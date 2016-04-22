@@ -1,11 +1,5 @@
-The Official Khronos Vulkan Samples Repository
----
+# Vulkan Samples
 
-This repository provides samples for Vulkan developers.
-These samples are useful to get started with, and learn about the Vulkan graphics API.
+This repository is for samples that demonstrate the Vulkan graphics API, or present interesting use cases.
 
-See [REQUIREMENTS](REQUIREMENTS.md) for system/tool requirements.
-
-See [BUILDING](BUILDING.md) for information about building the code.
-
-See [CONTRIBUTING](CONTRIBUTING.md) for information about contributing.
+Pending licensing for contributions, this repository will be populated with samples.
