@@ -8,15 +8,17 @@ Vulkan samples repository.
 
 ## Repository Structure
 
-| folder     | description                                            |
-|------------|--------------------------------------------------------|
-| samples/   | folder with samples, each in a separate sub-folder     |
-| ext/       | folder with commonly used external libraries           |
+| folder           | description                                                     |
+|------------------|-----------------------------------------------------------------|
+| samples/apps/    | folder with application samples, each in a separate sub-folder  |
+| samples/layers/  | folder with layer samples, each in a separate sub-folder        |
+| external/        | folder with commonly used external libraries                    |
 
 ## General Requirements
 
 - Folder and description:
-  - Each sample must be placed in a separate sub-folder in the samples/ folder.
+  - Each application sample must be placed in a separate sub-folder in the samples/apps/ folder.
+  - Each layer sample must be placed in a separate sub-folder in the samples/layers/ folder.
   - Each sample should use a short folder name (all lowercase, no spaces) that best describes the sample.
   - Each sample must include a README file in the root of the sample's folder with a description.
 - License:
@@ -29,11 +31,12 @@ Vulkan samples repository.
   - Single source file samples with minimal build complexity are encouraged to make porting to different platforms easier.
   - Embedding SPIR-V and assets in the source code is encouraged to simplify the sample and minimize the build complexity.
   - The sample should include the source from which the SPIR-V code was generated (typically GLSL).
+  - Compiling the sample with the highest warning level and warnings-as-errors (-Wall -Wextra -Werror, or /Wall /WX) is highly recommended.
 - Third party libraries:
   - A sample may not depend on a separate installation of a third party library.
   - Any third party library that is used needs to be available under a compatible open source license.
   - Any third party library that is used must be included in source.
-  - Commonly used third party libraries or header files may be placed in the ext/ folder.
+  - Commonly used third party libraries or header files may be placed in the external/ folder.
 
 ## Copyright Notice and License Template
 
