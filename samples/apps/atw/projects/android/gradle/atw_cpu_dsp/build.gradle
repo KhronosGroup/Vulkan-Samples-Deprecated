@@ -1,0 +1,34 @@
+import org.gradle.internal.os.OperatingSystem;
+
+buildscript {
+	repositories {
+		jcenter()
+	}
+
+	dependencies {
+		classpath 'com.android.tools.build:gradle-experimental:0.6.0-beta5'
+	}
+}
+
+def ndkDir = System.getenv('ANDROID_NDK_HOME')
+if( ndkDir == null ) { ndkDir = System.getenv('ANDROID_NDK_ROOT') }
+if( ndkDir == null ) { ndkDir = System.getenv('ANDROID_NDK') }
+if( ndkDir == null ) { ndkDir = System.getenv('NDK_HOME') }
+if( ndkDir == null ) { ndkDir = System.getenv('NDK_ROOT') }
+if( ndkDir == null ) { ndkDir = System.getenv('NDKROOT') }
+if( ndkDir == null )
+{
+	throw new GradleException('Android NDK path not found! Make sure ANDROID_NDK_HOME is set.')
+}
+def baseDir = "../../../../../../.."	// base of the Vulkan-Samples repository
+def buildDir = "${baseDir}/build/android/gradle/apps/atw_cpu_dsp/build"
+
+rootProject.buildDir = file(new File(buildDir))
+
+task build(type: Exec) {
+	if ( OperatingSystem.current().isWindows() ) {
+		commandLine ndkDir + '/ndk-build.cmd', '-C', '.', 'NDK_LIBS_OUT=' + buildDir + '/libs', 'NDK_OUT=' + buildDir + '/obj'
+	} else {
+		commandLine ndkDir + '/ndk-build', '-C', '.', 'NDK_LIBS_OUT=' + buildDir + '/libs', 'NDK_OUT=' + buildDir + '/obj'
+	}
+}
