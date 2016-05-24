@@ -1,0 +1,6 @@
+LIBRARY VKLayer_queue_muxer
+EXPORTS
+vkGetInstanceProcAddr
+vkGetDeviceProcAddr
+vkEnumerateInstanceLayerProperties
+vkEnumerateDeviceLayerProperties
