@@ -1,0 +1,17 @@
+{
+    "file_format_version" : "1.0.0",
+    "layer" : {
+        "name": "VK_LAYER_OCULUS_queue_muxer",
+        "type": "GLOBAL",
+        "library_path": ".\\VkLayer_queue_muxer.dll",
+        "api_version": "1.0.11",
+        "implementation_version": "1",
+        "description": "Queue Muxer Layer",
+        "instance_extensions": [
+             {
+                 "name": "VK_EXT_debug_report",
+                 "spec_version": "2"
+             }
+         ]
+    }
+}

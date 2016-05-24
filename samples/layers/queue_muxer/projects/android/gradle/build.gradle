@@ -1,0 +1,98 @@
+
+buildscript {
+	repositories {
+		jcenter()
+	}
+
+	dependencies {
+		//classpath 'com.android.tools.build:gradle-experimental:0.6.0-beta5'
+        classpath 'com.android.tools.build:gradle-experimental:0.7.0-alpha1'
+	}
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
+
+apply plugin: 'com.android.model.native'
+
+def ndkDir = System.getenv('ANDROID_NDK_HOME')
+if( ndkDir == null ) { ndkDir = System.getenv('ANDROID_NDK_ROOT') }
+if( ndkDir == null ) { ndkDir = System.getenv('ANDROID_NDK') }
+if( ndkDir == null ) { ndkDir = System.getenv('NDK_HOME') }
+if( ndkDir == null ) { ndkDir = System.getenv('NDK_ROOT') }
+if( ndkDir == null ) { ndkDir = System.getenv('NDKROOT') }
+if( ndkDir == null )
+{
+	throw new GradleException('Android NDK path not found! Make sure ANDROID_NDK_HOME is set.')
+}
+def baseDir = "../../../../../.."	// base of the Vulkan-Samples repository
+def buildDir = "${baseDir}/build/android/gradle/layers/queue_muxer/build"
+def vkSdkPath = System.getenv('VK_SDK_PATH')
+
+rootProject.buildDir = file(new File(buildDir))
+
+model {
+	android {
+		compileSdkVersion = 23
+		buildToolsVersion = "23.0.2"
+
+		defaultConfig.with {
+			minSdkVersion.apiLevel = 21
+			targetSdkVersion.apiLevel = 21
+			versionCode = 1
+			versionName = "1.0"
+		}
+	}
+
+	android.ndk {
+		moduleName = "VkLayer_queue_muxer"
+
+        stl = "gnustl_static"
+
+		cppFlags.addAll(["-std=c++11", "-Wall", "-DVK_USE_PLATFORM_ANDROID_KHR", "-DVK_PROTOTYPES"])
+
+		cppFlags.addAll([
+			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/include")}".toString(),
+			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/loader")}".toString(),
+			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/layers")}".toString(),
+			"-I${file("${vkSdkPath}/Include")}".toString(),
+			"-I${file("${vkSdkPath}/Source/loader")}".toString(),
+			"-I${file("${vkSdkPath}/Source/layers")}".toString()
+		])
+
+		ldLibs.addAll(["android", "log"])
+	}
+
+	android.sources {
+		main {
+			jni.source {
+				srcDir "${baseDir}/samples/layers/queue_muxer/"
+			}
+		}
+	}
+
+	android.buildTypes {
+		release {
+			ndk.with {
+				debuggable = true
+			}
+			minifyEnabled = false
+		}
+	}
+
+	// Turn on hard float support in armeabi-v7a
+	android.abis {
+		create("armeabi-v7a") {
+			cppFlags.addAll(["-mhard-float", "-D_NDK_MATH_NO_SOFTFP=1", "-mfloat-abi=hard"])
+			ldLibs.add("m_hard")
+			ldFlags.add("-Wl,--no-warn-mismatch")
+		}
+	}
+
+	android.productFlavors {
+		create ("arm7") {
+			ndk.abiFilters.add("armeabi-v7a")
+		}
+	}
+}
