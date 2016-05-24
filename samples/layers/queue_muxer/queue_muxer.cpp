@@ -206,6 +206,9 @@ VERSION HISTORY
 
 #if defined( __ANDROID__ )
 #include <android/log.h>			// for __android_log_print()
+#define Print( ... )				__android_log_print( ANDROID_LOG_INFO, "qm", __VA_ARGS__ )
+#else
+#define Print( ... )				printf( __VA_ARGS__ )
 #endif
 
 #define MIN_QUEUES_PER_FAMILY		16
@@ -216,7 +219,7 @@ struct instance_data
 									instance_data() :
 										instanceDispatchTable( NULL ) {}
 
-    VkLayerInstanceDispatchTable *	instanceDispatchTable;
+	VkLayerInstanceDispatchTable *	instanceDispatchTable;
 };
 
 struct device_data
@@ -229,11 +232,11 @@ struct device_data
 										pfnQueuePresentKHR( NULL ) {}
 
 	instance_data *					instance;
-    VkLayerDispatchTable *			deviceDispatchTable;
+	VkLayerDispatchTable *			deviceDispatchTable;
 	loader_platform_thread_mutex	deviceLock;
 	uint32_t						queueFamilyCount;
 	VkQueueFamilyProperties *		queueFamilyProperties;
-    PFN_vkQueuePresentKHR			pfnQueuePresentKHR;
+	PFN_vkQueuePresentKHR			pfnQueuePresentKHR;
 };
 
 struct queue_data
@@ -335,10 +338,8 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyPropert
 		{
 			if ( pQueueFamilyProperties[i].queueCount < MIN_QUEUES_PER_FAMILY )
 			{
-#if defined( __ANDROID__ )
-				__android_log_print( ANDROID_LOG_INFO, "qm", "vkGetPhysicalDeviceQueueFamilyProperties: VK_LAYER_OCULUS_queue_muxer increased queueu family %d queue count from %d to %d",
+				Print( "vkGetPhysicalDeviceQueueFamilyProperties: VK_LAYER_OCULUS_queue_muxer increased queueu family %d queue count from %d to %d",
 						i, pQueueFamilyProperties[i].queueCount, MIN_QUEUES_PER_FAMILY );
-#endif
 				pQueueFamilyProperties[i].queueCount = MIN_QUEUES_PER_FAMILY;
 			}
 		}
@@ -356,15 +357,15 @@ Device
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 		VkPhysicalDevice				physicalDevice,
 		const VkDeviceCreateInfo *		pCreateInfo,
-        const VkAllocationCallbacks *	pAllocator,
+		const VkAllocationCallbacks *	pAllocator,
 		VkDevice *						pDevice )
 {
-    VkLayerDeviceCreateInfo * chain_info = (VkLayerDeviceCreateInfo *)pCreateInfo->pNext;
-    while ( chain_info != NULL && !( chain_info->sType == VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO && chain_info->function == VK_LAYER_LINK_INFO ) )
+	VkLayerDeviceCreateInfo * chain_info = (VkLayerDeviceCreateInfo *)pCreateInfo->pNext;
+	while ( chain_info != NULL && !( chain_info->sType == VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO && chain_info->function == VK_LAYER_LINK_INFO ) )
 	{
-        chain_info = (VkLayerDeviceCreateInfo *)chain_info->pNext;
-    }
-    assert( chain_info != NULL );
+		chain_info = (VkLayerDeviceCreateInfo *)chain_info->pNext;
+	}
+	assert( chain_info != NULL );
 	assert( chain_info->u.pLayerInfo );
 
 	PFN_vkGetInstanceProcAddr pfnGetInstanceProcAddr = chain_info->u.pLayerInfo->pfnNextGetInstanceProcAddr;
@@ -422,7 +423,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 	my_device_data->deviceDispatchTable = pDeviceTable;
 	my_device_data->queueFamilyCount = queueFamilyCount;
 	my_device_data->queueFamilyProperties = queueFamilyProperties;
-    my_device_data->pfnQueuePresentKHR = (PFN_vkQueuePresentKHR)pDeviceTable->GetDeviceProcAddr( *pDevice, "vkQueuePresentKHR" );
+	my_device_data->pfnQueuePresentKHR = (PFN_vkQueuePresentKHR)pDeviceTable->GetDeviceProcAddr( *pDevice, "vkQueuePresentKHR" );
 	loader_platform_thread_create_mutex( &my_device_data->deviceLock );
 
 	return result;
@@ -432,8 +433,8 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
 		VkDevice						device,
 		const VkAllocationCallbacks *	pAllocator )
 {
-    dispatch_key key = get_dispatch_key( device );
-    device_data * my_device_data = get_my_data_ptr( key, device_data_map );
+	dispatch_key key = get_dispatch_key( device );
+	device_data * my_device_data = get_my_data_ptr( key, device_data_map );
 	assert( my_device_data->deviceDispatchTable != NULL );
 
 	my_device_data->deviceDispatchTable->DestroyDevice( device, pAllocator );
@@ -626,7 +627,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerPropertie
 		uint32_t *			pCount,
 		VkLayerProperties *	pProperties )
 {
-    return GetLayerProperties( ARRAY_SIZE( instanceLayerProps ), instanceLayerProps, pCount, pProperties );
+	return GetLayerProperties( ARRAY_SIZE( instanceLayerProps ), instanceLayerProps, pCount, pProperties );
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
@@ -635,7 +636,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionPrope
 		VkExtensionProperties *	pProperties)
 {
 	// This layer does not implement any instance extensions.
-    return GetExtensionProperties( 0, NULL, pCount, pProperties );
+	return GetExtensionProperties( 0, NULL, pCount, pProperties );
 }
 
 static const VkLayerProperties deviceLayerProps[] =
@@ -653,7 +654,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(
 			uint32_t *			pCount,
 			VkLayerProperties *	pProperties )
 {
-    return GetLayerProperties( ARRAY_SIZE( deviceLayerProps ), deviceLayerProps, pCount, pProperties );
+	return GetLayerProperties( ARRAY_SIZE( deviceLayerProps ), deviceLayerProps, pCount, pProperties );
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(
@@ -662,18 +663,18 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionPropert
 		uint32_t *				pCount,
 		VkExtensionProperties *	pProperties )
 {
-    if ( pLayerName != NULL && strcmp( pLayerName, deviceLayerProps[0].layerName ) == 0 )
+	if ( pLayerName != NULL && strcmp( pLayerName, deviceLayerProps[0].layerName ) == 0 )
 	{
 		// This layer does not implement any device extensions.
-        return GetExtensionProperties( 0, NULL, pCount, pProperties );
+		return GetExtensionProperties( 0, NULL, pCount, pProperties );
 	}
 
-    assert( physicalDevice );
+	assert( physicalDevice );
 
 	instance_data * my_instance_data = get_my_data_ptr( get_dispatch_key( physicalDevice ), instance_data_map );
 	assert( my_instance_data->instanceDispatchTable != NULL );
 
-    return my_instance_data->instanceDispatchTable->EnumerateDeviceExtensionProperties( physicalDevice, NULL, pCount, pProperties );
+	return my_instance_data->instanceDispatchTable->EnumerateDeviceExtensionProperties( physicalDevice, NULL, pCount, pProperties );
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr( VkInstance instance, const char * funcName )

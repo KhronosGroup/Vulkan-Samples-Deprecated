@@ -345,8 +345,8 @@ Platform headers / declarations
 	#include "vulkan/vulkan.h"
 	#include "vulkan/vk_sdk_platform.h"
 
-	#define METAL_VK
-	#if defined( METAL_VK )
+	#define MOLTEN_VK
+	#if defined( MOLTEN_VK )
 		#import <QuartzCore/CAMetalLayer.h>
 	#endif
 
@@ -4342,7 +4342,7 @@ NSAutoreleasePool * autoReleasePool;
 - (BOOL)acceptsFirstResponder { return YES; }
 - (void)keyDown:(NSEvent *)event {}
 
-#if defined( METAL_VK )
+#if defined( MOLTEN_VK )
 
 -(instancetype) initWithFrame:(NSRect)frameRect {
 	self = [super initWithFrame: frameRect];
@@ -6318,20 +6318,20 @@ typedef enum
 	GPU_TEXTURE_FORMAT_ASTC_12x10_UNORM		= VK_FORMAT_ASTC_12x10_UNORM_BLOCK,		// four-components ASTC 12x10 block compressed, unsigned
 	GPU_TEXTURE_FORMAT_ASTC_12x12_UNORM		= VK_FORMAT_ASTC_12x12_UNORM_BLOCK,		// four-components ASTC 12x12 block compressed, unsigned
 	
-	GPU_TEXTURE_FORMAT_ASTC_4x4_SRGB		= VK_FORMAT_ASTC_4x4_SRGB_BLOCK,		// four-components ASTC 4x4 block compressed, SRGB
-	GPU_TEXTURE_FORMAT_ASTC_5x4_SRGB		= VK_FORMAT_ASTC_5x4_SRGB_BLOCK,		// four-components ASTC 5x4 block compressed, SRGB
-	GPU_TEXTURE_FORMAT_ASTC_5x5_SRGB		= VK_FORMAT_ASTC_5x5_SRGB_BLOCK,		// four-components ASTC 5x5 block compressed, SRGB
-	GPU_TEXTURE_FORMAT_ASTC_6x5_SRGB		= VK_FORMAT_ASTC_6x5_SRGB_BLOCK,		// four-components ASTC 6x5 block compressed, SRGB
-	GPU_TEXTURE_FORMAT_ASTC_6x6_SRGB		= VK_FORMAT_ASTC_6x6_SRGB_BLOCK,		// four-components ASTC 6x6 block compressed, SRGB
-	GPU_TEXTURE_FORMAT_ASTC_8x5_SRGB		= VK_FORMAT_ASTC_8x5_SRGB_BLOCK,		// four-components ASTC 8x5 block compressed, SRGB
-	GPU_TEXTURE_FORMAT_ASTC_8x6_SRGB		= VK_FORMAT_ASTC_8x6_SRGB_BLOCK,		// four-components ASTC 8x6 block compressed, SRGB
-	GPU_TEXTURE_FORMAT_ASTC_8x8_SRGB		= VK_FORMAT_ASTC_8x8_SRGB_BLOCK,		// four-components ASTC 8x8 block compressed, SRGB
-	GPU_TEXTURE_FORMAT_ASTC_10x5_SRGB		= VK_FORMAT_ASTC_10x5_SRGB_BLOCK,		// four-components ASTC 10x5 block compressed, SRGB
-	GPU_TEXTURE_FORMAT_ASTC_10x6_SRGB		= VK_FORMAT_ASTC_10x6_SRGB_BLOCK,		// four-components ASTC 10x6 block compressed, SRGB
-	GPU_TEXTURE_FORMAT_ASTC_10x8_SRGB		= VK_FORMAT_ASTC_10x8_SRGB_BLOCK,		// four-components ASTC 10x8 block compressed, SRGB
-	GPU_TEXTURE_FORMAT_ASTC_10x10_SRGB		= VK_FORMAT_ASTC_10x10_SRGB_BLOCK,		// four-components ASTC 10x10 block compressed, SRGB
-	GPU_TEXTURE_FORMAT_ASTC_12x10_SRGB		= VK_FORMAT_ASTC_12x10_SRGB_BLOCK,		// four-components ASTC 12x10 block compressed, SRGB
-	GPU_TEXTURE_FORMAT_ASTC_12x12_SRGB		= VK_FORMAT_ASTC_12x12_SRGB_BLOCK,		// four-components ASTC 12x12 block compressed, SRGB
+	GPU_TEXTURE_FORMAT_ASTC_4x4_SRGB		= VK_FORMAT_ASTC_4x4_SRGB_BLOCK,		// four-components ASTC 4x4 block compressed, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_5x4_SRGB		= VK_FORMAT_ASTC_5x4_SRGB_BLOCK,		// four-components ASTC 5x4 block compressed, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_5x5_SRGB		= VK_FORMAT_ASTC_5x5_SRGB_BLOCK,		// four-components ASTC 5x5 block compressed, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_6x5_SRGB		= VK_FORMAT_ASTC_6x5_SRGB_BLOCK,		// four-components ASTC 6x5 block compressed, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_6x6_SRGB		= VK_FORMAT_ASTC_6x6_SRGB_BLOCK,		// four-components ASTC 6x6 block compressed, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_8x5_SRGB		= VK_FORMAT_ASTC_8x5_SRGB_BLOCK,		// four-components ASTC 8x5 block compressed, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_8x6_SRGB		= VK_FORMAT_ASTC_8x6_SRGB_BLOCK,		// four-components ASTC 8x6 block compressed, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_8x8_SRGB		= VK_FORMAT_ASTC_8x8_SRGB_BLOCK,		// four-components ASTC 8x8 block compressed, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_10x5_SRGB		= VK_FORMAT_ASTC_10x5_SRGB_BLOCK,		// four-components ASTC 10x5 block compressed, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_10x6_SRGB		= VK_FORMAT_ASTC_10x6_SRGB_BLOCK,		// four-components ASTC 10x6 block compressed, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_10x8_SRGB		= VK_FORMAT_ASTC_10x8_SRGB_BLOCK,		// four-components ASTC 10x8 block compressed, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_10x10_SRGB		= VK_FORMAT_ASTC_10x10_SRGB_BLOCK,		// four-components ASTC 10x10 block compressed, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_12x10_SRGB		= VK_FORMAT_ASTC_12x10_SRGB_BLOCK,		// four-components ASTC 12x10 block compressed, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_12x12_SRGB		= VK_FORMAT_ASTC_12x12_SRGB_BLOCK,		// four-components ASTC 12x12 block compressed, sRGB
 } GpuTextureFormat_t;
 
 typedef enum
@@ -7834,8 +7834,8 @@ typedef struct
 
 static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass )
 {
-	assert( window->windowWidth <= (int)window->context.device->physicalDeviceProperties.limits.maxFramebufferWidth );
-	assert( window->windowHeight <= (int)window->context.device->physicalDeviceProperties.limits.maxFramebufferHeight );
+	assert( window->windowWidth >= 1 && window->windowWidth <= (int)window->context.device->physicalDeviceProperties.limits.maxFramebufferWidth );
+	assert( window->windowHeight >= 1 && window->windowHeight <= (int)window->context.device->physicalDeviceProperties.limits.maxFramebufferHeight );
 
 	memset( framebuffer, 0, sizeof( GpuFramebuffer_t ) );
 
@@ -7897,8 +7897,8 @@ static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebu
 static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
 												const int width, const int height, const int numBuffers )
 {
-	assert( width <= (int)context->device->physicalDeviceProperties.limits.maxFramebufferWidth );
-	assert( height <= (int)context->device->physicalDeviceProperties.limits.maxFramebufferHeight );
+	assert( width >= 1 && width <= (int)context->device->physicalDeviceProperties.limits.maxFramebufferWidth );
+	assert( height >= 1 && height <= (int)context->device->physicalDeviceProperties.limits.maxFramebufferHeight );
 
 	memset( framebuffer, 0, sizeof( GpuFramebuffer_t ) );
 
@@ -7951,9 +7951,9 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 {
 	UNUSED_PARM( multiview );
 
-	assert( width <= (int)context->device->physicalDeviceProperties.limits.maxFramebufferWidth );
-	assert( height <= (int)context->device->physicalDeviceProperties.limits.maxFramebufferHeight );
-	assert( numLayers <= (int)context->device->physicalDeviceProperties.limits.maxFramebufferLayers );
+	assert( width >= 1 && width <= (int)context->device->physicalDeviceProperties.limits.maxFramebufferWidth );
+	assert( height >= 1 && height <= (int)context->device->physicalDeviceProperties.limits.maxFramebufferHeight );
+	assert( numLayers >= 1 && numLayers <= (int)context->device->physicalDeviceProperties.limits.maxFramebufferLayers );
 
 	memset( framebuffer, 0, sizeof( GpuFramebuffer_t ) );
 
