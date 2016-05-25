@@ -7,5 +7,6 @@ copy AndroidManifest.xml ${BUILD_DIR}AndroidManifest.xml
 copy build.xml ${BUILD_DIR}build.xml
 copy project.properties ${BUILD_DIR}project.properties
 ant -q debug -Dbasedir=${BUILD_DIR}
+jar -tf ${BUILD_DIR}bin/atw_opengl-debug.apk
 adb install -r ${BUILD_DIR}bin/atw_opengl-debug.apk
 adb shell "am start -n com.vulkansamples.atw_opengl/android.app.NativeActivity"
