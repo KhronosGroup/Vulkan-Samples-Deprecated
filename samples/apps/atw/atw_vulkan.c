@@ -1,4 +1,4 @@
-﻿/*
+/*
 ================================================================================================
 
 Description	:	Asynchronous Time Warp test utility for Vulkan.
@@ -331,19 +331,21 @@ Platform headers / declarations
 
 	#include "TargetConditionals.h"
 	#if TARGET_OS_IPHONE
-		#define VK_USE_PLATFORM_IOS_KHR
-		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_KHR_IOS_SURFACE_EXTENSION_NAME
-		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateIosSurfaceKHR
-		#define vkCreateSurfaceKHR						vkCreateIosSurfaceKHR
+		#define VK_USE_PLATFORM_IOS_MVK
+		#include <MoltenVK/vk_mvk_ios_surface.h>
+		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_MVK_IOS_SURFACE_EXTENSION_NAME
+		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateIOSSurfaceMVK
+		#define vkCreateSurfaceKHR						vkCreateIOSSurfaceMVK
 	#else
-		#define VK_USE_PLATFORM_OSX_KHR
-		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_KHR_OSX_SURFACE_EXTENSION_NAME
-		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateOsxSurfaceKHR
-		#define vkCreateSurfaceKHR						vkCreateOsxSurfaceKHR
+		#define VK_USE_PLATFORM_OSX_MVK
+		#include <MoltenVK/vk_mvk_osx_surface.h>
+		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_MVK_OSX_SURFACE_EXTENSION_NAME
+		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateOSXSurfaceMVK
+		#define vkCreateSurfaceKHR						vkCreateOSXSurfaceMVK
 	#endif
 
 	#include "vulkan/vulkan.h"
-	#include "vulkan/vk_sdk_platform.h"
+	#include <MoltenVK/vk_mvk_moltenvk.h>
 
 	#define MOLTEN_VK
 	#if defined( MOLTEN_VK )
@@ -1331,11 +1333,11 @@ static void Thread_SetRealTimePriority( int priority )
 	sp.sched_priority = priority;
 	if ( pthread_setschedparam( pthread_self(), SCHED_FIFO, &sp ) == -1 )
 	{
-		LOG( "Failed to change thread %d priority.\n", gettid() );
+		Print( "Failed to change thread priority.\n" );
 	}
 	else
 	{
-		Print( "Thread %d set to SCHED_FIFO, priority=%d\n", gettid(), priority );
+		Print( "Thread set to SCHED_FIFO, priority=%d\n", priority );
 	}
 #elif defined( OS_ANDROID )
 	struct sched_attr
@@ -3950,6 +3952,11 @@ static void GpuWindow_CreateFromSurface( GpuWindow_t * window, const VkSurfaceKH
 	GpuSwapchain_Create( &window->context, &window->swapchain, surface, window->colorFormat, window->windowWidth, window->windowHeight, window->windowSwapInterval );
 	GpuDepthBuffer_Create( &window->context, &window->depthBuffer, window->depthFormat, window->windowWidth, window->windowHeight, 1 );
 
+#if defined( OS_MAC )
+    window->windowWidth = window->swapchain.width;			// iOS/OSX patch for Retina displays
+    window->windowHeight = window->swapchain.height;		// iOS/OSX patch for Retina displays
+#endif
+
 	assert( window->swapchain.width == window->windowWidth && window->swapchain.height == window->windowHeight );
 
 	window->surface = surface;
@@ -4520,11 +4527,11 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 		[window->nsWindow makeFirstResponder:nil];
 	}
 
-	VkOsxSurfaceCreateInfoKHR osxSurfaceCreateInfo;
-	osxSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_OSX_SURFACE_CREATE_INFO_KHR;
+	VkOSXSurfaceCreateInfoMVK osxSurfaceCreateInfo;
+	osxSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_OSX_SURFACE_CREATE_INFO_MVK;
 	osxSurfaceCreateInfo.pNext = NULL;
 	osxSurfaceCreateInfo.flags = 0;
-	osxSurfaceCreateInfo.nsview = window->nsView;
+	osxSurfaceCreateInfo.pView = window->nsView;
 
 	VkSurfaceKHR surface;
 	VK( instance->vkCreateSurfaceKHR( instance->instance, &osxSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
