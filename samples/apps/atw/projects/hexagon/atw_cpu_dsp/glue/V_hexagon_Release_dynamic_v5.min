@@ -1,0 +1,28 @@
+#  min file
+
+MAKE_D_DIR			= $(HEXAGON_SDK_ROOT)/build/make.d
+MAKE_D_EXT_c_DIR	= $(HEXAGON_SDK_ROOT)/build/make.d.ext/c/hexagon_Release_dynamic_v5
+MAKE_D_EXT_1_DIR	= $(HEXAGON_SDK_ROOT)/build/make.d.ext/hexagon
+MAKE_D_EXT_2_DIR	= $(HEXAGON_SDK_ROOT)/build/make.d.ext/android
+MAKE_D_EXT_3_DIR	= $(HEXAGON_SDK_ROOT)/build/make.d.ext/qaic
+MAKE_D_1_INCDIR		= $(HEXAGON_SDK_ROOT)/incs
+MAKE_D_2_INCDIR		= $(HEXAGON_SDK_ROOT)/incs/stddef
+MAKE_D_3_INCDIR		= $(HEXAGON_SDK_ROOT)/libs/common/remote/ship/hexagon_Release_dynamic_v5
+MAKE_D_1_LIBDIR		= $(HEXAGON_SDK_ROOT)/libs/common/remote/ship/hexagon_Release_dynamic_v5
+QURT_IMAGE_DIR		= $(HEXAGON_SDK_ROOT)/libs/common/qurt
+QURT_INC_DIR		= $(HEXAGON_SDK_ROOT)/libs/common/qurt
+
+# adjust paths to be relative to current working dir
+_pkg_deps = MAKE_D_DIR MAKE_D_EXT_c_DIR MAKE_D_EXT_1_DIR MAKE_D_EXT_2_DIR MAKE_D_EXT_3_DIR MAKE_D_1_INCDIR MAKE_D_2_INCDIR MAKE_D_3_INCDIR MAKE_D_1_LIBDIR QURT_IMAGE_DIR QURT_INC_DIR
+__pkg_dir := $(filter-out ./,$(dir $(lastword $(MAKEFILE_LIST))))
+# $(foreach v,$(_pkg_deps),$(eval $v := $(__pkg_dir)$$($v)))
+
+# assign these variables only for the top-level makefile
+ifeq ($(origin __pkg_root),undefined)
+  __pkg_root    := $(__pkg_dir)..
+  __pkg_result  := $(__pkg_root)$(filter-out /.,/hexagon_Release_dynamic_v5/ship)
+  __pkg_deps    := $(_pkg_deps)
+endif
+__pkg_version ?= 6236815
+
+SHIP_DIR := $(__pkg_dir)../hexagon_Release_dynamic_v5/ship

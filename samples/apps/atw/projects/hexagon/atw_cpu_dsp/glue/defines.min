@@ -1,0 +1,21 @@
+GLUE_DIR:=$(dir $(lastword $(MAKEFILE_LIST)))
+
+include $(GLUE_DIR)/lastv.min
+
+# sort options
+null :=
+SPACE := $(null) $(null)
+override V:=$(subst $(SPACE),_,$(strip $(wordlist 1, 2, $(subst _, ,$(V))) $(sort $(wordlist 3,$(words $(subst _, ,$(V))),$(subst _, ,$(V))))))
+
+include $(GLUE_DIR)/V_$V.min
+
+MDLIB_PKG_DEPS:=$(__pkg_deps)
+include $(MAKE_D_DIR)/defines.min
+
+$(foreach v,$(MDLIB_PKG_DEPS),$(eval $v := $$(call cleanPath,$$($v))))
+
+GLUE_DIR  := $(call cleanPath,$(GLUE_DIR))
+SHIP_DIR  := $(call cleanPath,$(SHIP_DIR))
+EVERY_V   := $(patsubst $(GLUE_DIR)/V_%.min,%,$(wildcard $(GLUE_DIR)/V_*.min))
+RULES_MIN := $(RULES_MIN) $(GLUE_DIR)/$V.mak
+

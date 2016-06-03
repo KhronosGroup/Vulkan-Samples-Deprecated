@@ -1,0 +1,36 @@
+#ifndef __DSPWARP_APP_IDL__
+#define __DSPWARP_APP_IDL__
+
+#include "AEEStdDef.idl"
+
+struct MeshCoord_t
+{
+	float x;
+	float y;
+};
+
+// Interface name "TimeWarpInterface" results in generation of TimeWarpInterface.h, TimeWarpInterface_skel.c, TimeWarpInterface_stub.c. 
+// By convention, the user provices the implementations of the functions in the interface.
+interface TimeWarpInterface
+{
+	AEEResult GetDspVersion();
+
+	AEEResult Init();
+	AEEResult Shutdown();
+
+	AEEResult TimeWarp(	in sequence<uint8>			srcPackedRGB,		// source texture with 32 bits per texel
+						in sequence<uint8>			srcPlanarR,			// source texture with 8 bits per texel
+						in sequence<uint8>			srcPlanarG,			// source texture with 8 bits per texel
+						in sequence<uint8>			srcPlanarB,			// source texture with 8 bits per texel
+						in int32					srcPitchInTexels,	// in texels
+						in int32					srcTexelsWide,		// in texels
+						in int32					srcTexelsHigh,		// in texels
+						rout sequence<uint8>		dest,				// destination buffer with 32 bits per pixels
+						in int32					destPitchInPixels,	// in pixels: 1080, 1440, etc.
+						in int32					destTilesWide,		// tiles are implicitly 32 x 32 pixels
+						in int32					destTilesHigh,
+						in sequence<MeshCoord_t>	meshCoords,			// [(destTilesWide+1)*(destTilesHigh+1)]
+						in int32					sampling );
+};
+
+#endif __DSPWARP_APP_IDL__

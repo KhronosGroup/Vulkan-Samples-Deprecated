@@ -1,0 +1,18 @@
+# stand-alone TimeWarp executable
+BUILD_EXES+=TimeWarp
+TimeWarp_QAICIDLS	+=	inc/TimeWarp
+TimeWarp_C_SRCS		+=	../../../atw_cpu_dsp \
+						$V/TimeWarpInterface_stub
+TimeWarp_DLLS		+=	libadsprpc
+TimeWarp_LIBS		+=	adspmsgd
+TimeWarp_LD_FLAGS	+=	-llog -ldl -pie
+TimeWarp_DEFINES	+=	VERIFY_PRINT_ERROR
+
+CC_FLAGS			+=	-mfloat-abi=softfp -mfpu=neon -Wno-unused-function -DUSE_DSP_TIMEWARP
+
+# copy final build products to the ship directory
+BUILD_COPIES = \
+   $(DLLS) \
+   $(EXES) \
+   $(LIBS) \
+   $(SHIP_DIR)/ ;

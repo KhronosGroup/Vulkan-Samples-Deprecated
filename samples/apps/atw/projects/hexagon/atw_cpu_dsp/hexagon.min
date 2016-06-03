@@ -1,0 +1,93 @@
+# builds the static/dynamic skel
+ifeq (1,$(V_dynamic))
+BUILD_DLLS = libTimeWarpInterface_skel
+else
+BUILD_LIBS += libTimeWarpInterface_skel
+endif
+
+INCDIRS += \
+  $(QURT_INC_DIR)/ADSPv60MP/include
+
+CC_FLAGS	+=	-Wno-unused-function
+
+# Override the default -Os (optimize for code space) to optimize for cycle count
+# This is to give the fairest possible comparison between C and assembly performance.
+_OPT = -O3
+
+# TimeWarp source files.
+libTimeWarpInterface_skel_QAICIDLS = inc/TimeWarp
+libTimeWarpInterface_skel_C_SRCS		+=	$V/TimeWarpInterface_skel \
+											../../../atw_cpu_dsp
+#libTimeWarpInterface_skel.ASM_SRCS	+=	../../../atw_cpu_dsp_asm.S
+
+
+# Also build a stand-alone simulation environment executable (only for static lib build)
+ifneq (1,$(V_dynamic))
+
+BUILD_QEXES += TimeWarp_q
+# The following is needed to pull QuRT support into the executable for simulation
+LD=$(HEXAGON_BIN)$(HEXAGON_NAME)-link#
+LD_FLAG=#
+_LDFLAG=$(LD_FLAG)
+LD_FLAGS_WRAP=#
+LD_FLAGS=-m$(V_ARCH) -G0 -L$(HEXAGON_TOOLS_ROOT)/Tools/target/hexagon/lib/$(V_ARCH)/G0
+
+EXE_LD_FLAGS=#
+EXE_EXT=#
+
+RTOS_DIR = $(QURT_IMAGE_DIR)/ADSPv60MP
+
+TimeWarp_q_LIBS+=$(HEXAGON_TOOLS_ROOT)/Tools/target/hexagon/lib/$(V_ARCH)/G0/init.o
+TimeWarp_q_LIBS+=$(HEXAGON_TOOLS_ROOT)/Tools/target/hexagon/lib/$(V_ARCH)/G0/fini.o
+TimeWarp_q_LIBS+=$(HEXAGON_TOOLS_ROOT)/Tools/target/hexagon/lib/$(V_ARCH)/G0/libc.a
+TimeWarp_q_LIBS+=$(HEXAGON_TOOLS_ROOT)/Tools/target/hexagon/lib/$(V_ARCH)/G0/libqcc.a
+TimeWarp_q_LIBS+=$(HEXAGON_TOOLS_ROOT)/Tools/target/hexagon/lib/$(V_ARCH)/G0/libdl.a
+TimeWarp_q_LIBS+=$(HEXAGON_TOOLS_ROOT)/Tools/target/hexagon/lib/$(V_ARCH)/G0/libhexagon.a
+TimeWarp_q_LIBS+=$(RTOS_DIR)/lib/crt0.o
+TimeWarp_q_LIBS+=$(RTOS_DIR)/lib/libqurt.a
+TimeWarp_q_LIBS+=$(RTOS_DIR)/lib/libqurtkernel.a
+TimeWarp_q_LIBS+=$(RTOS_DIR)/lib/libqurtcfs.a
+TimeWarp_q_LIBS+=$(RTOS_DIR)/lib/libqurtdebugger.a
+TimeWarp_q_LIBS+=$(RTOS_DIR)/lib/libqube_compat.a
+TimeWarp_q_LIBS+=$(RTOS_DIR)/lib/libtimer.a
+TimeWarp_q_LIBS+=$(RTOS_DIR)/lib/libposix.a
+TimeWarp_q_LIBS+=$(RTOS_DIR)/examples/cust_config.o
+
+TimeWarp_q_C_SRCS		+=	$V/TimeWarpInterface_skel \
+							../../../atw_cpu_dsp
+#TimeWarp_q.ASM_SRCS	+=	../../../atw_cpu_dsp_asm.S
+
+TimeWarp_q_LD_FLAGS = -m$(V_ARCH) -g -nostdlib --section-start .start=0x1d000000
+
+all:$(V)/q6ss.cfg $(V)/osam.cfg
+
+ifeq (WinNT,$(UNAME_S))
+$(V)/q6ss.cfg:
+	mkdir $(@D)
+	@echo $(HEXAGON_TOOLS_ROOT)\Tools\lib\iss\qtimer.dll --csr_base=0x7b000000 --irq_p=35,36 --freq=19200000 --cnttid=0x11 >> $@
+	@echo $(HEXAGON_TOOLS_ROOT)\Tools\lib\iss\l2vic.dll 4 0x7b010000 >> $@
+
+$(V)/osam.cfg:
+	@echo $(RTOS_DIR)\debugger\cygwin\qurt_model.dll > $@
+
+else
+$(V)/q6ss.cfg:
+	mkdir $(@D)
+	@echo $(HEXAGON_TOOLS_ROOT)/Tools/lib/iss/qtimer.so --csr_base=0x7b000000 --irq_p=35,36 --freq=19200000 --cnttid=0x11 > $@
+	@echo $(HEXAGON_TOOLS_ROOT)/Tools/lib/iss/l2vic.so 4 0x7b010000 > $@
+
+$(V)/osam.cfg:
+	@echo $(RTOS_DIR)/debugger/lnx64/qurt_model.so > $@
+
+endif
+
+QEXE_EXEC+=--rtos $(V)/osam.cfg --symfile $(V)/TimeWarp_q$(EXE_EXT) --cosim_file $(V)/q6ss.cfg --dsp_clock 800
+
+endif #//ifneq (1,$(V_dynamic))
+
+# copy final build products to the ship directory
+BUILD_COPIES = \
+   $(DLLS) \
+   $(EXES) \
+   $(LIBS) \
+   $(SHIP_DIR)
