@@ -62,6 +62,13 @@ Supported platforms are:
 	- Ubuntu Linux 14.04 or later
 	- Android 5.0 or later
 
+The source texture resolution is limited to 2048x2048 RGBA texels because the
+SSE and AVX addressing uses 16-bit signed integers for the pitch. The Hexagon
+box prefetch also limits the source texture resolution to 2048x2048 RGBA texels.
+
+The destination is only limited by a 32-bit address space. All the typical 16:9
+display resolutions can be used: 1920 x 1080, 2560 x 1440, 3840 x 2160, 7680 x 4320.
+
 
 OPTIMIZATION
 ============
@@ -97,7 +104,7 @@ Linux: GCC 4.8.2:
 
 Android for ARM from Windows: NDK Revision 11c - Android 21
 	set path=%path%;%ANDROID_NDK_HOME%\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\
-	arm-linux-androideabi-gcc -std=c99 -Wall -g -O2 -march=armv7-a -mfloat-abi=softfp -mfpu=neon -o atw_cpu_dsp atw_cpu_dsp.c -lm -llog --sysroot=%ANDROID_NDK_HOME%/platforms/android-21/arch-arm
+	arm-linux-androideabi-gcc -std=c99 -Wall -g -O2 -march=armv7-a -mfloat-abi=softfp -mfpu=neon -o atw_cpu_dsp atw_cpu_dsp.c -lm -lpthread -ldl -llog --sysroot=%ANDROID_NDK_HOME%/platforms/android-21/arch-arm
 	adb root
 	adb remount
 	adb shell mkdir -p /sdcard/atw/images/
@@ -106,6 +113,12 @@ Android for ARM from Windows: NDK Revision 11c - Android 21
 	adb shell chmod 777 /data/local/atw_cpu_dsp
 	adb shell /data/local/atw_cpu_dsp
 	adb pull /sdcard/atw/images/ .
+
+Hexagon DSP from Windows: Hexagon SDK 3.0
+	C:\Qualcomm\Hexagon_SDK\3.0\setup_sdk_env.cmd
+	C:\Qualcomm\Hexagon_SDK\3.0\scripts\testsig.py
+	cd projects/hexagon
+	dev_run
 
 
 VERSION HISTORY
@@ -130,11 +143,11 @@ VERSION HISTORY
 	#error "unknown platform"
 #endif
 
-#if defined( OS_WINDOWS ) || defined( OS_MAC ) || defined( OS_LINUX )
+#if defined( OS_WINDOWS )
 
 /*
 ================================
-Windows, MacOS, Linux x86 or x64
+Windows, x86 or x64
 ================================
 */
 
@@ -154,18 +167,13 @@ Windows, MacOS, Linux x86 or x64
 #pragma warning( disable : 2415 )	// variable X of static storage duration was declared but never referenced
 #endif
 
-#ifdef __clang__
-#pragma clang diagnostic ignored "-Wunused-const-variable"
-#pragma clang diagnostic ignored "-Wself-assign"
-#endif
-
 #include <stdio.h>					// for printf()
+#include <stdint.h>					// for uint32_t etc.
+#include <stdbool.h>				// for bool
+#include <assert.h>					// for assert()
 #include <math.h>					// for tanf()
-#if defined( OS_WINDOWS )
+#include <Windows.h>				// for InterlockedIncrement(), VirtualAlloc(), VirtualFree()
 #include <intrin.h>					// for SSE intrinsics
-#else
-#include <x86intrin.h>				// for SSE intrinsics
-#endif
 
 #if 0	// using the hardware prefetcher works well
 #define CACHE_LINE_SIZE				64
@@ -187,12 +195,69 @@ Windows, MacOS, Linux x86 or x64
 #endif
 
 #define INLINE						__inline
-#define LOG(...)					printf( __VA_ARGS__ )
+#define Print(...)					printf( __VA_ARGS__ )
 
 // To test one of these exclusively make sure to also set the appropriate compiler option: /arch:SSE2, /arch:SSE4.1, /arch:CORE-AVX2
 #define __USE_SSE2__
 #define __USE_SSE4__				// SSE4 is only needed for _mm_extract_epi32() and _mm_insert_epi32(), otherwise SSSE3 would suffice
 #define __USE_AVX2__
+
+#elif defined( OS_LINUX )
+
+/*
+================================
+Linux x86 or x64
+================================
+
+*/
+
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wunused-const-variable"
+#pragma clang diagnostic ignored "-Wself-assign"
+#endif
+
+#include <stdio.h>					// for printf()
+#include <stdint.h>					// for uint32_t etc.
+#include <stdbool.h>				// for bool
+#include <assert.h>					// for assert()
+#include <math.h>					// for tanf()
+#include <string.h>					// for memset()
+#include <errno.h>					// for EBUSY, ETIMEDOUT etc.
+#include <ctype.h>					// for isspace() and isdigit()
+#include <sys/time.h>				// for gettimeofday()
+#define __USE_UNIX98				// for pthread_mutexattr_settype
+#include <pthread.h>				// for pthread_create() etc.
+#include <x86intrin.h>				// for SSE intrinsics
+
+#if 0	// using the hardware prefetcher works well
+#define CACHE_LINE_SIZE				64
+#define PrefetchLinear( a, b )		for ( int o = 0; o < (b); o += CACHE_LINE_SIZE ) \
+									{ \
+										_mm_prefetch( (const char *) (a) + (o), _MM_HINT_NTA ); \
+									}
+#define PrefetchBox( a, w, h, s )	for ( int r = 0; r < (h); r++ ) \
+									{ \
+										for ( int o = 0; o < (w); o += CACHE_LINE_SIZE ) \
+										{ \
+											_mm_prefetch( (const char *) (a) + r * (s) + (o), _MM_HINT_NTA ); \
+										} \
+									}
+#define ZeroCacheLinear( a, b )		do {} while( (a) && (b) && 0 )
+#define ZeroCacheBox( a, w, h, s )	do {} while( (a) && (w) && (h) && (s) && 0 )
+#define FlushCacheLinear( a, b )	do {} while( (a) && (b) && 0 )
+#define FlushCacheBox( a, w, h, s )	do {} while( (a) && (w) && (h) && (s) && 0 )
+#endif
+
+#define INLINE						__inline
+#define Print(...)					printf( __VA_ARGS__ )
+
+// To test one of these exclusively make sure to also set the appropriate compiler option: /arch:SSE2, /arch:SSE4.1, /arch:CORE-AVX2
+#define __USE_SSE2__
+#define __USE_SSE4__				// SSE4 is only needed for _mm_extract_epi32() and _mm_insert_epi32(), otherwise SSSE3 would suffice
+#define __USE_AVX2__
+
+// prototype is only included when __USE_GNU is defined but that causes other compile errors
+extern int pthread_setname_np( pthread_t __target_thread, __const char *__name );
 
 #elif defined( OS_ANDROID )
 
@@ -202,9 +267,20 @@ Android ARM
 ================================
 */
 
-#include <android/log.h>			// for __android_log_print()
+#include <stdio.h>					// for fopen()
+#include <stdlib.h>					// for atoi()
+#include <stdint.h>					// for uint32_t etc.
+#include <stdbool.h>				// for bool
+#include <assert.h>					// for assert()
 #include <math.h>					// for tanf()
+#include <pthread.h>				// for pthread_t
+#include <sched.h>					// for SCHED_FIFO
+#include <ctype.h>					// for isspace() and isdigit()
+#include <unistd.h>					// for gettid()
+#include <android/log.h>			// for __android_log_print()
 #include <arm_neon.h>				// for NEON
+#include <sys/prctl.h>				// for prctl()
+#include <sys/syscall.h>			// for syscall()
 
 #if 1	// manual prefetching improves the performance
 #define CACHE_LINE_SIZE				64
@@ -226,7 +302,7 @@ Android ARM
 #endif
 
 #define INLINE						inline
-#define LOG(...)					printf( __VA_ARGS__ )
+#define Print(...)					printf( __VA_ARGS__ )
 #define OUTPUT						"/sdcard/atw/images/"
 
 //#undef __ARM_NEON__
@@ -239,13 +315,26 @@ Hexagon QDSP6
 ================================
 */
 
+#include <stdlib.h>					// for malloc/free
+#include <stdint.h>					// for uint32_t etc.
+#include <stdbool.h>				// for bool
 #include <math.h>					// for tanf()
+#include "AEEStdErr.h"
+#include "HAP_mem.h"
+#include "HAP_debug.h"
+#include "HAP_perf.h"
+#include "HAP_power.h"
 #include "HAP_farf.h"
 #include "hexagon_types.h"
 #include "hexagon_protos.h"
+#include "qurt_atomic_ops.h"
+#include "qurt_thread.h"
+#include "qurt_rmutex.h"
+#include "qurt_cond.h"
+#include "qurt_printf.h"
+#include "TimeWarp.h"				// MeshCoord_t
 
 #if 1	// manual prefetching significantly improves the performance
-#include "dsp_cache.h"
 #define CACHE_LINE_SIZE				32
 #define PrefetchLinear( a, b )		dspcache_l2fetch_linear( (a), (b) )
 #define PrefetchBox( a, w, h, s )	dspcache_l2fetch_box( (a), (w), (h), (s) )
@@ -256,9 +345,9 @@ Hexagon QDSP6
 #endif
 
 #define INLINE						inline
-#define LOG(...)					FARF( DEBUG_MSG, __VA_ARGS__ )
 #define FARF_DEBUG_MSG				1
 #define FARF_DEBUG_MSG_LEVEL		HAP_LEVEL_HIGH
+#define Print(...)					FARF( ALWAYS, __VA_ARGS__ )
 
 #if !defined( __HEXAGON_V50__ )
 #define __HEXAGON_V50__				1	// Snapdragon 805 (8x84)
@@ -278,6 +367,203 @@ inline Word32 Q6_R_extract_Pl( Word64 Rss ) { return (Word32)( Rss ); }
 inline Word32 Q6_R_extract_Ph( Word64 Rss ) { return (Word32)( Rss >> 32 ); }
 inline Word64 Q6_P_memb_fifo_PRI( Word64 Rss, const Byte * Rt, Word32 s11 ) { return ( Rss >> 8 ) | ( (Word64)Rt[s11] << 56 ); }
 
+// Fetch all cache lines touched by the linear address range.
+// Issues L2FETCH for up to 64kB.
+// Divides bytes by 256, uses 256 for stride and 255 for width and bytes/256 + 1 for height.
+static void dspcache_l2fetch_linear( const void * addr, unsigned int bytes )
+{
+    __asm__ __volatile__(
+		"	{\n"
+		"		%1 = asr(%1,#8)\n"				// bytes/256
+		"		r2 = ##0x0100FF01\n"			// initial L2FETCH config [stride = 256 : width = 255 : height = 1]
+		"		r3 = #254\n"
+		"	}{\n"
+		"		p0 = cmp.gt(%1,#254)\n"			// (bytes > ~64KB)
+		"		if (p0.new) r2 = add(r2,r3)\n"	// Cap height to 255
+		"		if (!p0.new) r2 = add(r2,r1)\n"	// L2FETCH config [stride = 256 : width = 255 : height = bytes/256 + 1]
+		"	}{\n"
+		"		l2fetch(%0,r2)\n"				// fetch
+		"	}\n"
+        : 
+        : "r" (addr), "r" (bytes)
+        : "p0", "r2", "r3" );
+}
+
+// Fetch all cache lines touched by the address ranges inside the box.
+// Issues box-type L2FETCH for a box that is up to 255 bytes wide x 255 bytes high, with stride up to 16383.
+static void dspcache_l2fetch_box( const void * addr, unsigned int width, unsigned int height, unsigned int stride )
+{
+	Word64 mask;
+    __asm__ __volatile__(
+		"	{\n"
+		"		%3 = combine(%2.L,%3.L)\n"		// width : height
+		"	}{\n"
+		"		%0 = combine(%4,%3)\n"			// stride : width : height
+		"	}{\n"
+		"		l2fetch(%1,%0)\n"				// l2fetch [addr, stride : width : height]
+		"	}\n"
+        : "=&r" (mask)
+        : "r" (addr), "r" (width), "r" (height), "r" (stride)
+        : );
+}
+
+// Terminate all outstanding L2FETCH operations.
+static void dspcache_l2fetch_terminate( void )
+{
+	unsigned int temp;
+    __asm__ __volatile__(
+		"	{\n"
+		"		%0 = #0\n"						// 0 value for any param terminates L2 fetch
+		"	}{\n"
+		"		l2fetch( r29, %0 )\n"			// fetch (from a known good address and length 0)
+		"	}\n"
+        : "=&r" (temp)
+        :
+        : "r29" );
+}
+
+// Issues DCZERO on all cache lines fully contained in the linear address range.
+static void dspcache_dczeroa_linear( void * addr, unsigned int bytes )
+{
+    __asm__ __volatile__(
+		"	{\n"
+		"		if (%0==#0) jump:nt 2f\n"				// check for NULL addr
+		"		%0 = add(%0,#31)\n"						// find first 32-byte boundary
+		"		%1 = add(%0,%1)\n"						// find right edge
+		"	}{\n"
+		"		%0 = and(%0,#~31)\n"					// find first 32-byte boundary
+		"	}{\n"
+		"		%1 = sub(%1,%0)\n"						// adjust bytes for left-alignment
+		"	}{\n"
+		"		%1 = asr(%1,#5)\n"						// cache lines = bytes/32
+		"		if (!cmp.gt(%1.new,#0)) jump:nt	2f\n"	// skip loop if no full cache lines
+		"	}{\n"
+		"		loop0(1f, %1)\n"						// loop setup
+		"	}\n"
+		"1:\n"
+		"	{\n"
+		"		dczeroa(%0)\n"							// clear cache line
+		"		%0 = add(%0,#32)\n"						// advance to next cache line
+		"	}:endloop0\n"
+		"2:\n"
+		:
+		: "r" (addr), "r" (bytes)
+		: "memory" );
+}
+
+// Issues DCZERO on all cache lines fully contained in the address ranges inside the box.
+static void dspcache_dczeroa_box( void * addr, unsigned int width, unsigned int height, unsigned int stride )
+{
+    __asm__ __volatile__(
+		"	{\n"
+		"		p0 = !cmp.eq(%0,#0)\n"					// check for NULL pointer
+		"		p0 = cmp.gt(%2,#0)\n"					// (height > 0)
+		"		if (!p0.new) jump:nt 4f\n"				// return
+		"		r5 = add(%0,#31)\n"						// find the first cache line on the first row
+		"	}{\n"
+		"		loop1(1f,%2)\n"
+		"		r6 = add(%0,%1)\n"						// right edge
+		"		%0 = add(%0,%3)\n"						// start of second row
+		"	}\n"
+		"1:\n"
+		"	{\n"
+		"		r5 = and(r5,#~31)\n"					// point to start of cache line
+		"	}{\n"
+		"		r6 = sub(r6,r5)\n"						// adjust width to aligned row start
+		"	}{\n"
+		"		r6 = asr(r6,#5)\n"						// cache lines = bytes / 32
+		"		if (!cmp.gt(r6.new,#0)) jump:nt 3f\n"	// if no full cache lines, skip inner loop
+		"	}{\n"
+		"		loop0(2f, r6)\n"						// loop setup
+		"	}\n"
+		"2:\n"
+		"	{\n"
+		"		dczeroa(r5)\n"							// clear cache line
+		"		r5 = add(r5,#32)\n"						// increment to next cache line
+		"	}:endloop0\n"
+		"3:\n"
+		"	{\n"
+		"		r5 = add(%0,#31)\n"						// find the first cache line on the next row
+		"		r6 = add(%0,%1)\n"						// find right edge of next row
+		"		%0 = add(%0,%3)\n"						// increment to row after next
+		"	}:endloop1\n"
+		"4:\n"
+		:
+		: "r" (addr), "r" (width), "r" (height), "r" (stride)
+		: "p0", "r5", "r6", "memory" );
+}
+
+// Issues DCCLEANINVA on all cache lines fully contained in the linear address range.
+static void dspcache_flush_invalidate_linear( const void * addr, unsigned int bytes )
+{
+    __asm__ __volatile__(
+		"	{\n"
+		"		if (%0==#0) jump:nt 2f\n"				// check for NULL addr
+		"		%0 = add(%0,#31)\n"						// find first 32-byte boundary
+		"		%1 = add(%0,%1)\n"						// find right edge
+		"	}{\n"
+		"		%0 = and(%0,#~31)\n"					// find first 32-byte boundary
+		"	}{\n"
+		"		%1 = sub(%1,%0)\n"						// adjust bytes for left-alignment
+		"	}{\n"
+		"		%1 = asr(%1,#5)\n"						// cache lines = bytes/32
+		"		if (!cmp.gt(%1.new,#0)) jump:nt	2f\n"	// skip loop if no full cache lines
+		"	}{\n"
+		"		loop0(1f, %1)\n"						// loop setup
+		"	}\n"
+		"1:\n"
+		"	{\n"
+		"		dccleaninva(%0)\n"						// clear cache line
+		"		%0 = add(%0,#32)\n"						// advance to next cache line
+		"	}:endloop0\n"
+		"2:\n"
+		:
+		: "r" (addr), "r" (bytes)
+		: "memory" );
+}
+
+// Issues DCCLEANINVA on all cache lines fully contained in the address ranges inside the box.
+static void dspcache_flush_invalidate_box( void * addr, unsigned int width, unsigned int height, unsigned int stride )
+{
+    __asm__ __volatile__(
+		"	{\n"
+		"		p0 = !cmp.eq(%0,#0)\n"					// check for NULL pointer
+		"		p0 = cmp.gt(%2,#0)\n"					// (height > 0)
+		"		if (!p0.new) jump:nt 4f\n"				// return
+		"		r5 = add(%0,#31)\n"						// find the first cache line on the first row
+		"	}{\n"
+		"		loop1(1f,%2)\n"
+		"		r6 = add(%0,%1)\n"						// right edge
+		"		%0 = add(%0,%3)\n"						// start of second row
+		"	}\n"
+		"1:\n"
+		"	{\n"
+		"		r5 = and(r5,#~31)\n"					// point to start of cache line
+		"	}{\n"
+		"		r6 = sub(r6,r5)\n"						// adjust width to aligned row start
+		"	}{\n"
+		"		r6 = asr(r6,#5)\n"						// cache lines = bytes / 32
+		"		if (!cmp.gt(r6.new,#0)) jump:nt 3f\n"	// if no full cache lines, skip inner loop
+		"	}{\n"
+		"		loop0(2f, r6)\n"						// loop setup
+		"	}\n"
+		"2:\n"
+		"	{\n"
+		"		dccleaninva(r5)\n"						// flush the cache line
+		"		r5 = add(r5,#32)\n"						// increment to next cache line
+		"	}:endloop0\n"
+		"3:\n"
+		"	{\n"
+		"		r5 = add(%0,#31)\n"						// find the first cache line on the next row
+		"		r6 = add(%0,%1)\n"						// find right edge of next row
+		"		%0 = add(%0,%3)\n"						// increment to row after next
+		"	}:endloop1\n"
+		"4:\n"
+		:
+		: "r" (addr), "r" (width), "r" (height), "r" (stride)
+		: "p0", "r5", "r6", "memory" );
+}
+
 #else	// assume generic x86 or x64 platform
 
 /*
@@ -287,6 +573,8 @@ Generic x86 or x64
 */
 
 #include <stdio.h>					// for printf()
+#include <stdint.h>					// for uint32_t etc.
+#include <stdbool.h>				// for bool
 #include <math.h>					// for tanf()
 #include <intrin.h>					// for SSE intrinsics
 
@@ -310,11 +598,81 @@ Generic x86 or x64
 #endif
 
 #define INLINE						inline
-#define LOG(...)					printf( __VA_ARGS__ )
+#define Print(...)					printf( __VA_ARGS__ )
 
 #define __USE_SSE2__
 #define __USE_SSE4__				// SSE4 is only needed for _mm_extract_epi32() and _mm_insert_epi32(), otherwise SSSE3 would suffice
 #define __USE_AVX2__
+
+#endif
+
+/*
+================================
+Default to no cache management
+================================
+*/
+
+#if !defined( CACHE_LINE_SIZE )
+#define CACHE_LINE_SIZE				64
+#define PrefetchLinear( a, b )		do {} while( (a) && (b) && 0 )
+#define PrefetchBox( a, w, h, s )	do {} while( (a) && (w) && (h) && (s) && 0 )
+#define ZeroCacheLinear( a, b )		do {} while( (a) && (b) && 0 )
+#define ZeroCacheBox( a, w, h, s )	do {} while( (a) && (w) && (h) && (s) && 0 )
+#define FlushCacheLinear( a, b )	do {} while( (a) && (b) && 0 )
+#define FlushCacheBox( a, w, h, s )	do {} while( (a) && (w) && (h) && (s) && 0 )
+#endif
+
+#if !defined( OUTPUT )
+#define OUTPUT ""
+#endif
+
+#define UNUSED_PARM( x )			{ (void)(x); }
+#define ARRAY_SIZE( a )				( sizeof( (a) ) / sizeof( (a)[0] ) )
+
+#define NUM_EYES					2
+#define NUM_COLOR_CHANNELS			3
+
+/*
+================================
+Fast integer operations
+================================
+*/
+
+#if defined( OS_HEXAGON )
+INLINE int MinInt( const int x, const int y ) { return Q6_R_min_RR( x, y ); }
+INLINE int MaxInt( const int x, const int y ) { return Q6_R_max_RR( x, y ); }
+INLINE int MinInt4( const int x, const int y, const int z, const int w ) { return Q6_R_min_RR( Q6_R_min_RR( x, y ), Q6_R_min_RR( z, w ) ); }
+INLINE int MaxInt4( const int x, const int y, const int z, const int w ) { return Q6_R_max_RR( Q6_R_max_RR( x, y ), Q6_R_max_RR( z, w ) ); }
+INLINE int AbsInt( const int x ) { return Q6_R_abs_R( x ); }
+INLINE int ClampInt( const int x, const int min, const int max ) { return Q6_R_min_RR( Q6_R_max_RR( min, x ), max ); }
+#else
+static int MinInt( const int x, const int y ) { return y + ( ( x - y ) & ( ( x - y ) >> ( sizeof( int ) * 8 - 1 ) ) ); }
+static int MaxInt( const int x, const int y ) { return x - ( ( x - y ) & ( ( x - y ) >> ( sizeof( int ) * 8 - 1 ) ) ); }
+static int MinInt4( const int x, const int y, const int z, const int w ) { return MinInt( MinInt( x, y ), MinInt( z, w ) ); }
+static int MaxInt4( const int x, const int y, const int z, const int w ) { return MaxInt( MaxInt( x, y ), MaxInt( z, w ) ); }
+static int AbsInt( const int x ) { const int mask = x >> ( sizeof( int ) * 8 - 1 ); return ( x + mask ) ^ mask; }
+static int ClampInt( const int x, const int min, const int max ) { return min + ( ( AbsInt( x - min ) - AbsInt( x - max ) + max - min ) >> 1 ); }
+#endif
+
+#if defined( USE_DSP_TIMEWARP )
+
+#include "TimeWarp.h"
+
+#else	// !USE_DSP_TIMEWARP
+
+/*
+================================
+MeshCoord_t
+================================
+*/
+
+#if !defined( OS_HEXAGON )	// If not already defined in TimeWarp.h
+
+typedef struct
+{
+	float x;
+	float y;
+} MeshCoord_t;
 
 #endif
 
@@ -353,7 +711,7 @@ SSE and AVX vector constants
 #define _MM_SET_EPI16( h, g, f, e, d, c, b, a )							{ _S16( a ), _S16( b ), _S16( c ), _S16( d ), _S16( e ), _S16( f ), _S16( g ), _S16( h ) }
 #define _MM_SET1_EPI32( x )												{ _S32( x ), _S32( x ), _S32( x ), _S32( x ) }
 #define _MM_SET_EPI32( d, c, b, a )										{ _S32( a ), _S32( b ), _S32( c ), _S32( d ) }
-#else
+#else	// _MSC_VER
 // GCC/Clang/LLVM: static initialization of __m128i as 2x 64-bit integers
 // typedef long long __m128i __attribute__ ((__vector_size__ (16), __may_alias__));
 #define _MM_SET1_EPI8( x )												{ _C8( x, x, x, x, x, x, x, x ), _C8( x, x, x, x, x, x, x, x ) }
@@ -362,7 +720,7 @@ SSE and AVX vector constants
 #define _MM_SET_EPI16( h, g, f, e, d, c, b, a )							{ _C16( a, b, c, d ), _C16( e, f, g, h ) }
 #define _MM_SET1_EPI32( x )												{ _C32( x, x ), _C32( x, x ) }
 #define _MM_SET_EPI32( d, c, b, a )										{ _C32( a, b ), _C32( c, d ) }
-#endif
+#endif	// _MSC_VER
 
 static const __m128i vector_uint8_0				= _MM_SET1_EPI8( 0 );
 static const __m128i vector_uint8_127			= _MM_SET1_EPI8( 127 );
@@ -383,7 +741,7 @@ static const __m128i vector_int32_255			= _MM_SET1_EPI32( 255 );
 #define _mm_loadh_epi64( x, address )			_mm_castps_si128( _mm_loadh_pi( _mm_castsi128_ps( x ), (__m64 *)(address) ) )
 #define _mm_pack_epi32( a, b )					_mm_packs_epi32( _mm_srai_epi32( _mm_slli_epi32( a, 16 ), 16 ), _mm_srai_epi32( _mm_slli_epi32( b, 16 ), 16 ) )
 
-#endif
+#endif	// __USE_SSE2__ || __USE_SSE4__
 
 #if defined( __USE_AVX2__ )
 
@@ -410,7 +768,7 @@ static const __m128i vector_int32_255			= _MM_SET1_EPI32( 255 );
 							h, g, f, e, d, c, b, a )			{ _S16( a ), _S16( b ), _S16( c ), _S16( d ), _S16( e ), _S16( f ), _S16( g ), _S16( h ), _S16( i ), _S16( j ), _S16( k ), _S16( l ), _S16( m ), _S16( n ), _S16( o ), _S16( p ) }
 #define _MM256_SET1_EPI32( x )									{ _S32( x ), _S32( x ), _S32( x ), _S32( x ), _S32( x ), _S32( x ), _S32( x ), _S32( x ) }
 #define _MM256_SET_EPI32( h, g, f, e, d, c, b, a )				{ _S32( a ), _S32( b ), _S32( c ), _S32( d ), _S32( c ), _S32( d ), _S32( e ), _S32( f ) }
-#else
+#else	// _MSC_VER
 // GCC/Clang/LLVM: static initialization of __m256i as 4x 64-bit integers
 // typedef long long __m256i __attribute__ ((__vector_size__ (32), __may_alias__));
 #define _MM256_SET1_EPI8( x )									{ _C8( x, x, x, x, x, x, x, x ), _C8( x, x, x, x, x, x, x, x ), _C8( x, x, x, x, x, x, x, x ), _C8( x, x, x, x, x, x, x, x ) }
@@ -423,7 +781,7 @@ static const __m128i vector_int32_255			= _MM_SET1_EPI32( 255 );
 							h, g, f, e, d, c, b, a )			{ _C16( a, b, c, d ), _C16( e, f, g, h ), _C16( i, j, k, l ), _C16( m, n, o, p ) }
 #define _MM256_SET1_EPI32( x )									{ _C32( x, x ), _C32( x, x ), _C32( x, x ), _C32( x, x ) }
 #define _MM256_SET_EPI32( h, g, f, e, d, c, b, a )				{ _C32( a, b ), _C32( c, d ), _C32( e, f ), _C32( g, h ) }
-#endif
+#endif	// _MSC_VER
 
 static const __m256i vector256_uint8_unpack_hilo		= _MM256_SET_EPI8( 15, 11, 14, 10, 13, 9, 12, 8, 7, 3, 6, 2, 5, 1, 4, 0, 15, 11, 14, 10, 13, 9, 12, 8, 7, 3, 6, 2, 5, 1, 4, 0 );
 
@@ -440,51 +798,7 @@ static const __m256i vector256_int32_127				= _MM256_SET1_EPI32( 127 );
 
 #define _mm256_pack_epi32( a, b )						_mm256_packs_epi32( _mm256_srai_epi32( _mm256_slli_epi32( a, 16 ), 16 ), _mm256_srai_epi32( _mm256_slli_epi32( b, 16 ), 16 ) )
 
-#endif
-
-/*
-================================
-Default to no cache management
-================================
-*/
-
-#if !defined( CACHE_LINE_SIZE )
-#define CACHE_LINE_SIZE				64
-#define PrefetchLinear( a, b )		do {} while( (a) && (b) && 0 )
-#define PrefetchBox( a, w, h, s )	do {} while( (a) && (w) && (h) && (s) && 0 )
-#define ZeroCacheLinear( a, b )		do {} while( (a) && (b) && 0 )
-#define ZeroCacheBox( a, w, h, s )	do {} while( (a) && (w) && (h) && (s) && 0 )
-#define FlushCacheLinear( a, b )	do {} while( (a) && (b) && 0 )
-#define FlushCacheBox( a, w, h, s )	do {} while( (a) && (w) && (h) && (s) && 0 )
-#endif
-
-#if !defined( OUTPUT )
-#define OUTPUT ""
-#endif
-
-#define ARRAY_SIZE( a )				( sizeof( (a) ) / sizeof( (a)[0] ) )
-
-/*
-================================
-Fast integer operations
-================================
-*/
-
-#if defined( OS_HEXAGON )
-INLINE int MinInt( const int x, const int y ) { return Q6_R_min_RR( x, y ); }
-INLINE int MaxInt( const int x, const int y ) { return Q6_R_max_RR( x, y ); }
-INLINE int MinInt4( const int x, const int y, const int z, const int w ) { return Q6_R_min_RR( Q6_R_min_RR( x, y ), Q6_R_min_RR( z, w ) ); }
-INLINE int MaxInt4( const int x, const int y, const int z, const int w ) { return Q6_R_max_RR( Q6_R_max_RR( x, y ), Q6_R_max_RR( z, w ) ); }
-INLINE int AbsInt( const int x ) { return Q6_R_abs_R( x ); }
-INLINE int ClampInt( const int x, const int min, const int max ) { return Q6_R_min_RR( Q6_R_max_RR( min, x ), max ); }
-#else
-INLINE int MinInt( const int x, const int y ) { return y + ( ( x - y ) & ( ( x - y ) >> ( sizeof( int ) * 8 - 1 ) ) ); }
-INLINE int MaxInt( const int x, const int y ) { return x - ( ( x - y ) & ( ( x - y ) >> ( sizeof( int ) * 8 - 1 ) ) ); }
-INLINE int MinInt4( const int x, const int y, const int z, const int w ) { return MinInt( MinInt( x, y ), MinInt( z, w ) ); }
-INLINE int MaxInt4( const int x, const int y, const int z, const int w ) { return MaxInt( MaxInt( x, y ), MaxInt( z, w ) ); }
-INLINE int AbsInt( const int x ) { const int mask = x >> ( sizeof( int ) * 8 - 1 ); return ( x + mask ) ^ mask; }
-INLINE int ClampInt( const int x, const int min, const int max ) { return min + ( ( AbsInt( x - min ) - AbsInt( x - max ) + max - min ) >> 1 ); }
-#endif
+#endif	// __USE_AVX2__
 
 /*
 ================================================================================================
@@ -492,13 +806,122 @@ INLINE int ClampInt( const int x, const int min, const int max ) { return min + 
 ================================================================================================
 */
 
-typedef struct
+// Typically close to 20% of all tiles will be completely black.
+static void Clear32x32( unsigned char * const dest, const int destPitchInPixels )
 {
-	float x;
-	float y;
-} MeshCoord_t;
+#if defined( __USE_AVX2__ )
+	// Use AVX2 to clear the memory.
+	const __m256i zero = _mm256_setzero_si256();
+	unsigned char * destRow = dest;
+	for ( int y = 0; y < 32; y++ )
+	{
+		_mm256_stream_si256( (__m256i *)( destRow + 0 * 32 ), zero );
+		_mm256_stream_si256( (__m256i *)( destRow + 1 * 32 ), zero );
+		_mm256_stream_si256( (__m256i *)( destRow + 2 * 32 ), zero );
+		_mm256_stream_si256( (__m256i *)( destRow + 3 * 32 ), zero );
+		destRow += destPitchInPixels * 4;
+	}
+#elif defined( __USE_SSE2__ )
+	// Use SSE2 to clear the memory.
+	const __m128i zero = _mm_setzero_si128();
+	unsigned char * destRow = dest;
+	for ( int y = 0; y < 32; y++ )
+	{
+		_mm_stream_si128( (__m128i *)( destRow + 0 * 16 ), zero );
+		_mm_stream_si128( (__m128i *)( destRow + 1 * 16 ), zero );
+		_mm_stream_si128( (__m128i *)( destRow + 2 * 16 ), zero );
+		_mm_stream_si128( (__m128i *)( destRow + 3 * 16 ), zero );
+		_mm_stream_si128( (__m128i *)( destRow + 4 * 16 ), zero );
+		_mm_stream_si128( (__m128i *)( destRow + 5 * 16 ), zero );
+		_mm_stream_si128( (__m128i *)( destRow + 6 * 16 ), zero );
+		_mm_stream_si128( (__m128i *)( destRow + 7 * 16 ), zero );
+		destRow += destPitchInPixels * 4;
+	}
+#elif defined( __ARM_NEON__ )
+	// AArch64 supports ZVA (Zero-Virtual-Address) but for AArch32 memory is cleared using NEON.
+	__asm__ volatile(
+		"	mov			r0, #32					\n\t"
+		"	mov			r1, %[d]				\n\t"
+		"	mov			r2, #16					\n\t"
+		"	vmov.u8		d0, #0					\n\t"
+		"	vmov.u8		d1, #0					\n\t"
+		"1:										\n\t"
+		"	mov			r3, r1					\n\t"
+		"	vst1.u64	{d0, d1}, [r3], r2		\n\t"
+		"	vst1.u64	{d0, d1}, [r3], r2		\n\t"
+		"	vst1.u64	{d0, d1}, [r3], r2		\n\t"
+		"	vst1.u64	{d0, d1}, [r3], r2		\n\t"
+		"	vst1.u64	{d0, d1}, [r3], r2		\n\t"
+		"	vst1.u64	{d0, d1}, [r3], r2		\n\t"
+		"	vst1.u64	{d0, d1}, [r3], r2		\n\t"
+		"	vst1.u64	{d0, d1}, [r3], r2		\n\t"
+		"	add			r1, r1, %[p], lsl #2	\n\t"
+		"	subs		r0, r0, #1				\n\t"
+		"	bne			1b						\n\t"
+		:
+		:	[d] "r" (dest),
+			[p] "r" (destPitchInPixels)
+		:	"r0", "r1", "r2", "r3", "r4", "d0", "d1",
+			"memory"
+	);
+#elif defined( __HEXAGON_V50__ )
+	// Zero each cache line with DCZEROA and then flush the cache line with DCCLEANINVA.
+	Word32 width = 32 * 4;
+	Word32 height = 32;
+	Word32 stride = destPitchInPixels * 4;
+    __asm__ __volatile__(
+		"	{\n"
+		"		p0 = !cmp.eq(%0,#0)\n"					// check for NULL pointer
+		"		p0 = cmp.gt(%2,#0)\n"					// (height > 0)
+		"		if (!p0.new) jump:nt 4f\n"				// return
+		"		r5 = add(%0,#31)\n"						// find the first cache line on the first row
+		"	}{\n"
+		"		loop1(1f,%2)\n"
+		"		r6 = add(%0,%1)\n"						// right edge
+		"		%0 = add(%0,%3)\n"						// start of second row
+		"	}\n"
+		"1:\n"
+		"	{\n"
+		"		r5 = and(r5,#~31)\n"					// point to start of cache line
+		"	}{\n"
+		"		r6 = sub(r6,r5)\n"						// adjust width to aligned row start
+		"	}{\n"
+		"		r6 = asr(r6,#5)\n"						// cache lines = bytes / 32
+		"		if (!cmp.gt(r6.new,#0)) jump:nt 3f\n"	// if no full cache lines, skip inner loop
+		"	}{\n"
+		"		loop0(2f, r6)\n"						// loop setup
+		"	}\n"
+		"2:\n"
+		"	{\n"
+		"		dczeroa(r5)\n"							// clear the cache line
+		"	}{\n"
+		"		dccleaninva(r5)\n"						// flush the cache line
+		"		r5 = add(r5,#32)\n"						// increment to next cache line
+		"	}:endloop0\n"
+		"3:\n"
+		"	{\n"
+		"		r5 = add(%0,#31)\n"						// find the first cache line on the next row
+		"		r6 = add(%0,%1)\n"						// find right edge of next row
+		"		%0 = add(%0,%3)\n"						// increment to row after next
+		"	}:endloop1\n"
+		"4:\n"
+		:
+		: "r" (dest), "r" (width), "r" (height), "r" (stride)
+		: "p0", "r5", "r6", "memory" );
+#else
+	unsigned char * destRow = dest;
+	for ( int y = 0; y < 32; y++ )
+	{
+		for ( int x = 0; x < 32 * 4; x += 8 )
+		{
+			*(unsigned long long *)&destRow[x] = 0;
+		}
+		destRow += destPitchInPixels * 4;
+	}
+#endif
+}
 
-void Warp32x32_SampleNearestPackedRGB(
+static void Warp32x32_SampleNearestPackedRGB(
 		const unsigned char * const	src,
 		const int					srcPitchInTexels,
 		const int					srcTexelsWide,
@@ -531,6 +954,13 @@ void Warp32x32_SampleNearestPackedRGB(
 	const int maxSrcX = ( MaxInt4( clampedCorners[0][0], clampedCorners[1][0], clampedCorners[2][0], clampedCorners[3][0] ) >> SCP ) + 1;
 	const int minSrcY = ( MinInt4( clampedCorners[0][1], clampedCorners[1][1], clampedCorners[2][1], clampedCorners[3][1] ) >> SCP ) + 0;
 	const int maxSrcY = ( MaxInt4( clampedCorners[0][1], clampedCorners[1][1], clampedCorners[2][1], clampedCorners[3][1] ) >> SCP ) + 1;
+
+	// Just clear to black if only sampling the border.
+	if ( ( minSrcX >= srcTexelsWide - 1 ) || ( maxSrcX <= 1 ) || ( minSrcY >= srcTexelsHigh - 1 ) || ( maxSrcY <= 1 ) )
+	{
+		Clear32x32( dest, destPitchInPixels );
+		return;
+	}
 
 	// prefetch all source texture data that is possibly sampled
 	PrefetchBox( src + ( minSrcY * srcPitchInTexels + minSrcX ) * 4, ( maxSrcX - minSrcX ) * 4, ( maxSrcY - minSrcY ), srcPitchInTexels * 4 );
@@ -922,7 +1352,7 @@ void Warp32x32_SampleNearestPackedRGB(
 	//FlushCacheBox( dest, 32 * 4, 32, destPitchInPixels * 4 );
 }
 
-void Warp32x32_SampleLinearPackedRGB(
+static void Warp32x32_SampleLinearPackedRGB(
 		const unsigned char * const	src,
 		const int					srcPitchInTexels,
 		const int					srcTexelsWide,
@@ -959,6 +1389,13 @@ void Warp32x32_SampleLinearPackedRGB(
 	const int maxSrcX = ( MaxInt4( clampedCorners[0][0], clampedCorners[1][0], clampedCorners[2][0], clampedCorners[3][0] ) >> SCP ) + 1;
 	const int minSrcY = ( MinInt4( clampedCorners[0][1], clampedCorners[1][1], clampedCorners[2][1], clampedCorners[3][1] ) >> SCP ) + 0;
 	const int maxSrcY = ( MaxInt4( clampedCorners[0][1], clampedCorners[1][1], clampedCorners[2][1], clampedCorners[3][1] ) >> SCP ) + 1;
+
+	// Just clear to black if only sampling the border.
+	if ( ( minSrcX >= srcTexelsWide - 1 ) || ( maxSrcX <= 1 ) || ( minSrcY >= srcTexelsHigh - 1 ) || ( maxSrcY <= 1 ) )
+	{
+		Clear32x32( dest, destPitchInPixels );
+		return;
+	}
 
 	// prefetch all source texture data that is possibly sampled
 	PrefetchBox( src + ( minSrcY * srcPitchInTexels + minSrcX ) * 4, ( maxSrcX - minSrcX ) * 4, ( maxSrcY - minSrcY ), srcPitchInTexels * 4 );
@@ -1521,7 +1958,7 @@ void Warp32x32_SampleLinearPackedRGB(
 	//FlushCacheBox( dest, 32 * 4, 32, destPitchInPixels * 4 );
 }
 
-void Warp32x32_SampleBilinearPackedRGB(
+static void Warp32x32_SampleBilinearPackedRGB(
 		const unsigned char * const	src,
 		const int					srcPitchInTexels,
 		const int					srcTexelsWide,
@@ -1558,6 +1995,13 @@ void Warp32x32_SampleBilinearPackedRGB(
 	const int maxSrcX = ( MaxInt4( clampedCorners[0][0], clampedCorners[1][0], clampedCorners[2][0], clampedCorners[3][0] ) >> SCP ) + 1;
 	const int minSrcY = ( MinInt4( clampedCorners[0][1], clampedCorners[1][1], clampedCorners[2][1], clampedCorners[3][1] ) >> SCP ) + 0;
 	const int maxSrcY = ( MaxInt4( clampedCorners[0][1], clampedCorners[1][1], clampedCorners[2][1], clampedCorners[3][1] ) >> SCP ) + 1;
+
+	// Just clear to black if only sampling the border.
+	if ( ( minSrcX >= srcTexelsWide - 1 ) || ( maxSrcX <= 1 ) || ( minSrcY >= srcTexelsHigh - 1 ) || ( maxSrcY <= 1 ) )
+	{
+		Clear32x32( dest, destPitchInPixels );
+		return;
+	}
 
 	// prefetch all source texture data that is possibly sampled
 	PrefetchBox( src + ( minSrcY * srcPitchInTexels + minSrcX ) * 4, ( maxSrcX - minSrcX ) * 4, ( maxSrcY - minSrcY ), srcPitchInTexels * 4 );
@@ -2332,7 +2776,7 @@ void Warp32x32_SampleBilinearPackedRGB(
 	//FlushCacheBox( dest, 32 * 4, 32, destPitchInPixels * 4 );
 }
 
-void Warp32x32_SampleBilinearPlanarRGB( 
+static void Warp32x32_SampleBilinearPlanarRGB( 
 		const unsigned char * const	srcRed,
 		const unsigned char * const	srcGreen,
 		const unsigned char * const	srcBlue,
@@ -2371,6 +2815,13 @@ void Warp32x32_SampleBilinearPlanarRGB(
 	const int maxSrcX = ( MaxInt4( clampedCorners[0][0], clampedCorners[1][0], clampedCorners[2][0], clampedCorners[3][0] ) >> SCP ) + 1;
 	const int minSrcY = ( MinInt4( clampedCorners[0][1], clampedCorners[1][1], clampedCorners[2][1], clampedCorners[3][1] ) >> SCP ) + 0;
 	const int maxSrcY = ( MaxInt4( clampedCorners[0][1], clampedCorners[1][1], clampedCorners[2][1], clampedCorners[3][1] ) >> SCP ) + 1;
+
+	// Just clear to black if only sampling the border.
+	if ( ( minSrcX >= srcTexelsWide - 1 ) || ( maxSrcX <= 1 ) || ( minSrcY >= srcTexelsHigh - 1 ) || ( maxSrcY <= 1 ) )
+	{
+		Clear32x32( dest, destPitchInPixels );
+		return;
+	}
 
 	// prefetch all source texture data that is possibly sampled
 	PrefetchBox( srcRed + ( minSrcY * srcPitchInTexels + minSrcX ), ( maxSrcX - minSrcX ), ( maxSrcY - minSrcY ), srcPitchInTexels );
@@ -3311,7 +3762,7 @@ void Warp32x32_SampleBilinearPlanarRGB(
 	//FlushCacheBox( dest, 32 * 4, 32, destPitchInPixels * 4 );
 }
 
-void Warp32x32_SampleChromaticBilinearPlanarRGB(
+static void Warp32x32_SampleChromaticBilinearPlanarRGB(
 		const unsigned char * const	srcRed,
 		const unsigned char * const	srcGreen,
 		const unsigned char * const	srcBlue,
@@ -3368,6 +3819,15 @@ void Warp32x32_SampleChromaticBilinearPlanarRGB(
 	const int maxSrcBlueX = ( MaxInt4( clampedCornersBlue[0][0], clampedCornersBlue[1][0], clampedCornersBlue[2][0], clampedCornersBlue[3][0] ) >> SCP ) + 1;
 	const int minSrcBlueY = ( MinInt4( clampedCornersBlue[0][1], clampedCornersBlue[1][1], clampedCornersBlue[2][1], clampedCornersBlue[3][1] ) >> SCP ) + 0;
 	const int maxSrcBlueY = ( MaxInt4( clampedCornersBlue[0][1], clampedCornersBlue[1][1], clampedCornersBlue[2][1], clampedCornersBlue[3][1] ) >> SCP ) + 1;
+
+	// Just clear to black if only sampling the border.
+	if (	( ( minSrcRedX >= srcTexelsWide - 1 ) || ( maxSrcRedX <= 1 ) || ( minSrcRedY >= srcTexelsHigh - 1 ) || ( maxSrcRedY <= 1 ) ) &&
+			( ( minSrcBlueX >= srcTexelsWide - 1 ) || ( maxSrcBlueX <= 1 ) || ( minSrcBlueY >= srcTexelsHigh - 1 ) || ( maxSrcBlueY <= 1 ) ) &&
+			( ( minSrcGreenX >= srcTexelsWide - 1 ) || ( maxSrcGreenX <= 1 ) || ( minSrcGreenY >= srcTexelsHigh - 1 ) || ( maxSrcGreenY <= 1 ) ) )
+	{
+		Clear32x32( dest, destPitchInPixels );
+		return;
+	}
 
 	// prefetch all source texture data that is possibly sampled
 	PrefetchBox( srcRed + ( minSrcRedY * srcPitchInTexels + minSrcRedX ), ( maxSrcRedX - minSrcRedX ), ( maxSrcRedY - minSrcRedY ), srcPitchInTexels );
@@ -4857,7 +5317,7 @@ typedef struct
 } Matrix4x4f_t;
 
 // Creates an identity matrix.
-void Matrix4x4f_CreateIdentity( Matrix4x4f_t * matrix )
+static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * matrix )
 {
 	matrix->m[0][0] = 1.0f; matrix->m[0][1] = 0.0f; matrix->m[0][2] = 0.0f; matrix->m[0][3] = 0.0f;
 	matrix->m[1][0] = 0.0f; matrix->m[1][1] = 1.0f; matrix->m[1][2] = 0.0f; matrix->m[1][3] = 0.0f;
@@ -4943,7 +5403,7 @@ static void Matrix4x4f_CreateProjection( Matrix4x4f_t * matrix, const float minX
 }
 
 // Creates a projection matrix based on the specified FOV.
-void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float fovDegreesX, const float fovDegreesY,
+static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float fovDegreesX, const float fovDegreesY,
 												const float offsetX, const float offsetY, const float nearZ, const float farZ )
 {
 	const float halfWidth = nearZ * tanf( fovDegreesX * ( 0.5f * MATH_PI / 180.0f ) );
@@ -4959,7 +5419,7 @@ void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float fovDegre
 }
 
 // Use left-multiplication to accumulate transformations.
-void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, const Matrix4x4f_t * b )
+static void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, const Matrix4x4f_t * b )
 {
 	result->m[0][0] = a->m[0][0] * b->m[0][0] + a->m[0][1] * b->m[1][0] + a->m[0][2] * b->m[2][0] + a->m[0][3] * b->m[3][0];
 	result->m[0][1] = a->m[0][0] * b->m[0][1] + a->m[0][1] * b->m[1][1] + a->m[0][2] * b->m[2][1] + a->m[0][3] * b->m[3][1];
@@ -4983,7 +5443,7 @@ void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, const M
 }
 
 // Returns a 3x3 minor of a 4x4 matrix.
-float Matrix4x4f_Minor( const Matrix4x4f_t * src, int r0, int r1, int r2, int c0, int c1, int c2 )
+static float Matrix4x4f_Minor( const Matrix4x4f_t * src, int r0, int r1, int r2, int c0, int c1, int c2 )
 {
 	return	src->m[r0][c0] * ( src->m[r1][c1] * src->m[r2][c2] - src->m[r2][c1] * src->m[r1][c2] ) -
 			src->m[r0][c1] * ( src->m[r1][c0] * src->m[r2][c2] - src->m[r2][c0] * src->m[r1][c2] ) +
@@ -4991,7 +5451,7 @@ float Matrix4x4f_Minor( const Matrix4x4f_t * src, int r0, int r1, int r2, int c0
 }
  
 // Calculates the inverse of an arbitrary 4x4 matrix.
-void Matrix4x4f_Invert( Matrix4x4f_t * result, const Matrix4x4f_t * src )
+static void Matrix4x4f_Invert( Matrix4x4f_t * result, const Matrix4x4f_t * src )
 {
 	const float rcpDet = 1.0f / (	src->m[0][0] * Matrix4x4f_Minor( src, 1, 2, 3, 1, 2, 3 ) -
 									src->m[0][1] * Matrix4x4f_Minor( src, 1, 2, 3, 0, 2, 3 ) +
@@ -5017,7 +5477,7 @@ void Matrix4x4f_Invert( Matrix4x4f_t * result, const Matrix4x4f_t * src )
 }
 
 // Calculates the inverse of a homogeneous matrix.
-void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4f_t * src )
+static void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4f_t * src )
 {
 	result->m[0][0] = src->m[0][0];
 	result->m[1][0] = src->m[0][1];
@@ -5044,7 +5504,7 @@ Time Warp
 */
 
 // Calculate a 4x4 time warp transformation matrix.
-void CalculateTimeWarpTransform( Matrix4x4f_t * transform, const Matrix4x4f_t * renderProjectionMatrix,
+static void CalculateTimeWarpTransform( Matrix4x4f_t * transform, const Matrix4x4f_t * renderProjectionMatrix,
 								const Matrix4x4f_t * renderViewMatrix, const Matrix4x4f_t * newViewMatrix )
 {
 	// Convert the projection matrix from [-1, 1] space to [0, 1] space.
@@ -5077,7 +5537,7 @@ void CalculateTimeWarpTransform( Matrix4x4f_t * transform, const Matrix4x4f_t * 
 }
 
 // Transforms the 2D coordinates by interpreting them as 3D homogeneous coordinates with Z = -1 and W = 1.
-void TransformCoords( float result[3], const Matrix4x4f_t * transform, const float coords[2] )
+static void TransformCoords( float result[3], const Matrix4x4f_t * transform, const float coords[2] )
 {
 	result[0] = transform->m[0][0] * coords[0] + transform->m[0][1] * coords[1] - transform->m[0][2] + transform->m[0][3];
 	result[1] = transform->m[1][0] * coords[0] + transform->m[1][1] * coords[1] - transform->m[1][2] + transform->m[1][3];
@@ -5085,7 +5545,7 @@ void TransformCoords( float result[3], const Matrix4x4f_t * transform, const flo
 }
 
 // Interpolate between two 3D vectors.
-void InterpolateCoords( float result[3], const float start[3], const float end[3], const float fraction )
+static void InterpolateCoords( float result[3], const float start[3], const float end[3], const float fraction )
 {
 	result[0] = start[0] + fraction * ( end[0] - start[0] );
 	result[1] = start[1] + fraction * ( end[1] - start[1] );
@@ -5096,7 +5556,7 @@ void InterpolateCoords( float result[3], const float start[3], const float end[3
 // displayRefreshFraction       = The fraction along the display refresh.
 // displayRefreshStartTransform = The time warp transform at the start of the display refresh.
 // displayRefreshEndTransform   = The time warp transform at the end of the display refresh.
-void TimeWarpCoords( float result[2], const float coords[2], const float displayRefreshFraction,
+static void TimeWarpCoords( float result[2], const float coords[2], const float displayRefreshFraction,
 						const Matrix4x4f_t * displayRefreshStartTransform, const Matrix4x4f_t * displayRefreshEndTransform )
 {
 	float start[3];
@@ -5112,7 +5572,7 @@ void TimeWarpCoords( float result[2], const float coords[2], const float display
 	result[1] = current[1] * rcpZ;
 }
 
-void TimeWarp_SampleNearestPackedRGB(
+static void TimeWarp_SampleNearestPackedRGB(
 		const unsigned char *	src,				// source texture with 32 bits per texel
 		const int				srcPitchInTexels,	// in texels
 		const int				srcTexelsWide,		// in texels
@@ -5153,7 +5613,7 @@ void TimeWarp_SampleNearestPackedRGB(
 	}
 }
 
-void TimeWarp_SampleLinearPackedRGB(
+static void TimeWarp_SampleLinearPackedRGB(
 		const unsigned char *	src,				// source texture with 32 bits per texel
 		const int				srcPitchInTexels,	// in texels
 		const int				srcTexelsWide,		// in texels
@@ -5194,7 +5654,7 @@ void TimeWarp_SampleLinearPackedRGB(
 	}
 }
 
-void TimeWarp_SampleBilinearPackedRGB(
+static void TimeWarp_SampleBilinearPackedRGB(
 		const unsigned char *	src,				// source texture with 32 bits per texel
 		const int				srcPitchInTexels,	// in texels
 		const int				srcTexelsWide,		// in texels
@@ -5235,7 +5695,7 @@ void TimeWarp_SampleBilinearPackedRGB(
 	}
 }
 
-void TimeWarp_SampleBilinearPlanarRGB(
+static void TimeWarp_SampleBilinearPlanarRGB(
 		const unsigned char *	srcRed,				// source texture with 8 bits per texel
 		const unsigned char *	srcGreen,			// source texture with 8 bits per texel
 		const unsigned char *	srcBlue,			// source texture with 8 bits per texel
@@ -5278,7 +5738,7 @@ void TimeWarp_SampleBilinearPlanarRGB(
 	}
 }
 
-void TimeWarp_SampleChromaticBilinearPlanarRGB(
+static void TimeWarp_SampleChromaticBilinearPlanarRGB(
 		const unsigned char *	srcRed,				// source texture with 8 bits per texel
 		const unsigned char *	srcGreen,			// source texture with 8 bits per texel
 		const unsigned char *	srcBlue,			// source texture with 8 bits per texel
@@ -5329,19 +5789,1193 @@ void TimeWarp_SampleChromaticBilinearPlanarRGB(
 	}
 }
 
+/*
+================================================================================================================================
+
+Atomic 32-bit unsigned integer
+
+================================================================================================================================
+*/
+
+typedef unsigned int AtomicUint32_t;
+
+static AtomicUint32_t AtomicUint32_Increment( AtomicUint32_t * atomicUint32 )
+{
+#if defined( OS_WINDOWS )
+	return (AtomicUint32_t) InterlockedIncrement( (LONG *)atomicUint32 );
+#elif defined( OS_MAC ) || defined( OS_LINUX ) || defined( OS_ANDROID )
+	return __sync_fetch_and_add( atomicUint32, 1 );
+#elif defined( OS_HEXAGON )
+	return qurt_atomic_inc_return( atomicUint32 );
+#endif
+}
+
+static AtomicUint32_t AtomicUint32_Decrement( AtomicUint32_t * atomicUint32 )
+{
+#if defined( OS_WINDOWS )
+	return (AtomicUint32_t) InterlockedDecrement( (LONG *)atomicUint32 );
+#elif defined( OS_MAC ) || defined( OS_LINUX ) || defined( OS_ANDROID )
+	return __sync_fetch_and_add( atomicUint32, -1 );
+#elif defined( OS_HEXAGON )
+	return qurt_atomic_dec_return( atomicUint32 );
+#endif
+}
+
+/*
+================================================================================================================================
+
+Mutex for mutual exclusion on shared resources within a single process.
+
+Equivalent to a Windows Critical Section Object which allows recursive access. This mutex cannot be
+used for mutual-exclusion synchronization between threads from different processes.
+
+Mutex_t
+
+static void Mutex_Create( Mutex_t * mutex );
+static void Mutex_Destroy( Mutex_t * mutex );
+static bool Mutex_Lock( Mutex_t * mutex, const bool blocking );
+static void Mutex_Unlock( Mutex_t * mutex );
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+#if defined( OS_WINDOWS )
+	CRITICAL_SECTION	handle;
+#elif defined( OS_HEXAGON )
+	qurt_mutex_t		mutex;
+#else
+	pthread_mutex_t		mutex;
+#endif
+} Mutex_t;
+
+static void Mutex_Create( Mutex_t * mutex )
+{
+#if defined( OS_WINDOWS )
+	InitializeCriticalSection( &mutex->handle );
+#elif defined( OS_HEXAGON )
+	qurt_rmutex_init( &mutex->mutex );
+#else
+	pthread_mutexattr_t attr;
+	pthread_mutexattr_init( &attr );
+	pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_RECURSIVE );
+	pthread_mutex_init( &mutex->mutex, &attr );
+#endif
+}
+
+static void Mutex_Destroy( Mutex_t * mutex )
+{
+#if defined( OS_WINDOWS )
+	DeleteCriticalSection( &mutex->handle );
+#elif defined( OS_HEXAGON )
+	qurt_rmutex_destroy( &mutex->mutex );
+#else
+	pthread_mutex_destroy( &mutex->mutex );
+#endif
+}
+
+static bool Mutex_Lock( Mutex_t * mutex, const bool blocking )
+{
+#if defined( OS_WINDOWS )
+	if ( TryEnterCriticalSection( &mutex->handle ) == 0 )
+	{
+		if ( !blocking )
+		{
+			return false;
+		}
+		EnterCriticalSection( &mutex->handle );
+	}
+	return true;
+#elif defined( OS_HEXAGON )
+	if ( qurt_rmutex_try_lock( &mutex->mutex ) != 0 )
+	{
+		if ( !blocking )
+		{
+			return false;
+		}
+		qurt_rmutex_lock( &mutex->mutex );
+	}
+	return true;
+#else
+	if ( pthread_mutex_trylock( &mutex->mutex ) == EBUSY )
+	{
+		if ( !blocking )
+		{
+			return false;
+		}
+		pthread_mutex_lock( &mutex->mutex );
+	}
+	return true;
+#endif
+}
+
+static void Mutex_Unlock( Mutex_t * mutex )
+{
+#if defined( OS_WINDOWS )
+	LeaveCriticalSection( &mutex->handle );
+#elif defined( OS_HEXAGON )
+	qurt_rmutex_unlock( &mutex->mutex );
+#else
+	pthread_mutex_unlock( &mutex->mutex );
+#endif
+}
+
+/*
+================================================================================================================================
+
+Signal for thread synchronization, similar to a Windows event object which only supports SetEvent.
+
+Windows event objects come in two types: auto-reset events and manual-reset events. A Windows event object
+can be signalled by calling either SetEvent or PulseEvent.
+
+When a manual-reset event is signaled by calling SetEvent, it sets the event into the signaled state and
+wakes up all threads waiting on the event. The manual-reset event remains in the signalled state until
+the event is manually reset. When an auto-reset event is signaled by calling SetEvent and there are any
+threads waiting, it wakes up only one thread and resets the event to the non-signaled state. If there are
+no threads waiting for an auto-reset event, then the event remains signaled until a single waiting thread
+waits on it and is released.
+
+When a manual-reset event is signaled by calling PulseEvent, it wakes up all waiting threads and atomically
+resets the event. When an auto-reset event is signaled by calling PulseEvent, and there are any threads
+waiting, it wakes up only one thread and resets the event to the non-signaled state. If there are no threads
+waiting, then no threads are released and the event is set to the non-signaled state.
+
+A Windows event object has limited functionality compared to a POSIX condition variable. Unlike a
+Windows event object, the expression waited upon by a POSIX condition variable can be arbitrarily complex.
+Furthermore, there is no way to release just one waiting thread with a manual-reset Windows event object.
+Similarly there is no way to release all waiting threads with an auto-reset Windows event object.
+These limitations make it difficult to simulate a POSIX condition variable using Windows event objects.
+
+Windows Vista and later implement PCONDITION_VARIABLE, but as Douglas C. Schmidt and Irfan Pyarali point
+out, it is complicated to simulate a POSIX condition variable on prior versions of Windows without causing
+unfair or even incorrect behavior:
+
+	1. "Strategies for Implementing POSIX Condition Variables on Win32"
+	   http://www.cs.wustl.edu/~schmidt/win32-cv-1.html
+	2. "Patterns for POSIX Condition Variables on Win32"
+	   http://www.cs.wustl.edu/~schmidt/win32-cv-2.html
+	
+Even using SignalObjectAndWait is not safe because as per the Microsoft documentation: "Note that the 'signal'
+and 'wait' are not guaranteed to be performed as an atomic operation. Threads executing on other processors
+can observe the signaled state of the first object before the thread calling SignalObjectAndWait begins its
+wait on the second object."
+
+Simulating a Windows event object using a POSIX condition variable is fairly straight forward, which
+is done here. However, this implementation does not support the equivalent of PulseEvent, because
+PulseEvent is unreliable. On Windows, a thread waiting on an event object can be momentarily removed
+from the wait state by a kernel-mode Asynchronous Procedure Call (APC), and then returned to the wait
+state after the APC is complete. If a call to PulseEvent occurs during the time when the thread has
+been temporarily removed from the wait state, then the thread will not be released, because PulseEvent
+releases only those threads that are in the wait state at the moment PulseEvent is called.
+
+Signal_t
+
+static void Signal_Create( Signal_t * signal, const bool autoReset );
+static void Signal_Destroy( Signal_t * signal );
+static bool Signal_Wait( Signal_t * signal, const int timeOutMilliseconds );
+static void Signal_Raise( Signal_t * signal );
+static void Signal_Clear( Signal_t * signal );
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+#if defined( OS_WINDOWS )
+	HANDLE			handle;
+#elif defined( OS_HEXAGON )
+	qurt_mutex_t	mutex;
+	qurt_cond_t		cond;
+	int				waitCount;		// number of threads waiting on the signal
+	bool			autoReset;		// automatically clear the signalled state when a single thread is released
+	bool			signaled;		// in the signalled state if true
+#else
+	pthread_mutex_t	mutex;
+	pthread_cond_t	cond;
+	int				waitCount;		// number of threads waiting on the signal
+	bool			autoReset;		// automatically clear the signalled state when a single thread is released
+	bool			signaled;		// in the signalled state if true
+#endif
+} Signal_t;
+
+static void Signal_Create( Signal_t * signal, const bool autoReset )
+{
+#if defined( OS_WINDOWS )
+	signal->handle = CreateEvent( NULL, !autoReset, FALSE, NULL );
+#elif defined( OS_HEXAGON )
+	qurt_mutex_init( &signal->mutex );
+	qurt_cond_init( &signal->cond );
+	signal->waitCount = 0;
+	signal->autoReset = autoReset;
+	signal->signaled = false;
+#else
+	pthread_mutex_init( &signal->mutex, NULL );
+	pthread_cond_init( &signal->cond, NULL );
+	signal->waitCount = 0;
+	signal->autoReset = autoReset;
+	signal->signaled = false;
+#endif
+}
+
+static void Signal_Destroy( Signal_t * signal )
+{
+#if defined( OS_WINDOWS )
+	CloseHandle( signal->handle );
+#elif defined( OS_HEXAGON )
+	qurt_cond_destroy( &signal->cond );
+	qurt_mutex_destroy( &signal->mutex );
+#else
+	pthread_cond_destroy( &signal->cond );
+	pthread_mutex_destroy( &signal->mutex );
+#endif
+}
+
+// Waits for the object to enter the signalled state and returns true if this state is reached within the time-out period.
+// If 'autoReset' is true then the first thread that reaches the signalled state within the time-out period will clear the signalled state.
+// If 'timeOutMilliseconds' is negative then this will wait indefinitely until the signalled state is reached.
+// Returns true if the thread was released because the object entered the signalled state, returns false if the time-out is reached first.
+static bool Signal_Wait( Signal_t * signal, const int timeOutMilliseconds )
+{
+#if defined( OS_WINDOWS )
+	DWORD result = WaitForSingleObject( signal->handle, timeOutMilliseconds < 0 ? INFINITE : timeOutMilliseconds );
+	assert( result == WAIT_OBJECT_0 || ( timeOutMilliseconds >= 0 && result == WAIT_TIMEOUT ) );
+	return ( result == WAIT_OBJECT_0 );
+#elif defined( OS_HEXAGON )
+	bool released = false;
+	qurt_mutex_lock( &signal->mutex );
+	if ( signal->signaled )
+	{
+		released = true;
+	}
+	else
+	{
+		signal->waitCount++;
+		if ( timeOutMilliseconds < 0 )
+		{
+			do
+			{
+				qurt_cond_wait( &signal->cond, &signal->mutex );
+				// Re-check condition in case qurt_cond_wait spuriously woke up.
+			} while ( signal->signaled == false );
+		}
+		else if ( timeOutMilliseconds > 0 )
+		{
+			// No support for a time-out other than zero.
+			//assert( false );
+		}
+		released = signal->signaled;
+		signal->waitCount--;
+	}
+	if ( released && signal->autoReset )
+	{
+		signal->signaled = false;
+	}
+	qurt_mutex_unlock( &signal->mutex );
+	return released;
+#else
+	bool released = false;
+	pthread_mutex_lock( &signal->mutex );
+	if ( signal->signaled )
+	{
+		released = true;
+	}
+	else
+	{
+		signal->waitCount++;
+		if ( timeOutMilliseconds < 0 )
+		{
+			do
+			{
+				pthread_cond_wait( &signal->cond, &signal->mutex );
+				// Must re-check condition because pthread_cond_wait may spuriously wake up.
+			} while ( signal->signaled == false );
+		}
+		else if ( timeOutMilliseconds > 0 )
+		{
+			struct timeval tp;
+			gettimeofday( &tp, NULL );
+			struct timespec ts;
+			ts.tv_sec = tp.tv_sec + timeOutMilliseconds / 1000;
+			ts.tv_nsec = tp.tv_usec * 1000 + ( timeOutMilliseconds % 1000 ) * 1000000;
+			do
+			{
+				if ( pthread_cond_timedwait( &signal->cond, &signal->mutex, &ts ) == ETIMEDOUT )
+				{
+					break;
+				}
+				// Must re-check condition because pthread_cond_timedwait may spuriously wake up.
+			} while ( signal->signaled == false );
+		}
+		released = signal->signaled;
+		signal->waitCount--;
+	}
+	if ( released && signal->autoReset )
+	{
+		signal->signaled = false;
+	}
+	pthread_mutex_unlock( &signal->mutex );
+	return released;
+#endif
+}
+
+// Enter the signalled state.
+// Note that if 'autoReset' is true then this will only release a single thread.
+static void Signal_Raise( Signal_t * signal )
+{
+#if defined( OS_WINDOWS )
+	SetEvent( signal->handle );
+#elif defined( OS_HEXAGON )
+	qurt_mutex_lock( &signal->mutex );
+	signal->signaled = true;
+	if ( signal->waitCount > 0 )
+	{
+		qurt_cond_broadcast( &signal->cond );
+	}
+	qurt_mutex_unlock( &signal->mutex );
+#else
+	pthread_mutex_lock( &signal->mutex );
+	signal->signaled = true;
+	if ( signal->waitCount > 0 )
+	{
+		pthread_cond_broadcast( &signal->cond );
+	}
+	pthread_mutex_unlock( &signal->mutex );
+#endif
+}
+
+// Clear the signalled state.
+// Should not be needed for auto-reset signals (autoReset == true).
+static void Signal_Clear( Signal_t * signal )
+{
+#if defined( OS_WINDOWS )
+	ResetEvent( signal->handle );
+#elif defined( OS_HEXAGON )
+	qurt_mutex_lock( &signal->mutex );
+	signal->signaled = false;
+	qurt_mutex_unlock( &signal->mutex );
+#else
+	pthread_mutex_lock( &signal->mutex );
+	signal->signaled = false;
+	pthread_mutex_unlock( &signal->mutex );
+#endif
+}
+
+/*
+================================================================================================================================
+
+Worker thread.
+
+When the thread is first created, it will be in a suspended state. The thread function will be
+called as soon as the thread is signalled. If the thread is not signalled again, then the thread
+will return to a suspended state as soon as the thread function returns. The thread function will
+be called again by signalling the thread again. The thread function will be called again right
+away, when the thread is signalled during the execution of the thread function. Signalling the
+thread more than once during the execution of the thread function does not cause the thread
+function to be called multiple times. The thread can be joined to wait for the thread function
+to return.
+
+This worker thread will function as a normal thread by immediately signalling the thread after creation.
+Once the thread function returns, the thread can be destroyed. Destroying the thread always waits
+for the thread function to return first.
+
+Thread_t
+
+static bool Thread_Create( Thread_t * thread, const char * threadName, threadFunction_t threadFunction, void * threadData );
+static void Thread_Destroy( Thread_t * thread );
+static void Thread_Signal( Thread_t * thread );
+static void Thread_Join( Thread_t * thread );
+static void Thread_Submit( Thread_t * thread, threadFunction_t threadFunction, void * threadData );
+
+static void Thread_SetName( const char * name );
+static void Thread_SetAffinity( int mask );
+static void Thread_SetRealTimePriority( int priority );
+
+================================================================================================================================
+*/
+
+typedef void (*threadFunction_t)( void * data );
+
+#if defined( OS_WINDOWS )
+#define THREAD_HANDLE			HANDLE
+#define THREAD_RETURN_TYPE		int
+#define THREAD_RETURN_VALUE		0
+#elif defined( OS_HEXAGON )
+#define THREAD_HANDLE			qurt_thread_t
+#define THREAD_RETURN_TYPE		void
+#define THREAD_RETURN_VALUE
+#else
+#define THREAD_HANDLE			pthread_t
+#define THREAD_RETURN_TYPE		void *
+#define THREAD_RETURN_VALUE		0
+#endif
+
+#define THREAD_AFFINITY_BIG_CORES		-1
+
+typedef struct
+{
+	char				threadName[128];
+	threadFunction_t	threadFunction;
+	void *				threadData;
+
+	void *				stack;
+	THREAD_HANDLE		handle;
+	Signal_t			workIsDone;
+	Signal_t			workIsAvailable;
+	Mutex_t				workMutex;
+	volatile bool		terminate;
+} Thread_t;
+
+// Note that on Android AttachCurrentThread will reset the thread name.
+static void Thread_SetName( const char * name )
+{
+#if defined( OS_WINDOWS )
+	static const unsigned int MS_VC_EXCEPTION = 0x406D1388;
+
+	typedef struct
+	{
+		DWORD dwType;		// Must be 0x1000.
+		LPCSTR szName;		// Pointer to name (in user address space).
+		DWORD dwThreadID;	// Thread ID (-1 = caller thread).
+		DWORD dwFlags;		// Reserved for future use, must be zero.
+	} THREADNAME_INFO;
+
+	THREADNAME_INFO info;
+	info.dwType = 0x1000;
+	info.szName = name;
+	info.dwThreadID = (DWORD)( -1 );
+	info.dwFlags = 0;
+	__try
+	{
+		RaiseException( MS_VC_EXCEPTION, 0, sizeof( info ) / sizeof( DWORD ), (const ULONG_PTR *)&info );
+	}
+	__except( GetExceptionCode() == MS_VC_EXCEPTION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH )
+	{
+		info.dwFlags = 0;
+	}
+#elif defined( OS_MAC )
+	pthread_setname_np( name );
+#elif defined( OS_LINUX )
+	pthread_setname_np( pthread_self(), name );
+#elif defined( OS_ANDROID )
+	prctl( PR_SET_NAME, (long)name, 0, 0, 0 );
+#endif
+}
+
+static void Thread_SetAffinity( int mask )
+{
+#if defined( OS_WINDOWS )
+	if ( mask == THREAD_AFFINITY_BIG_CORES )
+	{
+		return;
+	}
+	HANDLE thread = GetCurrentThread();
+	if ( !SetThreadAffinityMask( thread, mask ) )
+	{
+		char buffer[1024];
+		DWORD error = GetLastError();
+		FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM, NULL, error, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ), buffer, sizeof( buffer ), NULL );
+		Print( "Failed to set thread %p affinity: %s(%d)\n", thread, buffer, error );
+	}
+	else
+	{
+		Print( "Thread %p affinity set to 0x%02X\n", thread, mask );
+	}
+#elif defined( OS_MAC )
+	// OS X does not export interfaces that identify processors or control thread placement.
+	// Explicit thread to processor binding is not supported.
+	mask = mask;
+#elif defined( OS_ANDROID )
+	// Optionally use the faster cores of a heterogeneous CPU.
+	if ( mask == THREAD_AFFINITY_BIG_CORES )
+	{
+		mask = 0;
+		unsigned int bestFrequency = 0;
+		for ( int i = 0; i < 16; i++ )
+		{
+			int maxFrequency = 0;
+			const char * files[] =
+			{
+				"scaling_available_frequencies",	// not available on all devices
+				"scaling_max_freq",					// no user read permission on all devices
+				"cpuinfo_max_freq",					// could be set lower than the actual max, but better than nothing
+			};
+			for ( int j = 0; j < ARRAY_SIZE( files ); j++ )
+			{
+				char fileName[1024];
+				sprintf( fileName, "/sys/devices/system/cpu/cpu%d/cpufreq/%s", i, files[j] );
+				FILE * fp = fopen( fileName, "r" );
+				if ( fp == NULL )
+				{
+					continue;
+				}
+				char buffer[1024];
+				if ( fgets( buffer, sizeof( buffer ), fp ) == NULL )
+				{
+					fclose( fp );
+					continue;
+				}
+				for ( int index = 0; buffer[index] != '\0'; )
+				{
+					const unsigned int frequency = atoi( buffer + index );
+					maxFrequency = ( frequency > maxFrequency ) ? frequency : maxFrequency;
+					while ( isspace( buffer[index] ) ) { index++; }
+					while ( isdigit( buffer[index] ) ) { index++; }
+				}
+				fclose( fp );
+				break;
+			}
+			if ( maxFrequency == 0 )
+			{
+				break;
+			}
+
+			if ( maxFrequency == bestFrequency )
+			{
+				mask |= ( 1 << i );
+			}
+			else if ( maxFrequency > bestFrequency )
+			{
+				mask = ( 1 << i );
+				bestFrequency = maxFrequency;
+			}
+		}
+
+		if ( mask == 0 )
+		{
+			return;
+		}
+	}
+
+	// Set the thread affinity.
+	pid_t pid = gettid();
+	int syscallres = syscall( __NR_sched_setaffinity, pid, sizeof( mask ), &mask );
+	if ( syscallres )
+	{
+		int err = errno;
+		Print( "    Error sched_setaffinity(%d): thread=(%d) mask=0x%X err=%s(%d)\n", __NR_sched_setaffinity, pid, mask, strerror( err ), err );
+	}
+	else
+	{
+		Print( "    Thread %d affinity 0x%02X\n", pid, mask );
+	}
+#else
+	UNUSED_PARM( mask );
+#endif
+}
+
+static void Thread_SetRealTimePriority( int priority )
+{
+#if defined( OS_WINDOWS )
+	UNUSED_PARM( priority );
+	HANDLE process = GetCurrentProcess();
+	if( !SetPriorityClass( process, REALTIME_PRIORITY_CLASS ) )
+	{
+		char buffer[1024];
+		DWORD error = GetLastError();
+		FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM, NULL, error, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ), buffer, sizeof( buffer ), NULL );
+		Print( "Failed to set process %p priority class: %s(%d)\n", process, buffer, error );
+	}
+	else
+	{
+		Print( "Process %p priority class set to real-time.\n", process );
+	}
+	HANDLE thread = GetCurrentThread();
+	if ( !SetThreadPriority( thread, THREAD_PRIORITY_TIME_CRITICAL ) )
+	{
+		char buffer[1024];
+		DWORD error = GetLastError();
+		FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM, NULL, error, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ), buffer, sizeof( buffer ), NULL );
+		Print( "Failed to set thread %p priority: %s(%d)\n", thread, buffer, error );
+	}
+	else
+	{
+		Print( "Thread %p priority set to critical.\n", thread );
+	}
+#elif defined( OS_MAC )
+	struct sched_param sp;
+	memset( &sp, 0, sizeof( struct sched_param ) );
+	sp.sched_priority = priority;
+	if ( pthread_setschedparam( pthread_self(), SCHED_FIFO, &sp ) == -1 )
+	{
+		Print( "Failed to change thread %d priority.\n", gettid() );
+	}
+	else
+	{
+		Print( "Thread %d set to SCHED_FIFO, priority=%d\n", gettid(), priority );
+	}
+#elif defined( OS_LINUX )
+	struct sched_param sp;
+	memset( &sp, 0, sizeof( struct sched_param ) );
+	sp.sched_priority = priority;
+	if ( pthread_setschedparam( pthread_self(), SCHED_FIFO, &sp ) == -1 )
+	{
+		Print( "Failed to change thread %d priority.\n", (unsigned int)pthread_self() );
+	}
+	else
+	{
+		Print( "Thread %d set to SCHED_FIFO, priority=%d\n", (unsigned int)pthread_self(), priority );
+	}
+#elif defined( OS_ANDROID )
+	struct sched_attr
+	{
+		uint32_t size;
+		uint32_t sched_policy;
+		uint64_t sched_flags;
+		int32_t  sched_nice;
+		uint32_t sched_priority;
+		uint64_t sched_runtime;
+		uint64_t sched_deadline;
+		uint64_t sched_period;
+	} attr;
+
+	memset( &attr, 0, sizeof( attr ) );
+	attr.size = sizeof( attr );
+	attr.sched_policy = SCHED_FIFO;
+	attr.sched_flags = SCHED_FLAG_RESET_ON_FORK;
+	attr.sched_nice = 0;				// (SCHED_OTHER, SCHED_BATCH)
+	attr.sched_priority = priority;		// (SCHED_FIFO, SCHED_RR)
+	attr.sched_runtime = 0;				// (SCHED_DEADLINE)
+	attr.sched_deadline = 0;			// (SCHED_DEADLINE)
+	attr.sched_period = 0;				// (SCHED_DEADLINE)
+
+	unsigned int flags = 0;
+
+	pid_t pid = gettid();
+	int syscallres = syscall( __NR_sched_setattr, pid, &attr, flags );
+	if ( syscallres )
+	{
+		int err = errno;
+		Print( "    Error sched_setattr(%d): thread=%d err=%s(%d)\n", __NR_sched_setattr, pid, strerror( err ), err );
+	}
+	else
+	{
+		Print( "    Thread %d set to SCHED_FIFO, priority=%d\n", pid, priority );
+	}
+#else
+	UNUSED_PARM( priority );
+#endif
+}
+
+static THREAD_RETURN_TYPE ThreadFunctionInternal( void * data )
+{
+	Thread_t * thread = (Thread_t *)data;
+
+	Thread_SetName( thread->threadName );
+
+	for ( ; ; )
+	{
+		Mutex_Lock( &thread->workMutex, true );
+		if ( Signal_Wait( &thread->workIsAvailable, 0 ) )
+		{
+			Mutex_Unlock( &thread->workMutex );
+		}
+		else
+		{
+			Signal_Raise( &thread->workIsDone );
+			Mutex_Unlock( &thread->workMutex );
+			Signal_Wait( &thread->workIsAvailable, -1 );
+		}
+		if ( thread->terminate )
+		{
+			Signal_Raise( &thread->workIsDone );
+			break;
+		}
+		thread->threadFunction( thread->threadData );
+	}
+	return THREAD_RETURN_VALUE;
+}
+
+static bool Thread_Create( Thread_t * thread, const char * threadName, threadFunction_t threadFunction, void * threadData )
+{
+	strncpy( thread->threadName, threadName, sizeof( thread->threadName ) );
+	thread->threadName[sizeof( thread->threadName ) - 1] = '\0';
+	thread->threadFunction = threadFunction;
+	thread->threadData = threadData;
+	thread->stack = NULL;
+	Signal_Create( &thread->workIsDone, false );
+	Signal_Create( &thread->workIsAvailable, true );
+	Mutex_Create( &thread->workMutex );
+	thread->terminate = false;
+
+#if defined( OS_WINDOWS )
+	const int stackSize = 512 * 1024;
+	DWORD threadID;
+	thread->handle = CreateThread( NULL, stackSize, (LPTHREAD_START_ROUTINE)ThreadFunctionInternal, thread, STACK_SIZE_PARAM_IS_A_RESERVATION, &threadID );
+	if ( thread->handle == 0 )
+	{
+		return false;
+	}
+#elif defined( OS_HEXAGON )
+	const int stackSize = 16 * 1024;
+	thread->stack = malloc( stackSize );
+	qurt_thread_attr_t attr;
+	qurt_thread_attr_init( &attr );
+	qurt_thread_attr_set_name( &attr, (char *)threadName );
+	qurt_thread_attr_set_stack_addr( &attr, thread->stack );
+	qurt_thread_attr_set_stack_size( &attr, stackSize );
+	qurt_thread_attr_set_priority( &attr, qurt_thread_get_priority( qurt_thread_get_id() ) );
+	int ret = qurt_thread_create( &thread->handle, &attr, ThreadFunctionInternal, (void *)thread );
+	if ( ret != 0 )
+	{
+		return false;
+	}
+#else
+	const int stackSize = 512 * 1024;
+	pthread_attr_t attr;
+	pthread_attr_init( &attr );
+	pthread_attr_setstacksize( &attr, stackSize );
+	int ret = pthread_create( &thread->handle, &attr, ThreadFunctionInternal, thread );
+	if ( ret != 0 )
+	{
+		return false;
+	}
+	pthread_attr_destroy( &attr );
+#endif
+
+	Signal_Wait( &thread->workIsDone, -1 );
+	return true;
+}
+
+static void Thread_Destroy( Thread_t * thread )
+{
+	Mutex_Lock( &thread->workMutex, true );
+	Signal_Clear( &thread->workIsDone );
+	thread->terminate = true;
+	Signal_Raise( &thread->workIsAvailable );
+	Mutex_Unlock( &thread->workMutex );
+	Signal_Wait( &thread->workIsDone, -1 );
+	Mutex_Destroy( &thread->workMutex );
+	Signal_Destroy( &thread->workIsDone );
+	Signal_Destroy( &thread->workIsAvailable );
+#if defined( OS_WINDOWS )
+	WaitForSingleObject( thread->handle, INFINITE );
+	CloseHandle( thread->handle );
+#elif defined( OS_HEXAGON )
+	int status = 0;
+	qurt_thread_join( thread->handle, &status );
+	free( thread->stack );
+#else
+	pthread_join( thread->handle, NULL );
+#endif
+}
+
+static void Thread_Signal( Thread_t * thread )
+{
+	Mutex_Lock( &thread->workMutex, true );
+	Signal_Clear( &thread->workIsDone );
+	Signal_Raise( &thread->workIsAvailable );
+	Mutex_Unlock( &thread->workMutex );
+}
+
+static void Thread_Join( Thread_t * thread )
+{
+	Signal_Wait( &thread->workIsDone, -1 );
+}
+
+static void Thread_Submit( Thread_t * thread, threadFunction_t threadFunction, void * threadData )
+{
+	Thread_Join( thread );
+	thread->threadFunction = threadFunction;
+	thread->threadData = threadData;
+	Thread_Signal( thread );
+}
+
+/*
+================================================================================================================================
+
+Worker thread pool.
+
+ThreadPool_t
+
+static bool ThreadPool_Create( ThreadPool_t * pool );
+static void ThreadPool_Destroy( ThreadPool_t * pool );
+static void ThreadPool_Submit( ThreadPool_t * pool, threadFunction_t threadFunction, void * threadData );
+static void ThreadPool_Join( ThreadPool_t * pool );
+
+================================================================================================================================
+*/
+
+#define NUM_WORKERS		4
+
+typedef struct
+{
+	Thread_t threads[NUM_WORKERS];
+} ThreadPool_t;
+
+void PoolStartThread( void * data )
+{
+	UNUSED_PARM( data );
+
+	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
+	Thread_SetRealTimePriority( 1 );
+}
+
+static void ThreadPool_Create( ThreadPool_t * pool )
+{
+	for ( int i = 0; i < NUM_WORKERS; i++ )
+	{
+		Thread_Create( &pool->threads[i], "worker", PoolStartThread, NULL );
+		Thread_Signal( &pool->threads[i] );
+		Thread_Join( &pool->threads[i] );
+	}
+}
+
+static void ThreadPool_Destroy( ThreadPool_t * pool )
+{
+	for ( int i = 0; i < NUM_WORKERS; i++ )
+	{
+		Thread_Destroy( &pool->threads[i] );
+	}
+}
+
+static void ThreadPool_Submit( ThreadPool_t * pool, threadFunction_t threadFunction, void * threadData )
+{
+	for ( int i = 0; i < NUM_WORKERS; i++ )
+	{
+		Thread_Submit( &pool->threads[i], threadFunction, threadData );
+	}
+}
+
+static void ThreadPool_Join( ThreadPool_t * pool )
+{
+	for ( int i = 0; i < NUM_WORKERS; i++ )
+	{
+		Thread_Join( &pool->threads[i] );
+	}
+}
+
+/*
+================================================================================================================================
+
+Threaded Time Warp
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+	AtomicUint32_t		rowCount;			// atomic counter shared by all workers
+	Matrix4x4f_t		projectionMatrix;	// projection matrix used to render the source data
+	Matrix4x4f_t		viewMatrix;			// view matrix used to render the source data
+	uint64_t			refreshStartTime;	// start of the display refresh
+	uint64_t			refreshEndTime;		// end of the display refresh
+	const uint8_t *		srcPackedRGB;		// source texture with 32 bits per texel
+	const uint8_t *		srcPlanarR;			// source texture with 8 bits per texel
+	const uint8_t *		srcPlanarG;			// source texture with 8 bits per texel
+	const uint8_t *		srcPlanarB;			// source texture with 8 bits per texel
+	int32_t				srcPitchInTexels;	// in texels
+	int32_t				srcTexelsWide;		// in texels
+	int32_t				srcTexelsHigh;		// in texels
+	uint8_t *			dest;				// destination buffer with 32 bits per pixels
+	int32_t				destPitchInPixels;	// in pixels: 1080, 1440, etc.
+	int32_t				destTilesWide;		// tiles are implicitly 32 x 32 pixels
+	int32_t				destTilesHigh;
+	const MeshCoord_t *	meshCoords;
+	int32_t				sampling;
+} TimeWarpThreadData_t;
+
+static void GetHmdViewMatrixForTime( Matrix4x4f_t * viewMatrix, const uint64_t time )
+{
+	UNUSED_PARM( time );
+	Matrix4x4f_CreateIdentity( viewMatrix );
+}
+
+void TimeWarpThread( TimeWarpThreadData_t * data )
+{
+	const size_t numMeshCoords = ( data->destTilesHigh + 1 ) * ( data->destTilesWide + 1 );
+	const MeshCoord_t * meshCoordsBasePtr = (const MeshCoord_t *) data->meshCoords;
+	const MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
+	{
+		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
+		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
+	};
+	MeshCoord_t * tempMeshCoords[NUM_COLOR_CHANNELS] =
+	{
+		(MeshCoord_t *)meshCoordsBasePtr + 6 * numMeshCoords,
+		(MeshCoord_t *)meshCoordsBasePtr + 7 * numMeshCoords,
+		(MeshCoord_t *)meshCoordsBasePtr + 8 * numMeshCoords
+	};
+
+	// Use view matrices predicted for the start and end of the display refresh.
+	Matrix4x4f_t displayRefreshStartViewMatrix;
+	Matrix4x4f_t displayRefreshEndViewMatrix;
+	GetHmdViewMatrixForTime( &displayRefreshStartViewMatrix, data->refreshStartTime );
+	GetHmdViewMatrixForTime( &displayRefreshEndViewMatrix, data->refreshEndTime );
+
+	// Calculate the time warp transform matrices for the start and the end of the display refresh.
+	Matrix4x4f_t timeWarpStartTransform;
+	Matrix4x4f_t timeWarpEndTransform;
+	CalculateTimeWarpTransform( &timeWarpStartTransform, &data->projectionMatrix, &data->viewMatrix, &displayRefreshStartViewMatrix );
+	CalculateTimeWarpTransform( &timeWarpEndTransform, &data->projectionMatrix, &data->viewMatrix, &displayRefreshEndViewMatrix );
+
+	// Loop until no more horizontal strips to process.
+    for ( ; ; )
+    {
+        // Atomically add 1 to claim a job.
+        unsigned int rowCount = AtomicUint32_Increment( &(data->rowCount) ) - 1;
+
+        // Done when all horizontal strips have been claimed for processing.
+        if ( rowCount >= (unsigned int)( 2 * data->destTilesHigh ) )
+        {
+            break;
+        }
+
+		const int eyeRow = ( rowCount % data->destTilesHigh );
+		const int eye = ( rowCount >= (unsigned int) data->destTilesHigh );
+		const int meshRowOffset = eyeRow * ( data->destTilesWide + 1 );
+		uint8_t * dstTileRow = data->dest + eyeRow * 32 * data->destPitchInPixels * 4 + eye * data->destTilesWide * 32 * 4;
+
+		if ( data->sampling == 0 )
+		{
+			TimeWarp_SampleNearestPackedRGB( data->srcPackedRGB,
+													data->srcPitchInTexels, data->srcTexelsWide, data->srcTexelsHigh,
+													dstTileRow, data->destPitchInPixels, data->destTilesWide, 1, eye,
+													meshCoords[eye][1] + meshRowOffset,
+													tempMeshCoords[1] + meshRowOffset,
+													&timeWarpStartTransform, &timeWarpEndTransform );
+		}
+		else if ( data->sampling == 1 )
+		{
+			TimeWarp_SampleLinearPackedRGB( data->srcPackedRGB,
+													data->srcPitchInTexels, data->srcTexelsWide, data->srcTexelsHigh,
+													dstTileRow, data->destPitchInPixels, data->destTilesWide, 1, eye,
+													meshCoords[eye][1] + meshRowOffset,
+													tempMeshCoords[1] + meshRowOffset,
+													&timeWarpStartTransform, &timeWarpEndTransform );
+		}
+		else if ( data->sampling == 2 )
+		{
+			TimeWarp_SampleBilinearPackedRGB( data->srcPackedRGB,
+													data->srcPitchInTexels, data->srcTexelsWide, data->srcTexelsHigh,
+													dstTileRow, data->destPitchInPixels, data->destTilesWide, 1, eye,
+													meshCoords[eye][1] + meshRowOffset,
+													tempMeshCoords[1] + meshRowOffset,
+													&timeWarpStartTransform, &timeWarpEndTransform );
+		}
+		else if ( data->sampling == 3 )
+		{
+			TimeWarp_SampleBilinearPlanarRGB( data->srcPlanarR, data->srcPlanarG, data->srcPlanarB,
+													data->srcPitchInTexels, data->srcTexelsWide, data->srcTexelsHigh,
+													dstTileRow, data->destPitchInPixels, data->destTilesWide, 1, eye,
+													meshCoords[eye][1] + meshRowOffset,
+													tempMeshCoords[1] + meshRowOffset,
+													&timeWarpStartTransform, &timeWarpEndTransform );
+		}
+		else if ( data->sampling == 4 )
+		{
+			TimeWarp_SampleChromaticBilinearPlanarRGB( data->srcPlanarR, data->srcPlanarG, data->srcPlanarB,
+													data->srcPitchInTexels, data->srcTexelsWide, data->srcTexelsHigh,
+													dstTileRow, data->destPitchInPixels, data->destTilesWide, 1, eye,
+													meshCoords[eye][0] + meshRowOffset,
+													meshCoords[eye][1] + meshRowOffset,
+													meshCoords[eye][2] + meshRowOffset,
+													tempMeshCoords[0] + meshRowOffset,
+													tempMeshCoords[1] + meshRowOffset,
+													tempMeshCoords[2] + meshRowOffset,
+													&timeWarpStartTransform, &timeWarpEndTransform );
+		}
+	}
+}
+
+#if defined( OS_HEXAGON )
+
+// enum DalChipInfoFamilyType, adsp_proc\core\api\systemdrivers\DDIChipInfo.h
+enum
+{
+	DALCHIPINFO_FAMILY_MSM8974		= 32,	// Snapdragon 801, Hexagon V50
+	DALCHIPINFO_FAMILY_MSM8974_PRO	= 46,	// Snapdragon 801, Hexagon V50
+	DALCHIPINFO_FAMILY_APQ8x94		= 43,	// Snapdragon 805, Hexagon V50
+	DALCHIPINFO_FAMILY_MSM8992		= 57,	// Snapdragon 808, Hexagon V56
+	DALCHIPINFO_FAMILY_MSM8994		= 50,	// Snapdragon 810, Hexagon V56
+	DALCHIPINFO_FAMILY_MSM8996		= 56,	// Snapdragon 820, Hexagon V60
+};
+
+#pragma weak HAP_get_chip_family_id
+extern uint32_t HAP_get_chip_family_id( void );
+
+int TimeWarpInterface_GetDspVersion()
+{
+	int version = 0;
+	if ( 0 != HAP_get_chip_family_id )
+	{
+		switch ( (int) HAP_get_chip_family_id() )
+		{
+			case DALCHIPINFO_FAMILY_MSM8974:		version = 50; break;
+			case DALCHIPINFO_FAMILY_MSM8974_PRO:	version = 50; break;
+			case DALCHIPINFO_FAMILY_APQ8x94:		version = 50; break;
+			case DALCHIPINFO_FAMILY_MSM8992:		version = 56; break;
+			case DALCHIPINFO_FAMILY_MSM8994:		version = 56; break;
+			case DALCHIPINFO_FAMILY_MSM8996:		version = 60; break;
+		}
+	}
+	return version;
+}
+
+#else	// !OS_HEXAGON
+
+int TimeWarpInterface_GetDspVersion()
+{
+	return 0;
+}
+
+#endif	// !OS_HEXAGON
+
+static ThreadPool_t threadPool;
+
+int TimeWarpInterface_Init()
+{
+#if defined( OS_HEXAGON )
+	const int DEFAULT_CLOCK_FREQ_PERCENTAGE	= 100;
+	const int DEFAULT_BUS_FREQ_PERCENTAGE	= 100;
+	const int DEFAULT_MAX_RPC_USEC			= 1000;	// microseconds tolerable wakeup latency upon RPC (or other) interrupt
+
+	const int result = HAP_power_request( DEFAULT_CLOCK_FREQ_PERCENTAGE, DEFAULT_BUS_FREQ_PERCENTAGE, DEFAULT_MAX_RPC_USEC );
+	Print( "HAP_power_request() %s\n", ( result == 0 ) ? "succeeded" : "failed" );
+	Print( "DSP %d%%, BUS %d%%, RPC %d uSec\n", DEFAULT_CLOCK_FREQ_PERCENTAGE, DEFAULT_BUS_FREQ_PERCENTAGE, DEFAULT_MAX_RPC_USEC );
+#endif
+
+	ThreadPool_Create( &threadPool );
+	return 0;	// AEE_SUCCESS
+}
+
+int TimeWarpInterface_Shutdown()
+{
+	ThreadPool_Destroy( &threadPool );
+
+#if defined( OS_HEXAGON )
+	HAP_power_request( 0, 0, -1 );
+#endif
+
+	return 0;	// AEE_SUCCESS
+}
+
+int TimeWarpInterface_TimeWarp(
+		const uint8_t *		srcPackedRGB,		// source texture with 32 bits per texel
+		int					srcPackedRGBCount,
+		const uint8_t *		srcPlanarR,			// source texture with 8 bits per texel
+		int					srcPlanarRCount,
+		const uint8_t *		srcPlanarG,			// source texture with 8 bits per texel
+		int					srcPlanarGCount,
+		const uint8_t *		srcPlanarB,			// source texture with 8 bits per texel
+		int					srcPlanarBCount,
+		int32_t				srcPitchInTexels,	// in texels
+		int32_t				srcTexelsWide,		// in texels
+		int32_t				srcTexelsHigh,		// in texels
+		uint8_t *			dest,				// destination buffer with 32 bits per pixels
+		int					destCount,
+		int32_t				destPitchInPixels,	// in pixels: 1080, 1440, etc.
+		int32_t				destTilesWide,		// tiles are implicitly 32 x 32 pixels
+		int32_t				destTilesHigh,
+		const MeshCoord_t *	meshCoords,			// [(destTilesWide+1)*(destTilesHigh+1)]
+		int					meshCoordsCount,
+		int32_t				sampling
+	)
+{
+	UNUSED_PARM( srcPackedRGBCount );
+	UNUSED_PARM( srcPlanarRCount );
+	UNUSED_PARM( srcPlanarGCount );
+	UNUSED_PARM( srcPlanarBCount );
+	UNUSED_PARM( destCount );
+	UNUSED_PARM( meshCoordsCount );
+
+	// Projection matrix that was used to render the source data.
+	Matrix4x4f_t renderProjectionMatrix;
+	Matrix4x4f_CreateProjectionFov( &renderProjectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
+
+	// View matrix that was used to render the source data;
+	Matrix4x4f_t renderViewMatrix;
+	Matrix4x4f_CreateIdentity( &renderViewMatrix );
+
+	TimeWarpThreadData_t data;
+	data.rowCount = 0;
+	data.projectionMatrix = renderProjectionMatrix;
+	data.viewMatrix = renderViewMatrix;
+	data.refreshStartTime = 0;
+	data.refreshEndTime = 0;
+	data.srcPackedRGB = srcPackedRGB;
+	data.srcPlanarR = srcPlanarR;
+	data.srcPlanarG = srcPlanarG;
+	data.srcPlanarB = srcPlanarB;
+	data.srcPitchInTexels = srcPitchInTexels;
+	data.srcTexelsWide = srcTexelsWide;
+	data.srcTexelsHigh = srcTexelsHigh;
+	data.dest = dest;
+	data.destPitchInPixels = destPitchInPixels;
+	data.destTilesWide = destTilesWide;
+	data.destTilesHigh = destTilesHigh;
+	data.meshCoords = meshCoords;
+	data.sampling = sampling;
+
+	ThreadPool_Submit( &threadPool, (threadFunction_t)TimeWarpThread, &data );
+	ThreadPool_Join( &threadPool );
+
+	return 0;	// AEE_SUCCESS
+}
+
+#endif // !USE_DSP_TIMEWARP
+
 #if !defined( OS_HEXAGON )
 
 /*
 ================================================================================================
-Distortion meshes
+
+Non-DSP code
+
 ================================================================================================
 */
 
+#if defined( OS_WINDOWS )
+
+#include <conio.h>			// for getch()
+#include <malloc.h>			// for _aligned_malloc()
+
+#define USE_DDK		0		// use the Driver Development Kit (DDK)
+
+#elif defined( OS_LINUX )
+
+#include <malloc.h>			// for memalign()
+
+#elif defined( OS_ANDROID )
+
+#include <malloc.h>			// for memalign()
+#include <time.h>			// for clock_gettime()
+#include <dlfcn.h>			// for dlopen()
+#include <fcntl.h>			// for ioctl(), O_RDONLY
+#include <sys/mman.h>
+#include "linux/types.h"
+#include "linux/ion.h"
+
+#if defined( USE_DSP_TIMEWARP )
+#include "adspmsgd.h"
+#endif
+
+#define USE_ION_MEMORY				1
+#define ION_FLAG_CACHED				1		// copied from ion.h
+#define ION_HEAP_ID_SYSTEM_CONTIG	21
+#define ION_HEAP_ID_ADSP			22
+#define ION_HEAP_ID_PIL1			23
+#define ION_HEAP_ID_SYSTEM			25
+
+#endif
+
+#include <stdio.h>			// for fopen()
+#include <stdlib.h>			// for abs()
+#include <string.h>			// for memcpy()
+#include <stdbool.h>		// for bool
+#include <stdint.h>			// for uint32_t etc.
+
+/*
+================================================================================================
+
+Distortion meshes
+
+================================================================================================
+*/
+
+// Typical 16:9 resolutions: 1920 x 1080, 2560 x 1440, 3840 x 2160, 7680 x 4320
 #define DISPLAY_PIXELS_WIDE		1920
 #define DISPLAY_PIXELS_HIGH		1080
-
-#define NUM_EYES				2
-#define NUM_COLOR_CHANNELS		3
 
 #define TILE_PIXELS_WIDE		32
 #define TILE_PIXELS_HIGH		32
@@ -5492,66 +7126,36 @@ void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNEL
 }
 
 /*
-================================================================================================
-Test Code
-================================================================================================
-*/
-
-#if defined( OS_WINDOWS )
-
-#include <stdio.h>			// for fopen()
-#include <string.h>			// for memcpy()
-#include <conio.h>			// for getch()
-#include <malloc.h>			// for _aligned_malloc()
-#include <Windows.h>		// for VirtualAlloc(), VirtualFree()
-
-#define USE_DDK		0		// use the Driver Development Kit (DDK)
-
-#elif defined( OS_MAC )
-
-#include <stdio.h>			// for fopen()
-#include <string.h>			// for memcpy()
-#include <conio.h>			// for getch()
-#include <sys/time.h>		// for gettimeofday()
-
-#elif defined( OS_ANDROID )
-
-#include <malloc.h>			// for memalign()
-#include <stdio.h>			// for fopen()
-#include <stdlib.h>			// for abs()
-#include <string.h>			// for memcpy()
-#include <time.h>			// for clock_gettime()
-#include <ctype.h>			// for isspace() and isdigit()
-#include <dlfcn.h>			// for dlopen
-#include <fcntl.h>			// for O_RDONLY
-#include <sched.h>			// for SCHED_FIFO
-#include <sys/syscall.h>
-#include <sys/ioctl.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
-#include "linux/types.h"
-#include "linux/ion.h"
-
-#define USE_ION_MEMORY		1
-
-#else
-
-#include <malloc.h>			// for memalign()
-#include <stdio.h>			// for fopen()
-#include <stdlib.h>			// for abs()
-#include <string.h>			// for memcpy()
-#include <sys/time.h>		// for gettimeofday()
-
-#endif
-
-/*
 ================================================================================================================================
 
 System level functionality
 
 ================================================================================================================================
 */
+
+#if defined( __hexagon__ )		// some defs/stubs so app can build for Hexagon simulation
+
+int HAP_power_request( int clock, int bus, int latency )
+{
+	return 0;
+}
+
+void HAP_debug( const char * msg, int level, const char * filename, int line )
+{
+	printf( "%s(%d): %s", filename, line, msg );
+}
+
+void HAP_debug_v2( int level, const char* file, int line, const char* format, ... )
+{
+	char buf[256];
+	va_list args;
+	va_start( args, format );
+	vsnprintf( buf, sizeof( buf ), format, args );
+	va_end( args );
+	HAP_debug( buf, level, file, line );
+}
+
+#endif
 
 static void * AllocAlignedMemory( size_t size, size_t alignment )
 {
@@ -5669,11 +7273,11 @@ static void * AllocContiguousPhysicalMemory( size_t size, CachingType_t type )
 	m->fd = open( "/dev/ion", O_RDONLY );
 	if ( m->fd < 0 )
 	{
-		LOG( "Failed to open /dev/ion\n" );
+		Print( "Failed to open /dev/ion\n" );
 		return NULL;
 	}
 
-	static const uint32_t heapids[] = { 0, 25 };
+	static const uint32_t heapids[] = { 0, ION_HEAP_ID_ADSP, ION_HEAP_ID_SYSTEM };
 	for ( int i = 0; i < ARRAY_SIZE( heapids ); i++ )
 	{
 		struct ion_allocation_data alloc;
@@ -5684,14 +7288,14 @@ static void * AllocContiguousPhysicalMemory( size_t size, CachingType_t type )
 
 		if ( ioctl( m->fd, ION_IOC_ALLOC, &alloc ) >= 0 )
 		{
-			//LOG( "Using heapid %d\n", heapids[i] );
+			//Print( "Using heapid %d\n", heapids[i] );
 			m->data.handle = alloc.handle;
 			break;
 		}
 	}
 	if ( m->data.handle == 0 )
 	{
-		LOG( "Failed to allocate ION memory\n" );
+		Print( "Failed to allocate ION memory\n" );
 		close( m->fd );
 		free( m );
 		return NULL;
@@ -5699,7 +7303,7 @@ static void * AllocContiguousPhysicalMemory( size_t size, CachingType_t type )
 
 	if ( ioctl( m->fd, ION_IOC_MAP, &m->data ) < 0 )
 	{
-		LOG( "Failed to map ION memory\n" );
+		Print( "Failed to map ION memory\n" );
 		ioctl( m->fd, ION_IOC_FREE, &m->data );
 		close( m->fd );
 		free( m );
@@ -5709,7 +7313,7 @@ static void * AllocContiguousPhysicalMemory( size_t size, CachingType_t type )
 	m->ptr = (void *)mmap( NULL, m->size, PROT_READ|PROT_WRITE, MAP_SHARED, m->data.fd, (off_t)0 );
 	if ( m->ptr == MAP_FAILED )
 	{
-		LOG( "Failed to create virtual mapping\n" );
+		Print( "Failed to create virtual mapping\n" );
 		ioctl( m->fd, ION_IOC_FREE, &m->data );
 		close( m->data.fd );
 		close( m->fd );
@@ -5979,199 +7583,6 @@ static Microseconds_t GetTimeMicroseconds()
 /*
 ================================================================================================================================
 
-Threading.
-
-================================================================================================================================
-*/
-
-#define THREAD_AFFINITY_BIG_CORES		-1
-
-static void Thread_SetAffinity( int mask )
-{
-#if defined( OS_WINDOWS )
-	if ( mask == THREAD_AFFINITY_BIG_CORES )
-	{
-		return;
-	}
-	HANDLE thread = GetCurrentThread();
-	if ( !SetThreadAffinityMask( thread, mask ) )
-	{
-		char buffer[1024];
-		DWORD error = GetLastError();
-		FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM, NULL, error, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ), buffer, sizeof( buffer ), NULL );
-		LOG( "Failed to set thread %p affinity: %s(%d)\n", thread, buffer, error );
-	}
-	else
-	{
-		LOG( "Thread %p affinity set to 0x%02X\n", thread, mask );
-	}
-#elif defined( OS_MAC )
-	// OS X does not export interfaces that identify processors or control thread placement.
-	// Explicit thread to processor binding is not supported.
-	mask = mask;
-#elif defined( OS_ANDROID )
-	// Optionally use the faster cores of a heterogeneous CPU.
-	if ( mask == THREAD_AFFINITY_BIG_CORES )
-	{
-		mask = 0;
-		unsigned int bestFrequency = 0;
-		for ( int i = 0; i < 16; i++ )
-		{
-			int maxFrequency = 0;
-			const char * files[] =
-			{
-				"scaling_available_frequencies",	// not available on all devices
-				"scaling_max_freq",					// no user read permission on all devices
-				"cpuinfo_max_freq",					// could be set lower than the actual max, but better than nothing
-			};
-			for ( int j = 0; j < sizeof( files ) / sizeof( files[0] ); j++ )
-			{
-				char fileName[1024];
-				sprintf( fileName, "/sys/devices/system/cpu/cpu%d/cpufreq/%s", i, files[j] );
-				FILE * fp = fopen( fileName, "r" );
-				if ( fp == NULL )
-				{
-					continue;
-				}
-				char buffer[1024];
-				if ( fgets( buffer, sizeof( buffer ), fp ) == NULL )
-				{
-					fclose( fp );
-					continue;
-				}
-				for ( int index = 0; buffer[index] != '\0'; )
-				{
-					const unsigned int frequency = atoi( buffer + index );
-					maxFrequency = ( frequency > maxFrequency ) ? frequency : maxFrequency;
-					while ( isspace( buffer[index] ) ) { index++; }
-					while ( isdigit( buffer[index] ) ) { index++; }
-				}
-				fclose( fp );
-				break;
-			}
-			if ( maxFrequency == 0 )
-			{
-				break;
-			}
-
-			if ( maxFrequency == bestFrequency )
-			{
-				mask |= ( 1 << i );
-			}
-			else if ( maxFrequency > bestFrequency )
-			{
-				mask = ( 1 << i );
-				bestFrequency = maxFrequency;
-			}
-		}
-
-		if ( mask == 0 )
-		{
-			return;
-		}
-	}
-
-	// Set the thread affinity.
-	pid_t pid = gettid();
-	int syscallres = syscall( __NR_sched_setaffinity, pid, sizeof( mask ), &mask );
-	if ( syscallres )
-	{
-		int err = errno;
-		LOG( "Error sched_setaffinity(%d): thread=(%d) mask=0x%X err=%s(%d)\n", __NR_sched_setaffinity, pid, mask, strerror( err ), err );
-	}
-	else
-	{
-		LOG( "Thread %d affinity 0x%02X\n", pid, mask );
-	}
-#else
-	mask = mask;
-#endif
-}
-
-static void Thread_SetRealTimePriority( int priority )
-{
-#if defined( OS_WINDOWS )
-	priority = priority;
-	HANDLE process = GetCurrentProcess();
-	if( !SetPriorityClass( process, REALTIME_PRIORITY_CLASS ) )
-	{
-		char buffer[1024];
-		DWORD error = GetLastError();
-		FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM, NULL, error, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ), buffer, sizeof( buffer ), NULL );
-		LOG( "Failed to set process %p priority class: %s(%d)\n", process, buffer, error );
-	}
-	else
-	{
-		LOG( "Process %p priority class set to real-time.\n", process );
-	}
-	HANDLE thread = GetCurrentThread();
-	if ( !SetThreadPriority( thread, THREAD_PRIORITY_TIME_CRITICAL ) )
-	{
-		char buffer[1024];
-		DWORD error = GetLastError();
-		FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM, NULL, error, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ), buffer, sizeof( buffer ), NULL );
-		LOG( "Failed to set thread %p priority: %s(%d)\n", thread, buffer, error );
-	}
-	else
-	{
-		LOG( "Thread %p priority set to critical.\n", thread );
-	}
-#elif defined( OS_MAC )
-	struct sched_param sp;
-	memset( &sp, 0, sizeof( struct sched_param ) );
-	sp.sched_priority = priority;
-	if ( pthread_setschedparam( pthread_self(), SCHED_FIFO, &sp ) == -1 )
-	{
-		LOG( "Failed to change thread %d priority.\n", gettid() );
-	}
-	else
-	{
-		Print( "Thread %d set to SCHED_FIFO, priority=%d\n", gettid(), priority );
-	}
-#elif defined( OS_ANDROID )
-	struct sched_attr
-	{
-		uint32_t size;
-		uint32_t sched_policy;
-		uint64_t sched_flags;
-		int32_t  sched_nice;
-		uint32_t sched_priority;
-		uint64_t sched_runtime;
-		uint64_t sched_deadline;
-		uint64_t sched_period;
-	} attr;
-
-	memset( &attr, 0, sizeof( attr ) );
-	attr.size = sizeof( attr );
-	attr.sched_policy = SCHED_FIFO;
-	attr.sched_flags = SCHED_FLAG_RESET_ON_FORK;
-	attr.sched_nice = 0;				// (SCHED_OTHER, SCHED_BATCH)
-	attr.sched_priority = priority;		// (SCHED_FIFO, SCHED_RR)
-	attr.sched_runtime = 0;				// (SCHED_DEADLINE)
-	attr.sched_deadline = 0;			// (SCHED_DEADLINE)
-	attr.sched_period = 0;				// (SCHED_DEADLINE)
-
-	unsigned int flags = 0;
-
-	pid_t pid = gettid();
-	int syscallres = syscall( __NR_sched_setattr, pid, &attr, flags );
-	if ( syscallres )
-	{
-		int err = errno;
-		LOG( "Error sched_setattr(%d): thread=%d err=%s(%d)\n", __NR_sched_setattr, pid, strerror( err ), err );
-	}
-	else
-	{
-		LOG( "Thread %d set to SCHED_FIFO, priority=%d\n", pid, priority );
-	}
-#else
-	UNUSED_PARM( priority );
-#endif
-}
-
-/*
-================================================================================================================================
-
 Test code.
 
 ================================================================================================================================
@@ -6271,12 +7682,12 @@ void WriteTGA( const char * fileName, const unsigned char * rgba, const int widt
 	FILE * fp = fopen( fileName, "wb" );
 	if ( fp == NULL )
 	{
-		LOG( "Failed to open %s\n", fileName );
+		Print( "Failed to open %s\n", fileName );
 		return;
 	}
 
 	if ( fwrite( &header, sizeof( header ), 1, fp ) != 1 ) {
-		LOG( "Failed to write TGA header to %s\n", fileName );
+		Print( "Failed to write TGA header to %s\n", fileName );
 		fclose( fp );
 		return;
 	}
@@ -6297,7 +7708,7 @@ void WriteTGA( const char * fileName, const unsigned char * rgba, const int widt
 		}
 		if ( fwrite( buffer, numPixels * 4, 1, fp ) != 1 )
 		{
-			LOG( "Failed to write TGA data to %s\n", fileName );
+			Print( "Failed to write TGA data to %s\n", fileName );
 			fclose( fp );
 			return;
 		}
@@ -6315,50 +7726,40 @@ void TestTimeWarp()
 
 	CreateTestPattern( src, srcTexelsWide, srcTexelsHigh );
 
-	const size_t packedSize = srcTexelsWide * srcTexelsHigh * 4 * sizeof( unsigned char );
-	unsigned char * packedRGB = (unsigned char *)AllocContiguousPhysicalMemory( packedSize, MEMORY_CACHED );
+	const size_t packedSizeInBytes = srcTexelsWide * srcTexelsHigh * 4 * sizeof( unsigned char );
+	unsigned char * packedRGB = (unsigned char *)AllocContiguousPhysicalMemory( packedSizeInBytes, MEMORY_CACHED );
 	unsigned char * planarR = packedRGB + 0 * srcTexelsWide * srcTexelsHigh;
 	unsigned char * planarG = packedRGB + 1 * srcTexelsWide * srcTexelsHigh;
 	unsigned char * planarB = packedRGB + 2 * srcTexelsWide * srcTexelsHigh;
 
 	const size_t numMeshCoords = ( EYE_TILES_WIDE + 1 ) * ( EYE_TILES_HIGH + 1 );
-	const size_t meshSize = ( NUM_EYES + 1 ) * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t );
-	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *)AllocContiguousPhysicalMemory( meshSize, MEMORY_CACHED );
+	const size_t meshSizeInBytes = ( NUM_EYES + 1 ) * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t );
+	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *)AllocContiguousPhysicalMemory( meshSizeInBytes, MEMORY_CACHED );
 	MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
 	{
 		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
 		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
 	};
-	MeshCoord_t * tempMeshCoords[NUM_COLOR_CHANNELS] =
-	{
-		meshCoordsBasePtr + 6 * numMeshCoords,
-		meshCoordsBasePtr + 7 * numMeshCoords,
-		meshCoordsBasePtr + 8 * numMeshCoords
-	};
 
 	BuildDistortionMeshes( meshCoords, EYE_TILES_WIDE, EYE_TILES_HIGH, DefaultHmdInfo() );
 
-	const int dstSize = DISPLAY_PIXELS_WIDE * DISPLAY_PIXELS_HIGH * 4 * sizeof( unsigned char );
-	unsigned char * dst = (unsigned char *) AllocContiguousPhysicalMemory( dstSize, MEMORY_WRITE_COMBINED );
+	const int dstSizeInBytes = DISPLAY_PIXELS_WIDE * DISPLAY_PIXELS_HIGH * 4 * sizeof( unsigned char );
+	unsigned char * dst = (unsigned char *) AllocContiguousPhysicalMemory( dstSizeInBytes, MEMORY_WRITE_COMBINED );
 
-	Matrix4x4f_t renderProjectionMatrix;
-	Matrix4x4f_CreateProjectionFov( &renderProjectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
+#if defined( USE_DSP_TIMEWARP )
+	const int adspmsgd_result = adspmsgd_start( ION_HEAP_ID_SYSTEM, ION_FLAG_CACHED, 2 * 4096 );
+	printf( "adspmsgd_start() %s\n", ( adspmsgd_result == 0 ) ? "succeeded" : "failed" );
+#endif
 
-	Matrix4x4f_t renderViewMatrix;
-	Matrix4x4f_CreateIdentity( &renderViewMatrix );
-
-	Matrix4x4f_t displayRefreshStartViewMatrix;
-	Matrix4x4f_t displayRefreshEndViewMatrix;
-	Matrix4x4f_CreateIdentity( &displayRefreshStartViewMatrix );
-	Matrix4x4f_CreateIdentity( &displayRefreshEndViewMatrix );
-
-	Matrix4x4f_t timeWarpStartTransform;
-	Matrix4x4f_t timeWarpEndTransform;
-	CalculateTimeWarpTransform( &timeWarpStartTransform, &renderProjectionMatrix, &renderViewMatrix, &displayRefreshStartViewMatrix );
-	CalculateTimeWarpTransform( &timeWarpEndTransform, &renderProjectionMatrix, &renderViewMatrix, &displayRefreshEndViewMatrix );
+	TimeWarpInterface_Init();
 
 	for ( int sampling = 0; sampling < 5; sampling++ )
 	{
+		int packedRGBCount = 0;
+		int planerRCount = 0;
+		int planerGCount = 0;
+		int planerBCount = 0;
+
 		if ( sampling >= 0 && sampling <= 2 )
 		{
 			for ( int i = 0; i < srcTexelsWide * srcTexelsHigh; i++ )
@@ -6373,6 +7774,8 @@ void TestTimeWarp()
 				packedRGB[i * 4 + 2] = b;
 				packedRGB[i * 4 + 3] = a;
 			}
+
+			packedRGBCount = srcTexelsHigh * srcPitchInTexels * 4;
 		}
 		else if ( sampling >= 3 && sampling <= 4 )
 		{
@@ -6386,60 +7789,41 @@ void TestTimeWarp()
 				planarG[i] = g;
 				planarB[i] = b;
 			}
+
+			planerRCount = srcTexelsHigh * srcPitchInTexels;
+			planerGCount = srcTexelsHigh * srcPitchInTexels;
+			planerBCount = srcTexelsHigh * srcPitchInTexels;
 		}
-		memset( dst, 0, dstSize );
+		memset( dst, 0, dstSizeInBytes );
 
 		Microseconds_t bestTime = 0xFFFFFFFFFFFFFFFF;
 
 		for ( int i = 0; i < 25; i++ )
 		{
-			Microseconds_t start = GetTimeMicroseconds();
+			const Microseconds_t start = GetTimeMicroseconds();
 
-			for ( int eye = 0; eye < NUM_EYES; eye++ )
-			{
-				unsigned char * eyeDest = dst + eye * ( DISPLAY_PIXELS_WIDE / NUM_EYES ) * 4;
+			TimeWarpInterface_TimeWarp(
+					packedRGB,
+					packedRGBCount,
+					planarR,
+					planerRCount,
+					planarG,
+					planerGCount,
+					planarB,
+					planerBCount,
+					srcPitchInTexels,
+					srcTexelsWide,
+					srcTexelsHigh,
+					dst,
+					dstSizeInBytes,
+					DISPLAY_PIXELS_WIDE,
+					EYE_TILES_WIDE,
+					EYE_TILES_HIGH,
+					meshCoordsBasePtr,
+					(int)meshSizeInBytes / sizeof( MeshCoord_t ),
+					sampling );
 
-				if ( sampling == 0 )
-				{
-					TimeWarp_SampleNearestPackedRGB( packedRGB, srcPitchInTexels, srcTexelsWide, srcTexelsHigh,
-													eyeDest, DISPLAY_PIXELS_WIDE, EYE_TILES_WIDE, EYE_TILES_HIGH, eye,
-													meshCoords[eye][1], tempMeshCoords[1],
-													&timeWarpStartTransform, &timeWarpEndTransform );
-				}
-				else if ( sampling == 1 )
-				{
-					TimeWarp_SampleLinearPackedRGB( packedRGB, srcPitchInTexels, srcTexelsWide, srcTexelsHigh,
-													eyeDest, DISPLAY_PIXELS_WIDE, EYE_TILES_WIDE, EYE_TILES_HIGH, eye,
-													meshCoords[eye][1], tempMeshCoords[1],
-													&timeWarpStartTransform, &timeWarpEndTransform );
-				}
-				else if ( sampling == 2 )
-				{
-					TimeWarp_SampleBilinearPackedRGB( packedRGB, srcPitchInTexels, srcTexelsWide, srcTexelsHigh,
-													eyeDest, DISPLAY_PIXELS_WIDE, EYE_TILES_WIDE, EYE_TILES_HIGH, eye,
-													meshCoords[eye][1], tempMeshCoords[1],
-													&timeWarpStartTransform, &timeWarpEndTransform );
-				}
-				else if ( sampling == 3 )
-				{
-					TimeWarp_SampleBilinearPlanarRGB( planarR, planarG, planarB,
-													srcPitchInTexels, srcTexelsWide, srcTexelsHigh,
-													eyeDest, DISPLAY_PIXELS_WIDE, EYE_TILES_WIDE, EYE_TILES_HIGH, eye,
-													meshCoords[eye][1], tempMeshCoords[1],
-													&timeWarpStartTransform, &timeWarpEndTransform );
-				}
-				else if ( sampling == 4 )
-				{
-					TimeWarp_SampleChromaticBilinearPlanarRGB( planarR, planarG, planarB,
-													srcPitchInTexels, srcTexelsWide, srcTexelsHigh,
-													eyeDest, DISPLAY_PIXELS_WIDE, EYE_TILES_WIDE, EYE_TILES_HIGH, eye,
-													meshCoords[eye][0], meshCoords[eye][1], meshCoords[eye][2],
-													tempMeshCoords[0], tempMeshCoords[1], tempMeshCoords[2],
-													&timeWarpStartTransform, &timeWarpEndTransform );
-				}
-			}
-
-			Microseconds_t end = GetTimeMicroseconds();
+			const Microseconds_t end = GetTimeMicroseconds();
 
 			if ( end - start < bestTime )
 			{
@@ -6457,7 +7841,7 @@ void TestTimeWarp()
 			case 4: string = "chromatic-planar-RGB"; break;
 		}
 
-		LOG( "%22s = %5.1f milliseconds (%1.0f Mpixels/sec)\n",
+		Print( "%22s = %5.1f milliseconds (%1.0f Mpixels/sec)\n",
 				string,
 				bestTime / 1000.0f,
 				2.0f * EYE_TILES_WIDE * EYE_TILES_HIGH * 32 * 32 / bestTime );
@@ -6467,9 +7851,18 @@ void TestTimeWarp()
 		WriteTGA( fileName, dst, DISPLAY_PIXELS_WIDE, DISPLAY_PIXELS_HIGH );
 	}
 
-	FreeContiguousPhysicalMemory( dst, dstSize );
-	FreeContiguousPhysicalMemory( packedRGB, packedSize );
-	FreeContiguousPhysicalMemory( meshCoordsBasePtr, meshSize );
+	TimeWarpInterface_Shutdown();
+
+#if defined( USE_DSP_TIMEWARP )
+	if ( adspmsgd_result == 0 )
+	{
+		adspmsgd_stop();
+	}
+#endif
+
+	FreeContiguousPhysicalMemory( dst, dstSizeInBytes );
+	FreeContiguousPhysicalMemory( packedRGB, packedSizeInBytes );
+	FreeContiguousPhysicalMemory( meshCoordsBasePtr, meshSizeInBytes );
 	FreeAlignedMemory( src );
 }
 
@@ -6478,23 +7871,25 @@ int main( int argc, char * argv[] )
 	argc = argc;
 	argv = argv;
 
-	LOG( "--------------------------------\n" );
-	LOG( "OS     : %s\n", GetOSVersion() );
-	LOG( "CPU    : %s\n", GetCPUVersion() );
-	LOG( "Mode   : %dx%d\n", DISPLAY_PIXELS_WIDE, DISPLAY_PIXELS_HIGH );
-	LOG( "--------------------------------\n" );
+	const int dspVersion = TimeWarpInterface_GetDspVersion();
+	char dspVersionString[32];
+	sprintf( dspVersionString, "Hexagon v%d", dspVersion );
 
-	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
-	Thread_SetRealTimePriority( 1 );
+	Print( "--------------------------------\n" );
+	Print( "OS     : %s\n", GetOSVersion() );
+	Print( "CPU    : %s\n", GetCPUVersion() );
+	Print( "DSP    : %s\n", dspVersion != 0 ? dspVersionString : "-" );
+	Print( "Mode   : %dx%d\n", DISPLAY_PIXELS_WIDE, DISPLAY_PIXELS_HIGH );
+	Print( "--------------------------------\n" );
 
-	LOG( "--------------------------------\n" );
+	Print( "--------------------------------\n" );
 
 	TestTimeWarp();
 
-	LOG( "--------------------------------\n" );
+	Print( "--------------------------------\n" );
 
-#if !defined( OS_ANDROID )
-	LOG( "Press any key to continue.\n" );
+#if defined( OS_WINDOWS )
+	Print( "Press any key to continue.\n" );
 	_getch();
 #endif
 }
