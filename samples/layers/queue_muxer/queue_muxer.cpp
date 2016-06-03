@@ -197,12 +197,12 @@ VERSION HISTORY
 #include <stdlib.h>
 #include <assert.h>
 #include <unordered_map>
-#include <vulkan/vulkan.h>
-#include <vulkan/vk_layer.h>
-#include <vk_loader_platform.h>
-#include <vk_dispatch_table_helper.h>
-#include <vk_layer_data.h>
-#include <vk_layer_extension_utils.h>
+#include <vulkan/vulkan.h>					// {SDK}/Include | Vulkan-LoaderAndValidationLayers/include
+#include <vulkan/vk_layer.h>				// {SDK}/Include | Vulkan-LoaderAndValidationLayers/include
+#include <vk_loader_platform.h>				// {SDK}/Source/loader | Vulkan-LoaderAndValidationLayers/loader
+#include <vk_dispatch_table_helper.h>		// {SDK}/Source/layers | Vulkan-LoaderAndValidationLayers/build\layers
+#include <vk_layer_data.h>					// {SDK}/Source/layers | Vulkan-LoaderAndValidationLayers/layers
+#include <vk_layer_extension_utils.h>		// {SDK}/Source/layers | Vulkan-LoaderAndValidationLayers/layers
 
 #if defined( __ANDROID__ )
 #include <android/log.h>			// for __android_log_print()
