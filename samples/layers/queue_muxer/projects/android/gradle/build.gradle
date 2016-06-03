@@ -50,6 +50,7 @@ model {
 
 		cppFlags.addAll([
 			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/include")}".toString(),
+			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/build/layers")}".toString(),
 			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/loader")}".toString(),
 			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/layers")}".toString(),
 			"-I${file("${vkSdkPath}/Include")}".toString(),

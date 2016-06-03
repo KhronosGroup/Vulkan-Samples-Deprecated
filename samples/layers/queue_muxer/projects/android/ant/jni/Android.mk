@@ -7,10 +7,10 @@ include $(CLEAR_VARS)
 
 LOCAL_MODULE := VkLayer_queue_muxer
 LOCAL_C_INCLUDES := $(BASE_DIR)/Vulkan-LoaderAndValidationLayers/include \
+                    $(BASE_DIR)/Vulkan-LoaderAndValidationLayers/build\layers \
                     $(BASE_DIR)/Vulkan-LoaderAndValidationLayers/layers \
                     $(BASE_DIR)/Vulkan-LoaderAndValidationLayers/loader \
-                    $(BASE_DIR)/Vulkan-LoaderAndValidationLayers/build\layers \
-					$(VK_SDK_PATH)/Include \
+                    $(VK_SDK_PATH)/Include \
                     $(VK_SDK_PATH)/Source/layers \
                     $(VK_SDK_PATH)/Source/loader
 LOCAL_SRC_FILES  := $(BASE_DIR)/samples/layers/queue_muxer/queue_muxer.cpp
