@@ -3,6 +3,10 @@
 @echo     C:\Qualcomm\Hexagon_SDK\3.0\setup_sdk_env.cmd
 @echo Specify "hotcache" for hot cache cycle counts.
 
+@if "X%SDK_SETUP_ENV%" == "X" (
+  C:\Qualcomm\Hexagon_SDK\3.0\setup_sdk_env.cmd
+)
+
 call make tree V_toolv72=1 V_ARCH=v60 V=hexagon_ReleaseG
 @if "%1" == "hotcache" (
 	@echo Measuring cycles with hot cache.

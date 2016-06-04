@@ -13255,9 +13255,9 @@ int main( int argc, char * argv[] )
 
 typedef struct
 {
-	char			buffer[MAX_ARGS_BUFFER];
-	const char *	argv[MAX_ARGS];
-	int				argc;
+	char	buffer[MAX_ARGS_BUFFER];
+	char *	argv[MAX_ARGS];
+	int		argc;
 } AndroidParm_t;
 
 // adb shell am start -n com.vulkansamples.atw_opengl/android.app.NativeActivity -a "android.intent.action.MAIN" --es "args" "\"-r tw\""
