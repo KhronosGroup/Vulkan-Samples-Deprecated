@@ -6,7 +6,7 @@ BUILD_LIBS += libTimeWarpInterface_skel
 endif
 
 INCDIRS += \
-  $(QURT_INC_DIR)/ADSPv60MP/include
+  $(QURT_INC_DIR)/ADSP$(V_ARCH)MP/include
 
 CC_FLAGS	+=	-Wno-unused-function
 
@@ -15,9 +15,9 @@ CC_FLAGS	+=	-Wno-unused-function
 _OPT = -O3
 
 # TimeWarp source files.
-libTimeWarpInterface_skel_QAICIDLS = inc/TimeWarp
-libTimeWarpInterface_skel_C_SRCS		+=	$V/TimeWarpInterface_skel \
-											../../../atw_cpu_dsp
+libTimeWarpInterface_skel_QAICIDLS	=	inc/TimeWarp
+libTimeWarpInterface_skel_C_SRCS	+=	$V/TimeWarpInterface_skel \
+										../../../atw_cpu_dsp
 #libTimeWarpInterface_skel.ASM_SRCS	+=	../../../atw_cpu_dsp_asm.S
 
 
@@ -35,7 +35,7 @@ LD_FLAGS=-m$(V_ARCH) -G0 -L$(HEXAGON_TOOLS_ROOT)/Tools/target/hexagon/lib/$(V_AR
 EXE_LD_FLAGS=#
 EXE_EXT=#
 
-RTOS_DIR = $(QURT_IMAGE_DIR)/ADSPv60MP
+RTOS_DIR = $(QURT_IMAGE_DIR)/ADSP$(V_ARCH)MP
 
 TimeWarp_q_LIBS+=$(HEXAGON_TOOLS_ROOT)/Tools/target/hexagon/lib/$(V_ARCH)/G0/init.o
 TimeWarp_q_LIBS+=$(HEXAGON_TOOLS_ROOT)/Tools/target/hexagon/lib/$(V_ARCH)/G0/fini.o
@@ -83,7 +83,7 @@ endif
 
 QEXE_EXEC+=--rtos $(V)/osam.cfg --symfile $(V)/TimeWarp_q$(EXE_EXT) --cosim_file $(V)/q6ss.cfg --dsp_clock 800
 
-endif #//ifneq (1,$(V_dynamic))
+endif #	//ifneq (1,$(V_dynamic))
 
 # copy final build products to the ship directory
 BUILD_COPIES = \

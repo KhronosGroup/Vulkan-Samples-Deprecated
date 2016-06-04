@@ -21,6 +21,10 @@
 @echo    adb logcat -s adspmsgd
 @echo ------------------------------------------------
 
+@if "X%SDK_SETUP_ENV%" == "X" (
+  C:\Qualcomm\Hexagon_SDK\3.0\setup_sdk_env.cmd
+)
+
 @rem run as root
 @adb root
 @adb wait-for-device
