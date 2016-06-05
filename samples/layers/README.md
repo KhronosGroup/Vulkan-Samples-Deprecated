@@ -2,8 +2,8 @@
 # Layers
 
 Additional Vulkan functionality may be provided by layers and extensions.
-While an extension can add or modify Vulkan commands, a layer only
-deals with existing Vulkan commands. A layers is implemented as a separate
+While a Vulkan extension can add or modify Vulkan commands, a Vulkan layer only
+deals with existing Vulkan commands. A layer is implemented as a separate
 shared object or dynamically linked library. An extensions is typically
 implemented as part of the graphics driver, but an extension can also be
 implemented as part of a layer object.
@@ -11,7 +11,7 @@ implemented as part of a layer object.
 The set of layers to enable is specified when an application creates an
 instance/device. These layers are able to intercept any Vulkan command
 dispatched to that instance/device or any of its child objects.
-A layer is inserted into the call chain for Vulkan commands the layer is
+A layer is inserted into the call chain of any Vulkan commands the layer is
 interested in. Multiple layers can be active at the same time and in some
 cases the ordering of the layers is important.
 
@@ -48,7 +48,7 @@ To compile on Android use the project files in projects/android.
 
 ### Windows 
 
-Add a reference to VkLayer_<name>.json to the registry key:
+Add a reference to VkLayer_&lt;name&gt;.json to the registry key:
 
     HKEY_LOCAL_MACHINE\SOFTWARE\Khronos\Vulkan\ExplicitLayers
 
@@ -56,7 +56,7 @@ Alternatively, use the VK_LAYER_PATH environment variable to specify where the l
 
 ### Linux
 
-Place the VkLayer_<name>.json and libVkLayer_<name>.so in one of the following folders:
+Place the VkLayer_&lt;name&gt;.json and libVkLayer_&lt;name&gt;.so in one of the following folders:
 
     /usr/share/vulkan/icd.d
     /etc/vulkan/icd.d
@@ -68,7 +68,7 @@ Alternatively, use the VK_LAYER_PATH environment variable to specify where the l
 
 ### Android
 
-On Android copy the libVkLayer_<name>.so file to the application's lib folder:
+On Android copy the libVkLayer_&lt;name&gt;.so file to the application's lib folder:
 
     src/main/jniLibs/
         arm64-v8a/
@@ -82,7 +82,7 @@ Recompile the application and use the jar tool to verify that the libraries are 
 
 	jar -tf <filename>.apk
 
-Alternatively, on a device with root access, the libVkLayer_<name>.so can be placed in
+Alternatively, on a device with root access, the libVkLayer_&lt;name&gt;.so can be placed in
 
 	/data/local/debug/vulkan/
 
@@ -91,14 +91,14 @@ and does not use JSON manifest files as used by the Windows and Linux loaders.
 
 # Layer Activation
 
-To enable the layer, the name of the layer ("VK_LAYER_<COMPANY>_<name>") should be added
+To enable the layer, the name of the layer ("VK_LAYER_&lt;COMPANY&gt;_&lt;name&gt;") should be added
 to the ppEnabledLayerNames member of VkInstanceCreateInfo when creating a VkInstance,
 and the ppEnabledLayerNames member of VkDeviceCreateInfo when creating a VkDevice.
 
 ### Windows
 
 Alternatively, on Windows the layer can be enabled for all applications by adding the layer name
-("VK_LAYER_<COMPANY>_<name>") to the VK_INSTANCE_LAYERS and VK_DEVICE_LAYERS environment variables.
+("VK_LAYER_&lt;COMPANY&gt;_&lt;name&gt;") to the VK_INSTANCE_LAYERS and VK_DEVICE_LAYERS environment variables.
 
     set VK_INSTANCE_LAYERS=VK_LAYER_<COMPANY>_<name>
     set VK_DEVICE_LAYERS=VK_LAYER_<COMPANY>_<name>
@@ -111,7 +111,7 @@ Multiple layers can be enabled simultaneously by separating them with colons.
 ### Linux
 
 Alternatively, on Linux the layer can be enabled for all applications by adding the layer name
-("VK_LAYER_<COMPANY>_<name>") to the VK_INSTANCE_LAYERS and VK_DEVICE_LAYERS environment variables.
+("VK_LAYER_&lt;COMPANY&gt;_&lt;name&gt;") to the VK_INSTANCE_LAYERS and VK_DEVICE_LAYERS environment variables.
 
     export VK_INSTANCE_LAYERS=VK_LAYER_<COMPANY>_<name>
     export VK_DEVICE_LAYERS=VK_LAYER_<COMPANY>_<name>
