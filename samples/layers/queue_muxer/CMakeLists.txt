@@ -23,7 +23,7 @@ if (WIN32)
         VERBATIM)
 else()
     set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wno-unused-function" )
-    set_target_properties(VkLayer_queue_muxer PROPERTIES LINK_FLAGS "-Wl,-Bsymbolic,-Wno-unused-function")
+    set_target_properties(VkLayer_queue_muxer PROPERTIES LINK_FLAGS "-Bsymbolic")
     add_custom_command(OUTPUT VkLayer_queue_muxer.json
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/projects/linux/VkLayer_queue_muxer.json VkLayer_queue_muxer.json
         VERBATIM)
