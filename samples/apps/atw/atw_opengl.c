@@ -482,10 +482,17 @@ OpenGL compute support
 	#define GL_UNIFORM_BLOCK					0x92E2
 	#define GL_SHADER_STORAGE_BLOCK				0x92E6
 
+	#define GL_TEXTURE_FETCH_BARRIER_BIT		0x00000008
+	#define GL_SHADER_IMAGE_ACCESS_BARRIER_BIT	0x00000020
+	#define GL_FRAMEBUFFER_BARRIER_BIT			0x00000400
+	#define GL_ALL_BARRIER_BITS					0xFFFFFFFF
+
 	static GLuint glGetProgramResourceIndex( GLuint program, GLenum programInterface, const GLchar *name ) { assert( false ); return 0; }
 	static void glShaderStorageBlockBinding( GLuint program, GLuint storageBlockIndex, GLuint storageBlockBinding ) { assert( false ); }
 	static void glBindImageTexture( GLuint unit, GLuint texture, GLint level, GLboolean layered, GLint layer, GLenum access, GLenum format ) { assert( false ); }
 	static void glDispatchCompute( GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z ) { assert( false ); }
+
+	static void glMemoryBarrier( GLbitfield barriers ) { assert( false ); }
 
 #elif defined( OS_ANDROID ) && OPENGL_VERSION_MAJOR == 3 && OPENGL_VERSION_MINOR == 0
 
@@ -530,7 +537,7 @@ Multi-view support
 #define GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_BASE_VIEW_INDEX_OVR	0x9632
 #define GL_MAX_VIEWS_OVR										0x9631
 
-typedef void (GL_APIENTRY* PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint baseViewIndex, GLsizei numViews);
+typedef void (* PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint baseViewIndex, GLsizei numViews);
 #endif
 
 /*
@@ -1288,7 +1295,7 @@ static void Thread_SetAffinity( int mask )
 #elif defined( OS_MAC )
 	// OS X does not export interfaces that identify processors or control thread placement.
 	// Explicit thread to processor binding is not supported.
-	mask = mask;
+	UNUSED_PARM( mask );
 #elif defined( OS_ANDROID )
 	// Optionally use the faster cores of a heterogeneous CPU.
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
@@ -1396,19 +1403,7 @@ static void Thread_SetRealTimePriority( int priority )
 	{
 		Print( "Thread %p priority set to critical.\n", thread );
 	}
-#elif defined( OS_MAC )
-	struct sched_param sp;
-	memset( &sp, 0, sizeof( struct sched_param ) );
-	sp.sched_priority = priority;
-	if ( pthread_setschedparam( pthread_self(), SCHED_FIFO, &sp ) == -1 )
-	{
-		Print( "Failed to change thread %d priority.\n", gettid() );
-	}
-	else
-	{
-		Print( "Thread %d set to SCHED_FIFO, priority=%d\n", gettid(), priority );
-	}
-#elif defined( OS_LINUX )
+#elif defined( OS_MAC ) || defined( OS_LINUX )
 	struct sched_param sp;
 	memset( &sp, 0, sizeof( struct sched_param ) );
 	sp.sched_priority = priority;
@@ -2346,6 +2341,10 @@ static void GlInitExtensions()
 	glExtensions.buffer_storage			= ( glBufferStorage != NULL );
 	glExtensions.multi_view				= ( glFramebufferTextureMultiviewOVR != NULL );
 }
+
+#elif defined( OS_MAC )
+
+PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC		glFramebufferTextureMultiviewOVR;
 
 #elif defined( OS_ANDROID )
 
@@ -4248,7 +4247,7 @@ static bool ChangeVideoMode_XF86VidMode( Display * xDisplay, int xScreen, Window
 			const int dw = modeWidth - *desiredWidth;
 			const int dh = modeHeight - *desiredHeight;
 			const int sizeError = dw * dw + dh * dh;
-			const float refreshRateError = abs( modeRefreshRate - *desiredRefreshRate );
+			const float refreshRateError = fabs( modeRefreshRate - *desiredRefreshRate );
 			if ( sizeError < bestSizeError || ( sizeError == bestSizeError && refreshRateError < bestRefreshRateError ) )
 			{
 				bestSizeError = sizeError;
@@ -7237,7 +7236,7 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 	{
 		const GLenum colorFormat = GpuContext_InternalSurfaceColorFormat( renderPass->colorFormat );
 
-		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], colorFormat, width, height, 1, NULL, 0 );
+		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)colorFormat, width, height, 1, NULL, 0 );
 		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 
 		// Create the frame buffer.
@@ -7290,7 +7289,7 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 	{
 		const GLenum colorFormat = GpuContext_InternalSurfaceColorFormat( renderPass->colorFormat );
 
-		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], colorFormat, width, height, numLayers, 1, NULL, 0 );
+		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)colorFormat, width, height, numLayers, 1, NULL, 0 );
 		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 
 		for ( int layerIndex = 0; layerIndex < framebuffer->numFramebuffersPerTexture; layerIndex++ )
@@ -8321,7 +8320,7 @@ static void GpuProgramParmState_SetParm( GpuProgramParmState_t * parmState, cons
 		}
 		// Currently parms can be set even if they are not used by the program.
 		//assert( found );
-		found = found;
+		UNUSED_PARM( found );
 	}
 
 	parmState->parms[index] = pointer;

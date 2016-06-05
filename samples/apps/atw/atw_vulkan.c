@@ -345,9 +345,33 @@ Platform headers / declarations
 	#include "vulkan/vulkan.h"
 	#include "vulkan/vk_sdk_platform.h"
 
-	#define MOLTEN_VK
+	//#define MOLTEN_VK
 	#if defined( MOLTEN_VK )
 		#import <QuartzCore/CAMetalLayer.h>
+	#elif TARGET_OS_IPHONE
+		typedef VkFlags VkIosSurfaceCreateFlagsKHR;
+		typedef struct VkIos2SurfaceCreateInfoKHR {
+			VkStructureType				sType;
+			const void *				pNext;
+			VkIosSurfaceCreateFlagsKHR	flags;
+			NSView *					nsview;
+		} VkIosSurfaceCreateInfoKHR;
+		#define VK_KHR_IOS_SURFACE_EXTENSION_NAME				"VK_KHR_ios_surface"
+		#define VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR	1000015000
+		typedef VkResult (VKAPI_PTR *PFN_vkCreateIosSurfaceKHR)(VkInstance instance, const VkIosSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
+		#define VULKAN_LOADER									"libvulkan.dylib"
+	#else
+		typedef VkFlags VkOsxSurfaceCreateFlagsKHR;
+		typedef struct VkOsxSurfaceCreateInfoKHR {
+			VkStructureType				sType;
+			const void *				pNext;
+			VkOsxSurfaceCreateFlagsKHR	flags;
+			NSView *					nsview;
+		} VkOsxSurfaceCreateInfoKHR;
+		#define VK_KHR_OSX_SURFACE_EXTENSION_NAME				"VK_KHR_osx_surface"
+		#define VK_STRUCTURE_TYPE_OSX_SURFACE_CREATE_INFO_KHR	1000015000
+		typedef VkResult (VKAPI_PTR *PFN_vkCreateOsxSurfaceKHR)(VkInstance instance, const VkOsxSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
+		#define VULKAN_LOADER									"libvulkan.dylib"
 	#endif
 
 	#define OUTPUT_PATH		""
@@ -1222,7 +1246,7 @@ static void Thread_SetAffinity( int mask )
 #elif defined( OS_MAC )
 	// OS X does not export interfaces that identify processors or control thread placement.
 	// Explicit thread to processor binding is not supported.
-	mask = mask;
+	UNUSED_PARM( mask );
 #elif defined( OS_ANDROID )
 	// Optionally use the faster cores of a heterogeneous CPU.
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
@@ -1330,19 +1354,7 @@ static void Thread_SetRealTimePriority( int priority )
 	{
 		Print( "Thread %p priority set to critical.\n", thread );
 	}
-#elif defined( OS_MAC )
-	struct sched_param sp;
-	memset( &sp, 0, sizeof( struct sched_param ) );
-	sp.sched_priority = priority;
-	if ( pthread_setschedparam( pthread_self(), SCHED_FIFO, &sp ) == -1 )
-	{
-		Print( "Failed to change thread %d priority.\n", gettid() );
-	}
-	else
-	{
-		Print( "Thread %d set to SCHED_FIFO, priority=%d\n", gettid(), priority );
-	}
-#elif defined( OS_LINUX )
+#elif defined( OS_MAC ) || defined( OS_LINUX )
 	struct sched_param sp;
 	memset( &sp, 0, sizeof( struct sched_param ) );
 	sp.sched_priority = priority;
@@ -2304,7 +2316,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	instance->vkEnumerateInstanceLayerProperties = (PFN_vkEnumerateInstanceLayerProperties)GetProcAddress( instance->loader, "vkEnumerateInstanceLayerProperties" );
 	instance->vkEnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)GetProcAddress( instance->loader, "vkEnumerateInstanceExtensionProperties" );
 	instance->vkCreateInstance = (PFN_vkCreateInstance)GetProcAddress( instance->loader, "vkCreateInstance" );
-#elif defined( OS_LINUX ) || defined( OS_ANDROID )
+#elif defined( OS_LINUX ) || defined( OS_ANDROID ) || defined( OS_MAC )
 	instance->loader = dlopen( VULKAN_LOADER, RTLD_NOW | RTLD_LOCAL );
 	if ( instance->loader == NULL )
 	{
@@ -4704,7 +4716,7 @@ static bool ChangeVideoMode_XF86VidMode( Display * xDisplay, int xScreen, Window
 			const int dw = modeWidth - *desiredWidth;
 			const int dh = modeHeight - *desiredHeight;
 			const int sizeError = dw * dw + dh * dh;
-			const float refreshRateError = abs( modeRefreshRate - *desiredRefreshRate );
+			const float refreshRateError = fabs( modeRefreshRate - *desiredRefreshRate );
 			if ( sizeError < bestSizeError || ( sizeError == bestSizeError && refreshRateError < bestRefreshRateError ) )
 			{
 				bestSizeError = sizeError;
@@ -6858,7 +6870,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 		{
 			// Can ony generate mip levels for uncompressed textures.
 			assert( compressed == false );
-			compressed = compressed;
+			UNUSED_PARM( compressed );
 
 			// Generate mip levels for the tiled image in place.
 			for ( int mipLevel = 1; mipLevel <= numStorageLevels; mipLevel++ )
@@ -7951,7 +7963,7 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 
 	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
 	{
-		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], renderPass->internalColorFormat, width, height, 1, NULL, 0 );
+		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)renderPass->internalColorFormat, width, height, 1, NULL, 0 );
 		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 
 		VkImageView attachments[2];
@@ -8007,7 +8019,7 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 
 	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
 	{
-		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], renderPass->internalColorFormat, width, height, numLayers, 1, NULL, 0 );
+		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)renderPass->internalColorFormat, width, height, numLayers, 1, NULL, 0 );
 		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 
 		for ( int layerIndex = 0; layerIndex < numLayers; layerIndex++ )
@@ -8757,7 +8769,7 @@ static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipel
 	depthStencilStateCreateInfo.flags							= 0;
 	depthStencilStateCreateInfo.depthTestEnable					= parms->rop.depthTestEnable ? VK_TRUE : VK_FALSE;
 	depthStencilStateCreateInfo.depthWriteEnable				= parms->rop.depthWriteEnable ? VK_TRUE : VK_FALSE;
-	depthStencilStateCreateInfo.depthCompareOp					= parms->rop.depthCompare;
+	depthStencilStateCreateInfo.depthCompareOp					= (VkCompareOp)parms->rop.depthCompare;
 	depthStencilStateCreateInfo.depthBoundsTestEnable			= VK_FALSE;
 	depthStencilStateCreateInfo.stencilTestEnable				= VK_FALSE;
 	depthStencilStateCreateInfo.front.failOp					= VK_STENCIL_OP_KEEP;
@@ -8773,12 +8785,12 @@ static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipel
 
 	VkPipelineColorBlendAttachmentState colorBlendAttachementState[1];
 	colorBlendAttachementState[0].blendEnable					= parms->rop.blendEnable ? VK_TRUE : VK_FALSE;
-	colorBlendAttachementState[0].srcColorBlendFactor			= parms->rop.blendSrcColor;
-	colorBlendAttachementState[0].dstColorBlendFactor			= parms->rop.blendDstColor;
-	colorBlendAttachementState[0].colorBlendOp					= parms->rop.blendOpColor;
-	colorBlendAttachementState[0].srcAlphaBlendFactor			= parms->rop.blendSrcAlpha;
-	colorBlendAttachementState[0].dstAlphaBlendFactor			= parms->rop.blendDstAlpha;
-	colorBlendAttachementState[0].alphaBlendOp					= parms->rop.blendOpAlpha;
+	colorBlendAttachementState[0].srcColorBlendFactor			= (VkBlendFactor)parms->rop.blendSrcColor;
+	colorBlendAttachementState[0].dstColorBlendFactor			= (VkBlendFactor)parms->rop.blendDstColor;
+	colorBlendAttachementState[0].colorBlendOp					= (VkBlendOp)parms->rop.blendOpColor;
+	colorBlendAttachementState[0].srcAlphaBlendFactor			= (VkBlendFactor)parms->rop.blendSrcAlpha;
+	colorBlendAttachementState[0].dstAlphaBlendFactor			= (VkBlendFactor)parms->rop.blendDstAlpha;
+	colorBlendAttachementState[0].alphaBlendOp					= (VkBlendOp)parms->rop.blendOpAlpha;
 	colorBlendAttachementState[0].colorWriteMask				=	VK_COLOR_COMPONENT_R_BIT |
 																	VK_COLOR_COMPONENT_G_BIT |
 																	VK_COLOR_COMPONENT_B_BIT |
@@ -9053,7 +9065,7 @@ static void GpuProgramParmState_SetParm( GpuProgramParmState_t * parmState, cons
 		}
 		// Currently parms can be set even if they are not used by the program.
 		//assert( found );
-		found = found;
+		UNUSED_PARM( found );
 	}
 
 	parmState->parms[index] = pointer;
