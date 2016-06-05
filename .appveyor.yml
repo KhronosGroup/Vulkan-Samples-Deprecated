@@ -29,15 +29,15 @@ init:
 
 # scripts that run after cloning repository
 install:
-  - git clone https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers.git ..\Vulkan-LoaderAndValidationLayers
+  - git clone https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers.git ../Vulkan-LoaderAndValidationLayers
 
 build:
   parallel: true  # enable MSBuild parallel builds
   verbosity: minimal
 
 build_script:
-  - mkdir ..\\Vulkan-LoaderAndValidationLayers\\build\\layers
-  - "%PYTHON_PATH%\\python.exe ..\\Vulkan-LoaderAndValidationLayers\\vk-generate.py Win32 dispatch-table-ops layer > ..\\Vulkan-LoaderAndValidationLayers\\build\\layers\\vk_dispatch_table_helper.h
+  - mkdir ../Vulkan-LoaderAndValidationLayers/build/layers
+  - "%PYTHON_PATH%/python.exe ../Vulkan-LoaderAndValidationLayers/vk-generate.py Win32 dispatch-table-ops layer > ../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h
   - mkdir build && cd build
   - cmake ..
   - cmake --build . --config %CONFIGURATION%
