@@ -2173,7 +2173,17 @@ static bool MatchStrings( const char * str1, const char * str2 )
 	return true;
 }
 
-static VkBool32 DebugReportCallback( VkDebugReportFlagsEXT msgFlags, VkDebugReportObjectTypeEXT objType, uint64_t srcObject, size_t location,
+typedef VkBool32 (VKAPI_PTR *PFN_vkDebugReportCallbackEXT)(
+    VkDebugReportFlagsEXT                       flags,
+    VkDebugReportObjectTypeEXT                  objectType,
+    uint64_t                                    object,
+    size_t                                      location,
+    int32_t                                     messageCode,
+    const char*                                 pLayerPrefix,
+    const char*                                 pMessage,
+    void*                                       pUserData);
+
+VkBool32 DebugReportCallback( VkDebugReportFlagsEXT msgFlags, VkDebugReportObjectTypeEXT objType, uint64_t srcObject, size_t location,
 									int32_t msgCode, const char * pLayerPrefix, const char * pMsg, void * pUserData )
 {
 	UNUSED_PARM( objType );
@@ -2470,7 +2480,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 			debugReportCallbackCreateInfo.pfnCallback = DebugReportCallback;
 			debugReportCallbackCreateInfo.pUserData = NULL;
 
-			VK( instance->vkCreateDebugReportCallbackEXT( instance->instance, &debugReportCallbackCreateInfo, VK_ALLOCATOR, &instance->debugReportCallback ) );
+			VK( instance->vkCreateDebugReportCallbackEXT( instance->instance, debugReportCallbackCreateInfo, VK_ALLOCATOR, &instance->debugReportCallback ) );
 		}
 	}
 
