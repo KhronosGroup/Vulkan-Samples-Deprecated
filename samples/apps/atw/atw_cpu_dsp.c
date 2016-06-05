@@ -97,10 +97,10 @@ Microsoft Windows: Intel Compiler 14.0
 	icl /Qstd=c99 /Zc:forScope /Wall /WX /MD /GS /Gy /O2 /Oi /arch:CORE-AVX2 atw_cpu_dsp.c
 
 Apple Mac OS: Apple LLVM 6.0:
-	clang -std=c99 -march=native -Wall -g -O2 -m64 -o atw_cpu_dsp atw_cpu_dsp.c
+	clang -std=c99 -march=native -Wall -g -O2 -m64 -o atw_cpu_dsp atw_cpu_dsp.c -lm -lpthread
 
 Linux: GCC 4.8.2:
-	gcc -std=c99 -march=native -Wall -g -O2 -m64 -o atw_cpu_dsp atw_cpu_dsp.c -lm
+	gcc -std=c99 -march=native -Wall -g -O2 -m64 -o atw_cpu_dsp atw_cpu_dsp.c -lm -lpthread
 
 Android for ARM from Windows: NDK Revision 11c - Android 21
 	set path=%path%;%ANDROID_NDK_HOME%\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\
@@ -258,6 +258,59 @@ Linux x86 or x64
 
 // prototype is only included when __USE_GNU is defined but that causes other compile errors
 extern int pthread_setname_np( pthread_t __target_thread, __const char *__name );
+
+#elif defined( OS_MAC )
+
+/*
+================================
+Mac OS X
+================================
+
+*/
+
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wunused-const-variable"
+#pragma clang diagnostic ignored "-Wself-assign"
+#endif
+
+#include <stdio.h>					// for printf()
+#include <stdint.h>					// for uint32_t etc.
+#include <stdbool.h>				// for bool
+#include <assert.h>					// for assert()
+#include <math.h>					// for tanf()
+#include <string.h>					// for memset()
+#include <errno.h>					// for EBUSY, ETIMEDOUT etc.
+#include <ctype.h>					// for isspace() and isdigit()
+#include <sys/time.h>				// for gettimeofday()
+#include <pthread.h>				// for pthread_create() etc.
+#include <x86intrin.h>				// for SSE intrinsics
+
+#if 0	// using the hardware prefetcher works well
+#define CACHE_LINE_SIZE				64
+#define PrefetchLinear( a, b )		for ( int o = 0; o < (b); o += CACHE_LINE_SIZE ) \
+									{ \
+										_mm_prefetch( (const char *) (a) + (o), _MM_HINT_NTA ); \
+									}
+#define PrefetchBox( a, w, h, s )	for ( int r = 0; r < (h); r++ ) \
+									{ \
+										for ( int o = 0; o < (w); o += CACHE_LINE_SIZE ) \
+										{ \
+											_mm_prefetch( (const char *) (a) + r * (s) + (o), _MM_HINT_NTA ); \
+										} \
+									}
+#define ZeroCacheLinear( a, b )		do {} while( (a) && (b) && 0 )
+#define ZeroCacheBox( a, w, h, s )	do {} while( (a) && (w) && (h) && (s) && 0 )
+#define FlushCacheLinear( a, b )	do {} while( (a) && (b) && 0 )
+#define FlushCacheBox( a, w, h, s )	do {} while( (a) && (w) && (h) && (s) && 0 )
+#endif
+
+#define INLINE						__inline
+#define Print(...)					printf( __VA_ARGS__ )
+
+// To test one of these exclusively make sure to also set the appropriate compiler option: /arch:SSE2, /arch:SSE4.1, /arch:CORE-AVX2
+#define __USE_SSE2__
+#define __USE_SSE4__				// SSE4 is only needed for _mm_extract_epi32() and _mm_insert_epi32(), otherwise SSSE3 would suffice
+#define __USE_AVX2__
 
 #elif defined( OS_ANDROID )
 
