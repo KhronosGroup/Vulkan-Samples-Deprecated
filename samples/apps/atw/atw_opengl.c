@@ -4248,7 +4248,7 @@ static bool ChangeVideoMode_XF86VidMode( Display * xDisplay, int xScreen, Window
 			const int dw = modeWidth - *desiredWidth;
 			const int dh = modeHeight - *desiredHeight;
 			const int sizeError = dw * dw + dh * dh;
-			const float refreshRateError = abs( modeRefreshRate - *desiredRefreshRate );
+			const float refreshRateError = fabs( modeRefreshRate - *desiredRefreshRate );
 			if ( sizeError < bestSizeError || ( sizeError == bestSizeError && refreshRateError < bestRefreshRateError ) )
 			{
 				bestSizeError = sizeError;
@@ -7237,7 +7237,7 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 	{
 		const GLenum colorFormat = GpuContext_InternalSurfaceColorFormat( renderPass->colorFormat );
 
-		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], colorFormat, width, height, 1, NULL, 0 );
+		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)colorFormat, width, height, 1, NULL, 0 );
 		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 
 		// Create the frame buffer.
@@ -7290,7 +7290,7 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 	{
 		const GLenum colorFormat = GpuContext_InternalSurfaceColorFormat( renderPass->colorFormat );
 
-		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], colorFormat, width, height, numLayers, 1, NULL, 0 );
+		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)colorFormat, width, height, numLayers, 1, NULL, 0 );
 		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 
 		for ( int layerIndex = 0; layerIndex < framebuffer->numFramebuffersPerTexture; layerIndex++ )
@@ -8321,7 +8321,7 @@ static void GpuProgramParmState_SetParm( GpuProgramParmState_t * parmState, cons
 		}
 		// Currently parms can be set even if they are not used by the program.
 		//assert( found );
-		found = found;
+		UNUSED_PARM( found );
 	}
 
 	parmState->parms[index] = pointer;

@@ -4704,7 +4704,7 @@ static bool ChangeVideoMode_XF86VidMode( Display * xDisplay, int xScreen, Window
 			const int dw = modeWidth - *desiredWidth;
 			const int dh = modeHeight - *desiredHeight;
 			const int sizeError = dw * dw + dh * dh;
-			const float refreshRateError = abs( modeRefreshRate - *desiredRefreshRate );
+			const float refreshRateError = fabs( modeRefreshRate - *desiredRefreshRate );
 			if ( sizeError < bestSizeError || ( sizeError == bestSizeError && refreshRateError < bestRefreshRateError ) )
 			{
 				bestSizeError = sizeError;
@@ -6858,7 +6858,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 		{
 			// Can ony generate mip levels for uncompressed textures.
 			assert( compressed == false );
-			compressed = compressed;
+			UNUSED_PARM( compressed );
 
 			// Generate mip levels for the tiled image in place.
 			for ( int mipLevel = 1; mipLevel <= numStorageLevels; mipLevel++ )
@@ -7951,7 +7951,7 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 
 	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
 	{
-		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], renderPass->internalColorFormat, width, height, 1, NULL, 0 );
+		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)renderPass->internalColorFormat, width, height, 1, NULL, 0 );
 		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 
 		VkImageView attachments[2];
@@ -8007,7 +8007,7 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 
 	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
 	{
-		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], renderPass->internalColorFormat, width, height, numLayers, 1, NULL, 0 );
+		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)renderPass->internalColorFormat, width, height, numLayers, 1, NULL, 0 );
 		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 
 		for ( int layerIndex = 0; layerIndex < numLayers; layerIndex++ )
@@ -8757,7 +8757,7 @@ static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipel
 	depthStencilStateCreateInfo.flags							= 0;
 	depthStencilStateCreateInfo.depthTestEnable					= parms->rop.depthTestEnable ? VK_TRUE : VK_FALSE;
 	depthStencilStateCreateInfo.depthWriteEnable				= parms->rop.depthWriteEnable ? VK_TRUE : VK_FALSE;
-	depthStencilStateCreateInfo.depthCompareOp					= parms->rop.depthCompare;
+	depthStencilStateCreateInfo.depthCompareOp					= (VkCompareOp)parms->rop.depthCompare;
 	depthStencilStateCreateInfo.depthBoundsTestEnable			= VK_FALSE;
 	depthStencilStateCreateInfo.stencilTestEnable				= VK_FALSE;
 	depthStencilStateCreateInfo.front.failOp					= VK_STENCIL_OP_KEEP;
@@ -8773,12 +8773,12 @@ static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipel
 
 	VkPipelineColorBlendAttachmentState colorBlendAttachementState[1];
 	colorBlendAttachementState[0].blendEnable					= parms->rop.blendEnable ? VK_TRUE : VK_FALSE;
-	colorBlendAttachementState[0].srcColorBlendFactor			= parms->rop.blendSrcColor;
-	colorBlendAttachementState[0].dstColorBlendFactor			= parms->rop.blendDstColor;
-	colorBlendAttachementState[0].colorBlendOp					= parms->rop.blendOpColor;
-	colorBlendAttachementState[0].srcAlphaBlendFactor			= parms->rop.blendSrcAlpha;
-	colorBlendAttachementState[0].dstAlphaBlendFactor			= parms->rop.blendDstAlpha;
-	colorBlendAttachementState[0].alphaBlendOp					= parms->rop.blendOpAlpha;
+	colorBlendAttachementState[0].srcColorBlendFactor			= (VkBlendFactor)parms->rop.blendSrcColor;
+	colorBlendAttachementState[0].dstColorBlendFactor			= (VkBlendFactor)parms->rop.blendDstColor;
+	colorBlendAttachementState[0].colorBlendOp					= (VkBlendOp)parms->rop.blendOpColor;
+	colorBlendAttachementState[0].srcAlphaBlendFactor			= (VkBlendFactor)parms->rop.blendSrcAlpha;
+	colorBlendAttachementState[0].dstAlphaBlendFactor			= (VkBlendFactor)parms->rop.blendDstAlpha;
+	colorBlendAttachementState[0].alphaBlendOp					= (VkBlendOp)parms->rop.blendOpAlpha;
 	colorBlendAttachementState[0].colorWriteMask				=	VK_COLOR_COMPONENT_R_BIT |
 																	VK_COLOR_COMPONENT_G_BIT |
 																	VK_COLOR_COMPONENT_B_BIT |
@@ -9053,7 +9053,7 @@ static void GpuProgramParmState_SetParm( GpuProgramParmState_t * parmState, cons
 		}
 		// Currently parms can be set even if they are not used by the program.
 		//assert( found );
-		found = found;
+		UNUSED_PARM( found );
 	}
 
 	parmState->parms[index] = pointer;
