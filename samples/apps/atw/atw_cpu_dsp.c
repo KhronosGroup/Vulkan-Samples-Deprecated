@@ -282,6 +282,8 @@ Mac OS X
 #include <errno.h>					// for EBUSY, ETIMEDOUT etc.
 #include <ctype.h>					// for isspace() and isdigit()
 #include <sys/time.h>				// for gettimeofday()
+#include <sys/types.h>
+#include <sys/sysctl.h>
 #include <pthread.h>				// for pthread_create() etc.
 #include <x86intrin.h>				// for SSE intrinsics
 
@@ -6337,7 +6339,7 @@ static void Thread_SetAffinity( int mask )
 #elif defined( OS_MAC )
 	// OS X does not export interfaces that identify processors or control thread placement.
 	// Explicit thread to processor binding is not supported.
-	mask = mask;
+	UNUSED_PARM( mask );
 #elif defined( OS_ANDROID )
 	// Optionally use the faster cores of a heterogeneous CPU.
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
@@ -6445,19 +6447,7 @@ static void Thread_SetRealTimePriority( int priority )
 	{
 		Print( "Thread %p priority set to critical.\n", thread );
 	}
-#elif defined( OS_MAC )
-	struct sched_param sp;
-	memset( &sp, 0, sizeof( struct sched_param ) );
-	sp.sched_priority = priority;
-	if ( pthread_setschedparam( pthread_self(), SCHED_FIFO, &sp ) == -1 )
-	{
-		Print( "Failed to change thread %d priority.\n", gettid() );
-	}
-	else
-	{
-		Print( "Thread %d set to SCHED_FIFO, priority=%d\n", gettid(), priority );
-	}
-#elif defined( OS_LINUX )
+#elif defined( OS_MAC ) || defined( OS_LINUX )
 	struct sched_param sp;
 	memset( &sp, 0, sizeof( struct sched_param ) );
 	sp.sched_priority = priority;

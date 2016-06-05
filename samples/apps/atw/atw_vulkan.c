@@ -348,6 +348,28 @@ Platform headers / declarations
 	//#define MOLTEN_VK
 	#if defined( MOLTEN_VK )
 		#import <QuartzCore/CAMetalLayer.h>
+	#elif TARGET_OS_IPHONE
+		typedef VkFlags VkIosSurfaceCreateFlagsKHR;
+		typedef struct VkIos2SurfaceCreateInfoKHR {
+			VkStructureType				sType;
+			const void *				pNext;
+			VkIosSurfaceCreateFlagsKHR	flags;
+			NSView *					nsView;
+		} VkIosSurfaceCreateInfoKHR;
+		#define VK_KHR_IOS_SURFACE_EXTENSION_NAME				"VK_KHR_ios_surface"
+		#define VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR	1000015000
+		typedef VkResult (VKAPI_PTR *PFN_vkCreateIosSurfaceKHR)(VkInstance instance, const VkIosSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
+	#else
+		typedef VkFlags VkOsxSurfaceCreateFlagsKHR;
+		typedef struct VkOsxSurfaceCreateInfoKHR {
+			VkStructureType				sType;
+			const void *				pNext;
+			VkOsxSurfaceCreateFlagsKHR	flags;
+			NSView *					nsView;
+		} VkOsxSurfaceCreateInfoKHR;
+		#define VK_KHR_IOS_SURFACE_EXTENSION_NAME				"VK_KHR_osx_surface"
+		#define VK_STRUCTURE_TYPE_OSX_SURFACE_CREATE_INFO_KHR	1000015000
+		typedef VkResult (VKAPI_PTR *PFN_vkCreateOsxSurfaceKHR)(VkInstance instance, const VkOsXSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
 	#endif
 
 	#define OUTPUT_PATH		""
@@ -1222,7 +1244,7 @@ static void Thread_SetAffinity( int mask )
 #elif defined( OS_MAC )
 	// OS X does not export interfaces that identify processors or control thread placement.
 	// Explicit thread to processor binding is not supported.
-	mask = mask;
+	UNUSED_PARM( mask );
 #elif defined( OS_ANDROID )
 	// Optionally use the faster cores of a heterogeneous CPU.
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
@@ -1330,19 +1352,7 @@ static void Thread_SetRealTimePriority( int priority )
 	{
 		Print( "Thread %p priority set to critical.\n", thread );
 	}
-#elif defined( OS_MAC )
-	struct sched_param sp;
-	memset( &sp, 0, sizeof( struct sched_param ) );
-	sp.sched_priority = priority;
-	if ( pthread_setschedparam( pthread_self(), SCHED_FIFO, &sp ) == -1 )
-	{
-		Print( "Failed to change thread %d priority.\n", gettid() );
-	}
-	else
-	{
-		Print( "Thread %d set to SCHED_FIFO, priority=%d\n", gettid(), priority );
-	}
-#elif defined( OS_LINUX )
+#elif defined( OS_MAC ) || defined( OS_LINUX )
 	struct sched_param sp;
 	memset( &sp, 0, sizeof( struct sched_param ) );
 	sp.sched_priority = priority;
