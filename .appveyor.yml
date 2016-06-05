@@ -36,7 +36,7 @@ build:
   verbosity: minimal
 
 build_script:
-  - mkdir ../Vulkan-LoaderAndValidationLayers/build/layers
+  - mkdir ..\\Vulkan-LoaderAndValidationLayers\\build\\layers
   - "%PYTHON_PATH%/python.exe ../Vulkan-LoaderAndValidationLayers/vk-generate.py Win32 dispatch-table-ops layer > ../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h"
   - mkdir build && cd build
   - cmake ..
