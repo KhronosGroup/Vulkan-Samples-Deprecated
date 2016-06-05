@@ -65,9 +65,10 @@ before_script:
   - git clone https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers.git ../Vulkan-LoaderAndValidationLayers
 
 script:
-  - mkdir ..\\Vulkan-LoaderAndValidationLayers\\build\\layers
-  - python ../Vulkan-LoaderAndValidationLayers/vk-generate.py Xcb dispatch-table-ops layer > ..\\Vulkan-LoaderAndValidationLayers\\build\\layers\\vk_dispatch_table_helper.h
-  - cp ..\\Vulkan-LoaderAndValidationLayers\\build\\layers\\vk_dispatch_table_helper.h samples\\layers\\queue_muxer\\vk_dispatch_table_helper.h
+  - mkdir "../Vulkan-LoaderAndValidationLayers/build/layers"
+  - python ../Vulkan-LoaderAndValidationLayers/vk-generate.py Xcb dispatch-table-ops layer > "../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h"
+  - cp ../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h samples/layers/queue_muxer/vk_dispatch_table_helper.h
+  - ls -slaF .
   - ls -slaF samples/layers/queue_muxer/
   - mkdir build && cd build
   - cmake -GNinja -DCMAKE_BUILD_TYPE=${VULKAN_SAMPLES_BUILD_TYPE:-Debug} -DENABLE_CODE_COVERAGE=${VULKAN_SAMPLES_CODE_COVERAGE:-OFF} ..
