@@ -2,7 +2,7 @@
 if( WIN32 )
     set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Zc:wchar_t /Zc:forScope /Wall /WX" )
 elseif( APPLE )
-    set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -march=core-avx2 -x objective-c -fno-objc-arc -Wall -Wno-unused-function -Wno-unused-const-variable" )
+    set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -march=core-avx2 -Wall -Wno-unused-function -Wno-unused-const-variable" )
 else()
     set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -march=core-avx2 -Wall -Wno-unused-function -Wno-unused-const-variable" )
 endif()
