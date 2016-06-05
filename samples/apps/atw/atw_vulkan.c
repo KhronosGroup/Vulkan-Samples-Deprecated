@@ -2477,10 +2477,10 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 			debugReportCallbackCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
 			debugReportCallbackCreateInfo.pNext = NULL;
 			debugReportCallbackCreateInfo.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT;
-			debugReportCallbackCreateInfo.pfnCallback = DebugReportCallback;
+			debugReportCallbackCreateInfo.pfnCallback = (PFN_vkDebugReportCallbackEXT)DebugReportCallback;
 			debugReportCallbackCreateInfo.pUserData = NULL;
 
-			VK( instance->vkCreateDebugReportCallbackEXT( instance->instance, debugReportCallbackCreateInfo, VK_ALLOCATOR, &instance->debugReportCallback ) );
+			VK( instance->vkCreateDebugReportCallbackEXT( instance->instance, &debugReportCallbackCreateInfo, VK_ALLOCATOR, &instance->debugReportCallback ) );
 		}
 	}
 
