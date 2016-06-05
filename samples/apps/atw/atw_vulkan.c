@@ -345,7 +345,7 @@ Platform headers / declarations
 	#include "vulkan/vulkan.h"
 	#include "vulkan/vk_sdk_platform.h"
 
-	#define MOLTEN_VK
+	//#define MOLTEN_VK
 	#if defined( MOLTEN_VK )
 		#import <QuartzCore/CAMetalLayer.h>
 	#endif
