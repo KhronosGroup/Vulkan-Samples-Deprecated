@@ -1,0 +1,54 @@
+# Windows Build Configuration for AppVeyor
+# http://www.appveyor.com/docs/appveyor-yml
+
+# build version format
+version: "{build}"
+
+os: Visual Studio 2013
+
+platform:
+  - x64
+
+environment:
+  PYTHON_PATH: "C:/Python27"
+  PYTHON_PACKAGE_PATH: "C:/Python27/Scripts"
+
+configuration:
+  - Debug
+  - Release
+
+branches:
+  only:
+    - master
+
+# scripts that are called at very beginning, before repo cloning
+init:
+  - ps: (new-object net.webclient).DownloadFile('https://bootstrap.pypa.io/get-pip.py', 'C:/get-pip.py')
+  - "%PYTHON_PATH%/python.exe C:/get-pip.py"
+  - "%PYTHON_PACKAGE_PATH%/pip.exe install nose"
+
+# scripts that run after cloning repository
+install:
+  - git clone https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers.git ..\Vulkan-LoaderAndValidationLayers
+
+build:
+  parallel: true  # enable MSBuild parallel builds
+  verbosity: minimal
+
+build_script:
+  - mkdir ..\Vulkan-LoaderAndValidationLayers\build\layers
+  - "%PYTHON_PATH%\python.exe ..\Vulkan-LoaderAndValidationLayers\vk-generate.py Win32 dispatch-table-ops layer > ..\Vulkan-LoaderAndValidationLayers\build\layers\vk_dispatch_table_helper.h
+  - mkdir build\win64 && cd build\win64
+  - cmake -G "Visual Studio 12 Win64" ..\..
+  - cmake --build . --config %CONFIGURATION%
+
+test_script:
+
+notifications:
+  - provider: Email
+    to:
+      - mrelusive@oculus.com
+    subject: 'Vulkan-Samples Windows Build #{{buildVersion}}: {{status}}'
+    on_build_success: false
+    on_build_failure: true
+    on_build_status_changed: true
