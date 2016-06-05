@@ -361,7 +361,6 @@ Platform headers / declarations
 	#include <OpenGL/gl3ext.h>
 
 	#define OUTPUT_PATH				""
-	#define GL_APIENTRY				GLAPIENTRY
 
 	// Undocumented CGS and CGL
 	typedef void * CGSConnectionID;
@@ -483,10 +482,17 @@ OpenGL compute support
 	#define GL_UNIFORM_BLOCK					0x92E2
 	#define GL_SHADER_STORAGE_BLOCK				0x92E6
 
+	#define GL_TEXTURE_FETCH_BARRIER_BIT		0x00000008
+	#define GL_SHADER_IMAGE_ACCESS_BARRIER_BIT	0x00000020
+	#define GL_FRAMEBUFFER_BARRIER_BIT			0x00000400
+	#define GL_ALL_BARRIER_BITS					0xFFFFFFFF
+
 	static GLuint glGetProgramResourceIndex( GLuint program, GLenum programInterface, const GLchar *name ) { assert( false ); return 0; }
 	static void glShaderStorageBlockBinding( GLuint program, GLuint storageBlockIndex, GLuint storageBlockBinding ) { assert( false ); }
 	static void glBindImageTexture( GLuint unit, GLuint texture, GLint level, GLboolean layered, GLint layer, GLenum access, GLenum format ) { assert( false ); }
 	static void glDispatchCompute( GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z ) { assert( false ); }
+
+	static void glMemoryBarrier( GLbitfield barriers ) { assert( false ); }
 
 #elif defined( OS_ANDROID ) && OPENGL_VERSION_MAJOR == 3 && OPENGL_VERSION_MINOR == 0
 
@@ -531,7 +537,7 @@ Multi-view support
 #define GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_BASE_VIEW_INDEX_OVR	0x9632
 #define GL_MAX_VIEWS_OVR										0x9631
 
-typedef void (GL_APIENTRY* PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint baseViewIndex, GLsizei numViews);
+typedef void (* PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint baseViewIndex, GLsizei numViews);
 #endif
 
 /*
