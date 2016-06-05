@@ -2342,6 +2342,10 @@ static void GlInitExtensions()
 	glExtensions.multi_view				= ( glFramebufferTextureMultiviewOVR != NULL );
 }
 
+#elif defined( OS_MAC )
+
+PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC		glFramebufferTextureMultiviewOVR;
+
 #elif defined( OS_ANDROID )
 
 // GL_EXT_disjoint_timer_query without _EXT
