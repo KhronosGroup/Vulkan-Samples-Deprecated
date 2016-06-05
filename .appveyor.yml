@@ -36,10 +36,10 @@ build:
   verbosity: minimal
 
 build_script:
-  - mkdir ..\Vulkan-LoaderAndValidationLayers\build\layers
-  - "%PYTHON_PATH%\python.exe ..\Vulkan-LoaderAndValidationLayers\vk-generate.py Win32 dispatch-table-ops layer > ..\Vulkan-LoaderAndValidationLayers\build\layers\vk_dispatch_table_helper.h
-  - mkdir build\win64 && cd build\win64
-  - cmake -G "Visual Studio 12 Win64" ..\..
+  - mkdir ..\\Vulkan-LoaderAndValidationLayers\\build\\layers
+  - "%PYTHON_PATH%\python.exe ..\\Vulkan-LoaderAndValidationLayers\\vk-generate.py Win32 dispatch-table-ops layer > ..\\Vulkan-LoaderAndValidationLayers\\build\\layers\\vk_dispatch_table_helper.h
+  - mkdir build\\win64 && cd build\\win64
+  - cmake -G "Visual Studio 12 Win64" ..\\..
   - cmake --build . --config %CONFIGURATION%
 
 test_script:
