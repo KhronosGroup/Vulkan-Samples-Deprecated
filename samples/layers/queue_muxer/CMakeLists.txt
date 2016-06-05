@@ -16,13 +16,19 @@ add_library(VkLayer_queue_muxer SHARED queue_muxer.cpp VkLayer_queue_muxer.json)
 set_target_properties(VkLayer_queue_muxer PROPERTIES CXX_FLAGS "")
 
 if (WIN32)
-    set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Wall /WX" )
-    set_target_properties(VkLayer_queue_muxer PROPERTIES LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/projects/windows/VkLayer_queue_muxer.def")
-    add_custom_command(OUTPUT VkLayer_queue_muxer.json
+	target_compile_options( VkLayer_queue_muxer PRIVATE /arch:AVX /Zc:wchar_t /Zc:forScope /Wall /WX )
+    set_target_properties( VkLayer_queue_muxer PROPERTIES LINK_FLAGS "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/projects/windows/VkLayer_queue_muxer.def" )
+    add_custom_command( OUTPUT VkLayer_queue_muxer.json
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/projects/windows/VkLayer_queue_muxer.json $<CONFIGURATION>/VkLayer_queue_muxer.json
+        VERBATIM )
+elseif()
+	target_compile_options( VkLayer_queue_muxer PRIVATE -std=c++11 -Wall -Wno-unused-function )
+    set_target_properties(VkLayer_queue_muxer PROPERTIES LINK_FLAGS "-Bsymbolic")
+    add_custom_command(OUTPUT VkLayer_queue_muxer.json
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/projects/linux/VkLayer_queue_muxer.json VkLayer_queue_muxer.json
         VERBATIM)
 else()
-    set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wno-unused-function" )
+	target_compile_options( VkLayer_queue_muxer PRIVATE -std=c++11 -Wall -Wno-unused-function )
     set_target_properties(VkLayer_queue_muxer PROPERTIES LINK_FLAGS "-Bsymbolic")
     add_custom_command(OUTPUT VkLayer_queue_muxer.json
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/projects/linux/VkLayer_queue_muxer.json VkLayer_queue_muxer.json

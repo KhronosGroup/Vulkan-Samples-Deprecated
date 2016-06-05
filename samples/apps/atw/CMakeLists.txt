@@ -1,10 +1,12 @@
 
+message(STATUS "Cflags: ${CMAKE_C_FLAGS}")
+
 if( WIN32 )
     add_executable( atw_cpu_dsp atw_cpu_dsp.c )
 	target_compile_options( atw_cpu_dsp PRIVATE /arch:AVX /Zc:wchar_t /Zc:forScope /Wall /WX )
 elseif( APPLE )
     add_executable( atw_cpu_dsp atw_cpu_dsp.c )
-	target_compile_options( atw_cpu_dsp PRIVATE -std=c99 -march=core-avx2 -x objective-c -fno-objc-arc -Wall -Wno-unused-function -Wno-unused-const-variable )
+	target_compile_options( atw_cpu_dsp PRIVATE -std=c99 -march=core-avx2 -Wall -Wno-unused-function -Wno-unused-const-variable )
     target_link_libraries( atw_cpu_dsp m pthread )
 else()
     add_executable( atw_cpu_dsp atw_cpu_dsp.c )

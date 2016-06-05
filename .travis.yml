@@ -62,7 +62,7 @@ install:
     fi
 
 before_script:
-  - git clone https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers.git ../Vulkan-LoaderAndValidationLayers
+  - git clone https://github.com/mre4ce/Vulkan-LoaderAndValidationLayers.git ../Vulkan-LoaderAndValidationLayers
 
 script:
   - mkdir "../Vulkan-LoaderAndValidationLayers/build"
