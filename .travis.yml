@@ -66,7 +66,7 @@ before_script:
 
 script:
   - mkdir ..\Vulkan-LoaderAndValidationLayers\build\layers
-  - python ../Vulkan-LoaderAndValidationLayers/vk-generate.py Xcb dispatch-table-ops layer > ..\Vulkan-LoaderAndValidationLayers\build\layers\vk_dispatch_table_helper.h
+  - python ../Vulkan-LoaderAndValidationLayers/vk-generate.py Xcb dispatch-table-ops layer > ..\\Vulkan-LoaderAndValidationLayers\\build\\layers\\vk_dispatch_table_helper.h
   - mkdir build && cd build
   - cmake -GNinja -DCMAKE_BUILD_TYPE=${VULKAN_SAMPLES_BUILD_TYPE:-Debug} -DENABLE_CODE_COVERAGE=${VULKAN_SAMPLES_CODE_COVERAGE:-OFF} ..
   - ninja
