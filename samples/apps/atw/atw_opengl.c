@@ -361,6 +361,7 @@ Platform headers / declarations
 	#include <OpenGL/gl3ext.h>
 
 	#define OUTPUT_PATH				""
+	#define GL_APIENTRY				GLAPIENTRY
 
 	// Undocumented CGS and CGL
 	typedef void * CGSConnectionID;

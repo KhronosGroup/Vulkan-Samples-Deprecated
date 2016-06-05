@@ -354,7 +354,7 @@ Platform headers / declarations
 			VkStructureType				sType;
 			const void *				pNext;
 			VkIosSurfaceCreateFlagsKHR	flags;
-			NSView *					nsView;
+			NSView *					nsview;
 		} VkIosSurfaceCreateInfoKHR;
 		#define VK_KHR_IOS_SURFACE_EXTENSION_NAME				"VK_KHR_ios_surface"
 		#define VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR	1000015000
@@ -365,11 +365,11 @@ Platform headers / declarations
 			VkStructureType				sType;
 			const void *				pNext;
 			VkOsxSurfaceCreateFlagsKHR	flags;
-			NSView *					nsView;
+			NSView *					nsview;
 		} VkOsxSurfaceCreateInfoKHR;
-		#define VK_KHR_IOS_SURFACE_EXTENSION_NAME				"VK_KHR_osx_surface"
+		#define VK_KHR_OSX_SURFACE_EXTENSION_NAME				"VK_KHR_osx_surface"
 		#define VK_STRUCTURE_TYPE_OSX_SURFACE_CREATE_INFO_KHR	1000015000
-		typedef VkResult (VKAPI_PTR *PFN_vkCreateOsxSurfaceKHR)(VkInstance instance, const VkOsXSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
+		typedef VkResult (VKAPI_PTR *PFN_vkCreateOsxSurfaceKHR)(VkInstance instance, const VkOsxSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
 	#endif
 
 	#define OUTPUT_PATH		""
