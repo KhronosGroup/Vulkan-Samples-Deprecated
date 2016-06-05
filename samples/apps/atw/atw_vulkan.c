@@ -6809,7 +6809,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 					void * mapped;
 					VK( context->device->vkMapMemory( context->device->device, linearMemory[imageIndex], 0, memoryRequirements.size, 0, &mapped ) );
 
-					const size_t copyBytes = ( (VkDeviceSize) dataRowSize < layout.rowPitch ) ? dataRowSize : layout.rowPitch;
+					const size_t copyBytes = (size_t)( ( (VkDeviceSize) dataRowSize < layout.rowPitch ) ? (VkDeviceSize) dataRowSize : layout.rowPitch );
 					for ( int y = 0; y < dataRowCount; y++ )
 					{
 						memcpy( (char *)mapped + layout.offset + y * layout.rowPitch,
