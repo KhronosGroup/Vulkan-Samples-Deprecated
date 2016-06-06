@@ -8,6 +8,16 @@ shared object or dynamically linked library. An extensions is typically
 implemented as part of the graphics driver, but an extension can also be
 implemented as part of a layer object.
 
+Layers are typically used for validation. To avoid driver overhead,
+implementations of the Vulkan API perform minimal to no validation.
+Incorrect use of the API will often result in a crash. Validation
+layers can be used during development to make sure the Vulkan API
+is used correctly. Khronos provides a set of validation layers here:
+[Vulkan-LoaderAndValidationLayers](https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers).
+Layers can also be used to privide performance telemetry and analysis.
+In other cases, a layer can be used to make an instance or device appear
+differently to an application.
+
 The set of layers to enable is specified when an application creates an
 instance/device. These layers are able to intercept any Vulkan command
 dispatched to that instance/device or any of its child objects.
@@ -15,22 +25,19 @@ A layer is inserted into the call chain of any Vulkan commands the layer is
 interested in. Multiple layers can be active at the same time and in some
 cases the ordering of the layers is important.
 
-Layers are typically used for validation. To avoid driver overhead,
-implementations of the Vulkan API perform minimal to no validation.
-Incorrect use of the API will often result in a crash. Validation
-layers can be used during development to make sure the Vulkan API
-is used correctly. Khronos provides a set of validation layers here:
-[Vulkan-LoaderAndValidationLayers](https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers)
-
-Layers can also be used to privide performance telemetry and analysis.
-In other cases, a layer can be used to make an instance or device appear
-differently to an application.
-
 # Layer Compilation
 
 Either the [Vulkan SDK](https://lunarg.com/vulkan-sdk/) or a collocated
 [Vulkan-LoaderAndValidationLayers](https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers)
 repository right next to the Vulkan-Samples repository is needed.
+When using a collocated [Vulkan-LoaderAndValidationLayers](https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers)
+repository, the paths will look as follows:
+
+    <path>/Vulkan-Samples/
+    <path>/Vulkan-LoaderAndValidationLayers/
+
+On Windows make sure that the &lt;path&gt; is no more than one folder deep to
+avoid running into maximum path depth compilation issues.
 
 ### Windows
 
@@ -56,7 +63,7 @@ Alternatively, use the VK_LAYER_PATH environment variable to specify where the l
 
 ### Linux
 
-Place the VkLayer_&lt;name&gt;.json and libVkLayer_&lt;name&gt;.so in one of the following folders:
+Place the VkLayer_&lt;name&gt;.json and libVkLayer_&lt;name&gt; .so in one of the following folders:
 
     /usr/share/vulkan/icd.d
     /etc/vulkan/icd.d
@@ -68,7 +75,7 @@ Alternatively, use the VK_LAYER_PATH environment variable to specify where the l
 
 ### Android
 
-On Android copy the libVkLayer_&lt;name&gt;.so file to the application's lib folder:
+On Android copy the libVkLayer_&lt;name&gt; .so file to the application's lib folder:
 
     src/main/jniLibs/
         arm64-v8a/
@@ -82,7 +89,26 @@ Recompile the application and use the jar tool to verify that the libraries are 
 
 	jar -tf <filename>.apk
 
-Alternatively, on a device with root access, the libVkLayer_&lt;name&gt;.so can be placed in
+The output of the jar tool would look similar to the following:
+
+    > jar -tf atw_vulkan-all-debug.apk
+    AndroidManifest.xml
+    classes.dex
+    lib/arm64-v8a/libatw_vulkan.so
+    lib/arm64-v8a/libVkLayer_queue_muxer.so
+    lib/armeabi-v7a/libatw_vulkan.so
+    lib/armeabi-v7a/libVkLayer_queue_muxer.so
+    lib/x86/libatw_vulkan.so
+    lib/x86/libVkLayer_queue_muxer.so
+    lib/x86_64/libatw_vulkan.so
+    lib/x86_64/libVkLayer_queue_muxer.so
+    META-INF/MANIFEST.MF
+    META-INF/CERT.SF
+    META-INF/CERT.RSA
+
+Notice how the libVkLayer_queue_muxer.so is right next to the libatw_vulkan.so in the APK.
+
+Alternatively, on a device with root access, the libVkLayer_&lt;name&gt; .so can be placed in
 
 	/data/local/debug/vulkan/
 
@@ -124,7 +150,7 @@ Multiple layers can be enabled simultaneously by separating them with colons.
 ### Android
 
 Alternatively on Android the layer can be enabled for all applications using
-the debug.vulkan.layers system property:
+the <i>debug.vulkan.layers</i> system property:
 
 	adb shell setprop debug.vulkan.layers VK_LAYER_<COMPANY>_<name>
 

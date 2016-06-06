@@ -6,7 +6,7 @@ These samples are useful to get started with, and learn about the Vulkan graphic
 
 | Platform | Build Status |
 |:--------:|:------------:|
-| Windows  | [![Windows Build status](https://ci.appveyor.com/api/projects/status/ker3vseqifys5u6d?svg=true)](https://ci.appveyor.com/project/Khronoswebmaster/Vulkan-Samples "Windows Build Status") |
+| Windows  | [![Windows Build status](https://ci.appveyor.com/api/projects/status/1ovlt9893m1aa7s8?svg=true)](https://ci.appveyor.com/project/Khronoswebmaster/Vulkan-Samples "Windows Build Status") |
 | Mac OS X | [![Mac Build Status](https://travis-ci.org/KhronosGroup/Vulkan-Samples.svg)](https://travis-ci.org/KhronosGroup/Vulkan-Samples "Mac Build Status") |
 | Linux    | [![Linux Build Status](https://travis-ci.org/KhronosGroup/Vulkan-Samples.svg)](https://travis-ci.org/KhronosGroup/Vulkan-Samples "Linux Build Status") |
 | Android  | Not Automated |
