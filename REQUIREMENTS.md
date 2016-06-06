@@ -45,5 +45,5 @@ Android M or earlier.
 
 Android N or later.
 
-- Android NDK Revision 12 beta1 or later (from https://github.com/android-ndk/ndk/wiki).
+- Android NDK Revision 12 beta 2 or later (from https://github.com/android-ndk/ndk/wiki).
 - Read the Android Vulkan guides for more details (from http://developer.android.com/ndk/guides/graphics/index.html).
