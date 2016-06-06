@@ -302,6 +302,7 @@ Platform headers / declarations
 		#pragma warning( disable : 4255 )	// '<name>' : no function prototype given: converting '()' to '(void)'
 		#pragma warning( disable : 4668 )	// '__cplusplus' is not defined as a preprocessor macro, replacing with '0' for '#if/#elif'
 		#pragma warning( disable : 4711 )	// function '<name>' selected for automatic inline expansion
+		#pragma warning( disable : 4738 )	// storing 32-bit float result in memory, possible loss of performance
 		#pragma warning( disable : 4820 )	// '<name>' : 'X' bytes padding added after data member '<member>'
 	#endif
 
@@ -2173,7 +2174,17 @@ static bool MatchStrings( const char * str1, const char * str2 )
 	return true;
 }
 
-static VkBool32 DebugReportCallback( VkDebugReportFlagsEXT msgFlags, VkDebugReportObjectTypeEXT objType, uint64_t srcObject, size_t location,
+typedef VkBool32 (VKAPI_PTR *PFN_vkDebugReportCallbackEXT)(
+    VkDebugReportFlagsEXT                       flags,
+    VkDebugReportObjectTypeEXT                  objectType,
+    uint64_t                                    object,
+    size_t                                      location,
+    int32_t                                     messageCode,
+    const char*                                 pLayerPrefix,
+    const char*                                 pMessage,
+    void*                                       pUserData);
+
+VkBool32 DebugReportCallback( VkDebugReportFlagsEXT msgFlags, VkDebugReportObjectTypeEXT objType, uint64_t srcObject, size_t location,
 									int32_t msgCode, const char * pLayerPrefix, const char * pMsg, void * pUserData )
 {
 	UNUSED_PARM( objType );
@@ -2467,7 +2478,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 			debugReportCallbackCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
 			debugReportCallbackCreateInfo.pNext = NULL;
 			debugReportCallbackCreateInfo.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT;
-			debugReportCallbackCreateInfo.pfnCallback = DebugReportCallback;
+			debugReportCallbackCreateInfo.pfnCallback = (PFN_vkDebugReportCallbackEXT)DebugReportCallback;
 			debugReportCallbackCreateInfo.pUserData = NULL;
 
 			VK( instance->vkCreateDebugReportCallbackEXT( instance->instance, &debugReportCallbackCreateInfo, VK_ALLOCATOR, &instance->debugReportCallback ) );
@@ -6799,7 +6810,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 					void * mapped;
 					VK( context->device->vkMapMemory( context->device->device, linearMemory[imageIndex], 0, memoryRequirements.size, 0, &mapped ) );
 
-					const size_t copyBytes = ( (VkDeviceSize) dataRowSize < layout.rowPitch ) ? dataRowSize : layout.rowPitch;
+					const size_t copyBytes = (size_t)( ( (VkDeviceSize) dataRowSize < layout.rowPitch ) ? (VkDeviceSize) dataRowSize : layout.rowPitch );
 					for ( int y = 0; y < dataRowCount; y++ )
 					{
 						memcpy( (char *)mapped + layout.offset + y * layout.rowPitch,
