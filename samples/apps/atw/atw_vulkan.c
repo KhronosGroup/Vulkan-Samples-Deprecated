@@ -2174,16 +2174,6 @@ static bool MatchStrings( const char * str1, const char * str2 )
 	return true;
 }
 
-typedef VkBool32 (VKAPI_PTR *PFN_vkDebugReportCallbackEXT)(
-    VkDebugReportFlagsEXT                       flags,
-    VkDebugReportObjectTypeEXT                  objectType,
-    uint64_t                                    object,
-    size_t                                      location,
-    int32_t                                     messageCode,
-    const char*                                 pLayerPrefix,
-    const char*                                 pMessage,
-    void*                                       pUserData);
-
 VkBool32 DebugReportCallback( VkDebugReportFlagsEXT msgFlags, VkDebugReportObjectTypeEXT objType, uint64_t srcObject, size_t location,
 									int32_t msgCode, const char * pLayerPrefix, const char * pMsg, void * pUserData )
 {
