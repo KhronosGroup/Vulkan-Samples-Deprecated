@@ -92,8 +92,8 @@ before_install:
 install:
   - pip install --user nose
   - pip install --user cpp-coveralls
-
-  - export PATH=$HOME/.local/bin:$PATH # Make sure we can find the above Python packages
+    # Make sure we can find the above Python packages
+  - export PATH=$HOME/.local/bin:$PATH
     # Make sure that clang-3.6 is selected.
   - if [[ "$TRAVIS_OS_NAME" == "linux" && "$CC" == "clang" ]]; then
       export CC=clang-3.6 CXX=clang++-3.6;
