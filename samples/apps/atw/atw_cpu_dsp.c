@@ -6754,16 +6754,16 @@ void TimeWarpThread( TimeWarpThreadData_t * data )
 	CalculateTimeWarpTransform( &timeWarpEndTransform, &data->projectionMatrix, &data->viewMatrix, &displayRefreshEndViewMatrix );
 
 	// Loop until no more horizontal strips to process.
-    for ( ; ; )
-    {
-        // Atomically add 1 to claim a job.
-        unsigned int rowCount = AtomicUint32_Increment( &(data->rowCount) ) - 1;
+	for ( ; ; )
+	{
+		// Atomically add 1 to claim a job.
+		unsigned int rowCount = AtomicUint32_Increment( &(data->rowCount) ) - 1;
 
-        // Done when all horizontal strips have been claimed for processing.
-        if ( rowCount >= (unsigned int)( 2 * data->destTilesHigh ) )
-        {
-            break;
-        }
+		// Done when all horizontal strips have been claimed for processing.
+		if ( rowCount >= (unsigned int)( 2 * data->destTilesHigh ) )
+		{
+			break;
+		}
 
 		const int eyeRow = ( rowCount % data->destTilesHigh );
 		const int eye = ( rowCount >= (unsigned int) data->destTilesHigh );
