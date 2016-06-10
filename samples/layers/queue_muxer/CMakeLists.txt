@@ -4,15 +4,13 @@ message(STATUS "Cxxflags: ${CMAKE_CXX_FLAGS}")
 
 include_directories(
         "${CMAKE_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/include"
-        "${CMAKE_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers"
         "${CMAKE_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/layers"
-        "${CMAKE_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/loader"
+        "${CMAKE_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers"
         "$ENV{VK_SDK_PATH}/Include"
         "$ENV{VK_SDK_PATH}/Source/layers"
-        "$ENV{VK_SDK_PATH}/Source/loader"
         )
 
-add_library(VkLayer_queue_muxer SHARED queue_muxer.cpp VkLayer_queue_muxer.json)
+add_library(VkLayer_queue_muxer SHARED queue_muxer.c VkLayer_queue_muxer.json)
 set_target_properties(VkLayer_queue_muxer PROPERTIES CXX_FLAGS "")
 
 if (WIN32)
@@ -22,13 +20,13 @@ if (WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/projects/windows/VkLayer_queue_muxer.json $<CONFIGURATION>/VkLayer_queue_muxer.json
         VERBATIM )
 elseif()
-	target_compile_options( VkLayer_queue_muxer PRIVATE -std=c++11 -Wall -Wno-unused-function )
+	target_compile_options( VkLayer_queue_muxer PRIVATE -std=c99 -Wall -Wno-unused-function )
     set_target_properties(VkLayer_queue_muxer PROPERTIES LINK_FLAGS "-Bsymbolic")
     add_custom_command(OUTPUT VkLayer_queue_muxer.json
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/projects/linux/VkLayer_queue_muxer.json VkLayer_queue_muxer.json
         VERBATIM)
 else()
-	target_compile_options( VkLayer_queue_muxer PRIVATE -std=c++11 -Wall -Wno-unused-function )
+	target_compile_options( VkLayer_queue_muxer PRIVATE -std=c99 -Wall -Wno-unused-function )
     set_target_properties(VkLayer_queue_muxer PROPERTIES LINK_FLAGS "-Bsymbolic")
     add_custom_command(OUTPUT VkLayer_queue_muxer.json
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/projects/linux/VkLayer_queue_muxer.json VkLayer_queue_muxer.json

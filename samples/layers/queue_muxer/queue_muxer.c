@@ -4,7 +4,7 @@
 Description	:	Queue Multiplexer for drivers that support too few queues per family.
 Author		:	J.M.P. van Waveren
 Date		:	05/12/2016
-Language	:	C++
+Language	:	C99
 Format		:	Real tabs with the tab size equal to 4 spaces.
 Copyright	:	Copyright (c) 2016 Oculus VR, LLC. All Rights reserved.
 
@@ -185,6 +185,7 @@ VERSION HISTORY
 #ifdef _MSC_VER
 #pragma warning( disable : 4100 )	// unreferenced formal parameter
 #pragma warning( disable : 4191 )	// 'type cast' : unsafe conversion from 'PFN_vkVoidFunction' to 'PFN_vkCmdCopyImage'
+#pragma warning( disable : 4255 )	// 'FARPROC' : no function prototype given: converting '()' to '(void)'
 #pragma warning( disable : 4350 )	// behavior change: 'member1' called instead of 'member2'
 #pragma warning( disable : 4505 )	// unreferenced local function has been removed
 #pragma warning( disable : 4668 )	// 'NTDDI_WIN7SP1' is not defined as a preprocessor macro, replacing with '0' for '#if/#elif'
@@ -193,15 +194,15 @@ VERSION HISTORY
 #pragma warning( disable : 4820 )	// '<name>' : 'X' bytes padding added after data member '<member>'
 #endif
 
+#define inline
+
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <assert.h>
-#include <unordered_map>
-#include <vulkan/vulkan.h>					// {SDK}/Include/       | Vulkan-LoaderAndValidationLayers/include/   | /usr/include/
-#include <vulkan/vk_layer.h>				// {SDK}/Include/       | Vulkan-LoaderAndValidationLayers/include/   | /usr/include/
-#include <vk_layer_table.h>					// {SDK}/Source/layers/ | Vulkan-LoaderAndValidationLayers/layers/
-#include <vk_layer_data.h>					// {SDK}/Source/layers/ | Vulkan-LoaderAndValidationLayers/layers/
-#include <vk_dispatch_table_helper.h>		// {SDK}/Source/layers/ | Vulkan-LoaderAndValidationLayers/build/layers/
+#include <vulkan/vulkan.h>				// {SDK}/Include/       | Vulkan-LoaderAndValidationLayers/include/      | /usr/include/
+#include <vulkan/vk_layer.h>			// {SDK}/Include/       | Vulkan-LoaderAndValidationLayers/include/      | /usr/include/
+#include <vk_dispatch_table_helper.h>	// {SDK}/Source/layers/ | Vulkan-LoaderAndValidationLayers/build/layers/
 
 #if defined( __ANDROID__ )
 #include <android/log.h>			// for __android_log_print()
@@ -209,6 +210,21 @@ VERSION HISTORY
 #else
 #define Print( ... )				printf( __VA_ARGS__ )
 #endif
+
+#define MIN_QUEUES_PER_FAMILY		16
+
+/*
+================================================================================================================================
+
+Mutex_t
+
+static void Mutex_Create( Mutex_t * pMutex );
+static void Mutex_Destroy( Mutex_t * pMutex );
+static void Mutex_Lock( Mutex_t * pMutex );
+static void Mutex_Unlock( Mutex_t * pMutex );
+
+================================================================================================================================
+*/
 
 #if defined( WIN32 ) || defined( _WIN32 ) || defined( WIN64 ) || defined( _WIN64 )
 
@@ -227,58 +243,190 @@ static void Mutex_Unlock( Mutex_t * pMutex ) { LeaveCriticalSection( pMutex ); }
 
 typedef pthread_mutex_t Mutex_t;
 
-static inline void Mutex_Create( Mutex_t * pMutex ) { pthread_mutex_init( pMutex, NULL ); }
-static inline void Mutex_Destroy( Mutex_t * pMutex ) { pthread_mutex_destroy( pMutex ); }
-static inline void Mutex_Lock( Mutex_t * pMutex ) { pthread_mutex_lock( pMutex ); }
-static inline void Mutex_Unlock( Mutex_t * pMutex ) { pthread_mutex_unlock( pMutex ); }
+static void Mutex_Create( Mutex_t * pMutex ) { pthread_mutex_init( pMutex, NULL ); }
+static void Mutex_Destroy( Mutex_t * pMutex ) { pthread_mutex_destroy( pMutex ); }
+static void Mutex_Lock( Mutex_t * pMutex ) { pthread_mutex_lock( pMutex ); }
+static void Mutex_Unlock( Mutex_t * pMutex ) { pthread_mutex_unlock( pMutex ); }
 
 #endif
 
-#define MIN_QUEUES_PER_FAMILY		16
+/*
+================================================================================================================================
 
+HashMap_t
 
-struct instance_data
+static void HashMap_Create( HashMap_t * map );
+static void HashMap_Destroy( HashMap_t * map );
+static void HashMap_Add( HashMap_t * map, void * key, void * data );
+static void HashMap_Remove( HashMap_t * map, void * key );
+static void * HashMap_Find( HashMap_t * map, void * key );
+
+================================================================================================================================
+*/
+
+// This layer does not track many different objects, typically 1 instance, 1 device and up to 16 queues.
+#define HASH_TABLE_SIZE		256
+
+typedef struct
 {
-									instance_data() :
-										instanceDispatchTable( NULL ) {}
+	int				table[HASH_TABLE_SIZE];
+	void **			key;
+	void **			data;
+	int *			next;
+	int *			empty;
+	int				count;
+	int				nextEmpty;
+} HashMap_t;
 
+static void HashMap_Create( HashMap_t * map )
+{
+	const int count = 16;
+
+	map->key = (void **) malloc( count * sizeof( map->key[0] ) );
+	map->data = (void **) malloc( count * sizeof( map->data[0] ) );
+	map->next = (int *) malloc( count * sizeof( map->next[0] ) );
+	map->empty = (int *) malloc( count * sizeof( map->empty[0] ) );
+
+	memset( map->table, -1, sizeof( map->table ) );
+	memset( map->key, 0, count * sizeof( map->key[0] ) );
+	memset( map->data, 0, count * sizeof( map->data[0] ) );
+	memset( map->next, -1, count * sizeof( map->next[0] ) );
+	for ( int i = 0; i < count; i++ ) { map->empty[i] = i; }
+
+	map->count = count;
+	map->nextEmpty = 0;
+}
+
+static void HashMap_Destroy( HashMap_t * map )
+{
+	free( map->key );
+	free( map->data );
+	free( map->next );
+	free( map->empty );
+	memset( map, 0, sizeof( HashMap_t ) );
+}
+
+static unsigned int HashMap_HashPointer( HashMap_t * map, const void * key )
+{
+	// HASH_TABLE_SIZE must be a power of two.
+	assert( ( HASH_TABLE_SIZE > 0 ) && ( HASH_TABLE_SIZE & ( HASH_TABLE_SIZE - 1 ) ) == 0 );
+	const size_t value = (size_t)key;
+	return (unsigned int)( ( ( value >> 3 ) ^ ( value >> 11 ) ) & ( HASH_TABLE_SIZE - 1 ) );
+}
+
+static void HashMap_Add( HashMap_t * map, void * key, void * data )
+{
+	const unsigned int hash = HashMap_HashPointer( map, key );
+	int * index = NULL;
+	for ( index = &map->table[hash]; *index != -1; index = &map->next[*index] )
+	{
+		if ( map->key[*index] == key )
+		{
+			assert( 0 );
+			return;
+		}
+	}
+	if ( map->nextEmpty >= map->count )
+	{
+		const int newCount = map->count * 2;
+
+		void ** key = (void **) malloc( newCount * sizeof( map->key[0] ) );
+		void ** data = (void **) malloc( newCount * sizeof( map->data[0] ) );
+		int * next = (int *) malloc( newCount * sizeof( map->next[0] ) );
+		int * empty = (int *) malloc( newCount * sizeof( map->empty[0] ) );
+
+		memcpy( key, map->key, map->count * sizeof( key[0] ) );
+		memcpy( data, map->data, map->count * sizeof( data[0] ) );
+		memcpy( next, map->next, map->count * sizeof( next[0] ) );
+		memcpy( empty, map->empty, map->count * sizeof( empty[0] ) );
+
+		memset( key + map->count, 0, ( newCount - map->count ) * sizeof( key[0] ) );
+		memset( data + map->count, 0, ( newCount - map->count ) * sizeof( data[0] ) );
+		memset( next + map->count, -1, ( newCount - map->count ) * sizeof( next[0] ) );
+		for ( int i = map->count; i < newCount; i++ ) { empty[i] = i; }
+
+		free( map->key );
+		free( map->data );
+		free( map->next );
+		free( map->empty );
+
+		map->key = key;
+		map->data = data;
+		map->next = next;
+		map->empty = empty;
+		map->count = newCount;
+	}
+	*index = map->empty[map->nextEmpty++];
+	map->key[*index] = key;
+	map->data[*index] = data;
+	map->next[*index] = -1;
+}
+
+static void HashMap_Remove( HashMap_t * map, void * key )
+{
+	const unsigned int hash = HashMap_HashPointer( map, key );
+	for ( int * index = &map->table[hash]; *index != -1; index = &map->next[*index] )
+	{
+		if ( map->key[*index] == key )
+		{
+			map->key[*index] = NULL;
+			map->data[*index] = NULL;
+			map->next[*index] = -1;
+			map->empty[--map->nextEmpty] = *index;
+			*index = map->next[*index];
+			return;
+		}
+	}
+	assert( 0 );
+}
+
+static void * HashMap_Find( HashMap_t * map, void * key )
+{
+	const unsigned int hash = HashMap_HashPointer( map, key );
+	for ( int index = map->table[hash]; index != -1; index = map->next[index] )
+	{
+		if ( map->key[index] == key )
+		{
+			return map->data[index];
+		}
+	}
+	return NULL;
+}
+
+/*
+================================================================================================================================
+
+Instance/Device/Queue data maps
+
+================================================================================================================================
+*/
+
+typedef struct
+{
 	VkLayerInstanceDispatchTable *	instanceDispatchTable;
-};
+} InstanceData_t;
 
-struct device_data
+typedef struct
 {
-									device_data() :
-										instance( NULL ),
-										deviceDispatchTable( NULL ),
-										queueFamilyCount( 0 ),
-										queueFamilyProperties( NULL ),
-										pfnQueuePresentKHR( NULL ) {}
-
-	instance_data *					instance;
+	InstanceData_t *				instance;
 	VkLayerDispatchTable *			deviceDispatchTable;
 	Mutex_t							deviceMutex;
 	uint32_t						queueFamilyCount;
 	VkQueueFamilyProperties *		queueFamilyProperties;
 	PFN_vkQueuePresentKHR			pfnQueuePresentKHR;
-};
+} DeviceData_t;
 
-struct queue_data
+typedef struct
 {
-									queue_data() :
-										device( NULL ) {}
-
-	device_data *					device;
+	DeviceData_t *					device;
 	Mutex_t							queueMutex;
-};
+} QueueData_t;
 
-static std::unordered_map<void *, instance_data *> instance_data_map;
-static std::unordered_map<void *, device_data *> device_data_map;
-static std::unordered_map<void *, queue_data *> queue_data_map;
+static HashMap_t instance_data_map;
+static HashMap_t device_data_map;
+static HashMap_t queue_data_map;
 
-// Explicit instantiation.
-template instance_data *get_my_data_ptr<instance_data>( void * data_key, std::unordered_map< void *, instance_data * > & data_map );
-template device_data *get_my_data_ptr<device_data>( void * data_key, std::unordered_map< void *, device_data * > & data_map );
-template queue_data *get_my_data_ptr<queue_data>( void * data_key, std::unordered_map< void *, queue_data * > & data_map );
+static void * GetDispatchPointer( const void * object ) { return *(VkLayerDispatchTable **)object; }
 
 /*
 ================================================================================================================================
@@ -317,14 +465,19 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
 		return result;
 	}
 
-	instance_data * my_instance_data = get_my_data_ptr( get_dispatch_key( *pInstance ), instance_data_map );
-	assert( my_instance_data->instanceDispatchTable == NULL );
+	if ( instance_data_map.nextEmpty == 0 )
+	{
+		HashMap_Create( &instance_data_map );
+		HashMap_Create( &device_data_map );
+		HashMap_Create( &queue_data_map );
+	}
 
-	VkLayerInstanceDispatchTable * pInstanceTable = new VkLayerInstanceDispatchTable;
-	layer_init_instance_dispatch_table( *pInstance, pInstanceTable, pfnGetInstanceProcAddr );
+	InstanceData_t * my_instance_data = (InstanceData_t *)malloc( sizeof( InstanceData_t ) );
+	my_instance_data->instanceDispatchTable = (VkLayerInstanceDispatchTable *)malloc( sizeof( VkLayerInstanceDispatchTable ) );
+	layer_init_instance_dispatch_table( *pInstance, my_instance_data->instanceDispatchTable, pfnGetInstanceProcAddr );
 
-	my_instance_data->instanceDispatchTable = pInstanceTable;
-
+	HashMap_Add( &instance_data_map, GetDispatchPointer( *pInstance ), my_instance_data );
+		
 	return result;
 }
 
@@ -332,16 +485,22 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(
 		VkInstance						instance,
 		const VkAllocationCallbacks *	pAllocator)
 {
-	dispatch_key key = get_dispatch_key( instance );
-	instance_data * my_instance_data = get_my_data_ptr( key, instance_data_map );
-	assert( my_instance_data->instanceDispatchTable != NULL );
+	void * key = GetDispatchPointer( instance );
+	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, key );
 
 	my_instance_data->instanceDispatchTable->DestroyInstance( instance, pAllocator );
 
-	delete my_instance_data->instanceDispatchTable;
-	my_instance_data->instanceDispatchTable = NULL;
+	HashMap_Remove( &instance_data_map, key );
 
-	instance_data_map.erase( key );
+	free( my_instance_data->instanceDispatchTable );
+	free( my_instance_data );
+
+	if ( instance_data_map.nextEmpty == 0 )
+	{
+		HashMap_Destroy( &instance_data_map );
+		HashMap_Destroy( &device_data_map );
+		HashMap_Destroy( &queue_data_map );
+	}
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyProperties(
@@ -349,8 +508,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyPropert
 		uint32_t *					pQueueFamilyPropertyCount,
 		VkQueueFamilyProperties *	pQueueFamilyProperties )
 {
-	instance_data * my_instance_data = get_my_data_ptr( get_dispatch_key( physicalDevice ), instance_data_map );
-	assert( my_instance_data->instanceDispatchTable != NULL );
+	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchPointer( physicalDevice ) );
 
 	my_instance_data->instanceDispatchTable->GetPhysicalDeviceQueueFamilyProperties( physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties );
 
@@ -402,8 +560,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 	// Advance the link info for the next element on the chain
 	chain_info->u.pLayerInfo = chain_info->u.pLayerInfo->pNext;
 
-	instance_data * my_instance_data = get_my_data_ptr( get_dispatch_key( physicalDevice ), instance_data_map );
-	assert( my_instance_data->instanceDispatchTable != NULL );
+	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchPointer( physicalDevice ) );
 
 	// Get the queue family properties.
 	uint32_t queueFamilyCount = 0;
@@ -435,19 +592,19 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 
 	free( queueCreateInfos );
 
-	device_data * my_device_data = get_my_data_ptr( get_dispatch_key( *pDevice ), device_data_map );
-	assert( my_device_data->deviceDispatchTable == NULL );
-
-	// Setup device dispatch table
-	VkLayerDispatchTable * pDeviceTable = new VkLayerDispatchTable;
+	VkLayerDispatchTable * pDeviceTable = (VkLayerDispatchTable *)malloc( sizeof( VkLayerDispatchTable ) );
 	layer_init_device_dispatch_table( *pDevice, pDeviceTable, pfnGetDeviceProcAddr );
 
+	// Setup device data.
+	DeviceData_t * my_device_data = (DeviceData_t *)malloc( sizeof( DeviceData_t ) );
 	my_device_data->instance = my_instance_data;
 	my_device_data->deviceDispatchTable = pDeviceTable;
 	my_device_data->queueFamilyCount = queueFamilyCount;
 	my_device_data->queueFamilyProperties = queueFamilyProperties;
 	my_device_data->pfnQueuePresentKHR = (PFN_vkQueuePresentKHR)pDeviceTable->GetDeviceProcAddr( *pDevice, "vkQueuePresentKHR" );
 	Mutex_Create( &my_device_data->deviceMutex );
+
+	HashMap_Add( &device_data_map, GetDispatchPointer( *pDevice ), my_device_data );
 
 	return result;
 }
@@ -456,37 +613,29 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
 		VkDevice						device,
 		const VkAllocationCallbacks *	pAllocator )
 {
-	dispatch_key key = get_dispatch_key( device );
-	device_data * my_device_data = get_my_data_ptr( key, device_data_map );
-	assert( my_device_data->deviceDispatchTable != NULL );
+	void * key = GetDispatchPointer( device );
+	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, key );
 
 	my_device_data->deviceDispatchTable->DestroyDevice( device, pAllocator );
 
 	// Free all queue objects associated with this device.
 	Mutex_Lock( &my_device_data->deviceMutex );
-	for ( std::unordered_map<void *, queue_data *>::const_iterator cur = queue_data_map.begin(); cur != queue_data_map.end(); )
+	for ( int i = 0; i < queue_data_map.count; i++ )
 	{
-		if ( cur->second->device == my_device_data )
+		if ( queue_data_map.data[i] != NULL && ((QueueData_t *)queue_data_map.data[i])->device == my_device_data )
 		{
-			queue_data_map.erase( cur );
-			cur = queue_data_map.begin();
-		}
-		else
-		{
-			cur++;
+			free( queue_data_map.data[i] );
+			HashMap_Remove( &queue_data_map, queue_data_map.key[i] );
 		}
 	}
 	Mutex_Unlock( &my_device_data->deviceMutex );
 
-	my_device_data->instance = NULL;
-	delete my_device_data->deviceDispatchTable;
-	my_device_data->deviceDispatchTable = NULL;
-	my_device_data->queueFamilyCount = 0;
-	free( my_device_data->queueFamilyProperties );
-	my_device_data->queueFamilyProperties = NULL;
-	Mutex_Destroy( &my_device_data->deviceMutex );
+	HashMap_Remove( &device_data_map, key );
 
-	device_data_map.erase( key );
+	Mutex_Destroy( &my_device_data->deviceMutex );
+	free( my_device_data->deviceDispatchTable );
+	free( my_device_data->queueFamilyProperties );
+	free( my_device_data );
 }
 
 /*
@@ -497,26 +646,13 @@ Queues
 ================================================================================================================================
 */
 
-static Mutex_t * GetQueueMutex( device_data * my_device_data, VkQueue queue )
-{
-	// NOTE: this fetches or creates a queue_data for each unique queue.
-	queue_data * my_queue_data = get_my_data_ptr( (void *)queue, queue_data_map );
-	if ( my_queue_data->device == NULL )
-	{
-		my_queue_data->device = my_device_data;
-		Mutex_Create( &my_queue_data->queueMutex );
-	}
-	return &my_queue_data->queueMutex;
-}
-
 VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
 		VkDevice	device,
 		uint32_t	queueFamilyIndex,
 		uint32_t	queueIndex,
 		VkQueue *	pQueue )
 {
-	device_data * my_device_data = get_my_data_ptr( get_dispatch_key( device ), device_data_map );
-	assert( my_device_data->deviceDispatchTable != NULL );
+	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchPointer( device ) );
 
 	// Direct all virtual queues to the last physical queue.
 	if ( queueIndex >= my_device_data->queueFamilyProperties[queueFamilyIndex].queueCount )
@@ -526,9 +662,15 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
 
 	my_device_data->deviceDispatchTable->GetDeviceQueue( device, queueFamilyIndex, queueIndex, pQueue );
 
-	// Create the queue lock here without thread contention.
+	// Create the queue mutex here without thread contention.
 	Mutex_Lock( &my_device_data->deviceMutex );
-	GetQueueMutex( my_device_data, *pQueue );
+	if ( HashMap_Find( &queue_data_map, *pQueue ) == NULL )
+	{
+		QueueData_t * my_queue_data = (QueueData_t *)malloc( sizeof( QueueData_t ) );
+		my_queue_data->device = my_device_data;
+		Mutex_Create( &my_queue_data->queueMutex );
+		HashMap_Add( &queue_data_map, *pQueue, my_queue_data );
+	}
 	Mutex_Unlock( &my_device_data->deviceMutex );
 }
 
@@ -538,14 +680,12 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 		const VkSubmitInfo *	pSubmits,
 		VkFence					fence )
 {
-	device_data * my_device_data = get_my_data_ptr( get_dispatch_key( queue ), device_data_map );
-	assert( my_device_data->deviceDispatchTable != NULL );
+	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchPointer( queue ) );
+	QueueData_t * my_queue_data = (QueueData_t *)HashMap_Find( &queue_data_map, queue );
 
-	Mutex_t * mutex = GetQueueMutex( my_device_data, queue );
-
-	Mutex_Lock( mutex );
+	Mutex_Lock( &my_queue_data->queueMutex );
 	VkResult result = my_device_data->deviceDispatchTable->QueueSubmit( queue, submitCount, pSubmits, fence );
-	Mutex_Unlock( mutex );
+	Mutex_Unlock( &my_queue_data->queueMutex );
 
 	return result;
 }
@@ -553,14 +693,12 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueueWaitIdle(
 		VkQueue	queue )
 {
-	device_data * my_device_data = get_my_data_ptr( get_dispatch_key( queue ), device_data_map );
-	assert( my_device_data->deviceDispatchTable != NULL );
+	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchPointer( queue ) );
+	QueueData_t * my_queue_data = (QueueData_t *)HashMap_Find( &queue_data_map, queue );
 
-	Mutex_t * mutex = GetQueueMutex( my_device_data, queue );
-
-	Mutex_Lock( mutex );
+	Mutex_Lock( &my_queue_data->queueMutex );
 	VkResult result = my_device_data->deviceDispatchTable->QueueWaitIdle( queue );
-	Mutex_Unlock( mutex );
+	Mutex_Unlock( &my_queue_data->queueMutex );
 
 	return result;
 }
@@ -569,14 +707,12 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(
 		VkQueue						queue,
 		const VkPresentInfoKHR *	pPresentInfo )
 {
-	device_data * my_device_data = get_my_data_ptr( get_dispatch_key( queue ), device_data_map );
-	assert( my_device_data->deviceDispatchTable != NULL );
+	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchPointer( queue ) );
+	QueueData_t * my_queue_data = (QueueData_t *)HashMap_Find( &queue_data_map, queue );
 
-	Mutex_t * mutex = GetQueueMutex( my_device_data, queue );
-
-	Mutex_Lock( mutex );
+	Mutex_Lock( &my_queue_data->queueMutex );
 	VkResult result = my_device_data->pfnQueuePresentKHR( queue, pPresentInfo );
-	Mutex_Unlock( mutex );
+	Mutex_Unlock( &my_queue_data->queueMutex );
 
 	return result;
 }
@@ -696,8 +832,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionPropert
 
 	assert( physicalDevice );
 
-	instance_data * my_instance_data = get_my_data_ptr( get_dispatch_key( physicalDevice ), instance_data_map );
-	assert( my_instance_data->instanceDispatchTable != NULL );
+	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchPointer( physicalDevice ) );
 
 	return my_instance_data->instanceDispatchTable->EnumerateDeviceExtensionProperties( physicalDevice, NULL, pCount, pProperties );
 }
@@ -723,8 +858,7 @@ VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr( 
 		return NULL;
 	}
 
-	instance_data * my_instance_data = get_my_data_ptr( get_dispatch_key( instance ), instance_data_map );
-	assert( my_instance_data->instanceDispatchTable != NULL );
+	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchPointer( instance ) );
 
 	VkLayerInstanceDispatchTable * pInstanceTable = my_instance_data->instanceDispatchTable;
 	if ( pInstanceTable->GetInstanceProcAddr == NULL )
@@ -754,8 +888,7 @@ VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr( Vk
 		return NULL;
 	}
 
-	device_data * my_device_data = get_my_data_ptr( get_dispatch_key( device ), device_data_map );
-	assert( my_device_data->deviceDispatchTable != NULL );
+	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchPointer( device ) );
 
 	VkLayerDispatchTable * pDeviceTable = my_device_data->deviceDispatchTable;
 	if ( pDeviceTable->GetDeviceProcAddr == NULL )
