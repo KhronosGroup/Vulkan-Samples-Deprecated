@@ -193,22 +193,45 @@ VERSION HISTORY
 #pragma warning( disable : 4820 )	// '<name>' : 'X' bytes padding added after data member '<member>'
 #endif
 
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 #include <unordered_map>
-#include <vulkan/vulkan.h>					// {SDK}/Include | Vulkan-LoaderAndValidationLayers/include
-#include <vulkan/vk_layer.h>				// {SDK}/Include | Vulkan-LoaderAndValidationLayers/include
-#include <vk_loader_platform.h>				// {SDK}/Source/loader | Vulkan-LoaderAndValidationLayers/loader
-#include <vk_dispatch_table_helper.h>		// {SDK}/Source/layers | Vulkan-LoaderAndValidationLayers/build/layers
-#include <vk_layer_data.h>					// {SDK}/Source/layers | Vulkan-LoaderAndValidationLayers/layers
-#include <vk_layer_extension_utils.h>		// {SDK}/Source/layers | Vulkan-LoaderAndValidationLayers/layers
+#include <vulkan/vulkan.h>					// {SDK}/Include/       | Vulkan-LoaderAndValidationLayers/include/   | /usr/include/
+#include <vulkan/vk_layer.h>				// {SDK}/Include/       | Vulkan-LoaderAndValidationLayers/include/   | /usr/include/
+#include <vk_layer_table.h>					// {SDK}/Source/layers/ | Vulkan-LoaderAndValidationLayers/layers/
+#include <vk_layer_data.h>					// {SDK}/Source/layers/ | Vulkan-LoaderAndValidationLayers/layers/
+#include <vk_dispatch_table_helper.h>		// {SDK}/Source/layers/ | Vulkan-LoaderAndValidationLayers/build/layers/
 
 #if defined( __ANDROID__ )
 #include <android/log.h>			// for __android_log_print()
 #define Print( ... )				__android_log_print( ANDROID_LOG_INFO, "qm", __VA_ARGS__ )
 #else
 #define Print( ... )				printf( __VA_ARGS__ )
+#endif
+
+#if defined( WIN32 ) || defined( _WIN32 ) || defined( WIN64 ) || defined( _WIN64 )
+
+#include <Windows.h>
+
+typedef CRITICAL_SECTION Mutex_t;
+
+static void Mutex_Create( Mutex_t * pMutex ) { InitializeCriticalSection( pMutex ); }
+static void Mutex_Destroy( Mutex_t * pMutex ) { DeleteCriticalSection( pMutex ); }
+static void Mutex_Lock( Mutex_t * pMutex ) { EnterCriticalSection( pMutex ); }
+static void Mutex_Unlock( Mutex_t * pMutex ) { LeaveCriticalSection( pMutex ); }
+
+#else
+
+#include <pthread.h>
+
+typedef pthread_mutex_t Mutex_t;
+
+static inline void Mutex_Create( Mutex_t * pMutex ) { pthread_mutex_init( pMutex, NULL ); }
+static inline void Mutex_Destroy( Mutex_t * pMutex ) { pthread_mutex_destroy( pMutex ); }
+static inline void Mutex_Lock( Mutex_t * pMutex ) { pthread_mutex_lock( pMutex ); }
+static inline void Mutex_Unlock( Mutex_t * pMutex ) { pthread_mutex_unlock( pMutex ); }
+
 #endif
 
 #define MIN_QUEUES_PER_FAMILY		16
@@ -233,7 +256,7 @@ struct device_data
 
 	instance_data *					instance;
 	VkLayerDispatchTable *			deviceDispatchTable;
-	loader_platform_thread_mutex	deviceLock;
+	Mutex_t							deviceMutex;
 	uint32_t						queueFamilyCount;
 	VkQueueFamilyProperties *		queueFamilyProperties;
 	PFN_vkQueuePresentKHR			pfnQueuePresentKHR;
@@ -245,7 +268,7 @@ struct queue_data
 										device( NULL ) {}
 
 	device_data *					device;
-	loader_platform_thread_mutex	queueLock;
+	Mutex_t							queueMutex;
 };
 
 static std::unordered_map<void *, instance_data *> instance_data_map;
@@ -424,7 +447,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 	my_device_data->queueFamilyCount = queueFamilyCount;
 	my_device_data->queueFamilyProperties = queueFamilyProperties;
 	my_device_data->pfnQueuePresentKHR = (PFN_vkQueuePresentKHR)pDeviceTable->GetDeviceProcAddr( *pDevice, "vkQueuePresentKHR" );
-	loader_platform_thread_create_mutex( &my_device_data->deviceLock );
+	Mutex_Create( &my_device_data->deviceMutex );
 
 	return result;
 }
@@ -440,7 +463,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
 	my_device_data->deviceDispatchTable->DestroyDevice( device, pAllocator );
 
 	// Free all queue objects associated with this device.
-	loader_platform_thread_lock_mutex( &my_device_data->deviceLock );
+	Mutex_Lock( &my_device_data->deviceMutex );
 	for ( std::unordered_map<void *, queue_data *>::const_iterator cur = queue_data_map.begin(); cur != queue_data_map.end(); )
 	{
 		if ( cur->second->device == my_device_data )
@@ -453,7 +476,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
 			cur++;
 		}
 	}
-	loader_platform_thread_unlock_mutex( &my_device_data->deviceLock );
+	Mutex_Unlock( &my_device_data->deviceMutex );
 
 	my_device_data->instance = NULL;
 	delete my_device_data->deviceDispatchTable;
@@ -461,7 +484,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
 	my_device_data->queueFamilyCount = 0;
 	free( my_device_data->queueFamilyProperties );
 	my_device_data->queueFamilyProperties = NULL;
-	loader_platform_thread_delete_mutex( &my_device_data->deviceLock );
+	Mutex_Destroy( &my_device_data->deviceMutex );
 
 	device_data_map.erase( key );
 }
@@ -474,16 +497,16 @@ Queues
 ================================================================================================================================
 */
 
-static loader_platform_thread_mutex * GetQueueLock( device_data * my_device_data, VkQueue queue )
+static Mutex_t * GetQueueMutex( device_data * my_device_data, VkQueue queue )
 {
 	// NOTE: this fetches or creates a queue_data for each unique queue.
 	queue_data * my_queue_data = get_my_data_ptr( (void *)queue, queue_data_map );
 	if ( my_queue_data->device == NULL )
 	{
 		my_queue_data->device = my_device_data;
-		loader_platform_thread_create_mutex( &my_queue_data->queueLock );
+		Mutex_Create( &my_queue_data->queueMutex );
 	}
-	return &my_queue_data->queueLock;
+	return &my_queue_data->queueMutex;
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
@@ -504,9 +527,9 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
 	my_device_data->deviceDispatchTable->GetDeviceQueue( device, queueFamilyIndex, queueIndex, pQueue );
 
 	// Create the queue lock here without thread contention.
-	loader_platform_thread_lock_mutex( &my_device_data->deviceLock );
-	GetQueueLock( my_device_data, *pQueue );
-	loader_platform_thread_unlock_mutex( &my_device_data->deviceLock );
+	Mutex_Lock( &my_device_data->deviceMutex );
+	GetQueueMutex( my_device_data, *pQueue );
+	Mutex_Unlock( &my_device_data->deviceMutex );
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
@@ -518,11 +541,11 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 	device_data * my_device_data = get_my_data_ptr( get_dispatch_key( queue ), device_data_map );
 	assert( my_device_data->deviceDispatchTable != NULL );
 
-	loader_platform_thread_mutex * lock = GetQueueLock( my_device_data, queue );
+	Mutex_t * mutex = GetQueueMutex( my_device_data, queue );
 
-	loader_platform_thread_lock_mutex( lock );
+	Mutex_Lock( mutex );
 	VkResult result = my_device_data->deviceDispatchTable->QueueSubmit( queue, submitCount, pSubmits, fence );
-	loader_platform_thread_unlock_mutex( lock );
+	Mutex_Unlock( mutex );
 
 	return result;
 }
@@ -533,11 +556,11 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueueWaitIdle(
 	device_data * my_device_data = get_my_data_ptr( get_dispatch_key( queue ), device_data_map );
 	assert( my_device_data->deviceDispatchTable != NULL );
 
-	loader_platform_thread_mutex * lock = GetQueueLock( my_device_data, queue );
+	Mutex_t * mutex = GetQueueMutex( my_device_data, queue );
 
-	loader_platform_thread_lock_mutex( lock );
+	Mutex_Lock( mutex );
 	VkResult result = my_device_data->deviceDispatchTable->QueueWaitIdle( queue );
-	loader_platform_thread_unlock_mutex( lock );
+	Mutex_Unlock( mutex );
 
 	return result;
 }
@@ -549,11 +572,11 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(
 	device_data * my_device_data = get_my_data_ptr( get_dispatch_key( queue ), device_data_map );
 	assert( my_device_data->deviceDispatchTable != NULL );
 
-	loader_platform_thread_mutex * lock = GetQueueLock( my_device_data, queue );
+	Mutex_t * mutex = GetQueueMutex( my_device_data, queue );
 
-	loader_platform_thread_lock_mutex( lock );
+	Mutex_Lock( mutex );
 	VkResult result = my_device_data->pfnQueuePresentKHR( queue, pPresentInfo );
-	loader_platform_thread_unlock_mutex( lock );
+	Mutex_Unlock( mutex );
 
 	return result;
 }
@@ -574,6 +597,8 @@ For a layer to be recognized by the Android loader the layer .so must export:
 
 ================================================================================================================================
 */
+
+#define ARRAY_SIZE( a )		( sizeof( (a) ) / sizeof( (a)[0] ) )
 
 static VkResult GetLayerProperties(
 		const uint32_t				count,
