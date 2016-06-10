@@ -5,8 +5,8 @@ buildscript {
 	}
 
 	dependencies {
-		//classpath 'com.android.tools.build:gradle-experimental:0.6.0-beta5'
-        classpath 'com.android.tools.build:gradle-experimental:0.7.0-alpha1'
+		classpath 'com.android.tools.build:gradle-experimental:0.6.0-beta5'
+        //classpath 'com.android.tools.build:gradle-experimental:0.7.0-alpha1'
 	}
 }
 
@@ -44,17 +44,13 @@ model {
 	android.ndk {
 		moduleName = "VkLayer_queue_muxer"
 
-        stl = "gnustl_static"
+		CFlags.addAll(["-std=c99", "-Wall", "-DVK_USE_PLATFORM_ANDROID_KHR"])
 
-		cppFlags.addAll(["-std=c++11", "-Wall", "-DVK_USE_PLATFORM_ANDROID_KHR"])
-
-		cppFlags.addAll([
+		CFlags.addAll([
 			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/include")}".toString(),
-			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/build/layers")}".toString(),
-			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/loader")}".toString(),
 			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/layers")}".toString(),
+			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/build/layers")}".toString(),
 			"-I${file("${vkSdkPath}/Include")}".toString(),
-			"-I${file("${vkSdkPath}/Source/loader")}".toString(),
 			"-I${file("${vkSdkPath}/Source/layers")}".toString()
 		])
 
