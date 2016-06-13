@@ -53,8 +53,9 @@ onto the display.
 Even though rendering commands are issued concurrently from two separate threads,
 most current hardware and drivers serialize these rendering commands because the
 hardware cannot actually execute multiple graphics/compute tasks concurrently.
-Based on how the rendering commands are prioritized and serialized, the asynchronous
-time warp may, or may not be able to stay synchronized with the display refresh.
+Based on the task switching granularity of the GPU, and on how the rendering
+commands are prioritized and serialized, the asynchronous time warp may, or may
+not be able to stay synchronized with the display refresh.
 
 On hardware that cannot execute multiple graphics/compute tasks concurrently, the
 following is required to keep the asynchronous time warp synchronized with the
@@ -95,7 +96,7 @@ milliseconds.
 SCENE WORKLOAD
 ==============
 
-The graphics work load of the scene that is rendered fer each eye can be changed by
+The graphics work load of the scene that is rendered for each eye can be changed by
 adjusting the number of draw calls, the number of triangles per draw call, and the
 fragment program complexity. For each of these there are four levels:
 
