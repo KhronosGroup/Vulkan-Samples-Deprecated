@@ -278,23 +278,41 @@ typedef struct
 	int				nextEmpty;
 } HashMap_t;
 
+static void HashMap_Grow( HashMap_t * map, const int newCount )
+{
+	assert( newCount > map->count );
+
+	void ** key = (void **) malloc( newCount * sizeof( map->key[0] ) );
+	void ** data = (void **) malloc( newCount * sizeof( map->data[0] ) );
+	int * next = (int *) malloc( newCount * sizeof( map->next[0] ) );
+	int * empty = (int *) malloc( newCount * sizeof( map->empty[0] ) );
+
+	memcpy( key, map->key, map->count * sizeof( key[0] ) );
+	memcpy( data, map->data, map->count * sizeof( data[0] ) );
+	memcpy( next, map->next, map->count * sizeof( next[0] ) );
+	memcpy( empty, map->empty, map->count * sizeof( empty[0] ) );
+
+	memset( key + map->count, 0, ( newCount - map->count ) * sizeof( key[0] ) );
+	memset( data + map->count, 0, ( newCount - map->count ) * sizeof( data[0] ) );
+	memset( next + map->count, -1, ( newCount - map->count ) * sizeof( next[0] ) );
+	for ( int i = map->count; i < newCount; i++ ) { empty[i] = i; }
+
+	free( map->key );
+	free( map->data );
+	free( map->next );
+	free( map->empty );
+
+	map->key = key;
+	map->data = data;
+	map->next = next;
+	map->empty = empty;
+	map->count = newCount;
+}
+
 static void HashMap_Create( HashMap_t * map )
 {
-	const int count = 16;
-
-	map->key = (void **) malloc( count * sizeof( map->key[0] ) );
-	map->data = (void **) malloc( count * sizeof( map->data[0] ) );
-	map->next = (int *) malloc( count * sizeof( map->next[0] ) );
-	map->empty = (int *) malloc( count * sizeof( map->empty[0] ) );
-
-	memset( map->table, -1, sizeof( map->table ) );
-	memset( map->key, 0, count * sizeof( map->key[0] ) );
-	memset( map->data, 0, count * sizeof( map->data[0] ) );
-	memset( map->next, -1, count * sizeof( map->next[0] ) );
-	for ( int i = 0; i < count; i++ ) { map->empty[i] = i; }
-
-	map->count = count;
-	map->nextEmpty = 0;
+	memset( map, 0, sizeof( HashMap_t ) );
+	HashMap_Grow( map, 16 );
 }
 
 static void HashMap_Destroy( HashMap_t * map )
@@ -328,33 +346,7 @@ static void HashMap_Add( HashMap_t * map, void * key, void * data )
 	}
 	if ( map->nextEmpty >= map->count )
 	{
-		const int newCount = map->count * 2;
-
-		void ** key = (void **) malloc( newCount * sizeof( map->key[0] ) );
-		void ** data = (void **) malloc( newCount * sizeof( map->data[0] ) );
-		int * next = (int *) malloc( newCount * sizeof( map->next[0] ) );
-		int * empty = (int *) malloc( newCount * sizeof( map->empty[0] ) );
-
-		memcpy( key, map->key, map->count * sizeof( key[0] ) );
-		memcpy( data, map->data, map->count * sizeof( data[0] ) );
-		memcpy( next, map->next, map->count * sizeof( next[0] ) );
-		memcpy( empty, map->empty, map->count * sizeof( empty[0] ) );
-
-		memset( key + map->count, 0, ( newCount - map->count ) * sizeof( key[0] ) );
-		memset( data + map->count, 0, ( newCount - map->count ) * sizeof( data[0] ) );
-		memset( next + map->count, -1, ( newCount - map->count ) * sizeof( next[0] ) );
-		for ( int i = map->count; i < newCount; i++ ) { empty[i] = i; }
-
-		free( map->key );
-		free( map->data );
-		free( map->next );
-		free( map->empty );
-
-		map->key = key;
-		map->data = data;
-		map->next = next;
-		map->empty = empty;
-		map->count = newCount;
+		HashMap_Grow( map, map->count * 2 );
 	}
 	*index = map->empty[map->nextEmpty++];
 	map->key[*index] = key;
@@ -408,7 +400,7 @@ typedef struct
 
 typedef struct
 {
-	InstanceData_t *				instance;
+	InstanceData_t *				instanceData;
 	VkLayerDispatchTable *			deviceDispatchTable;
 	Mutex_t							deviceMutex;
 	uint32_t						queueFamilyCount;
@@ -418,7 +410,7 @@ typedef struct
 
 typedef struct
 {
-	DeviceData_t *					device;
+	DeviceData_t *					deviceData;
 	Mutex_t							queueMutex;
 } QueueData_t;
 
@@ -426,7 +418,7 @@ static HashMap_t instance_data_map;
 static HashMap_t device_data_map;
 static HashMap_t queue_data_map;
 
-static void * GetDispatchPointer( const void * object ) { return *(VkLayerDispatchTable **)object; }
+static VkLayerDispatchTable * GetDispatchTable( const void * object ) { return *(VkLayerDispatchTable **)object; }
 
 /*
 ================================================================================================================================
@@ -476,7 +468,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
 	my_instance_data->instanceDispatchTable = (VkLayerInstanceDispatchTable *)malloc( sizeof( VkLayerInstanceDispatchTable ) );
 	layer_init_instance_dispatch_table( *pInstance, my_instance_data->instanceDispatchTable, pfnGetInstanceProcAddr );
 
-	HashMap_Add( &instance_data_map, GetDispatchPointer( *pInstance ), my_instance_data );
+	HashMap_Add( &instance_data_map, GetDispatchTable( *pInstance ), my_instance_data );
 		
 	return result;
 }
@@ -485,7 +477,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(
 		VkInstance						instance,
 		const VkAllocationCallbacks *	pAllocator)
 {
-	void * key = GetDispatchPointer( instance );
+	void * key = GetDispatchTable( instance );
 	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, key );
 
 	my_instance_data->instanceDispatchTable->DestroyInstance( instance, pAllocator );
@@ -508,7 +500,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyPropert
 		uint32_t *					pQueueFamilyPropertyCount,
 		VkQueueFamilyProperties *	pQueueFamilyProperties )
 {
-	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchPointer( physicalDevice ) );
+	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchTable( physicalDevice ) );
 
 	my_instance_data->instanceDispatchTable->GetPhysicalDeviceQueueFamilyProperties( physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties );
 
@@ -560,7 +552,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 	// Advance the link info for the next element on the chain
 	chain_info->u.pLayerInfo = chain_info->u.pLayerInfo->pNext;
 
-	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchPointer( physicalDevice ) );
+	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchTable( physicalDevice ) );
 
 	// Get the queue family properties.
 	uint32_t queueFamilyCount = 0;
@@ -597,14 +589,14 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 
 	// Setup device data.
 	DeviceData_t * my_device_data = (DeviceData_t *)malloc( sizeof( DeviceData_t ) );
-	my_device_data->instance = my_instance_data;
+	my_device_data->instanceData = my_instance_data;
 	my_device_data->deviceDispatchTable = pDeviceTable;
 	my_device_data->queueFamilyCount = queueFamilyCount;
 	my_device_data->queueFamilyProperties = queueFamilyProperties;
 	my_device_data->pfnQueuePresentKHR = (PFN_vkQueuePresentKHR)pDeviceTable->GetDeviceProcAddr( *pDevice, "vkQueuePresentKHR" );
 	Mutex_Create( &my_device_data->deviceMutex );
 
-	HashMap_Add( &device_data_map, GetDispatchPointer( *pDevice ), my_device_data );
+	HashMap_Add( &device_data_map, GetDispatchTable( *pDevice ), my_device_data );
 
 	return result;
 }
@@ -613,7 +605,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
 		VkDevice						device,
 		const VkAllocationCallbacks *	pAllocator )
 {
-	void * key = GetDispatchPointer( device );
+	void * key = GetDispatchTable( device );
 	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, key );
 
 	my_device_data->deviceDispatchTable->DestroyDevice( device, pAllocator );
@@ -622,7 +614,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
 	Mutex_Lock( &my_device_data->deviceMutex );
 	for ( int i = 0; i < queue_data_map.count; i++ )
 	{
-		if ( queue_data_map.data[i] != NULL && ((QueueData_t *)queue_data_map.data[i])->device == my_device_data )
+		if ( queue_data_map.data[i] != NULL && ((QueueData_t *)queue_data_map.data[i])->deviceData == my_device_data )
 		{
 			free( queue_data_map.data[i] );
 			HashMap_Remove( &queue_data_map, queue_data_map.key[i] );
@@ -652,7 +644,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
 		uint32_t	queueIndex,
 		VkQueue *	pQueue )
 {
-	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchPointer( device ) );
+	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchTable( device ) );
 
 	// Direct all virtual queues to the last physical queue.
 	if ( queueIndex >= my_device_data->queueFamilyProperties[queueFamilyIndex].queueCount )
@@ -667,7 +659,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
 	if ( HashMap_Find( &queue_data_map, *pQueue ) == NULL )
 	{
 		QueueData_t * my_queue_data = (QueueData_t *)malloc( sizeof( QueueData_t ) );
-		my_queue_data->device = my_device_data;
+		my_queue_data->deviceData = my_device_data;
 		Mutex_Create( &my_queue_data->queueMutex );
 		HashMap_Add( &queue_data_map, *pQueue, my_queue_data );
 	}
@@ -680,7 +672,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 		const VkSubmitInfo *	pSubmits,
 		VkFence					fence )
 {
-	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchPointer( queue ) );
+	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchTable( queue ) );
 	QueueData_t * my_queue_data = (QueueData_t *)HashMap_Find( &queue_data_map, queue );
 
 	Mutex_Lock( &my_queue_data->queueMutex );
@@ -693,7 +685,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueueWaitIdle(
 		VkQueue	queue )
 {
-	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchPointer( queue ) );
+	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchTable( queue ) );
 	QueueData_t * my_queue_data = (QueueData_t *)HashMap_Find( &queue_data_map, queue );
 
 	Mutex_Lock( &my_queue_data->queueMutex );
@@ -707,7 +699,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(
 		VkQueue						queue,
 		const VkPresentInfoKHR *	pPresentInfo )
 {
-	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchPointer( queue ) );
+	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchTable( queue ) );
 	QueueData_t * my_queue_data = (QueueData_t *)HashMap_Find( &queue_data_map, queue );
 
 	Mutex_Lock( &my_queue_data->queueMutex );
@@ -832,7 +824,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionPropert
 
 	assert( physicalDevice );
 
-	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchPointer( physicalDevice ) );
+	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchTable( physicalDevice ) );
 
 	return my_instance_data->instanceDispatchTable->EnumerateDeviceExtensionProperties( physicalDevice, NULL, pCount, pProperties );
 }
@@ -858,7 +850,7 @@ VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr( 
 		return NULL;
 	}
 
-	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchPointer( instance ) );
+	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchTable( instance ) );
 
 	VkLayerInstanceDispatchTable * pInstanceTable = my_instance_data->instanceDispatchTable;
 	if ( pInstanceTable->GetInstanceProcAddr == NULL )
@@ -888,7 +880,7 @@ VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr( Vk
 		return NULL;
 	}
 
-	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchPointer( device ) );
+	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchTable( device ) );
 
 	VkLayerDispatchTable * pDeviceTable = my_device_data->deviceDispatchTable;
 	if ( pDeviceTable->GetDeviceProcAddr == NULL )
