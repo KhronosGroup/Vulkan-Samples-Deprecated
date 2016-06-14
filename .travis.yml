@@ -1,0 +1,136 @@
+# Linux Build Configuration for Travis
+# https://travis-ci.org
+
+language:
+  - cpp
+
+# Must list an OS otherwise the Android build does not work.
+os:
+  - osx
+
+jdk: oraclejdk8
+
+matrix:
+  # Show final status immediately if a test fails.
+  fast_finish: true
+  include:
+    # Android build.
+    - language: android
+      sudo: false
+      env: VULKAN_SAMPLES_ANDROID=ON ANDROID_TARGET=android-21 ANDROID_ABI=armeabi-v7a
+    # Linux GCC debug build.
+    - os: linux
+      compiler: gcc
+      sudo: required
+      dist: trusty
+      env: VULKAN_SAMPLES_BUILD_TYPE=Debug
+    # Linux GCC build.
+    - os: linux
+      compiler: gcc
+      sudo: required
+      dist: trusty
+      env: VULKAN_SAMPLES_BUILD_TYPE=Release
+    # Linux Clang debug build.
+    - os: linux
+      compiler: clang
+      sudo: required
+      dist: trusty
+      env: VULKAN_SAMPLES_BUILD_TYPE=Debug
+    # Linux Clang build.
+    - os: linux
+      compiler: clang
+      sudo: required
+      dist: trusty
+      env: VULKAN_SAMPLES_BUILD_TYPE=Release
+    # Linux GCC build for code coverage.
+    - os: linux
+      sudo: required
+      dist: trusty
+      compiler: gcc
+      env: VULKAN_SAMPLES_CODE_COVERAGE=ON
+    # Mac OS X Clang debug build.
+    - os: osx
+      compiler: clang
+      sudo: required
+      env: VULKAN_SAMPLES_BUILD_TYPE=Debug
+    # Mac OS X Clang build.
+    - os: osx
+      compiler: clang
+      sudo: required
+      env: VULKAN_SAMPLES_BUILD_TYPE=Release
+  exclude:
+    # Exclude Mac OS X GCC build.
+    - os: osx
+      language: cpp
+
+cache:
+  apt: true
+
+branches:
+  only:
+    - master
+
+addons:
+  apt:
+    packages:
+      - clang-3.6
+      - ninja-build
+      - lcov
+
+before_install:
+  # Install ninja on Mac OS X.
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update && brew install ninja; fi
+  # Get the appropriate Linux packages.
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update && sudo apt-get -y install python3 libx11-dev libxxf86vm-dev libxrandr-dev libxcb1-dev libxcb-keysyms1-dev libxcb-icccm4-dev; fi
+  # Set Android NDK path.
+  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then export NDK_CCACHE=ccache; fi
+  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then export ARCH=`uname -m`; fi
+  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then wget http://dl.google.com/android/repository/android-ndk-r11c-linux-${ARCH}.zip; fi
+  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then unzip -q android-ndk-r11c-linux-${ARCH}.zip; fi
+  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then export ANDROID_NDK_HOME=`pwd`/android-ndk-r11c; fi
+
+install:
+  - pip install --user nose
+  - pip install --user cpp-coveralls
+    # Make sure we can find the above Python packages
+  - export PATH=$HOME/.local/bin:$PATH
+    # Make sure that clang-3.6 is selected.
+  - if [[ "$TRAVIS_OS_NAME" == "linux" && "$CC" == "clang" ]]; then
+      export CC=clang-3.6 CXX=clang++-3.6;
+    fi
+
+before_script:
+  - git clone https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers.git ../Vulkan-LoaderAndValidationLayers
+
+script:
+  - echo "$TRAVIS_OS_NAME"
+  - mkdir "../Vulkan-LoaderAndValidationLayers/build"
+  - mkdir "../Vulkan-LoaderAndValidationLayers/build/layers"
+  - python ../Vulkan-LoaderAndValidationLayers/vk-generate.py Xcb dispatch-table-ops layer > "../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h"
+  - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then mkdir build && cd build; fi
+  - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${VULKAN_SAMPLES_BUILD_TYPE:-Debug} -DENABLE_CODE_COVERAGE=${VULKAN_SAMPLES_CODE_COVERAGE:-OFF} ..; fi
+  - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then ninja; fi
+  - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then ctest -j`nproc` --output-on-failure; fi
+  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then ./build_android.sh; fi
+
+after_success:
+  # Collect coverage and push to coveralls.info.
+  # Ignore third party source code and tests.
+  - if [[ "$CC" == "gcc" && "$VULKAN_SAMPLES_CODE_COVERAGE" == "ON" ]]; then
+      coveralls
+        --root ../
+        --build-root ./
+        --exclude-pattern '.+/external/'
+        --exclude-pattern '.+/.+_test/.cc'
+        --exclude-pattern '.+/CMakeFiles/'
+        --gcov /usr/bin/gcov
+        --gcov-options '/--long-file-names --preserve-paths'
+        --verbose;
+    fi
+
+notifications:
+  email:
+    recipients:
+      - mrelusive@oculus.com
+    on_success: change
+    on_failure: always

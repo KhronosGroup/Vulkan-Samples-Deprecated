@@ -53,8 +53,9 @@ onto the display.
 Even though rendering commands are issued concurrently from two separate threads,
 most current hardware and drivers serialize these rendering commands because the
 hardware cannot actually execute multiple graphics/compute tasks concurrently.
-Based on how the rendering commands are prioritized and serialized, the asynchronous
-time warp may, or may not be able to stay synchronized with the display refresh.
+Based on the task switching granularity of the GPU, and on how the rendering
+commands are prioritized and serialized, the asynchronous time warp may, or may
+not be able to stay synchronized with the display refresh.
 
 On hardware that cannot execute multiple graphics/compute tasks concurrently, the
 following is required to keep the asynchronous time warp synchronized with the
@@ -95,7 +96,7 @@ milliseconds.
 SCENE WORKLOAD
 ==============
 
-The graphics work load of the scene that is rendered fer each eye can be changed by
+The graphics work load of the scene that is rendered for each eye can be changed by
 adjusting the number of draw calls, the number of triangles per draw call, and the
 fragment program complexity. For each of these there are four levels:
 
@@ -324,6 +325,7 @@ Platform headers / declarations
 		#pragma warning( disable : 4255 )	// '<name>' : no function prototype given: converting '()' to '(void)'
 		#pragma warning( disable : 4668 )	// '__cplusplus' is not defined as a preprocessor macro, replacing with '0' for '#if/#elif'
 		#pragma warning( disable : 4711 )	// function '<name>' selected for automatic inline expansion
+		#pragma warning( disable : 4738 )	// storing 32-bit float result in memory, possible loss of performance
 		#pragma warning( disable : 4820 )	// '<name>' : 'X' bytes padding added after data member '<member>'
 	#endif
 
@@ -482,10 +484,17 @@ OpenGL compute support
 	#define GL_UNIFORM_BLOCK					0x92E2
 	#define GL_SHADER_STORAGE_BLOCK				0x92E6
 
+	#define GL_TEXTURE_FETCH_BARRIER_BIT		0x00000008
+	#define GL_SHADER_IMAGE_ACCESS_BARRIER_BIT	0x00000020
+	#define GL_FRAMEBUFFER_BARRIER_BIT			0x00000400
+	#define GL_ALL_BARRIER_BITS					0xFFFFFFFF
+
 	static GLuint glGetProgramResourceIndex( GLuint program, GLenum programInterface, const GLchar *name ) { assert( false ); return 0; }
 	static void glShaderStorageBlockBinding( GLuint program, GLuint storageBlockIndex, GLuint storageBlockBinding ) { assert( false ); }
 	static void glBindImageTexture( GLuint unit, GLuint texture, GLint level, GLboolean layered, GLint layer, GLenum access, GLenum format ) { assert( false ); }
 	static void glDispatchCompute( GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z ) { assert( false ); }
+
+	static void glMemoryBarrier( GLbitfield barriers ) { assert( false ); }
 
 #elif defined( OS_ANDROID ) && OPENGL_VERSION_MAJOR == 3 && OPENGL_VERSION_MINOR == 0
 
@@ -530,7 +539,7 @@ Multi-view support
 #define GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_BASE_VIEW_INDEX_OVR	0x9632
 #define GL_MAX_VIEWS_OVR										0x9631
 
-typedef void (GL_APIENTRY* PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint baseViewIndex, GLsizei numViews);
+typedef void (* PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint baseViewIndex, GLsizei numViews);
 #endif
 
 /*
@@ -1111,7 +1120,7 @@ static bool Signal_Wait( Signal_t * signal, const int timeOutMilliseconds )
 				// Must re-check condition because pthread_cond_wait may spuriously wake up.
 			} while ( signal->signaled == false );
 		}
-		else
+		else if ( timeOutMilliseconds > 0 )
 		{
 			struct timeval tp;
 			gettimeofday( &tp, NULL );
@@ -1163,9 +1172,9 @@ static void Signal_Clear( Signal_t * signal )
 #if defined( OS_WINDOWS )
 	ResetEvent( signal->handle );
 #else
-	pthread_mutex_lock( & signal->mutex );
+	pthread_mutex_lock( &signal->mutex );
 	signal->signaled = false;
-	pthread_mutex_unlock( & signal->mutex );
+	pthread_mutex_unlock( &signal->mutex );
 #endif
 }
 
@@ -1193,6 +1202,7 @@ static bool Thread_Create( Thread_t * thread, const char * threadName, threadFun
 static void Thread_Destroy( Thread_t * thread );
 static void Thread_Signal( Thread_t * thread );
 static void Thread_Join( Thread_t * thread );
+static void Thread_Submit( Thread_t * thread, threadFunction_t threadFunction, void * threadData );
 
 static void Thread_SetName( const char * name );
 static void Thread_SetAffinity( int mask );
@@ -1204,11 +1214,13 @@ static void Thread_SetRealTimePriority( int priority );
 typedef void (*threadFunction_t)( void * data );
 
 #if defined( OS_WINDOWS )
-#define THREAD_RETURN	int
-#define THREAD_HANDLE	HANDLE
+#define THREAD_HANDLE			HANDLE
+#define THREAD_RETURN_TYPE		int
+#define THREAD_RETURN_VALUE		0
 #else
-#define THREAD_RETURN	void *
-#define THREAD_HANDLE	pthread_t
+#define THREAD_HANDLE			pthread_t
+#define THREAD_RETURN_TYPE		void *
+#define THREAD_RETURN_VALUE		0
 #endif
 
 #define THREAD_AFFINITY_BIG_CORES		-1
@@ -1219,6 +1231,7 @@ typedef struct
 	threadFunction_t	threadFunction;
 	void *				threadData;
 
+	void *				stack;
 	THREAD_HANDLE		handle;
 	Signal_t			workIsDone;
 	Signal_t			workIsAvailable;
@@ -1255,10 +1268,10 @@ static void Thread_SetName( const char * name )
 	}
 #elif defined( OS_MAC )
 	pthread_setname_np( name );
+#elif defined( OS_LINUX )
+	pthread_setname_np( pthread_self(), name );
 #elif defined( OS_ANDROID )
 	prctl( PR_SET_NAME, (long)name, 0, 0, 0 );
-#else
-	pthread_setname_np( pthread_self(), name );
 #endif
 }
 
@@ -1284,7 +1297,7 @@ static void Thread_SetAffinity( int mask )
 #elif defined( OS_MAC )
 	// OS X does not export interfaces that identify processors or control thread placement.
 	// Explicit thread to processor binding is not supported.
-	mask = mask;
+	UNUSED_PARM( mask );
 #elif defined( OS_ANDROID )
 	// Optionally use the faster cores of a heterogeneous CPU.
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
@@ -1392,17 +1405,17 @@ static void Thread_SetRealTimePriority( int priority )
 	{
 		Print( "Thread %p priority set to critical.\n", thread );
 	}
-#elif defined( OS_MAC )
+#elif defined( OS_MAC ) || defined( OS_LINUX )
 	struct sched_param sp;
 	memset( &sp, 0, sizeof( struct sched_param ) );
 	sp.sched_priority = priority;
 	if ( pthread_setschedparam( pthread_self(), SCHED_FIFO, &sp ) == -1 )
 	{
-		LOG( "Failed to change thread %d priority.\n", gettid() );
+		Print( "Failed to change thread %d priority.\n", (unsigned int)pthread_self() );
 	}
 	else
 	{
-		Print( "Thread %d set to SCHED_FIFO, priority=%d\n", gettid(), priority );
+		Print( "Thread %d set to SCHED_FIFO, priority=%d\n", (unsigned int)pthread_self(), priority );
 	}
 #elif defined( OS_ANDROID )
 	struct sched_attr
@@ -1445,7 +1458,7 @@ static void Thread_SetRealTimePriority( int priority )
 #endif
 }
 
-static THREAD_RETURN ThreadFunctionInternal( void * data )
+static THREAD_RETURN_TYPE ThreadFunctionInternal( void * data )
 {
 	Thread_t * thread = (Thread_t *)data;
 
@@ -1471,7 +1484,7 @@ static THREAD_RETURN ThreadFunctionInternal( void * data )
 		}
 		thread->threadFunction( thread->threadData );
 	}
-	return 0;
+	return THREAD_RETURN_VALUE;
 }
 
 static bool Thread_Create( Thread_t * thread, const char * threadName, threadFunction_t threadFunction, void * threadData )
@@ -1480,14 +1493,14 @@ static bool Thread_Create( Thread_t * thread, const char * threadName, threadFun
 	thread->threadName[sizeof( thread->threadName ) - 1] = '\0';
 	thread->threadFunction = threadFunction;
 	thread->threadData = threadData;
+	thread->stack = NULL;
 	Signal_Create( &thread->workIsDone, false );
 	Signal_Create( &thread->workIsAvailable, true );
 	Mutex_Create( &thread->workMutex );
 	thread->terminate = false;
 
-	const int stackSize = 512 * 1024;
-
 #if defined( OS_WINDOWS )
+	const int stackSize = 512 * 1024;
 	DWORD threadID;
 	thread->handle = CreateThread( NULL, stackSize, (LPTHREAD_START_ROUTINE)ThreadFunctionInternal, thread, STACK_SIZE_PARAM_IS_A_RESERVATION, &threadID );
 	if ( thread->handle == 0 )
@@ -1495,6 +1508,7 @@ static bool Thread_Create( Thread_t * thread, const char * threadName, threadFun
 		return false;
 	}
 #else
+	const int stackSize = 512 * 1024;
 	pthread_attr_t attr;
 	pthread_attr_init( &attr );
 	pthread_attr_setstacksize( &attr, stackSize );
@@ -1518,6 +1532,9 @@ static void Thread_Destroy( Thread_t * thread )
 	Signal_Raise( &thread->workIsAvailable );
 	Mutex_Unlock( &thread->workMutex );
 	Signal_Wait( &thread->workIsDone, -1 );
+	Mutex_Destroy( &thread->workMutex );
+	Signal_Destroy( &thread->workIsDone );
+	Signal_Destroy( &thread->workIsAvailable );
 #if defined( OS_WINDOWS )
 	WaitForSingleObject( thread->handle, INFINITE );
 	CloseHandle( thread->handle );
@@ -1537,6 +1554,14 @@ static void Thread_Signal( Thread_t * thread )
 static void Thread_Join( Thread_t * thread )
 {
 	Signal_Wait( &thread->workIsDone, -1 );
+}
+
+static void Thread_Submit( Thread_t * thread, threadFunction_t threadFunction, void * threadData )
+{
+	Thread_Join( thread );
+	thread->threadFunction = threadFunction;
+	thread->threadData = threadData;
+	Thread_Signal( thread );
 }
 
 /*
@@ -2318,6 +2343,10 @@ static void GlInitExtensions()
 	glExtensions.buffer_storage			= ( glBufferStorage != NULL );
 	glExtensions.multi_view				= ( glFramebufferTextureMultiviewOVR != NULL );
 }
+
+#elif defined( OS_MAC )
+
+PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC		glFramebufferTextureMultiviewOVR;
 
 #elif defined( OS_ANDROID )
 
@@ -4220,7 +4249,7 @@ static bool ChangeVideoMode_XF86VidMode( Display * xDisplay, int xScreen, Window
 			const int dw = modeWidth - *desiredWidth;
 			const int dh = modeHeight - *desiredHeight;
 			const int sizeError = dw * dw + dh * dh;
-			const float refreshRateError = abs( modeRefreshRate - *desiredRefreshRate );
+			const float refreshRateError = fabs( modeRefreshRate - *desiredRefreshRate );
 			if ( sizeError < bestSizeError || ( sizeError == bestSizeError && refreshRateError < bestRefreshRateError ) )
 			{
 				bestSizeError = sizeError;
@@ -5006,7 +5035,6 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 	xcb_flush( window->connection );
 	xcb_disconnect( window->connection );
 	xcb_key_symbols_free( window->key_symbols );
-	free( window->connection );
 }
 
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
@@ -7210,7 +7238,7 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 	{
 		const GLenum colorFormat = GpuContext_InternalSurfaceColorFormat( renderPass->colorFormat );
 
-		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], colorFormat, width, height, 1, NULL, 0 );
+		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)colorFormat, width, height, 1, NULL, 0 );
 		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 
 		// Create the frame buffer.
@@ -7263,7 +7291,7 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 	{
 		const GLenum colorFormat = GpuContext_InternalSurfaceColorFormat( renderPass->colorFormat );
 
-		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], colorFormat, width, height, numLayers, 1, NULL, 0 );
+		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)colorFormat, width, height, numLayers, 1, NULL, 0 );
 		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 
 		for ( int layerIndex = 0; layerIndex < framebuffer->numFramebuffersPerTexture; layerIndex++ )
@@ -8294,7 +8322,7 @@ static void GpuProgramParmState_SetParm( GpuProgramParmState_t * parmState, cons
 		}
 		// Currently parms can be set even if they are not used by the program.
 		//assert( found );
-		found = found;
+		UNUSED_PARM( found );
 	}
 
 	parmState->parms[index] = pointer;
@@ -9218,7 +9246,7 @@ static GpuBuffer_t * GpuCommandBuffer_MapBuffer( GpuCommandBuffer_t * commandBuf
 	UNUSED_PARM( commandBuffer );
 
 	GL( glBindBuffer( buffer->target, buffer->buffer ) );
-	GL( *data = glMapBufferRange( buffer->target, 0, buffer->size, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT ) );
+	GL( *data = glMapBufferRange( buffer->target, 0, buffer->size, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_UNSYNCHRONIZED_BIT ) );
 	GL( glBindBuffer( buffer->target, 0 ) );
 
 	return buffer;
@@ -9958,6 +9986,7 @@ HmdInfo_t
 ================================================================================================================================
 */
 
+// Typical 16:9 resolutions: 1920 x 1080, 2560 x 1440, 3840 x 2160, 7680 x 4320
 #define DISPLAY_PIXELS_WIDE		1920
 #define DISPLAY_PIXELS_HIGH		1080
 
@@ -10202,7 +10231,8 @@ static void TimeWarpGraphics_Destroy( GpuContext_t * context, TimeWarpGraphics_t
 static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpGraphics_t * graphics,
 									GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
 									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
-									const Matrix4x4f_t * viewMatrix, GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
+									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
+									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
 									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
 									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] );
 
@@ -10456,14 +10486,12 @@ static void TimeWarpGraphics_Destroy( GpuContext_t * context, TimeWarpGraphics_t
 static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpGraphics_t * graphics,
 									GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
 									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
-									const Matrix4x4f_t * viewMatrix, GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
+									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
+									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
 									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
 									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] )
 {
 	const Microseconds_t t0 = GetTimeMicroseconds();
-
-	Matrix4x4f_t projectionMatrix;
-	Matrix4x4f_CreateProjectionFov( &projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 
 	Matrix4x4f_t displayRefreshStartViewMatrix;
 	Matrix4x4f_t displayRefreshEndViewMatrix;
@@ -10472,8 +10500,8 @@ static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWar
 
 	Matrix4x4f_t timeWarpStartTransform;
 	Matrix4x4f_t timeWarpEndTransform;
-	CalculateTimeWarpTransform( &timeWarpStartTransform, &projectionMatrix, viewMatrix, &displayRefreshStartViewMatrix );
-	CalculateTimeWarpTransform( &timeWarpEndTransform, &projectionMatrix, viewMatrix, &displayRefreshEndViewMatrix );
+	CalculateTimeWarpTransform( &timeWarpStartTransform, projectionMatrix, viewMatrix, &displayRefreshStartViewMatrix );
+	CalculateTimeWarpTransform( &timeWarpEndTransform, projectionMatrix, viewMatrix, &displayRefreshEndViewMatrix );
 
 	const ScreenRect_t screenRect = GpuFramebuffer_GetRect( framebuffer );
 
@@ -10542,7 +10570,8 @@ static void TimeWarpCompute_Destroy( GpuContext_t * context, TimeWarpCompute_t *
 static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpCompute_t * compute,
 									GpuFramebuffer_t * framebuffer,
 									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
-									const Matrix4x4f_t * viewMatrix, GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
+									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
+									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
 									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
 									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] );
 
@@ -10817,14 +10846,12 @@ static void TimeWarpCompute_Destroy( GpuContext_t * context, TimeWarpCompute_t *
 static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpCompute_t * compute,
 									GpuFramebuffer_t * framebuffer,
 									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
-									const Matrix4x4f_t * viewMatrix, GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
+									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
+									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
 									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
 									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] )
 {
 	const Microseconds_t t0 = GetTimeMicroseconds();
-
-	Matrix4x4f_t projectionMatrix;
-	Matrix4x4f_CreateProjectionFov( &projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 
 	Matrix4x4f_t displayRefreshStartViewMatrix;
 	Matrix4x4f_t displayRefreshEndViewMatrix;
@@ -10833,8 +10860,8 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 
 	Matrix4x4f_t timeWarpStartTransform;
 	Matrix4x4f_t timeWarpEndTransform;
-	CalculateTimeWarpTransform( &timeWarpStartTransform, &projectionMatrix, viewMatrix, &displayRefreshStartViewMatrix );
-	CalculateTimeWarpTransform( &timeWarpEndTransform, &projectionMatrix, viewMatrix, &displayRefreshEndViewMatrix );
+	CalculateTimeWarpTransform( &timeWarpStartTransform, projectionMatrix, viewMatrix, &displayRefreshStartViewMatrix );
+	CalculateTimeWarpTransform( &timeWarpEndTransform, projectionMatrix, viewMatrix, &displayRefreshEndViewMatrix );
 
 	GpuCommandBuffer_BeginPrimary( commandBuffer );
 	GpuCommandBuffer_BeginFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_STORAGE );
@@ -10987,7 +11014,8 @@ static void TimeWarpCompute_Destroy( GpuContext_t * context, TimeWarpCompute_t *
 static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpCompute_t * compute,
 									GpuFramebuffer_t * framebuffer,
 									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
-									const Matrix4x4f_t * viewMatrix, GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
+									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
+									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
 									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
 									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] )
 {
@@ -11029,7 +11057,8 @@ static void TimeWarp_SetDrawCallLevel( TimeWarp_t * timeWarp, const int level );
 static void TimeWarp_SetTriangleLevel( TimeWarp_t * timeWarp, const int level );
 static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level );
 
-static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp, const Matrix4x4f_t * viewMatrix,
+static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp,
+											const Matrix4x4_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
 											GpuTexture_t * eyeTexture[2], GpuFence_t * eyeCompletionFence[2],
 											int eyeArrayLayer[2], float eyeTexturesCpuTime, float eyeTexturesGpuTime );
 static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window );
@@ -11049,6 +11078,7 @@ typedef enum
 typedef struct
 {
 	int							index;
+	Matrix4x4f_t				projectionMatrix;
 	Matrix4x4f_t				viewMatrix;
 	GpuTexture_t *				texture[NUM_EYES];
 	GpuFence_t *				completionFence[NUM_EYES];
@@ -11062,6 +11092,7 @@ typedef struct
 	GpuTexture_t				defaultTexture;
 	GpuTexture_t *				eyeTexture[NUM_EYES];
 	int							eyeArrayLayer[NUM_EYES];
+	Matrix4x4f_t				projectionMatrix;
 	Matrix4x4f_t				viewMatrix;
 
 	Mutex_t						newEyeTexturesMutex;
@@ -11243,12 +11274,14 @@ static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level )
 	}
 }
 
-static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp, const Matrix4x4f_t * viewMatrix,
+static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp,
+											const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
 											GpuTexture_t * eyeTexture[2], GpuFence_t * eyeCompletionFence[2],
 											int eyeArrayLayer[2], float eyeTexturesCpuTime, float eyeTexturesGpuTime )
 {
 	EyeTextures_t newEyeTextures;
 	newEyeTextures.index = timeWarp->eyeTexturesPresentIndex++;
+	newEyeTextures.projectionMatrix = *projectionMatrix;
 	newEyeTextures.viewMatrix = *viewMatrix;
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
@@ -11284,6 +11317,7 @@ static void TimeWarp_ConsumeNewEyeTextures( GpuContext_t * context, TimeWarp_t *
 	{
 		assert( newEyeTextures.index == timeWarp->eyeTexturesConsumedIndex + 1 );
 		timeWarp->eyeTexturesConsumedIndex = newEyeTextures.index;
+		timeWarp->projectionMatrix = newEyeTextures.projectionMatrix;
 		timeWarp->viewMatrix = newEyeTextures.viewMatrix;
 		for ( int eye = 0; eye < NUM_EYES; eye++ )
 		{
@@ -11372,14 +11406,16 @@ static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	{
 		TimeWarpGraphics_Render( &timeWarp->commandBuffer, &timeWarp->graphics, &timeWarp->framebuffer, &timeWarp->renderPass,
 								refreshStartTime, refreshEndTime,
-								&timeWarp->viewMatrix, timeWarp->eyeTexture, timeWarp->eyeArrayLayer, timeWarp->correctChromaticAberration,
+								&timeWarp->projectionMatrix, &timeWarp->viewMatrix,
+								timeWarp->eyeTexture, timeWarp->eyeArrayLayer, timeWarp->correctChromaticAberration,
 								&timeWarp->bargraphs, timeWarp->cpuTimes, timeWarp->gpuTimes );
 	}
 	else if ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_COMPUTE )
 	{
 		TimeWarpCompute_Render( &timeWarp->commandBuffer, &timeWarp->compute, &timeWarp->framebuffer,
 								refreshStartTime, refreshEndTime,
-								&timeWarp->viewMatrix, timeWarp->eyeTexture, timeWarp->eyeArrayLayer, timeWarp->correctChromaticAberration,
+								&timeWarp->projectionMatrix, &timeWarp->viewMatrix,
+								timeWarp->eyeTexture, timeWarp->eyeArrayLayer, timeWarp->correctChromaticAberration,
 								&timeWarp->bargraphs, timeWarp->cpuTimes, timeWarp->gpuTimes );
 	}
 
@@ -12313,7 +12349,10 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 
 		FrameLog_EndFrame( eyeTexturesCpuTime, eyeTexturesGpuTime, GPU_TIMER_FRAMES_DELAYED );
 
-		TimeWarp_PresentNewEyeTextures( threadData->timeWarp, &hmdViewMatrix,
+		Matrix4x4f_t projectionMatrix;
+		Matrix4x4f_CreateProjectionFov( &projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
+
+		TimeWarp_PresentNewEyeTextures( threadData->timeWarp, &projectionMatrix, &hmdViewMatrix,
 										eyeTexture, eyeCompletionFence, eyeArrayLayer,
 										eyeTexturesCpuTime, eyeTexturesGpuTime );
 	}
@@ -12906,7 +12945,7 @@ Startup
 ================================================================================================================================
 */
 
-static int StartApplication( int argc, const char * argv[] )
+static int StartApplication( int argc, char * argv[] )
 {
 	StartupSettings_t startupSettings;
 	memset( &startupSettings, 0, sizeof( startupSettings ) );
@@ -13217,9 +13256,9 @@ int main( int argc, char * argv[] )
 
 typedef struct
 {
-	char			buffer[MAX_ARGS_BUFFER];
-	const char *	argv[MAX_ARGS];
-	int				argc;
+	char	buffer[MAX_ARGS_BUFFER];
+	char *	argv[MAX_ARGS];
+	int		argc;
 } AndroidParm_t;
 
 // adb shell am start -n com.vulkansamples.atw_opengl/android.app.NativeActivity -a "android.intent.action.MAIN" --es "args" "\"-r tw\""
