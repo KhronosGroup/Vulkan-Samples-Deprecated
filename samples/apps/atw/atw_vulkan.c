@@ -348,35 +348,7 @@ Platform headers / declarations
 
 	#include "vulkan/vulkan.h"
 	#include <MoltenVK/vk_mvk_moltenvk.h>
-
-	#define MOLTEN_VK
-	#if defined( MOLTEN_VK )
-		#import <QuartzCore/CAMetalLayer.h>
-	#elif TARGET_OS_IPHONE
-		typedef VkFlags VkIosSurfaceCreateFlagsKHR;
-		typedef struct VkIos2SurfaceCreateInfoKHR {
-			VkStructureType				sType;
-			const void *				pNext;
-			VkIosSurfaceCreateFlagsKHR	flags;
-			NSView *					nsview;
-		} VkIosSurfaceCreateInfoKHR;
-		#define VK_KHR_IOS_SURFACE_EXTENSION_NAME				"VK_KHR_ios_surface"
-		#define VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR	1000015000
-		typedef VkResult (VKAPI_PTR *PFN_vkCreateIosSurfaceKHR)(VkInstance instance, const VkIosSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
-		#define VULKAN_LOADER									"libvulkan.dylib"
-	#else
-		typedef VkFlags VkOsxSurfaceCreateFlagsKHR;
-		typedef struct VkOsxSurfaceCreateInfoKHR {
-			VkStructureType				sType;
-			const void *				pNext;
-			VkOsxSurfaceCreateFlagsKHR	flags;
-			NSView *					nsview;
-		} VkOsxSurfaceCreateInfoKHR;
-		#define VK_KHR_OSX_SURFACE_EXTENSION_NAME				"VK_KHR_osx_surface"
-		#define VK_STRUCTURE_TYPE_OSX_SURFACE_CREATE_INFO_KHR	1000015000
-		typedef VkResult (VKAPI_PTR *PFN_vkCreateOsxSurfaceKHR)(VkInstance instance, const VkOsxSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
-		#define VULKAN_LOADER									"libvulkan.dylib"
-	#endif
+	#include <QuartzCore/CAMetalLayer.h>
 
 	#define OUTPUT_PATH		""
 
@@ -2320,7 +2292,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	instance->vkEnumerateInstanceLayerProperties = (PFN_vkEnumerateInstanceLayerProperties)GetProcAddress( instance->loader, "vkEnumerateInstanceLayerProperties" );
 	instance->vkEnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)GetProcAddress( instance->loader, "vkEnumerateInstanceExtensionProperties" );
 	instance->vkCreateInstance = (PFN_vkCreateInstance)GetProcAddress( instance->loader, "vkCreateInstance" );
-#elif defined( OS_LINUX ) || defined( OS_ANDROID ) || (defined( OS_MAC ) && defined(VULKAN_LOADER))
+#elif defined( OS_LINUX ) || defined( OS_ANDROID )
 	instance->loader = dlopen( VULKAN_LOADER, RTLD_NOW | RTLD_LOCAL );
 	if ( instance->loader == NULL )
 	{
@@ -2331,6 +2303,11 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	instance->vkEnumerateInstanceLayerProperties = (PFN_vkEnumerateInstanceLayerProperties)dlsym( instance->loader, "vkEnumerateInstanceLayerProperties" );
 	instance->vkEnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)dlsym( instance->loader, "vkEnumerateInstanceExtensionProperties" );
 	instance->vkCreateInstance = (PFN_vkCreateInstance)dlsym( instance->loader, "vkCreateInstance" );
+#elif defined( OS_MAC )
+	instance->vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+	GET_INSTANCE_PROC_ADDR( vkEnumerateInstanceLayerProperties );
+	GET_INSTANCE_PROC_ADDR( vkEnumerateInstanceExtensionProperties );
+	GET_INSTANCE_PROC_ADDR( vkCreateInstance );
 #else
 	instance->vkGetInstanceProcAddr = vkGetInstanceProcAddr;
 	GET_INSTANCE_PROC_ADDR( vkEnumerateInstanceLayerProperties );
@@ -4392,8 +4369,6 @@ NSAutoreleasePool * autoReleasePool;
 - (BOOL)acceptsFirstResponder { return YES; }
 - (void)keyDown:(NSEvent *)event {}
 
-#if defined( MOLTEN_VK )
-
 -(instancetype) initWithFrame:(NSRect)frameRect {
 	self = [super initWithFrame: frameRect];
 	if ( self ) {
@@ -4412,8 +4387,6 @@ NSAutoreleasePool * autoReleasePool;
 	layer.contentsScale = MIN( viewScale.width, viewScale.height );
 	return layer;
 }
-
-#endif
 
 @end
 
