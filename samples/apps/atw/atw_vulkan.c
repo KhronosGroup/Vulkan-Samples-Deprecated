@@ -277,7 +277,7 @@ VERSION HISTORY
 #elif defined( __ANDROID__ )
 	#define OS_ANDROID
 #elif defined( __APPLE__ )
-	#define OS_MAC
+	#define OS_APPLE
 #elif defined( __linux__ )
 	#define OS_LINUX
 	//#define OS_LINUX_XLIB
@@ -322,7 +322,7 @@ Platform headers / declarations
 
 	#define __thread	__declspec( thread )
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 
 	#include <sys/param.h>
 	#include <sys/sysctl.h>
@@ -332,23 +332,31 @@ Platform headers / declarations
 	#include <Cocoa/Cocoa.h>
 
 	#include "TargetConditionals.h"
-	#if TARGET_OS_IPHONE
+	#if TARGET_OS_IOS
+		#define OS_IOS
+	#endif
+	#if TARGET_OS_MAC
+		#define OS_MAC
+	#endif
+
+	#include "vulkan/vulkan.h"
+	#include <MoltenVK/vk_mvk_moltenvk.h>
+	#include <QuartzCore/CAMetalLayer.h>
+
+	#if defined( OS_IOS )
 		#define VK_USE_PLATFORM_IOS_MVK
 		#include <MoltenVK/vk_mvk_ios_surface.h>
 		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_MVK_IOS_SURFACE_EXTENSION_NAME
 		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateIOSSurfaceMVK
 		#define vkCreateSurfaceKHR						vkCreateIOSSurfaceMVK
-	#else
+	#endif
+	#if defined( OS_MAC )
 		#define VK_USE_PLATFORM_OSX_MVK
 		#include <MoltenVK/vk_mvk_osx_surface.h>
 		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_MVK_OSX_SURFACE_EXTENSION_NAME
 		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateOSXSurfaceMVK
 		#define vkCreateSurfaceKHR						vkCreateOSXSurfaceMVK
 	#endif
-
-	#include "vulkan/vulkan.h"
-	#include <MoltenVK/vk_mvk_moltenvk.h>
-	#include <QuartzCore/CAMetalLayer.h>
 
 	#define OUTPUT_PATH		""
 
@@ -515,7 +523,7 @@ static void * AllocAlignedMemory( size_t size, size_t alignment )
 	alignment = ( alignment < sizeof( void * ) ) ? sizeof( void * ) : alignment;
 #if defined( OS_WINDOWS )
 	return _aligned_malloc( size, alignment );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	void * ptr = NULL;
 	return ( posix_memalign( &ptr, alignment, size ) == 0 ) ? ptr : NULL;
 #else
@@ -542,7 +550,7 @@ static void Print( const char * format, ... )
 	va_end( args );
 
 	OutputDebugString( buffer );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	char buffer[4096];
 	va_list args;
 	va_start( args, format );
@@ -579,7 +587,7 @@ static void Error( const char * format, ... )
 	OutputDebugString( buffer );
 
 	MessageBox( NULL, buffer, "ERROR", MB_OK | MB_ICONINFORMATION );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	char buffer[4096];
 	va_list args;
 	va_start( args, format );
@@ -637,7 +645,7 @@ static const char * GetOSVersion()
 	}
 
 	return "Microsoft Windows";
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	static char version[1024];
 	size_t len;
 	int mib[2] = { CTL_KERN, KERN_OSRELEASE };
@@ -734,7 +742,7 @@ static const char * GetCPUVersion()
 			return processor;
 		}
 	}
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	static char processor[1024];
 	size_t processor_length = sizeof( processor );
 	sysctlbyname( "machdep.cpu.brand_string", &processor, &processor_length, NULL, 0 );
@@ -1191,7 +1199,7 @@ static void Thread_SetName( const char * name )
 	{
 		info.dwFlags = 0;
 	}
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	pthread_setname_np( name );
 #elif defined( OS_LINUX )
 	pthread_setname_np( pthread_self(), name );
@@ -1219,7 +1227,7 @@ static void Thread_SetAffinity( int mask )
 	{
 		Print( "Thread %p affinity set to 0x%02X\n", thread, mask );
 	}
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	// OS X does not export interfaces that identify processors or control thread placement.
 	// Explicit thread to processor binding is not supported.
 	UNUSED_PARM( mask );
@@ -1330,7 +1338,7 @@ static void Thread_SetRealTimePriority( int priority )
 	{
 		Print( "Thread %p priority set to critical.\n", thread );
 	}
-#elif defined( OS_MAC ) || defined( OS_LINUX )
+#elif defined( OS_APPLE ) || defined( OS_LINUX )
 	struct sched_param sp;
 	memset( &sp, 0, sizeof( struct sched_param ) );
 	sp.sched_priority = priority;
@@ -2303,7 +2311,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	instance->vkEnumerateInstanceLayerProperties = (PFN_vkEnumerateInstanceLayerProperties)dlsym( instance->loader, "vkEnumerateInstanceLayerProperties" );
 	instance->vkEnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)dlsym( instance->loader, "vkEnumerateInstanceExtensionProperties" );
 	instance->vkCreateInstance = (PFN_vkCreateInstance)dlsym( instance->loader, "vkCreateInstance" );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	instance->vkGetInstanceProcAddr = vkGetInstanceProcAddr;
 	GET_INSTANCE_PROC_ADDR( vkEnumerateInstanceLayerProperties );
 	GET_INSTANCE_PROC_ADDR( vkEnumerateInstanceExtensionProperties );
@@ -3937,7 +3945,7 @@ typedef struct
 	HINSTANCE				hInstance;
 	HWND					hWnd;
 	bool					windowActiveState;
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	CGDirectDisplayID		display;
 	CGDisplayModeRef		desktopDisplayMode;
 	NSWindow *				nsWindow;
@@ -3972,7 +3980,7 @@ static void GpuWindow_CreateFromSurface( GpuWindow_t * window, const VkSurfaceKH
 	GpuSwapchain_Create( &window->context, &window->swapchain, surface, window->colorFormat, window->windowWidth, window->windowHeight, window->windowSwapInterval );
 	GpuDepthBuffer_Create( &window->context, &window->depthBuffer, window->depthFormat, window->windowWidth, window->windowHeight, 1 );
 
-#if defined( OS_MAC )
+#if defined( OS_APPLE )
     window->windowWidth = window->swapchain.width;			// iOS/OSX patch for Retina displays
     window->windowHeight = window->swapchain.height;		// iOS/OSX patch for Retina displays
 #endif
@@ -4305,7 +4313,7 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 	return GPU_WINDOW_EVENT_NONE;
 }
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 
 typedef enum
 {
@@ -15742,7 +15750,7 @@ int APIENTRY WinMain( HINSTANCE hCurrentInst, HINSTANCE hPreviousInst, LPSTR lps
 	return StartApplication( argc, argv );
 }
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 
 static const char * FormatString( const char * format, ... )
 {
