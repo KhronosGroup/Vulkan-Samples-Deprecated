@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+		package="com.vulkansamples.driverinfo_vulkan">
+
+	<!-- Allow writing frame logs. -->
+	<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+
+	<!-- This .apk has no Java code itself, so set hasCode to false. -->
+	<application android:label="driverinfo_vulkan" android:hasCode="false" android:allowBackup="false">
+		<!-- The activity is the built-in NativeActivity framework class. -->
+		<!-- launchMode is set to singleTask because there should never be multiple copies of the app running. -->
+		<!-- Theme.Black.NoTitleBar.Fullscreen gives solid black instead of a (bad stereoscopic) gradient on app transition. -->
+		<activity android:name="android.app.NativeActivity"
+				android:label="driverinfo_vulkan"
+				android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+				android:launchMode="singleTask"
+				android:screenOrientation="landscape"
+				android:configChanges="orientation|screenSize|keyboard|keyboardHidden">
+			<!-- Tell NativeActivity the name of the .so -->
+			<meta-data android:name="android.app.lib_name" android:value="driverinfo_vulkan" />
+			<intent-filter>
+				<action android:name="android.intent.action.MAIN" />
+				<category android:name="android.intent.category.LAUNCHER" />
+			</intent-filter>
+		</activity>
+	</application>
+
+</manifest>
