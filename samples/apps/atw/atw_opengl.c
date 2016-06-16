@@ -2221,7 +2221,7 @@ PROC GetExtension( const char * functionName )
 #elif defined( OS_LINUX )
 void ( *GetExtension( const char * functionName ) )()
 {
-	return glXGetProcAddress( (GLubyte *)functionName );
+	return glXGetProcAddress( (const GLubyte *)functionName );
 }
 #endif
 

@@ -652,6 +652,18 @@ static void GlCheckErrors( const char * function )
 	}
 }
 
+#if defined( OS_WINDOWS )
+PROC GetExtension( const char * functionName )
+{
+	return wglGetProcAddress( functionName );
+}
+#elif defined( OS_LINUX )
+void ( *GetExtension( const char * functionName ) )()
+{
+	return glXGetProcAddress( (const GLubyte *)functionName );
+}
+#endif
+
 /*
 ================================================================================================================================
 
@@ -1018,10 +1030,11 @@ static bool GpuContext_Create( GpuContext_t * context )
 		Error( "Unable to open X Display." );
 		return false;
 	}
+	context->xScreen = XDefaultScreen( context->xDisplay );
 
 	int glxErrorBase;
 	int glxEventBase;
-	if ( !glXQueryExtension( xDisplay, &glxErrorBase, &glxEventBase ) )
+	if ( !glXQueryExtension( context->xDisplay, &glxErrorBase, &glxEventBase ) )
 	{
 		Error( "X display does not support the GLX extension." );
 		return false;
@@ -1029,14 +1042,14 @@ static bool GpuContext_Create( GpuContext_t * context )
 
 	int glxVersionMajor;
 	int glxVersionMinor;
-	if ( !glXQueryVersion( xDisplay, &glxVersionMajor, &glxVersionMinor ) )
+	if ( !glXQueryVersion( context->xDisplay, &glxVersionMajor, &glxVersionMinor ) )
 	{
 		Error( "Unable to retrieve GLX version." );
 		return false;
 	}
 
 	int fbConfigCount = 0;
-	GLXFBConfig * fbConfigs = glXGetFBConfigs( xDisplay, xScreen, &fbConfigCount );
+	GLXFBConfig * fbConfigs = glXGetFBConfigs( context->xDisplay, context->xScreen, &fbConfigCount );
 	if ( fbConfigCount == 0 )
 	{
 		Error( "No valid framebuffer configurations found." );
@@ -1046,18 +1059,18 @@ static bool GpuContext_Create( GpuContext_t * context )
 	bool foundFbConfig = false;
 	for ( int i = 0; i < fbConfigCount; i++ )
 	{
-		if ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_FBCONFIG_ID ) == 0 ) { continue; }
-		if ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_VISUAL_ID ) == 0 ) { continue; }
-		if ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_DOUBLEBUFFER ) == 0 ) { continue; }
-		if ( ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_RENDER_TYPE ) & GLX_RGBA_BIT ) == 0 ) { continue; }
-		if ( ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_DRAWABLE_TYPE ) & GLX_WINDOW_BIT ) == 0 ) { continue; }
-		if ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_RED_SIZE )   != 8 ) { continue; }
-		if ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_GREEN_SIZE ) != 8 ) { continue; }
-		if ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_BLUE_SIZE )  != 8 ) { continue; }
-		if ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_ALPHA_SIZE ) != 8 ) { continue; }
-		if ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_DEPTH_SIZE ) != 0 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_FBCONFIG_ID ) == 0 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_VISUAL_ID ) == 0 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_DOUBLEBUFFER ) == 0 ) { continue; }
+		if ( ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_RENDER_TYPE ) & GLX_RGBA_BIT ) == 0 ) { continue; }
+		if ( ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_DRAWABLE_TYPE ) & GLX_WINDOW_BIT ) == 0 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_RED_SIZE )   != 8 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_GREEN_SIZE ) != 8 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_BLUE_SIZE )  != 8 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_ALPHA_SIZE ) != 8 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_DEPTH_SIZE ) != 0 ) { continue; }
 
-		context->visualid = glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_VISUAL_ID );
+		context->visualid = glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_VISUAL_ID );
 		context->glxFBConfig = fbConfigs[i];
 		foundFbConfig = true;
 		break;
@@ -1071,7 +1084,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 		return false;
 	}
 
-	PFNGLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB = (PFNGLXCREATECONTEXTATTRIBSARBPROC) glXGetProcAddress( "glXCreateContextAttribsARB" );
+	PFNGLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB = (PFNGLXCREATECONTEXTATTRIBSARBPROC) glXGetProcAddress( (const GLubyte *) "glXCreateContextAttribsARB" );
 
 	int attribs[] =
 	{
@@ -1082,7 +1095,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 		0
 	};
 
-	context->glxContext = glXCreateContextAttribsARB( xDisplay,					// Display *	dpy
+	context->glxContext = glXCreateContextAttribsARB( context->xDisplay,		// Display *	dpy
 														context->glxFBConfig,	// GLXFBConfig	config
 														NULL,					// GLXContext	share_context
 														True,					// Bool			direct
@@ -1094,7 +1107,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 		return false;
 	}
 
-	if ( !glXIsDirect( xDisplay, context->glxContext ) )
+	if ( !glXIsDirect( context->xDisplay, context->glxContext ) )
 	{
 		Error( "Unable to create direct rendering context." );
 		return false;
@@ -1122,16 +1135,16 @@ static bool GpuContext_Create( GpuContext_t * context )
 	memset( context, 0, sizeof( GpuContext_t ) );
 
 	const char * displayName = NULL;
-	int screen_number = 0;
-	context->connection = xcb_connect( displayName, &screen_number );
+	context->screen_number = 0;
+	context->connection = xcb_connect( displayName, &context->screen_number );
 	if ( xcb_connection_has_error( context->connection ) )
 	{
 		Error( "Failed to open XCB connection." );
 		return false;
 	}
 
-	xcb_glx_query_version_cookie_t glx_query_version_cookie = xcb_glx_query_version( connection, OPENGL_VERSION_MAJOR, OPENGL_VERSION_MINOR );
-	xcb_glx_query_version_reply_t * glx_query_version_reply = xcb_glx_query_version_reply( connection, glx_query_version_cookie, NULL );
+	xcb_glx_query_version_cookie_t glx_query_version_cookie = xcb_glx_query_version( context->connection, OPENGL_VERSION_MAJOR, OPENGL_VERSION_MINOR );
+	xcb_glx_query_version_reply_t * glx_query_version_reply = xcb_glx_query_version_reply( context->connection, glx_query_version_cookie, NULL );
 	if ( glx_query_version_reply == NULL )
 	{
 		Error( "Unable to retrieve GLX version." );
@@ -1139,8 +1152,8 @@ static bool GpuContext_Create( GpuContext_t * context )
 	}
 	free( glx_query_version_reply );
 
-	xcb_glx_get_fb_configs_cookie_t get_fb_configs_cookie = xcb_glx_get_fb_configs( connection, screen_number );
-	xcb_glx_get_fb_configs_reply_t * get_fb_configs_reply = xcb_glx_get_fb_configs_reply( connection, get_fb_configs_cookie, NULL );
+	xcb_glx_get_fb_configs_cookie_t get_fb_configs_cookie = xcb_glx_get_fb_configs( context->connection, context->screen_number );
+	xcb_glx_get_fb_configs_reply_t * get_fb_configs_reply = xcb_glx_get_fb_configs_reply( context->connection, get_fb_configs_cookie, NULL );
 
 	if ( get_fb_configs_reply == NULL || get_fb_configs_reply->num_FB_configs == 0 )
 	{
@@ -1184,7 +1197,6 @@ static bool GpuContext_Create( GpuContext_t * context )
 	}
 
 	context->connection = connection;
-	context->screen_number = screen_number;
 
 	// Create the context.
 	uint32_t attribs[] =
@@ -1196,11 +1208,11 @@ static bool GpuContext_Create( GpuContext_t * context )
 		0
 	};
 
-	context->glxContext = xcb_generate_id( connection );
-	xcb_glx_create_context_attribs_arb( connection,				// xcb_connection_t *	connection
+	context->glxContext = xcb_generate_id( context->connection );
+	xcb_glx_create_context_attribs_arb( context->connection,	// xcb_connection_t *	connection
 										context->glxContext,	// xcb_glx_context_t	context
 										context->fbconfigid,	// xcb_glx_fbconfig_t	fbconfig
-										screen_number,			// uint32_t				screen
+										context->screen_number,	// uint32_t				screen
 										0,						// xcb_glx_context_t	share_list
 										1,						// uint8_t				is_direct
 										4,						// uint32_t				num_attribs
@@ -1208,8 +1220,8 @@ static bool GpuContext_Create( GpuContext_t * context )
 
 	// Make sure the context is direct.
 	xcb_generic_error_t * error;
-	xcb_glx_is_direct_cookie_t glx_is_direct_cookie = xcb_glx_is_direct_unchecked( connection, context->glxContext );
-	xcb_glx_is_direct_reply_t * glx_is_direct_reply = xcb_glx_is_direct_reply( connection, glx_is_direct_cookie, &error );
+	xcb_glx_is_direct_cookie_t glx_is_direct_cookie = xcb_glx_is_direct_unchecked( context->connection, context->glxContext );
+	xcb_glx_is_direct_reply_t * glx_is_direct_reply = xcb_glx_is_direct_reply( context->connection, glx_is_direct_cookie, &error );
 	const bool is_direct = ( glx_is_direct_reply != NULL && glx_is_direct_reply->is_direct );
 	free( glx_is_direct_reply );
 
