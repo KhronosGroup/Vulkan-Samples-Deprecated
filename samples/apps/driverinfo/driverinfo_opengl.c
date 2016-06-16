@@ -685,6 +685,7 @@ typedef struct
 	CGLContextObj			cglContext;
 #elif defined( OS_LINUX_XLIB )
 	Display *				xDisplay;
+	int						xScreen;
 	uint32_t				visualid;
 	GLXFBConfig				glxFBConfig;
 	GLXDrawable				glxDrawable;
@@ -940,7 +941,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 		HGLRC hGLRC = wglCreateContext( context->hDC );
 		wglMakeCurrent( context->hDC, hGLRC );
 
-		wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC) wglGetProcAddress( "wglCreateContextAttribsARB" );
+		wglCreateContextAttribsARB = (PFNWGLCREATECONTEXTATTRIBSARBPROC) GetExtension( "wglCreateContextAttribsARB" );
 
 		wglMakeCurrent( NULL, NULL );
 		wglDeleteContext( hGLRC );
@@ -1084,7 +1085,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 		return false;
 	}
 
-	PFNGLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB = (PFNGLXCREATECONTEXTATTRIBSARBPROC) glXGetProcAddress( (const GLubyte *) "glXCreateContextAttribsARB" );
+	PFNGLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB = (PFNGLXCREATECONTEXTATTRIBSARBPROC) GetExtension( "glXCreateContextAttribsARB" );
 
 	int attribs[] =
 	{
@@ -2059,7 +2060,7 @@ int main( int argc, char * argv[] )
 	// Extension strings
 	{
 #if defined( OS_WINDOWS ) || defined( OS_LINUX )
-		PFNGLGETSTRINGIPROC glGetStringi = (PFNGLGETSTRINGIPROC) wglGetProcAddress( "glGetStringi" );
+		PFNGLGETSTRINGIPROC glGetStringi = (PFNGLGETSTRINGIPROC) GetExtension( "glGetStringi" );
 #endif
 		GL( const GLint numExtensions = glGetInteger( GL_NUM_EXTENSIONS ) );
 		for ( int i = 0; i < numExtensions; i++ )
