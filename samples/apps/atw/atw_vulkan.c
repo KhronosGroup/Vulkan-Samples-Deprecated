@@ -6590,11 +6590,12 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	VC( context->device->instance->vkGetPhysicalDeviceFormatProperties( context->device->physicalDevice, format, &props ) );
 
 	if (	// Copy from linear staging image.
-			( props.linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT ) == 0 &&
+// FIXME: the Qualcomm driver always has linearTilingFeatures set to 0.
+//			( props.linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT ) == 0 ||
 			// Blit from tiled image to create mip maps.
-			( props.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT ) == 0 &&
+			( props.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT ) == 0 ||
 			// Blit to tiled image from linear staging image, or to create mip maps.
-			( props.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT ) == 0 &&
+			( props.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT ) == 0 ||
 			// Sample texture during rendering.
 			( props.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT ) == 0 )
 	{
