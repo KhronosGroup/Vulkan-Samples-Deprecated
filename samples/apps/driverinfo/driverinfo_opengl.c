@@ -75,7 +75,7 @@ Linux: GCC 4.8.2 XCB:
 	sudo apt-get install libxcb-icccm4-dev
 	sudo apt-get install mesa-common-dev
 	sudo apt-get install libgl1-mesa-dev
-	gcc -std=c99 -Wall -g -O2 -o -m64 driverinfo_opengl driverinfo_opengl.c -lm -lxcb -lxcb-keysyms -lxcb-randr -lxcb-glx -lxcb-dri2 -lGL
+	gcc -std=c99 -Wall -g -O2 -m64 -o driverinfo_opengl driverinfo_opengl.c -lm -lxcb -lxcb-keysyms -lxcb-randr -lxcb-glx -lxcb-dri2 -lGL
 
 Android for ARM from Windows: NDK Revision 11c - Android 21 - ANT/Gradle
 	ANT:
@@ -195,6 +195,7 @@ Platform headers / declarations
 
 	#include <time.h>
 	#include <malloc.h>							// for memalign
+	#include <dlfcn.h>							// for dlopen
 	#include <android/log.h>					// for __android_log_print
 	#include <android/input.h>					// for AKEYCODE_ etc.
 	#include <android/window.h>					// for AWINDOW_FLAG_KEEP_SCREEN_ON
@@ -250,6 +251,9 @@ Common defines
 #endif
 #if !defined( GL_SRG8_EXT )
 	#define GL_SRG8_EXT						0x8FBE
+#endif
+#if !defined( EGL_OPENGL_ES3_BIT )
+	#define EGL_OPENGL_ES3_BIT				0x0040
 #endif
 
 /*
@@ -771,24 +775,24 @@ static void GpuContext_Destroy( GpuContext_t * context )
 	if ( context->context != EGL_NO_CONTEXT )
 	{
 		EGL( eglDestroyContext( context->display, context->context ) );
+		context->context = EGL_NO_CONTEXT;
 	}
 	if ( context->mainSurface != context->tinySurface )
 	{
 		EGL( eglDestroySurface( context->display, context->mainSurface ) );
+		context->mainSurface = EGL_NO_SURFACE;
 	}
 	if ( context->tinySurface != EGL_NO_SURFACE )
 	{
 		EGL( eglDestroySurface( context->display, context->tinySurface ) );
+		context->tinySurface = EGL_NO_SURFACE;
 	}
 	if ( context->display != 0 )
 	{
 		EGL( eglTerminate( context->display ) );
+		context->display = 0;
 	}
-	context->display = 0;
-	context->config = 0;
-	context->tinySurface = EGL_NO_SURFACE;
-	context->mainSurface = EGL_NO_SURFACE;
-	context->context = EGL_NO_CONTEXT;
+	context->config = EGL_NO_CONTEXT;
 #endif
 }
 
@@ -820,6 +824,8 @@ LRESULT APIENTRY WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 
 static bool GpuContext_Create( GpuContext_t * context )
 {
+	memset( context, 0, sizeof( GpuContext_t ) );
+
 	context->hInstance = GetModuleHandle( NULL );
 
 	WNDCLASS wc;
@@ -951,6 +957,8 @@ static bool GpuContext_Create( GpuContext_t * context )
 
 static bool GpuContext_Create( GpuContext_t * context )
 {
+	memset( context, 0, sizeof( GpuContext_t ) );
+
 	CGDirectDisplayID displays[32];
 	CGDisplayCount displayCount = 0;
 	CGDisplayErr err = CGGetActiveDisplayList( 32, displays, &displayCount );
@@ -1001,6 +1009,8 @@ static int glxGetFBConfigAttrib2( Display * dpy, GLXFBConfig config, int attribu
 
 static bool GpuContext_Create( GpuContext_t * context )
 {
+	memset( context, 0, sizeof( GpuContext_t ) );
+
 	const char * displayName = NULL;
 	context->xDisplay = XOpenDisplay( displayName );
 	if ( !context->xDisplay )
@@ -1109,7 +1119,7 @@ static uint32_t xcb_glx_get_property( const uint32_t * properties, const uint32_
 
 static bool GpuContext_Create( GpuContext_t * context )
 {
-	PFNGLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB = (PFNGLXCREATECONTEXTATTRIBSARBPROC) glXGetProcAddress( "glXCreateContextAttribsARB" );
+	memset( context, 0, sizeof( GpuContext_t ) );
 
 	const char * displayName = NULL;
 	int screen_number = 0;
@@ -1216,6 +1226,8 @@ static bool GpuContext_Create( GpuContext_t * context )
 
 static bool GpuContext_Create( GpuContext_t * context )
 {
+	memset( context, 0, sizeof( GpuContext_t ) );
+
 	EGLint majorVersion = OPENGL_VERSION_MAJOR;
 	EGLint minorVersion = OPENGL_VERSION_MINOR;
 
@@ -1225,7 +1237,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 	const int MAX_CONFIGS = 1024;
 	EGLConfig configs[MAX_CONFIGS];
 	EGLint numConfigs = 0;
-	EGL( eglGetConfigs( display, configs, MAX_CONFIGS, &numConfigs ) );
+	EGL( eglGetConfigs( context->display, configs, MAX_CONFIGS, &numConfigs ) );
 
 	const EGLint configAttribs[] =
 	{
@@ -1244,14 +1256,14 @@ static bool GpuContext_Create( GpuContext_t * context )
 	{
 		EGLint value = 0;
 
-		eglGetConfigAttrib( display, configs[i], EGL_RENDERABLE_TYPE, &value );
+		eglGetConfigAttrib( context->display, configs[i], EGL_RENDERABLE_TYPE, &value );
 		if ( ( value & EGL_OPENGL_ES3_BIT ) != EGL_OPENGL_ES3_BIT )
 		{
 			continue;
 		}
 
 		// Without EGL_KHR_surfaceless_context, the config needs to support both pbuffers and window surfaces.
-		eglGetConfigAttrib( display, configs[i], EGL_SURFACE_TYPE, &value );
+		eglGetConfigAttrib( context->display, configs[i], EGL_SURFACE_TYPE, &value );
 		if ( ( value & ( EGL_WINDOW_BIT | EGL_PBUFFER_BIT ) ) != ( EGL_WINDOW_BIT | EGL_PBUFFER_BIT ) )
 		{
 			continue;
@@ -1260,7 +1272,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 		int	j = 0;
 		for ( ; configAttribs[j] != EGL_NONE; j += 2 )
 		{
-			eglGetConfigAttrib( display, configs[i], configAttribs[j], &value );
+			eglGetConfigAttrib( context->display, configs[i], configAttribs[j], &value );
 			if ( value != configAttribs[j + 1] )
 			{
 				break;
@@ -1283,7 +1295,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 		EGL_NONE, EGL_NONE,
 		EGL_NONE
 	};
-	context->context = eglCreateContext( display, context->config, EGL_NO_CONTEXT, contextAttribs );
+	context->context = eglCreateContext( context->display, context->config, EGL_NO_CONTEXT, contextAttribs );
 	if ( context->context == EGL_NO_CONTEXT )
 	{
 		Error( "eglCreateContext() failed: %s", EglErrorString( eglGetError() ) );
@@ -1296,11 +1308,11 @@ static bool GpuContext_Create( GpuContext_t * context )
 		EGL_HEIGHT, 16,
 		EGL_NONE
 	};
-	context->tinySurface = eglCreatePbufferSurface( display, context->config, surfaceAttribs );
+	context->tinySurface = eglCreatePbufferSurface( context->display, context->config, surfaceAttribs );
 	if ( context->tinySurface == EGL_NO_SURFACE )
 	{
 		Error( "eglCreatePbufferSurface() failed: %s", EglErrorString( eglGetError() ) );
-		eglDestroyContext( display, context->context );
+		eglDestroyContext( context->display, context->context );
 		context->context = EGL_NO_CONTEXT;
 		return false;
 	}
@@ -1369,7 +1381,7 @@ Print Driver Info
 
 #define FORMAT_ENUM_STRING( e, c, d )		{ e, #e, c, d }
 
-struct
+static struct
 {
 	GLenum			value;
 	const char *	string;
@@ -1404,13 +1416,25 @@ formats[] =
 	//
 	// 16 bits per component
 	//
+#if defined( GL_R16 )
 	FORMAT_ENUM_STRING( GL_R16,												false, "1-component, 16-bit unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_RG16,											false, "2-component, 16-bit unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_RGBA16,											false, "4-component, 16-bit unsigned normalized" ),
+#elif defined( GL_R16_EXT )
+	FORMAT_ENUM_STRING( GL_R16_EXT,											false, "1-component, 16-bit unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_RG16_EXT,										false, "2-component, 16-bit unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_RGB16_EXT,										false, "4-component, 16-bit unsigned normalized" ),
+#endif
 
+#if defined( GL_R16_SNORM )
 	FORMAT_ENUM_STRING( GL_R16_SNORM,										false, "1-component, 16-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RG16_SNORM,										false, "2-component, 16-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RGBA16_SNORM,									false, "4-component, 16-bit signed normalized" ),
+#elif defined( GL_R16_EXT )
+	FORMAT_ENUM_STRING( GL_R16_SNORM_EXT,									false, "1-component, 16-bit signed normalized" ),
+	FORMAT_ENUM_STRING( GL_RG16_SNORM_EXT,									false, "2-component, 16-bit signed normalized" ),
+	FORMAT_ENUM_STRING( GL_RGB16_SNORM_EXT,									false, "4-component, 16-bit signed normalized" ),
+#endif
 
 	FORMAT_ENUM_STRING( GL_R16I,											false, "1-component, 16-bit signed integer" ),
 	FORMAT_ENUM_STRING( GL_RG16I,											false, "2-component, 16-bit signed integer" ),
@@ -1442,20 +1466,48 @@ formats[] =
 	//
 	// Odd bits per component
 	//
+#if defined( GL_R3_G3_B2 )
 	FORMAT_ENUM_STRING( GL_R3_G3_B2,										false, "3-component 3:3:2,       unsigned normalized" ),
+#endif
+#if defined( GL_RGB4 )
 	FORMAT_ENUM_STRING( GL_RGB4,											false, "3-component 4:4:4,       unsigned normalized" ),
+#endif
+#if defined( GL_RGB5 )
 	FORMAT_ENUM_STRING( GL_RGB5,											false, "3-component 5:5:5,       unsigned normalized" ),
+#endif
+#if defined( GL_RGB565 )
 	FORMAT_ENUM_STRING( GL_RGB565,											false, "3-component 5:6:5,       unsigned normalized" ),
+#endif
+#if defined( GL_RGB10 )
 	FORMAT_ENUM_STRING( GL_RGB10,											false, "3-component 10:10:10,    unsigned normalized" ),
+#endif
+#if defined( GL_RGB12 )
 	FORMAT_ENUM_STRING( GL_RGB12,											false, "3-component 12:12:12,    unsigned normalized" ),
+#endif
+#if defined( GL_RGBA2 )
 	FORMAT_ENUM_STRING( GL_RGBA2,											false, "4-component 2:2:2:2,     unsigned normalized" ),
+#endif
+#if defined( GL_RGBA4 )
 	FORMAT_ENUM_STRING( GL_RGBA4,											false, "4-component 4:4:4:4,     unsigned normalized" ),
+#endif
+#if defined( GL_RGBA12 )
 	FORMAT_ENUM_STRING( GL_RGBA12,											false, "4-component 12:12:12:12, unsigned normalized" ),
+#endif
+#if defined( GL_RGB5_A1 )
 	FORMAT_ENUM_STRING( GL_RGB5_A1,											false, "4-component 5:5:5:1,     unsigned normalized" ),
+#endif
+#if defined( GL_RGB10_A2 )
 	FORMAT_ENUM_STRING( GL_RGB10_A2,										false, "4-component 10:10:10:2,  unsigned normalized" ),
+#endif
+#if defined( GL_RGB10_A2UI )
 	FORMAT_ENUM_STRING( GL_RGB10_A2UI,										false, "4-component 10:10:10:2,  unsigned integer" ),
+#endif
+#if defined( GL_R11F_G11F_B10F )
 	FORMAT_ENUM_STRING( GL_R11F_G11F_B10F,									false, "3-component 11:11:10,    floating-point" ),
+#endif
+#if defined( GL_RGB9_E5 )
 	FORMAT_ENUM_STRING( GL_RGB9_E5,											false, "3-component/exp 9:9:9/5, floating-point" ),
+#endif
 
 	//
 	// Compressed formats
@@ -1518,6 +1570,16 @@ formats[] =
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT,		true, "line through 2D space, signed normalized" ),
 #endif
 
+#if defined( GL_ATC_RGB_AMD )
+	FORMAT_ENUM_STRING( GL_ATC_RGB_AMD,										true, "3-component, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_ATC_RGBA_EXPLICIT_ALPHA_AMD,						true, "4-component, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD,					true, "4-component, unsigned normalized" ),
+#endif
+
+#if defined( GL_ETC1_RGB8_OES )
+	FORMAT_ENUM_STRING( GL_ETC1_RGB8_OES,									true, "3-component ETC1, unsigned normalized" ),
+#endif
+
 #if defined( GL_COMPRESSED_RGB8_ETC2 )
 	FORMAT_ENUM_STRING( GL_COMPRESSED_RGB8_ETC2,							true, "3-component ETC2, unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2,		true, "4-component with 1-bit alpha ETC2, unsigned normalized" ),
@@ -1566,6 +1628,29 @@ formats[] =
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR,			true, "4-component ASTC, 12x10 blocks, sRGB" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR,			true, "4-component ASTC, 12x12 blocks, sRGB" ),
 #endif
+
+#if defined( GL_COMPRESSED_RGBA_ASTC_3x3x3_OES )
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_3x3x3_OES,					true, "4-component ASTC, 3x3x3 blocks, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_4x3x3_OES,					true, "4-component ASTC, 4x3x3 blocks, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_4x4x3_OES,					true, "4-component ASTC, 4x4x3 blocks, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_4x4x4_OES,					true, "4-component ASTC, 4x4x4 blocks, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_5x4x4_OES,					true, "4-component ASTC, 5x4x4 blocks, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_5x5x4_OES,					true, "4-component ASTC, 5x5x4 blocks, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_5x5x5_OES,					true, "4-component ASTC, 5x5x5 blocks, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_6x5x5_OES,					true, "4-component ASTC, 6x5x5 blocks, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_6x6x5_OES,					true, "4-component ASTC, 6x6x5 blocks, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_6x6x6_OES,					true, "4-component ASTC, 6x6x6 blocks, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_3x3x3_OES,			true, "4-component ASTC, 3x3x3 blocks, sRGB" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x3x3_OES,			true, "4-component ASTC, 4x3x3 blocks, sRGB" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4x3_OES,			true, "4-component ASTC, 4x4x3 blocks, sRGB" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4x4_OES,			true, "4-component ASTC, 4x4x4 blocks, sRGB" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4x4_OES,			true, "4-component ASTC, 5x4x4 blocks, sRGB" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5x4_OES,			true, "4-component ASTC, 5x5x4 blocks, sRGB" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5x5_OES,			true, "4-component ASTC, 5x5x5 blocks, sRGB" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5x5_OES,			true, "4-component ASTC, 6x5x5 blocks, sRGB" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x5_OES,			true, "4-component ASTC, 6x6x5 blocks, sRGB" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x6_OES,			true, "4-component ASTC, 6x6x6 blocks, sRGB" ),
+#endif
 };
 
 static const char * GetTextureEnumString( GLenum e )
@@ -1584,7 +1669,7 @@ static const char * GetTextureEnumString( GLenum e )
 
 #define LIMIT_ENUM_STRING( e, c, d )		{ e, #e, c, d }
 
-struct
+static struct
 {
 	GLenum			value;
 	const char *	string;
@@ -1961,7 +2046,9 @@ int main( int argc, char * argv[] )
 
 	// Extension strings
 	{
+#if defined( OS_WINDOWS ) || defined( OS_LINUX )
 		PFNGLGETSTRINGIPROC glGetStringi = (PFNGLGETSTRINGIPROC) wglGetProcAddress( "glGetStringi" );
+#endif
 		GL( const GLint numExtensions = glGetInteger( GL_NUM_EXTENSIONS ) );
 		for ( int i = 0; i < numExtensions; i++ )
 		{
@@ -2021,12 +2108,84 @@ int main( int argc, char * argv[] )
 
 #if defined( OS_ANDROID )
 
+static void app_handle_cmd( struct android_app * app, int32_t cmd )
+{
+	switch ( cmd )
+	{
+		// There is no APP_CMD_CREATE. The ANativeActivity creates the
+		// application thread from onCreate(). The application thread
+		// then calls android_main().
+		case APP_CMD_START:
+		{
+			Print( "onStart()" );
+			Print( "    APP_CMD_START" );
+			break;
+		}
+		case APP_CMD_RESUME:
+		{
+			Print( "onResume()" );
+			Print( "    APP_CMD_RESUME" );
+			main( 0, NULL );
+			ANativeActivity_finish( app->activity );
+			break;
+		}
+		case APP_CMD_PAUSE:
+		{
+			Print( "onPause()" );
+			Print( "    APP_CMD_PAUSE" );
+			break;
+		}
+		case APP_CMD_STOP:
+		{
+			Print( "onStop()" );
+			Print( "    APP_CMD_STOP" );
+			break;
+		}
+		case APP_CMD_DESTROY:
+		{
+			Print( "onDestroy()" );
+			Print( "    APP_CMD_DESTROY" );
+			break;
+		}
+		case APP_CMD_INIT_WINDOW:
+		{
+			Print( "surfaceCreated()" );
+			Print( "    APP_CMD_INIT_WINDOW" );
+			break;
+		}
+		case APP_CMD_TERM_WINDOW:
+		{
+			Print( "surfaceDestroyed()" );
+			Print( "    APP_CMD_TERM_WINDOW" );
+			break;
+		}
+    }
+}
+
 void android_main( struct android_app * app )
 {
 	// Make sure the native app glue is not stripped.
 	app_dummy();
 
-	main( 0, NULL );
+	app->userData = NULL;
+	app->onAppCmd = app_handle_cmd;
+	app->onInputEvent = NULL;
+
+	for ( ; ; )
+	{
+		int events;
+		struct android_poll_source * source;
+		const int timeoutMilliseconds = ( app->destroyRequested == 0 ) ? -1 : 0;
+		if ( ALooper_pollAll( timeoutMilliseconds, NULL, &events, (void **)&source ) < 0 )
+		{
+			break;
+		}
+
+		if ( source != NULL )
+		{
+			source->process( app, source );
+		}
+	}
 }
 
 #endif

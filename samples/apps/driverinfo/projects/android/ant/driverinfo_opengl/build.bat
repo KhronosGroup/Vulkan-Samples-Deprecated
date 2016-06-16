@@ -9,4 +9,4 @@ call copy project.properties %BUILD_DIR%project.properties
 call ant -q debug -Dbasedir=%BUILD_DIR%
 call jar -tf %BUILD_DIR%bin/driverinfo_opengl-debug.apk
 call adb install -r %BUILD_DIR%bin/driverinfo_opengl-debug.apk
-call adb shell "am start -n com.vulkansamples.driverinfo_opengl/android.app.NativeActivity"
+call adb shell am start -n com.vulkansamples.driverinfo_opengl/android.app.NativeActivity -a "android.intent.action.MAIN"

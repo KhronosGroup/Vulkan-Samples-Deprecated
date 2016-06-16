@@ -8,9 +8,6 @@
 	<!-- SDK 9 is the platform API where NativeActivity was introduced. -->
 	<uses-sdk android:minSdkVersion="21" android:targetSdkVersion="21" />
 
-	<!-- Allow writing frame logs. -->
-	<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-
 	<!-- This .apk has no Java code itself, so set hasCode to false. -->
 	<application android:label="driverinfo_vulkan" android:hasCode="false">
 		<!-- The activity is the built-in NativeActivity framework class. -->

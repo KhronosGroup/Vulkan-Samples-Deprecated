@@ -6,9 +6,6 @@
 	<!-- Tell the system this app requires OpenGL ES 3.1. -->
 	<uses-feature android:glEsVersion="0x00030001" android:required="true"/>
 
-	<!-- Allow writing frame logs. -->
-	<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-
 	<!-- This .apk has no Java code itself, so set hasCode to false. -->
 	<application android:label="driverinfo_opengl" android:hasCode="false" android:allowBackup="false">
 		<!-- The activity is the built-in NativeActivity framework class. -->

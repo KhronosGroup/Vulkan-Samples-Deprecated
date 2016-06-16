@@ -214,6 +214,13 @@ Platform headers / declarations
 
 	#pragma GCC diagnostic ignored "-Wunused-function"
 
+	typedef struct
+	{
+		JavaVM *	vm;			// Java Virtual Machine
+		JNIEnv *	env;		// Thread specific environment
+		jobject		activity;	// Java activity object
+	} Java_t;
+
 #endif
 
 /*
@@ -576,7 +583,7 @@ static void Console_Resize( const short numLines, const short numColumns )
 		rect.Left = 0;
 		rect.Top = 0;
 		rect.Right = ( numColumns > csbi.dwSize.X ? numColumns : csbi.dwSize.X ) - 1;
-		rect.Bottom = 100;
+		rect.Bottom = 100 - 1;
 		SetConsoleWindowInfo( consoleHandle, TRUE, &rect );
 	}
 #endif
@@ -1489,12 +1496,95 @@ int main( int argc, char * argv[] )
 
 #if defined( OS_ANDROID )
 
+static void app_handle_cmd( struct android_app * app, int32_t cmd )
+{
+	switch ( cmd )
+	{
+		// There is no APP_CMD_CREATE. The ANativeActivity creates the
+		// application thread from onCreate(). The application thread
+		// then calls android_main().
+		case APP_CMD_START:
+		{
+			Print( "onStart()" );
+			Print( "    APP_CMD_START" );
+			break;
+		}
+		case APP_CMD_RESUME:
+		{
+			Print( "onResume()" );
+			Print( "    APP_CMD_RESUME" );
+			main( 0, NULL );
+			ANativeActivity_finish( app->activity );
+			break;
+		}
+		case APP_CMD_PAUSE:
+		{
+			Print( "onPause()" );
+			Print( "    APP_CMD_PAUSE" );
+			break;
+		}
+		case APP_CMD_STOP:
+		{
+			Print( "onStop()" );
+			Print( "    APP_CMD_STOP" );
+			break;
+		}
+		case APP_CMD_DESTROY:
+		{
+			Print( "onDestroy()" );
+			Print( "    APP_CMD_DESTROY" );
+			break;
+		}
+		case APP_CMD_INIT_WINDOW:
+		{
+			Print( "surfaceCreated()" );
+			Print( "    APP_CMD_INIT_WINDOW" );
+			ANativeActivity_setWindowFlags( app->activity, AWINDOW_FLAG_FULLSCREEN | AWINDOW_FLAG_KEEP_SCREEN_ON, 0 );
+			break;
+		}
+		case APP_CMD_TERM_WINDOW:
+		{
+			Print( "surfaceDestroyed()" );
+			Print( "    APP_CMD_TERM_WINDOW" );
+			break;
+		}
+    }
+}
+
 void android_main( struct android_app * app )
 {
 	// Make sure the native app glue is not stripped.
 	app_dummy();
 
-	main( 0, NULL );
+	app->userData = NULL;
+	app->onAppCmd = app_handle_cmd;
+	app->onInputEvent = NULL;
+
+	Java_t java;
+	java.vm = app->activity->vm;
+	(*java.vm)->AttachCurrentThread( java.vm, &java.env, NULL );
+	java.activity = app->activity->clazz;
+
+	for ( ; ; )
+	{
+		int events;
+		struct android_poll_source * source;
+		const int timeoutMilliseconds = ( app->destroyRequested == 0 ) ? -1 : 0;
+		if ( ALooper_pollAll( timeoutMilliseconds, NULL, &events, (void **)&source ) < 0 )
+		{
+			break;
+		}
+
+		if ( source != NULL )
+		{
+			source->process( app, source );
+		}
+	}
+
+	(*java.vm)->DetachCurrentThread( java.vm );
+	java.vm = NULL;
+	java.env = NULL;
+	java.activity = 0;
 }
 
 #endif

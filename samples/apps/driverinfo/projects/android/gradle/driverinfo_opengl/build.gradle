@@ -56,8 +56,8 @@ model {
 	android.sources {
 		main {
 			manifest.source {
-				srcDir "./"
-				include "AndroidManifest.xml"
+				srcDir './'
+				include 'AndroidManifest.xml'
 			}
 			jni.source {
 				srcDir "${ndkDir}/sources/android/native_app_glue"
