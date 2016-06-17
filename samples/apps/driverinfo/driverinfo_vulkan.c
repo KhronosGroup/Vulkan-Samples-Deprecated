@@ -214,13 +214,6 @@ Platform headers / declarations
 
 	#pragma GCC diagnostic ignored "-Wunused-function"
 
-	typedef struct
-	{
-		JavaVM *	vm;			// Java Virtual Machine
-		JNIEnv *	env;		// Thread specific environment
-		jobject		activity;	// Java activity object
-	} Java_t;
-
 #endif
 
 /*
@@ -447,7 +440,8 @@ static const char * GetOSVersion()
 	#define PROP_NAME_MAX   32
 	#define PROP_VALUE_MAX  92
 
-	char propval[PROP_VALUE_MAX] = { 0 };
+	char release[PROP_VALUE_MAX] = { 0 };
+	char build[PROP_VALUE_MAX] = { 0 };
 
 	void * handle = dlopen( "libc.so", RTLD_NOLOAD );
 	if ( handle != NULL )
@@ -456,11 +450,12 @@ static const char * GetOSVersion()
 		PFN_SYSTEM_PROP_GET __my_system_property_get = (PFN_SYSTEM_PROP_GET)dlsym( handle, "__system_property_get" );
 		if ( __my_system_property_get != NULL )
 		{
-			__my_system_property_get( "ro.build.version.release", propval );
+			__my_system_property_get( "ro.build.version.release", release );
+			__my_system_property_get( "ro.build.version.incremental", build );
 		}
 	}
 
-	snprintf( version, sizeof( version ), "Android %s", propval );
+	snprintf( version, sizeof( version ), "Android %s (%s)", release, build );
 
 	return version;
 #endif
@@ -1171,60 +1166,60 @@ static void PrintDeviceSparseProperties( const VkPhysicalDeviceSparseProperties 
 static void PrintDeviceFeatures( const VkPhysicalDeviceFeatures * deviceFeatures )
 {
 	PRINT_STRUCT_MEMBER( deviceFeatures, robustBufferAccess, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, fullDrawIndexUint32, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, imageCubeArray, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, independentBlend, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, geometryShader, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, tessellationShader, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, sampleRateShading, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, dualSrcBlend, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, logicOp, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, multiDrawIndirect, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, drawIndirectFirstInstance, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, depthClamp, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, depthBiasClamp, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, fillModeNonSolid, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, depthBounds, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, wideLines, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, largePoints, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, alphaToOne, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, multiViewport, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, samplerAnisotropy, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, textureCompressionETC2, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, textureCompressionASTC_LDR, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, textureCompressionBC, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, occlusionQueryPrecise, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, pipelineStatisticsQuery, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, vertexPipelineStoresAndAtomics, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, fragmentStoresAndAtomics, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderTessellationAndGeometryPointSize, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderImageGatherExtended, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderStorageImageExtendedFormats, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderStorageImageMultisample, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderStorageImageReadWithoutFormat, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderStorageImageWriteWithoutFormat, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderUniformBufferArrayDynamicIndexing, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderSampledImageArrayDynamicIndexing, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderStorageBufferArrayDynamicIndexing, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderStorageImageArrayDynamicIndexing, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderClipDistance, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderCullDistance, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderFloat64, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderInt64, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderInt16, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderResourceResidency, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, shaderResourceMinLod, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, sparseBinding, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidencyBuffer, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidencyImage2D, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidencyImage3D, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidency2Samples, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidency4Samples, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidency8Samples, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidency16Samples, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidencyAliased, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, variableMultisampleRate, FORMAT_VkBool32 );
-    PRINT_STRUCT_MEMBER( deviceFeatures, inheritedQueries, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, fullDrawIndexUint32, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, imageCubeArray, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, independentBlend, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, geometryShader, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, tessellationShader, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, sampleRateShading, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, dualSrcBlend, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, logicOp, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, multiDrawIndirect, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, drawIndirectFirstInstance, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, depthClamp, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, depthBiasClamp, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, fillModeNonSolid, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, depthBounds, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, wideLines, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, largePoints, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, alphaToOne, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, multiViewport, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, samplerAnisotropy, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, textureCompressionETC2, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, textureCompressionASTC_LDR, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, textureCompressionBC, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, occlusionQueryPrecise, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, pipelineStatisticsQuery, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, vertexPipelineStoresAndAtomics, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, fragmentStoresAndAtomics, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderTessellationAndGeometryPointSize, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderImageGatherExtended, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderStorageImageExtendedFormats, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderStorageImageMultisample, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderStorageImageReadWithoutFormat, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderStorageImageWriteWithoutFormat, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderUniformBufferArrayDynamicIndexing, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderSampledImageArrayDynamicIndexing, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderStorageBufferArrayDynamicIndexing, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderStorageImageArrayDynamicIndexing, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderClipDistance, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderCullDistance, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderFloat64, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderInt64, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderInt16, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderResourceResidency, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, shaderResourceMinLod, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, sparseBinding, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidencyBuffer, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidencyImage2D, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidencyImage3D, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidency2Samples, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidency4Samples, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidency8Samples, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidency16Samples, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, sparseResidencyAliased, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, variableMultisampleRate, FORMAT_VkBool32 );
+	PRINT_STRUCT_MEMBER( deviceFeatures, inheritedQueries, FORMAT_VkBool32 );
 }
 
 int main( int argc, char * argv[] )
@@ -1560,11 +1555,6 @@ void android_main( struct android_app * app )
 	app->onAppCmd = app_handle_cmd;
 	app->onInputEvent = NULL;
 
-	Java_t java;
-	java.vm = app->activity->vm;
-	(*java.vm)->AttachCurrentThread( java.vm, &java.env, NULL );
-	java.activity = app->activity->clazz;
-
 	for ( ; ; )
 	{
 		int events;
@@ -1580,11 +1570,6 @@ void android_main( struct android_app * app )
 			source->process( app, source );
 		}
 	}
-
-	(*java.vm)->DetachCurrentThread( java.vm );
-	java.vm = NULL;
-	java.env = NULL;
-	java.activity = 0;
 }
 
 #endif
