@@ -727,7 +727,8 @@ static const char * GetOSVersion()
 	#define PROP_NAME_MAX   32
 	#define PROP_VALUE_MAX  92
 
-	char propval[PROP_VALUE_MAX] = { 0 };
+	char release[PROP_VALUE_MAX] = { 0 };
+	char build[PROP_VALUE_MAX] = { 0 };
 
 	void * handle = dlopen( "libc.so", RTLD_NOLOAD );
 	if ( handle != NULL )
@@ -736,11 +737,12 @@ static const char * GetOSVersion()
 		PFN_SYSTEM_PROP_GET __my_system_property_get = (PFN_SYSTEM_PROP_GET)dlsym( handle, "__system_property_get" );
 		if ( __my_system_property_get != NULL )
 		{
-			__my_system_property_get( "ro.build.version.release", propval );
+			__my_system_property_get( "ro.build.version.release", release );
+			__my_system_property_get( "ro.build.version.incremental", build );
 		}
 	}
 
-	snprintf( version, sizeof( version ), "Android %s", propval );
+	snprintf( version, sizeof( version ), "Android %s (%s)", release, build );
 
 	return version;
 #endif
@@ -3173,7 +3175,7 @@ GPU context.
 
 A context encapsulates a queue that is used to submit command buffers.
 A context can only be used by a single thread.
-For optimal performance, a context should only be created at load time, not at runtime.
+For optimal performance a context should only be created at load time, not at runtime.
 
 GpuContext_t
 
@@ -3321,7 +3323,7 @@ static void GpuContext_FlushSetupCmdBuffer( GpuContext_t * context )
 GPU swapchain.
 
 This encapsulates a platform agnostic swapchain.
-For optimal performance, a swapchain should only be created at load time, not at runtime.
+For optimal performance a swapchain should only be created at load time, not at runtime.
 
 GpuSwapchain_t
 
@@ -3727,7 +3729,7 @@ static Microseconds_t GpuSwapchain_SwapBuffers( GpuContext_t * context, GpuSwapc
 GPU depth buffer.
 
 This encapsulates a platform agnostic depth buffer.
-For optimal performance, a depth buffer should only be created at load time, not at runtime.
+For optimal performance a depth buffer should only be created at load time, not at runtime.
 
 GpuDepthBuffer_t
 
@@ -3898,7 +3900,7 @@ static void GpuDepthBuffer_Destroy( GpuContext_t * context, GpuDepthBuffer_t * d
 GPU Window.
 
 Window with associated GPU context for GPU accelerated rendering.
-For optimal performance, a window should only be created at load time, not at runtime.
+For optimal performance a window should only be created at load time, not at runtime.
 
 GpuWindow_t
 GpuWindowEvent_t
@@ -3915,8 +3917,8 @@ static bool GpuWindow_ProcessEvents( GpuWindow_t * window );
 static void GpuWindow_SwapInterval( GpuWindow_t * window, const int swapInterval );
 static void GpuWindow_SwapBuffers( GpuWindow_t * window );
 static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window );
-static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
-static bool GpuWindow_CheckMouseButton( GpuWindow_t * window, const MouseButton_t button );
+static bool GpuWindow_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
+static bool GpuWindow_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button );
 
 ================================================================================================================================
 */
@@ -6075,7 +6077,7 @@ static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window )
 	return window->lastSwapTime + (Microseconds_t)( frameTimeMicroseconds );
 }
 
-static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key )
+static bool GpuWindow_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key )
 {
 	if ( window->keyInput[key] )
 	{
@@ -6085,7 +6087,7 @@ static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_
 	return false;
 }
 
-static bool GpuWindow_CheckMouseButton( GpuWindow_t * window, const MouseButton_t button )
+static bool GpuWindow_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button )
 {
 	if ( window->mouseInput[button] )
 	{
@@ -6101,7 +6103,7 @@ static bool GpuWindow_CheckMouseButton( GpuWindow_t * window, const MouseButton_
 GPU buffer.
 
 A buffer maintains a block of memory for a specific use by GPU programs (vertex, index, uniform, storage).
-For optimal performance, a buffer should only be created at load time, not at runtime.
+For optimal performance a buffer should only be created at load time, not at runtime.
 The best performance is typically achieved when the buffer is not host visible.
 
 GpuBufferType_t
@@ -6269,7 +6271,7 @@ static void GpuBuffer_Destroy( GpuContext_t * context, GpuBuffer_t * buffer )
 GPU texture.
 
 Supports loading textures from raw data.
-For optimal performance, a texture should only be created or modified at load time, not at runtime.
+For optimal performance a texture should only be created or modified at load time, not at runtime.
 Note that the geometry code assumes the texture origin 0,0 = left-top as opposed to left-bottom.
 In other words, textures are expected to be stored top-down as opposed to bottom-up.
 
@@ -6325,9 +6327,9 @@ typedef enum
 	GPU_TEXTURE_FORMAT_R8G8_SINT			= VK_FORMAT_R8G8_SINT,
 	GPU_TEXTURE_FORMAT_R8G8B8_SINT			= VK_FORMAT_R8G8B8_SINT,
 
-	GPU_TEXTURE_FORMAT_R8_UINT				= VK_FORMAT_R8_SINT,
-	GPU_TEXTURE_FORMAT_R8G8_UINT			= VK_FORMAT_R8G8_SINT,
-	GPU_TEXTURE_FORMAT_R8G8B8_UINT			= VK_FORMAT_R8G8B8_SINT,
+	GPU_TEXTURE_FORMAT_R8_UINT				= VK_FORMAT_R8_UINT,
+	GPU_TEXTURE_FORMAT_R8G8_UINT			= VK_FORMAT_R8G8_UINT,
+	GPU_TEXTURE_FORMAT_R8G8B8_UINT			= VK_FORMAT_R8G8B8_UINT,
 
 	//
 	// 16 bits per component
@@ -6368,24 +6370,27 @@ typedef enum
 	GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT	= VK_FORMAT_R32G32B32A32_SFLOAT,
 
 	//
-	// Compressed formats
+	// S3TC/DXT/BC
 	//
-	GPU_TEXTURE_FORMAT_BC1_R8G8B8_UNORM		= VK_FORMAT_BC1_RGB_UNORM_BLOCK,		// line through 3D space, unsigned normalized
-	GPU_TEXTURE_FORMAT_BC1_R8G8B8A1_UNORM	= VK_FORMAT_BC1_RGBA_UNORM_BLOCK,		// line through 3D space plus 1-bit alpha, unsigned normalized
-	GPU_TEXTURE_FORMAT_BC2_R8G8B8A8_UNORM	= VK_FORMAT_BC2_UNORM_BLOCK,			// line through 3D space plus line through 1D space, unsigned normalized
-	GPU_TEXTURE_FORMAT_BC3_R8G8B8A4_UNORM	= VK_FORMAT_BC3_UNORM_BLOCK,			// line through 3D space plus 4-bit alpha, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC1_R8G8B8_UNORM		= VK_FORMAT_BC1_RGB_UNORM_BLOCK,		// 3-component, line through 3D space, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC1_R8G8B8A1_UNORM	= VK_FORMAT_BC1_RGBA_UNORM_BLOCK,		// 4-component, line through 3D space plus 1-bit alpha, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC2_R8G8B8A8_UNORM	= VK_FORMAT_BC2_UNORM_BLOCK,			// 4-component, line through 3D space plus line through 1D space, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC3_R8G8B8A4_UNORM	= VK_FORMAT_BC3_UNORM_BLOCK,			// 4-component, line through 3D space plus 4-bit alpha, unsigned normalized
 
-	GPU_TEXTURE_FORMAT_BC1_R8G8B8_SRGB		= VK_FORMAT_BC1_RGB_SRGB_BLOCK,			// line through 3D space, sRGB
-	GPU_TEXTURE_FORMAT_BC1_R8G8B8A1_SRGB	= VK_FORMAT_BC1_RGBA_SRGB_BLOCK,		// line through 3D space plus 1-bit alpha, sRGB
-	GPU_TEXTURE_FORMAT_BC2_R8G8B8A8_SRGB	= VK_FORMAT_BC2_SRGB_BLOCK,				// line through 3D space plus line through 1D space, sRGB
-	GPU_TEXTURE_FORMAT_BC3_R8G8B8A4_SRGB	= VK_FORMAT_BC3_SRGB_BLOCK,				// line through 3D space plus 4-bit alpha, sRGB
+	GPU_TEXTURE_FORMAT_BC1_R8G8B8_SRGB		= VK_FORMAT_BC1_RGB_SRGB_BLOCK,			// 3-component, line through 3D space, sRGB
+	GPU_TEXTURE_FORMAT_BC1_R8G8B8A1_SRGB	= VK_FORMAT_BC1_RGBA_SRGB_BLOCK,		// 4-component, line through 3D space plus 1-bit alpha, sRGB
+	GPU_TEXTURE_FORMAT_BC2_R8G8B8A8_SRGB	= VK_FORMAT_BC2_SRGB_BLOCK,				// 4-component, line through 3D space plus line through 1D space, sRGB
+	GPU_TEXTURE_FORMAT_BC3_R8G8B8A4_SRGB	= VK_FORMAT_BC3_SRGB_BLOCK,				// 4-component, line through 3D space plus 4-bit alpha, sRGB
     
-	GPU_TEXTURE_FORMAT_BC4_R8_UNORM			= VK_FORMAT_BC4_UNORM_BLOCK,			// line through 1D space, unsigned normalized
-	GPU_TEXTURE_FORMAT_BC5_R8G8_UNORM		= VK_FORMAT_BC5_UNORM_BLOCK,			// line through 2D space, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC4_R8_UNORM			= VK_FORMAT_BC4_UNORM_BLOCK,			// 1-component, line through 1D space, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC5_R8G8_UNORM		= VK_FORMAT_BC5_UNORM_BLOCK,			// 2-component, two lines through 1D space, unsigned normalized
 
-	GPU_TEXTURE_FORMAT_BC4_R8_SNORM			= VK_FORMAT_BC4_SNORM_BLOCK,			// line through 1D space, signed normalized
-	GPU_TEXTURE_FORMAT_BC5_R8G8_SNORM		= VK_FORMAT_BC5_SNORM_BLOCK,			// line through 2D space, signed normalized
+	GPU_TEXTURE_FORMAT_BC4_R8_SNORM			= VK_FORMAT_BC4_SNORM_BLOCK,			// 1-component, line through 1D space, signed normalized
+	GPU_TEXTURE_FORMAT_BC5_R8G8_SNORM		= VK_FORMAT_BC5_SNORM_BLOCK,			// 2-component, two lines through 1D space, signed normalized
 
+	//
+	// ETC
+	//
 	GPU_TEXTURE_FORMAT_ETC2_R8G8B8_UNORM	= VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK,	// 3-component ETC2, unsigned normalized
 	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A1_UNORM	= VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK,	// 3-component with 1-bit alpha ETC2, unsigned normalized
 	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A8_UNORM	= VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK,	// 4-component ETC2, unsigned normalized
@@ -6394,11 +6399,15 @@ typedef enum
 	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A1_SRGB	= VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK,	// 3-component with 1-bit alpha ETC2, sRGB
 	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A8_SRGB	= VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK,	// 4-component ETC2, sRGB
 
-	GPU_TEXTURE_FORMAT_EAC_R11_UNORM		= VK_FORMAT_EAC_R11_UNORM_BLOCK,		// 1-component ETC, unsigned normalized
-	GPU_TEXTURE_FORMAT_EAC_R11_SNORM		= VK_FORMAT_EAC_R11_SNORM_BLOCK,		// 1-component ETC, signed normalized
-	GPU_TEXTURE_FORMAT_EAC_R11G11_UNORM		= VK_FORMAT_EAC_R11G11_UNORM_BLOCK,		// 2-component ETC, unsigned normalized
-	GPU_TEXTURE_FORMAT_EAC_R11G11_SNORM		= VK_FORMAT_EAC_R11G11_SNORM_BLOCK,		// 2-component ETC, signed normalized
+	GPU_TEXTURE_FORMAT_EAC_R11_UNORM		= VK_FORMAT_EAC_R11_UNORM_BLOCK,		// 1-component ETC, line through 1D space, unsigned normalized
+	GPU_TEXTURE_FORMAT_EAC_R11G11_UNORM		= VK_FORMAT_EAC_R11G11_UNORM_BLOCK,		// 2-component ETC, two lines through 1D space, unsigned normalized
 
+	GPU_TEXTURE_FORMAT_EAC_R11_SNORM		= VK_FORMAT_EAC_R11_SNORM_BLOCK,		// 1-component ETC, line through 1D space, signed normalized
+	GPU_TEXTURE_FORMAT_EAC_R11G11_SNORM		= VK_FORMAT_EAC_R11G11_SNORM_BLOCK,		// 2-component ETC, two lines through 1D space, signed normalized
+
+	//
+	// ASTC
+	//
 	GPU_TEXTURE_FORMAT_ASTC_4x4_UNORM		= VK_FORMAT_ASTC_4x4_UNORM_BLOCK,		// 4-component ASTC, 4x4 blocks, unsigned normalized
 	GPU_TEXTURE_FORMAT_ASTC_5x4_UNORM		= VK_FORMAT_ASTC_5x4_UNORM_BLOCK,		// 4-component ASTC, 5x4 blocks, unsigned normalized
 	GPU_TEXTURE_FORMAT_ASTC_5x5_UNORM		= VK_FORMAT_ASTC_5x5_UNORM_BLOCK,		// 4-component ASTC, 5x5 blocks, unsigned normalized
@@ -6767,6 +6776,9 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 					int dataRowSize = 0;
 					switch ( format )
 					{
+						//
+						// 8 bits per component
+						//
 						case VK_FORMAT_R8_UNORM:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( unsigned char ); break; }
 						case VK_FORMAT_R8G8_UNORM:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( unsigned char ); break; }
 						case VK_FORMAT_R8G8B8A8_UNORM:				{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( unsigned char ); break; }
@@ -6775,14 +6787,59 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 						case VK_FORMAT_R8G8_SRGB:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( unsigned char ); break; }
 						case VK_FORMAT_R8G8B8A8_SRGB:				{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( unsigned char ); break; }
 
+						case VK_FORMAT_R8_SNORM:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( char ); break; }
+						case VK_FORMAT_R8G8_SNORM:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( char ); break; }
+						case VK_FORMAT_R8G8B8_SNORM:				{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( char ); break; }
+
+						case VK_FORMAT_R8_SINT:						{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( char ); break; }
+						case VK_FORMAT_R8G8_SINT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( char ); break; }
+						case VK_FORMAT_R8G8B8_SINT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( char ); break; }
+
+						case VK_FORMAT_R8_UINT:						{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( unsigned char ); break; }
+						case VK_FORMAT_R8G8_UINT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( unsigned char ); break; }
+						case VK_FORMAT_R8G8B8_UINT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( unsigned char ); break; }
+
+						//
+						// 16 bits per component
+						//
+						case VK_FORMAT_R16_UNORM:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( unsigned short ); break; }
+						case VK_FORMAT_R16G16_UNORM:				{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( unsigned short ); break; }
+						case VK_FORMAT_R16G16B16A16_UNORM:			{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( unsigned short ); break; }
+
+						case VK_FORMAT_R16_SNORM:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( short ); break; }
+						case VK_FORMAT_R16G16_SNORM:				{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( short ); break; }
+						case VK_FORMAT_R16G16B16A16_SNORM:			{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( short ); break; }
+
+						case VK_FORMAT_R16_SINT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( short ); break; }
+						case VK_FORMAT_R16G16_SINT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( short ); break; }
+						case VK_FORMAT_R16G16B16A16_SINT:			{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( short ); break; }
+
+						case VK_FORMAT_R16_UINT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( unsigned short ); break; }
+						case VK_FORMAT_R16G16_UINT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( unsigned short ); break; }
+						case VK_FORMAT_R16G16B16A16_UINT:			{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( unsigned short ); break; }
+
 						case VK_FORMAT_R16_SFLOAT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( unsigned short ); break; }
 						case VK_FORMAT_R16G16_SFLOAT:				{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( unsigned short ); break; }
 						case VK_FORMAT_R16G16B16A16_SFLOAT:			{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( unsigned short ); break; }
+
+						//
+						// 32 bits per component
+						//
+						case VK_FORMAT_R32_SINT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( int ); break; }
+						case VK_FORMAT_R32G32_SINT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( int ); break; }
+						case VK_FORMAT_R32G32B32A32_SINT:			{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( int ); break; }
+
+						case VK_FORMAT_R32_UINT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( unsigned int ); break; }
+						case VK_FORMAT_R32G32_UINT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( unsigned int ); break; }
+						case VK_FORMAT_R32G32B32A32_UINT:			{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( unsigned int ); break; }
 
 						case VK_FORMAT_R32_SFLOAT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( float ); break; }
 						case VK_FORMAT_R32G32_SFLOAT:				{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( float ); break; }
 						case VK_FORMAT_R32G32B32A32_SFLOAT:			{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( float ); break; }
 
+						//
+						// S3TC/DXT/BC
+						//
 						case VK_FORMAT_BC1_RGB_UNORM_BLOCK:			{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
 						case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
 						case VK_FORMAT_BC2_UNORM_BLOCK:				{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
@@ -6793,12 +6850,15 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 						case VK_FORMAT_BC2_SRGB_BLOCK:				{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
 						case VK_FORMAT_BC3_SRGB_BLOCK:				{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
 
-						case VK_FORMAT_BC4_UNORM_BLOCK:			
-						case VK_FORMAT_BC5_UNORM_BLOCK:				{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_BC4_UNORM_BLOCK:				{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_BC5_UNORM_BLOCK:				{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
 
-						case VK_FORMAT_BC4_SNORM_BLOCK:			
+						case VK_FORMAT_BC4_SNORM_BLOCK:				{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
 						case VK_FORMAT_BC5_SNORM_BLOCK:				{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
 
+						//
+						// ETC
+						//
 						case VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
 						case VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK:	{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
 						case VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK:	{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
@@ -6807,6 +6867,15 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 						case VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK:	{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
 						case VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK:	{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
 
+						case VK_FORMAT_EAC_R11_UNORM_BLOCK:			{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_EAC_R11G11_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
+
+						case VK_FORMAT_EAC_R11_SNORM_BLOCK:			{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_EAC_R11G11_SNORM_BLOCK:		{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
+
+						//
+						// ASTC
+						//
 						case VK_FORMAT_ASTC_4x4_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
 						case VK_FORMAT_ASTC_5x4_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+4)/5) * 16; compressed = true; break; }
 						case VK_FORMAT_ASTC_5x5_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+4)/5); dataRowSize = ((mipWidth+4)/5) * 16; compressed = true; break; }
@@ -7294,7 +7363,7 @@ static void GpuTexture_SetAniso( GpuContext_t * context, GpuTexture_t * texture,
 
 GPU geometry.
 
-For optimal performance, geometry should only be created at load time, not at runtime.
+For optimal performance geometry should only be created at load time, not at runtime.
 The vertex, index and instance buffers are placed in device memory for optimal performance.
 The vertex attributes are not packed. Each attribute is stored in a separate array for
 optimal binning on tiling GPUs that only transform the vertex position for the binning pass.
@@ -7774,7 +7843,7 @@ static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeomet
 GPU render pass.
 
 A render pass encapsulates a sequence of graphics commands that can be executed in a single tiling pass.
-For optimal performance, a render pass should only be created at load time, not at runtime.
+For optimal performance a render pass should only be created at load time, not at runtime.
 Render passes cannot overlap and cannot be nested.
 
 GpuRenderPassType_t
@@ -7892,7 +7961,7 @@ static void GpuRenderPass_Destroy( GpuContext_t * context, GpuRenderPass_t * ren
 GPU framebuffer.
 
 A framebuffer encapsulates either a swapchain or a buffered set of textures.
-For optimal performance, a framebuffer should only be created at load time, not at runtime.
+For optimal performance a framebuffer should only be created at load time, not at runtime.
 
 GpuFramebuffer_t
 
@@ -8473,7 +8542,7 @@ static void GpuProgramParmLayout_Destroy( GpuContext_t * context, GpuProgramParm
 GPU graphics program.
 
 A graphics program encapsulates a vertex and fragment program that are used to render geometry.
-For optimal performance, a graphics program should only be created at load time, not at runtime.
+For optimal performance a graphics program should only be created at load time, not at runtime.
 
 GpuGraphicsProgram_t
 
@@ -8541,7 +8610,7 @@ static void GpuGraphicsProgram_Destroy( GpuContext_t * context, GpuGraphicsProgr
 
 GPU compute program.
 
-For optimal performance, a compute program should only be created at load time, not at runtime.
+For optimal performance a compute program should only be created at load time, not at runtime.
 
 GpuComputeProgram_t
 
@@ -8592,7 +8661,7 @@ static void GpuComputeProgram_Destroy( GpuContext_t * context, GpuComputeProgram
 GPU graphics pipeline.
 
 A graphics pipeline encapsulates the geometry, program and ROP state that is used to render.
-For optimal performance, a graphics pipeline should only be created at load time, not at runtime.
+For optimal performance a graphics pipeline should only be created at load time, not at runtime.
 The vertex attribute locations are assigned here, when both the geometry and program are known,
 to avoid binding vertex attributes that are not used by the vertex shader, and to avoid binding
 to a discontinuous set of vertex attribute locations.
@@ -8917,7 +8986,7 @@ static void GpuGraphicsPipeline_Destroy( GpuContext_t * context, GpuGraphicsPipe
 GPU compute pipeline.
 
 A compute pipeline encapsulates a compute program.
-For optimal performance, a compute pipeline should only be created at load time, not at runtime.
+For optimal performance a compute pipeline should only be created at load time, not at runtime.
 
 GpuComputePipeline_t
 
@@ -8964,7 +9033,7 @@ static void GpuComputePipeline_Destroy( GpuContext_t * context, GpuComputePipeli
 GPU fence.
 
 A fence is used to notify completion of a command buffer.
-For optimal performance, a fence should only be created at load time, not at runtime.
+For optimal performance a fence should only be created at load time, not at runtime.
 
 GpuFence_t
 
@@ -9023,7 +9092,7 @@ static bool GpuFence_IsSignalled( GpuContext_t * context, GpuFence_t * fence )
 GPU timer.
 
 A timer is used to measure the amount of time it takes to complete GPU commands.
-For optimal performance, a timer should only be created at load time, not at runtime.
+For optimal performance a timer should only be created at load time, not at runtime.
 To avoid synchronization, GpuTimer_GetMilliseconds() reports the time from GPU_TIMER_FRAMES_DELAYED frames ago.
 Timer queries are allowed to overlap and can be nested.
 Timer queries that are issued inside a render pass may not produce accurate times on tiling GPUs.
@@ -9634,7 +9703,7 @@ static void GpuPipelineResources_Destroy( GpuContext_t * context, GpuPipelineRes
 GPU command buffer.
 
 A command buffer is used to record graphics and compute commands.
-For optimal performance, a command buffer should only be created at load time, not at runtime.
+For optimal performance a command buffer should only be created at load time, not at runtime.
 When a command is submitted, the state of the command is compared with the currently saved state,
 and only the state that has changed translates into Vulkan function calls.
 
@@ -15225,15 +15294,15 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
 			break;	// change render mode
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
 			SceneThread_Destroy( &sceneThread, &sceneThreadData );
@@ -15250,61 +15319,61 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
 			SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
 			sceneThreadData.openFrameLog = true;
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_P ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_P ) )
 		{
 			SceneSettings_ToggleSimulationPaused( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_G ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_G ) )
 		{
 			TimeWarp_CycleBarGraphState( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_Q ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_Q ) )
 		{
 			SceneSettings_CycleDrawCallLevel( &sceneSettings );
 			TimeWarp_SetDrawCallLevel( &timeWarp, SceneSettings_GetDrawCallLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_W ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_W ) )
 		{
 			SceneSettings_CycleTriangleLevel( &sceneSettings );
 			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_E ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_E ) )
 		{
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_I ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_I ) )
 		{
 			TimeWarp_CycleImplementation( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_C ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_C ) )
 		{
 			TimeWarp_ToggleChromaticAberrationCorrection( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_M ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_M ) )
 		{
 			SceneSettings_ToggleMultiView( &sceneSettings );
 			TimeWarp_SetMultiView( &timeWarp, SceneSettings_GetMultiView( &sceneSettings ) );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
 		{
 			DumpGLSL();
 		}
@@ -15388,15 +15457,15 @@ bool RenderTimeWarp( const StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
 			break;	// change render mode
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
 			TimeWarp_Destroy( &timeWarp, &window );
@@ -15408,36 +15477,36 @@ bool RenderTimeWarp( const StartupSettings_t * startupSettings )
 							fullscreen );
 			TimeWarp_Create( &timeWarp, &window );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_G ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_G ) )
 		{
 			TimeWarp_CycleBarGraphState( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_I ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_I ) )
 		{
 			TimeWarp_CycleImplementation( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_C ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_C ) )
 		{
 			TimeWarp_ToggleChromaticAberrationCorrection( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
 		{
 			DumpGLSL();
 		}
@@ -15543,15 +15612,15 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
 			break;	// change render mode
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
 			Scene_Destroy( &window.context, &scene );
@@ -15574,40 +15643,40 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 			GpuTimer_Create( &window.context, &timer );
 			Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_scene.txt", 10 );
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_P ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_P ) )
 		{
 			SceneSettings_ToggleSimulationPaused( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_Q ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_Q ) )
 		{
 			SceneSettings_CycleDrawCallLevel( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_W ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_W ) )
 		{
 			SceneSettings_CycleTriangleLevel( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_E ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_E ) )
 		{
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
 		{
 			DumpGLSL();
 		}

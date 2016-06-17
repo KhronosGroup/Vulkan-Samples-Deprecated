@@ -214,13 +214,6 @@ Platform headers / declarations
 
 	#pragma GCC diagnostic ignored "-Wunused-function"
 
-	typedef struct
-	{
-		JavaVM *	vm;			// Java Virtual Machine
-		JNIEnv *	env;		// Thread specific environment
-		jobject		activity;	// Java activity object
-	} Java_t;
-
 #endif
 
 /*
@@ -447,7 +440,8 @@ static const char * GetOSVersion()
 	#define PROP_NAME_MAX   32
 	#define PROP_VALUE_MAX  92
 
-	char propval[PROP_VALUE_MAX] = { 0 };
+	char release[PROP_VALUE_MAX] = { 0 };
+	char build[PROP_VALUE_MAX] = { 0 };
 
 	void * handle = dlopen( "libc.so", RTLD_NOLOAD );
 	if ( handle != NULL )
@@ -456,11 +450,12 @@ static const char * GetOSVersion()
 		PFN_SYSTEM_PROP_GET __my_system_property_get = (PFN_SYSTEM_PROP_GET)dlsym( handle, "__system_property_get" );
 		if ( __my_system_property_get != NULL )
 		{
-			__my_system_property_get( "ro.build.version.release", propval );
+			__my_system_property_get( "ro.build.version.release", release );
+			__my_system_property_get( "ro.build.version.incremental", build );
 		}
 	}
 
-	snprintf( version, sizeof( version ), "Android %s", propval );
+	snprintf( version, sizeof( version ), "Android %s (%s)", release, build );
 
 	return version;
 #endif
@@ -1560,11 +1555,6 @@ void android_main( struct android_app * app )
 	app->onAppCmd = app_handle_cmd;
 	app->onInputEvent = NULL;
 
-	Java_t java;
-	java.vm = app->activity->vm;
-	(*java.vm)->AttachCurrentThread( java.vm, &java.env, NULL );
-	java.activity = app->activity->clazz;
-
 	for ( ; ; )
 	{
 		int events;
@@ -1580,11 +1570,6 @@ void android_main( struct android_app * app )
 			source->process( app, source );
 		}
 	}
-
-	(*java.vm)->DetachCurrentThread( java.vm );
-	java.vm = NULL;
-	java.env = NULL;
-	java.activity = 0;
 }
 
 #endif

@@ -777,7 +777,8 @@ static const char * GetOSVersion()
 	#define PROP_NAME_MAX   32
 	#define PROP_VALUE_MAX  92
 
-	char propval[PROP_VALUE_MAX] = { 0 };
+	char release[PROP_VALUE_MAX] = { 0 };
+	char build[PROP_VALUE_MAX] = { 0 };
 
 	void * handle = dlopen( "libc.so", RTLD_NOLOAD );
 	if ( handle != NULL )
@@ -786,11 +787,12 @@ static const char * GetOSVersion()
 		PFN_SYSTEM_PROP_GET __my_system_property_get = (PFN_SYSTEM_PROP_GET)dlsym( handle, "__system_property_get" );
 		if ( __my_system_property_get != NULL )
 		{
-			__my_system_property_get( "ro.build.version.release", propval );
+			__my_system_property_get( "ro.build.version.release", release );
+			__my_system_property_get( "ro.build.version.incremental", build );
 		}
 	}
 
-	snprintf( version, sizeof( version ), "Android %s", propval );
+	snprintf( version, sizeof( version ), "Android %s (%s)", release, build );
 
 	return version;
 #endif
@@ -2642,7 +2644,7 @@ GPU context.
 
 A context encapsulates a queue that is used to submit command buffers.
 A context can only be used by a single thread.
-For optimal performance, a context should only be created at load time, not at runtime.
+For optimal performance a context should only be created at load time, not at runtime.
 
 GpuContext_t
 
@@ -3462,7 +3464,7 @@ static bool GpuContext_CheckCurrent( GpuContext_t * context )
 GPU Window.
 
 Window with associated GPU context for GPU accelerated rendering.
-For optimal performance, a window should only be created at load time, not at runtime.
+For optimal performance a window should only be created at load time, not at runtime.
 Because on some platforms the OS/drivers use thread local storage, GpuWindow_t *must* be created
 and destroyed on the same thread that will actually render to the window and swap buffers.
 
@@ -3481,8 +3483,8 @@ static bool GpuWindow_ProcessEvents( GpuWindow_t * window );
 static void GpuWindow_SwapInterval( GpuWindow_t * window, const int swapInterval );
 static void GpuWindow_SwapBuffers( GpuWindow_t * window );
 static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window );
-static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
-static bool GpuWindow_CheckMouseButton( GpuWindow_t * window, const MouseButton_t button );
+static bool GpuWindow_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
+static bool GpuWindow_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button );
 
 ================================================================================================================================
 */
@@ -5678,7 +5680,7 @@ static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window )
 	return window->lastSwapTime + (Microseconds_t)( frameTimeMicroseconds );
 }
 
-static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key )
+static bool GpuWindow_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key )
 {
 	if ( window->keyInput[key] )
 	{
@@ -5688,7 +5690,7 @@ static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_
 	return false;
 }
 
-static bool GpuWindow_CheckMouseButton( GpuWindow_t * window, const MouseButton_t button )
+static bool GpuWindow_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button )
 {
 	if ( window->mouseInput[button] )
 	{
@@ -5704,7 +5706,7 @@ static bool GpuWindow_CheckMouseButton( GpuWindow_t * window, const MouseButton_
 GPU buffer.
 
 A buffer maintains a block of memory for a specific use by GPU programs (vertex, index, uniform, storage).
-For optimal performance, a buffer should only be created at load time, not at runtime.
+For optimal performance a buffer should only be created at load time, not at runtime.
 The best performance is typically achieved when the buffer is not host visible.
 
 GpuBufferType_t
@@ -5768,7 +5770,7 @@ GPU texture.
 
 Supports loading textures from raw data or OpenGL KTX container files.
 Textures are always created as immutable textures.
-For optimal performance, a texture should only be created or modified at load time, not at runtime.
+For optimal performance a texture should only be created or modified at load time, not at runtime.
 Note that the geometry code assumes the texture origin 0,0 = left-top as opposed to left-bottom.
 In other words, textures are expected to be stored top-down as opposed to bottom-up.
 
@@ -5879,47 +5881,54 @@ typedef enum
 	GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT	= GL_RGBA32F,
 
 	//
-	// Compressed formats
+	// S3TC/DXT/BC
 	//
 #if defined( GL_COMPRESSED_RGB_S3TC_DXT1_EXT )
-	GPU_TEXTURE_FORMAT_BC1_R8G8B8_UNORM		= GL_COMPRESSED_RGB_S3TC_DXT1_EXT,					// line through 3D space, unsigned normalized
-	GPU_TEXTURE_FORMAT_BC1_R8G8B8A1_UNORM	= GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,					// line through 3D space plus 1-bit alpha, unsigned normalized
-	GPU_TEXTURE_FORMAT_BC2_R8G8B8A8_UNORM	= GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,					// line through 3D space plus line through 1D space, unsigned normalized
-	GPU_TEXTURE_FORMAT_BC3_R8G8B8A4_UNORM	= GL_COMPRESSED_RGBA_S3TC_DXT3_EXT,					// line through 3D space plus 4-bit alpha, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC1_R8G8B8_UNORM		= GL_COMPRESSED_RGB_S3TC_DXT1_EXT,					// 3-component, line through 3D space, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC1_R8G8B8A1_UNORM	= GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,					// 4-component, line through 3D space plus 1-bit alpha, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC2_R8G8B8A8_UNORM	= GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,					// 4-component, line through 3D space plus line through 1D space, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC3_R8G8B8A4_UNORM	= GL_COMPRESSED_RGBA_S3TC_DXT3_EXT,					// 4-component, line through 3D space plus 4-bit alpha, unsigned normalized
 #endif
 
 #if defined( GL_COMPRESSED_SRGB_S3TC_DXT1_EXT )
-	GPU_TEXTURE_FORMAT_BC1_R8G8B8_SRGB		= GL_COMPRESSED_SRGB_S3TC_DXT1_EXT,					// line through 3D space, sRGB
-	GPU_TEXTURE_FORMAT_BC1_R8G8B8A1_SRGB	= GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT,			// line through 3D space plus 1-bit alpha, sRGB
-	GPU_TEXTURE_FORMAT_BC2_R8G8B8A8_SRGB	= GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT,			// line through 3D space plus line through 1D space, sRGB
-	GPU_TEXTURE_FORMAT_BC3_R8G8B8A4_SRGB	= GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT,			// line through 3D space plus 4-bit alpha, sRGB
+	GPU_TEXTURE_FORMAT_BC1_R8G8B8_SRGB		= GL_COMPRESSED_SRGB_S3TC_DXT1_EXT,					// 3-component, line through 3D space, sRGB
+	GPU_TEXTURE_FORMAT_BC1_R8G8B8A1_SRGB	= GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT,			// 4-component, line through 3D space plus 1-bit alpha, sRGB
+	GPU_TEXTURE_FORMAT_BC2_R8G8B8A8_SRGB	= GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT,			// 4-component, line through 3D space plus line through 1D space, sRGB
+	GPU_TEXTURE_FORMAT_BC3_R8G8B8A4_SRGB	= GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT,			// 4-component, line through 3D space plus 4-bit alpha, sRGB
 #endif
 
 #if defined( GL_COMPRESSED_LUMINANCE_LATC1_EXT )
-	GPU_TEXTURE_FORMAT_BC4_R8_UNORM			= GL_COMPRESSED_LUMINANCE_LATC1_EXT,				// line through 1D space, unsigned normalized
-	GPU_TEXTURE_FORMAT_BC5_R8G8_UNORM		= GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT,			// line through 2D space, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC4_R8_UNORM			= GL_COMPRESSED_LUMINANCE_LATC1_EXT,				// 1-component, line through 1D space, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC5_R8G8_UNORM		= GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT,			// 2-component, two lines through 1D space, unsigned normalized
 
-	GPU_TEXTURE_FORMAT_BC4_R8_SNORM			= GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT,			// line through 1D space, signed normalized
-	GPU_TEXTURE_FORMAT_BC5_R8G8_SNORM		= GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT,	// line through 2D space, signed normalized
+	GPU_TEXTURE_FORMAT_BC4_R8_SNORM			= GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT,			// 1-component, line through 1D space, signed normalized
+	GPU_TEXTURE_FORMAT_BC5_R8G8_SNORM		= GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT,	// 2-component, two lines through 1D space, signed normalized
 #endif
 
+	//
+	// ETC
+	//
 #if defined( GL_COMPRESSED_RGB8_ETC2 )
 	GPU_TEXTURE_FORMAT_ETC2_R8G8B8_UNORM	= GL_COMPRESSED_RGB8_ETC2,							// 3-component ETC2, unsigned normalized
 	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A1_UNORM	= GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2,		// 3-component with 1-bit alpha ETC2, unsigned normalized
 	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A8_UNORM	= GL_COMPRESSED_RGBA8_ETC2_EAC,						// 4-component ETC2, unsigned normalized
 
-	GPU_TEXTURE_FORMAT_ETC2_R8G8B8_SRGB		= GL_COMPRESSED_SRGB8_ETC2,							// 3-component, ETC2, sRGB
+	GPU_TEXTURE_FORMAT_ETC2_R8G8B8_SRGB		= GL_COMPRESSED_SRGB8_ETC2,							// 3-component ETC2, sRGB
 	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A1_SRGB	= GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2,		// 3-component with 1-bit alpha ETC2, sRGB
-	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A8_SRGB	= GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC,				// 4-component, ETC2, sRGB
+	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A8_SRGB	= GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC,				// 4-component ETC2, sRGB
 #endif
 
 #if defined( GL_COMPRESSED_R11_EAC )
-	GPU_TEXTURE_FORMAT_EAC_R11_UNORM		= GL_COMPRESSED_R11_EAC,							// 1-component ETC, unsigned normalized
-	GPU_TEXTURE_FORMAT_EAC_R11_SNORM		= GL_COMPRESSED_SIGNED_R11_EAC,						// 1-component ETC, signed normalized
-	GPU_TEXTURE_FORMAT_EAC_R11G11_UNORM		= GL_COMPRESSED_RG11_EAC,							// 2-component ETC, unsigned normalized
-	GPU_TEXTURE_FORMAT_EAC_R11G11_SNORM		= GL_COMPRESSED_SIGNED_RG11_EAC,					// 2-component ETC, signed normalized
+	GPU_TEXTURE_FORMAT_EAC_R11_UNORM		= GL_COMPRESSED_R11_EAC,							// 1-component ETC, line through 1D space, unsigned normalized
+	GPU_TEXTURE_FORMAT_EAC_R11G11_UNORM		= GL_COMPRESSED_RG11_EAC,							// 2-component ETC, two lines through 1D space, unsigned normalized
+
+	GPU_TEXTURE_FORMAT_EAC_R11_SNORM		= GL_COMPRESSED_SIGNED_R11_EAC,						// 1-component ETC, line through 1D space, signed normalized
+	GPU_TEXTURE_FORMAT_EAC_R11G11_SNORM		= GL_COMPRESSED_SIGNED_RG11_EAC,					// 2-component ETC, two lines through 1D space, signed normalized
 #endif
 
+	//
+	// ASTC
+	//
 #if defined( GL_COMPRESSED_RGBA_ASTC_4x4_KHR )
 	GPU_TEXTURE_FORMAT_ASTC_4x4_UNORM		= GL_COMPRESSED_RGBA_ASTC_4x4_KHR,					// 4-component ASTC, 4x4 blocks, unsigned normalized
 	GPU_TEXTURE_FORMAT_ASTC_5x4_UNORM		= GL_COMPRESSED_RGBA_ASTC_5x4_KHR,					// 4-component ASTC, 5x4 blocks, unsigned normalized
@@ -5936,20 +5945,20 @@ typedef enum
 	GPU_TEXTURE_FORMAT_ASTC_12x10_UNORM		= GL_COMPRESSED_RGBA_ASTC_12x10_KHR,				// 4-component ASTC, 12x10 blocks, unsigned normalized
 	GPU_TEXTURE_FORMAT_ASTC_12x12_UNORM		= GL_COMPRESSED_RGBA_ASTC_12x12_KHR,				// 4-component ASTC, 12x12 blocks, unsigned normalized
 
-	GPU_TEXTURE_FORMAT_ASTC_4x4_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR,			// 3-component ASTC, 4x4 blocks, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_5x4_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4_KHR,			// 3-component ASTC, 5x4 blocks, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_5x5_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5_KHR,			// 3-component ASTC, 5x5 blocks, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_6x5_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5_KHR,			// 3-component ASTC, 6x5 blocks, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_6x6_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6_KHR,			// 3-component ASTC, 6x6 blocks, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_8x5_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x5_KHR,			// 3-component ASTC, 8x5 blocks, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_8x6_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x6_KHR,			// 3-component ASTC, 8x6 blocks, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_8x8_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR,			// 3-component ASTC, 8x8 blocks, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_10x5_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x5_KHR,			// 3-component ASTC, 10x5 blocks, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_10x6_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x6_KHR,			// 3-component ASTC, 10x6 blocks, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_10x8_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x8_KHR,			// 3-component ASTC, 10x8 blocks, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_10x10_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x10_KHR,		// 3-component ASTC, 10x10 blocks, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_12x10_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR,		// 3-component ASTC, 12x10 blocks, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_12x12_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR,		// 3-component ASTC, 12x12 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_4x4_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR,			// 4-component ASTC, 4x4 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_5x4_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4_KHR,			// 4-component ASTC, 5x4 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_5x5_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5_KHR,			// 4-component ASTC, 5x5 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_6x5_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5_KHR,			// 4-component ASTC, 6x5 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_6x6_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6_KHR,			// 4-component ASTC, 6x6 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_8x5_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x5_KHR,			// 4-component ASTC, 8x5 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_8x6_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x6_KHR,			// 4-component ASTC, 8x6 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_8x8_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR,			// 4-component ASTC, 8x8 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_10x5_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x5_KHR,			// 4-component ASTC, 10x5 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_10x6_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x6_KHR,			// 4-component ASTC, 10x6 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_10x8_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x8_KHR,			// 4-component ASTC, 10x8 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_10x10_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x10_KHR,		// 4-component ASTC, 10x10 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_12x10_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR,		// 4-component ASTC, 12x10 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_12x12_SRGB		= GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR,		// 4-component ASTC, 12x12 blocks, sRGB
 #endif
 } GpuTextureFormat_t;
 
@@ -6114,6 +6123,9 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 			GLenum glDataType = GL_UNSIGNED_BYTE;
 			switch ( glInternalFormat )
 			{
+				//
+				// 8 bits per component
+				//
 				case GL_R8:				{ mipSize = w * h * d * 1 * sizeof( unsigned char ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_BYTE; break; }
 				case GL_RG8:			{ mipSize = w * h * d * 2 * sizeof( unsigned char ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_BYTE; break; }
 				case GL_RGBA8:			{ mipSize = w * h * d * 4 * sizeof( unsigned char ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_BYTE; break; }
@@ -6122,14 +6134,71 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 				case GL_SRG8_EXT:		{ mipSize = w * h * d * 2 * sizeof( unsigned char ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_BYTE; break; }
 				case GL_SRGB8_ALPHA8:	{ mipSize = w * h * d * 4 * sizeof( unsigned char ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_BYTE; break; }
 
+				case GL_R8_SNORM:		{ mipSize = w * h * d * 1 * sizeof( char ); glFormat = GL_RED;  glDataType = GL_BYTE; break; }
+				case GL_RG8_SNORM:		{ mipSize = w * h * d * 2 * sizeof( char ); glFormat = GL_RG;   glDataType = GL_BYTE; break; }
+				case GL_RGBA8_SNORM:	{ mipSize = w * h * d * 4 * sizeof( char ); glFormat = GL_RGBA; glDataType = GL_BYTE; break; }
+
+				case GL_R8I:			{ mipSize = w * h * d * 1 * sizeof( char ); glFormat = GL_RED;  glDataType = GL_BYTE; break; }
+				case GL_RG8I:			{ mipSize = w * h * d * 2 * sizeof( char ); glFormat = GL_RG;   glDataType = GL_BYTE; break; }
+				case GL_RGBA8I:			{ mipSize = w * h * d * 4 * sizeof( char ); glFormat = GL_RGBA; glDataType = GL_BYTE; break; }
+
+				case GL_R8UI:			{ mipSize = w * h * d * 1 * sizeof( unsigned char ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_RG8UI:			{ mipSize = w * h * d * 2 * sizeof( unsigned char ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_RGBA8UI:		{ mipSize = w * h * d * 4 * sizeof( unsigned char ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_BYTE; break; }
+
+				//
+				// 16 bits per component
+				//
+#if defined( GL_R16 )
+				case GL_R16:			{ mipSize = w * h * d * 1 * sizeof( unsigned short ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_RG16:			{ mipSize = w * h * d * 2 * sizeof( unsigned short ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_RGBA16:			{ mipSize = w * h * d * 4 * sizeof( unsigned short ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_SHORT; break; }
+#elif defined( GL_R16_EXT )
+				case GL_R16_EXT:		{ mipSize = w * h * d * 1 * sizeof( unsigned short ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_RG16_EXT:		{ mipSize = w * h * d * 2 * sizeof( unsigned short ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_RGB16_EXT:		{ mipSize = w * h * d * 4 * sizeof( unsigned short ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_SHORT; break; }
+#endif
+
+#if defined( GL_R16_SNORM )
+				case GL_R16_SNORM:		{ mipSize = w * h * d * 1 * sizeof( short ); glFormat = GL_RED;  glDataType = GL_SHORT; break; }
+				case GL_RG16_SNORM:		{ mipSize = w * h * d * 2 * sizeof( short ); glFormat = GL_RG;   glDataType = GL_SHORT; break; }
+				case GL_RGBA16_SNORM:	{ mipSize = w * h * d * 4 * sizeof( short ); glFormat = GL_RGBA; glDataType = GL_SHORT; break; }
+#elif defined( GL_R16_EXT )
+				case GL_R16_SNORM_EXT:	{ mipSize = w * h * d * 1 * sizeof( short ); glFormat = GL_RED;  glDataType = GL_SHORT; break; }
+				case GL_RG16_SNORM_EXT:	{ mipSize = w * h * d * 2 * sizeof( short ); glFormat = GL_RG;   glDataType = GL_SHORT; break; }
+				case GL_RGB16_SNORM_EXT:{ mipSize = w * h * d * 4 * sizeof( short ); glFormat = GL_RGBA; glDataType = GL_SHORT; break; }
+#endif
+
+				case GL_R16I:			{ mipSize = w * h * d * 1 * sizeof( short ); glFormat = GL_RED;  glDataType = GL_SHORT; break; }
+				case GL_RG16I:			{ mipSize = w * h * d * 2 * sizeof( short ); glFormat = GL_RG;   glDataType = GL_SHORT; break; }
+				case GL_RGBA16I:		{ mipSize = w * h * d * 4 * sizeof( short ); glFormat = GL_RGBA; glDataType = GL_SHORT; break; }
+
+				case GL_R16UI:			{ mipSize = w * h * d * 1 * sizeof( unsigned short ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_RG16UI:			{ mipSize = w * h * d * 2 * sizeof( unsigned short ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_RGBA16UI:		{ mipSize = w * h * d * 4 * sizeof( unsigned short ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_SHORT; break; }
+
 				case GL_R16F:			{ mipSize = w * h * d * 1 * sizeof( unsigned short ); glFormat = GL_RED;  glDataType = GL_HALF_FLOAT; break; }
 				case GL_RG16F:			{ mipSize = w * h * d * 2 * sizeof( unsigned short ); glFormat = GL_RG;   glDataType = GL_HALF_FLOAT; break; }
 				case GL_RGBA16F:		{ mipSize = w * h * d * 4 * sizeof( unsigned short ); glFormat = GL_RGBA; glDataType = GL_HALF_FLOAT; break; }
+
+				//
+				// 32 bits per component
+				//
+				case GL_R32I:			{ mipSize = w * h * d * 1 * sizeof( int ); glFormat = GL_RED;  glDataType = GL_INT; break; }
+				case GL_RG32I:			{ mipSize = w * h * d * 2 * sizeof( int ); glFormat = GL_RG;   glDataType = GL_INT; break; }
+				case GL_RGBA32I:		{ mipSize = w * h * d * 4 * sizeof( int ); glFormat = GL_RGBA; glDataType = GL_INT; break; }
+
+				case GL_R32UI:			{ mipSize = w * h * d * 1 * sizeof( unsigned int ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_INT; break; }
+				case GL_RG32UI:			{ mipSize = w * h * d * 2 * sizeof( unsigned int ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_INT; break; }
+				case GL_RGBA32UI:		{ mipSize = w * h * d * 4 * sizeof( unsigned int ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_INT; break; }
 
 				case GL_R32F:			{ mipSize = w * h * d * 1 * sizeof( float ); glFormat = GL_RED;  glDataType = GL_FLOAT; break; }
 				case GL_RG32F:			{ mipSize = w * h * d * 2 * sizeof( float ); glFormat = GL_RG;   glDataType = GL_FLOAT; break; }
 				case GL_RGBA32F:		{ mipSize = w * h * d * 4 * sizeof( float ); glFormat = GL_RGBA; glDataType = GL_FLOAT; break; }
 
+				//
+				// S3TC/DXT/BC
+				//
 #if defined( GL_COMPRESSED_RGB_S3TC_DXT1_EXT )
 				case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:				{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
 				case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:				{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
@@ -6152,6 +6221,9 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 				case GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT:{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
 #endif
 
+				//
+				// ETC
+				//
 #if defined( GL_COMPRESSED_RGB8_ETC2 )
 				case GL_COMPRESSED_RGB8_ETC2:						{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
 				case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:	{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
@@ -6162,6 +6234,17 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 				case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:			{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
 #endif
 
+#if defined( GL_COMPRESSED_R11_EAC )
+				case GL_COMPRESSED_R11_EAC:							{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
+				case GL_COMPRESSED_RG11_EAC:						{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
+
+				case GL_COMPRESSED_SIGNED_R11_EAC:					{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
+				case GL_COMPRESSED_SIGNED_RG11_EAC:					{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
+#endif
+
+				//
+				// ASTC
+				//
 #if defined( GL_COMPRESSED_RGBA_ASTC_4x4_KHR )
 				case GL_COMPRESSED_RGBA_ASTC_4x4_KHR:				{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
 				case GL_COMPRESSED_RGBA_ASTC_5x4_KHR:				{ mipSize = ((w+4)/5) * ((h+3)/4) * d * 16; compressed = true; break; }
@@ -6670,7 +6753,7 @@ static void GpuTexture_SetWrapMode( GpuContext_t * context, GpuTexture_t * textu
 
 GPU geometry.
 
-For optimal performance, geometry should only be created at load time, not at runtime.
+For optimal performance geometry should only be created at load time, not at runtime.
 The vertex attributes are not packed. Each attribute is stored in a separate array for
 optimal binning on tiling GPUs that only transform the vertex position for the binning pass.
 Storing each attribute in a saparate array is preferred even on immediate-mode GPUs to avoid
@@ -7151,7 +7234,7 @@ static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeomet
 GPU render pass.
 
 A render pass encapsulates a sequence of graphics commands that can be executed in a single tiling pass.
-For optimal performance, a render pass should only be created at load time, not at runtime.
+For optimal performance a render pass should only be created at load time, not at runtime.
 Render passes cannot overlap and cannot be nested.
 
 GpuRenderPassType_t
@@ -7213,7 +7296,7 @@ static void GpuRenderPass_Destroy( GpuContext_t * context, GpuRenderPass_t * ren
 GPU framebuffer.
 
 A framebuffer encapsulates either a swapchain or a buffered set of textures.
-For optimal performance, a framebuffer should only be created at load time, not at runtime.
+For optimal performance a framebuffer should only be created at load time, not at runtime.
 
 GpuFramebuffer_t
 
@@ -7650,7 +7733,7 @@ static void GpuProgramParmLayout_Destroy( GpuContext_t * context, GpuProgramParm
 GPU graphics program.
 
 A graphics program encapsulates a vertex and fragment program that are used to render geometry.
-For optimal performance, a graphics program should only be created at load time, not at runtime.
+For optimal performance a graphics program should only be created at load time, not at runtime.
 
 GpuGraphicsProgram_t
 
@@ -7779,7 +7862,7 @@ static void GpuGraphicsProgram_Destroy( GpuContext_t * context, GpuGraphicsProgr
 
 GPU compute program.
 
-For optimal performance, a compute program should only be created at load time, not at runtime.
+For optimal performance a compute program should only be created at load time, not at runtime.
 
 GpuComputeProgram_t
 
@@ -7867,7 +7950,7 @@ static void GpuComputeProgram_Destroy( GpuContext_t * context, GpuComputeProgram
 GPU graphics pipeline.
 
 A graphics pipeline encapsulates the geometry, program and ROP state that is used to render.
-For optimal performance, a graphics pipeline should only be created at load time, not at runtime.
+For optimal performance a graphics pipeline should only be created at load time, not at runtime.
 Due to the use of a Vertex Array Object (VAO), a graphics pipeline must be created using the same
 context that is used to render with the graphics pipeline. The VAO is created here, when both the
 geometry and the program are known, to avoid binding vertex attributes that are not used by the
@@ -8050,7 +8133,7 @@ static void GpuGraphicsPipeline_Destroy( GpuContext_t * context, GpuGraphicsPipe
 GPU compute pipeline.
 
 A compute pipeline encapsulates a compute program.
-For optimal performance, a compute pipeline should only be created at load time, not at runtime.
+For optimal performance a compute pipeline should only be created at load time, not at runtime.
 
 GpuComputePipeline_t
 
@@ -8086,7 +8169,7 @@ static void GpuComputePipeline_Destroy( GpuContext_t * context, GpuComputePipeli
 GPU fence.
 
 A fence is used to notify completion of a command buffer.
-For optimal performance, a fence should only be created at load time, not at runtime.
+For optimal performance a fence should only be created at load time, not at runtime.
 
 GpuFence_t
 
@@ -8292,7 +8375,7 @@ static bool GpuFence_IsSignalled( GpuContext_t * context, GpuFence_t * fence )
 GPU timer.
 
 A timer is used to measure the amount of time it takes to complete GPU commands.
-For optimal performance, a timer should only be created at load time, not at runtime.
+For optimal performance a timer should only be created at load time, not at runtime.
 To avoid synchronization, GpuTimer_GetMilliseconds() reports the time from GPU_TIMER_FRAMES_DELAYED frames ago.
 Timer queries are allowed to overlap and can be nested.
 Timer queries that are issued inside a render pass may not produce accurate times on tiling GPUs.
@@ -8710,7 +8793,7 @@ static void GpuComputeCommand_SetDimensions( GpuComputeCommand_t * command, cons
 GPU command buffer.
 
 A command buffer is used to record graphics and compute commands.
-For optimal performance, a command buffer should only be created at load time, not at runtime.
+For optimal performance a command buffer should only be created at load time, not at runtime.
 When a command is submitted, the state of the command is compared with the currently saved state,
 and only the state that has changed translates into OpenGL function calls.
 
@@ -12539,15 +12622,15 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
 			break;	// change render mode
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
 			SceneThread_Destroy( &sceneThread, &sceneThreadData );
@@ -12564,56 +12647,56 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
 			SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
 			sceneThreadData.openFrameLog = true;
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_P ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_P ) )
 		{
 			SceneSettings_ToggleSimulationPaused( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_G ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_G ) )
 		{
 			TimeWarp_CycleBarGraphState( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_Q ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_Q ) )
 		{
 			SceneSettings_CycleDrawCallLevel( &sceneSettings );
 			TimeWarp_SetDrawCallLevel( &timeWarp, SceneSettings_GetDrawCallLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_W ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_W ) )
 		{
 			SceneSettings_CycleTriangleLevel( &sceneSettings );
 			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_E ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_E ) )
 		{
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_I ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_I ) )
 		{
 			TimeWarp_CycleImplementation( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_C ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_C ) )
 		{
 			TimeWarp_ToggleChromaticAberrationCorrection( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_M ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_M ) )
 		{
 			if ( glExtensions.multi_view )
 			{
@@ -12625,7 +12708,7 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 				SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
 			}
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
 		{
 			DumpGLSL();
 		}
@@ -12709,15 +12792,15 @@ bool RenderTimeWarp( const StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
 			break;	// change render mode
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
 			TimeWarp_Destroy( &timeWarp, &window );
@@ -12729,36 +12812,36 @@ bool RenderTimeWarp( const StartupSettings_t * startupSettings )
 							fullscreen );
 			TimeWarp_Create( &timeWarp, &window );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_G ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_G ) )
 		{
 			TimeWarp_CycleBarGraphState( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_I ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_I ) )
 		{
 			TimeWarp_CycleImplementation( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_C ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_C ) )
 		{
 			TimeWarp_ToggleChromaticAberrationCorrection( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
 		{
 			DumpGLSL();
 		}
@@ -12864,15 +12947,15 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
 			break;	// change render mode
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
 			Scene_Destroy( &window.context, &scene );
@@ -12895,40 +12978,40 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 			GpuTimer_Create( &window.context, &timer );
 			Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_scene.txt", 10 );
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_P ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_P ) )
 		{
 			SceneSettings_ToggleSimulationPaused( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_Q ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_Q ) )
 		{
 			SceneSettings_CycleDrawCallLevel( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_W ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_W ) )
 		{
 			SceneSettings_CycleTriangleLevel( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_E ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_E ) )
 		{
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
 		{
 			DumpGLSL();
 		}
