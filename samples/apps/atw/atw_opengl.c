@@ -1705,6 +1705,7 @@ Vector4i_t
 Vector2f_t
 Vector3f_t
 Vector4f_t
+Matrix3x4f_t		// This is a column-major matrix.
 Matrix4x4f_t		// This is a column-major matrix.
 
 static void Vector3f_Zero( Vector3f_t * v );
@@ -1772,6 +1773,12 @@ typedef struct
 	float w;
 } Vector4f_t;
 
+// Column-major 3x4 matrix
+typedef struct
+{
+	float m[3][4];
+} Matrix3x4f_t;
+
 // Column-major 4x4 matrix
 typedef struct
 {
@@ -1802,6 +1809,22 @@ static void Vector3f_Normalize( Vector3f_t * v )
 	v->x *= lengthRcp;
 	v->y *= lengthRcp;
 	v->z *= lengthRcp;
+}
+
+static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * dest, const Matrix4x4f_t * source )
+{
+	dest->m[0][0] = source->m[0][0];
+	dest->m[0][1] = source->m[1][0];
+	dest->m[0][2] = source->m[2][0];
+	dest->m[0][3] = source->m[3][0];
+	dest->m[1][0] = source->m[0][1];
+	dest->m[1][1] = source->m[1][1];
+	dest->m[1][2] = source->m[2][1];
+	dest->m[1][3] = source->m[3][1];
+	dest->m[2][0] = source->m[0][2];
+	dest->m[2][1] = source->m[1][2];
+	dest->m[2][2] = source->m[2][2];
+	dest->m[2][3] = source->m[3][2];
 }
 
 // Use left-multiplication to accumulate transformations.
@@ -2179,6 +2202,7 @@ PFNGLUNIFORM1FVPROC							glUniform1fv;
 PFNGLUNIFORM2FVPROC							glUniform2fv;
 PFNGLUNIFORM3FVPROC							glUniform3fv;
 PFNGLUNIFORM4FVPROC							glUniform4fv;
+PFNGLUNIFORMMATRIX3X4FVPROC					glUniformMatrix3x4fv;
 PFNGLUNIFORMMATRIX4FVPROC					glUniformMatrix4fv;
 
 PFNGLDRAWELEMENTSINSTANCEDPROC				glDrawElementsInstanced;
@@ -2303,6 +2327,7 @@ static void GlInitExtensions()
 	glUniform2fv						= (PFNGLUNIFORM2FVPROC)						GetExtension( "glUniform2fv" );
 	glUniform3fv						= (PFNGLUNIFORM3FVPROC)						GetExtension( "glUniform3fv" );
 	glUniform4fv						= (PFNGLUNIFORM4FVPROC)						GetExtension( "glUniform4fv" );
+	glUniformMatrix3x4fv				= (PFNGLUNIFORMMATRIX3X4FVPROC)				GetExtension( "glUniformMatrix3x4fv" );
 	glUniformMatrix4fv					= (PFNGLUNIFORMMATRIX4FVPROC)				GetExtension( "glUniformMatrix4fv" );
 	glGetProgramResourceIndex			= (PFNGLGETPROGRAMRESOURCEINDEXPROC)		GetExtension( "glGetProgramResourceIndex" );
 	glUniformBlockBinding				= (PFNGLUNIFORMBLOCKBINDINGPROC)			GetExtension( "glUniformBlockBinding" );
@@ -7572,6 +7597,7 @@ typedef enum
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,		// float[2]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3,		// float[3]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4,		// float[4]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	// float[3][4]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	// float[4][4]
 	GPU_PROGRAM_PARM_TYPE_MAX
 } GpuProgramParmType_t;
@@ -7622,6 +7648,7 @@ static int GpuProgramParm_GetPushConstantSize( const GpuProgramParmType_t type )
 		(unsigned int)sizeof( float[2] ),
 		(unsigned int)sizeof( float[3] ),
 		(unsigned int)sizeof( float[4] ),
+		(unsigned int)sizeof( float[3][4] ),
 		(unsigned int)sizeof( float[4][4] )
 	};
 	return parmSize[type];
@@ -8552,6 +8579,8 @@ static void GpuGraphicsCommand_SetParmFloat( GpuGraphicsCommand_t * command, con
 static void GpuGraphicsCommand_SetParmFloatVector2( GpuGraphicsCommand_t * command, const int index, const Vector2f_t * value );
 static void GpuGraphicsCommand_SetParmFloatVector3( GpuGraphicsCommand_t * command, const int index, const Vector3f_t * value );
 static void GpuGraphicsCommand_SetParmFloatVector4( GpuGraphicsCommand_t * command, const int index, const Vector3f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix3x4( GpuGraphicsCommand_t * command, const int index, const Matrix3x4f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix4x4( GpuGraphicsCommand_t * command, const int index, const Matrix4x4f_t * value );
 static void GpuGraphicsCommand_SetNumInstances( GpuGraphicsCommand_t * command, const int numInstances );
 
 ================================================================================================================================
@@ -8650,6 +8679,11 @@ static void GpuGraphicsCommand_SetParmFloatVector4( GpuGraphicsCommand_t * comma
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4, value );
 }
 
+static void GpuGraphicsCommand_SetParmFloatMatrix3x4( GpuGraphicsCommand_t * command, const int index, const Matrix3x4f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4, value );
+}
+
 static void GpuGraphicsCommand_SetParmFloatMatrix4x4( GpuGraphicsCommand_t * command, const int index, const Matrix4x4f_t * value )
 {
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4, value );
@@ -8687,6 +8721,8 @@ static void GpuComputeCommand_SetParmFloat( GpuComputeCommand_t * command, const
 static void GpuComputeCommand_SetParmFloatVector2( GpuComputeCommand_t * command, const int index, const Vector2f_t * value );
 static void GpuComputeCommand_SetParmFloatVector3( GpuComputeCommand_t * command, const int index, const Vector3f_t * value );
 static void GpuComputeCommand_SetParmFloatVector4( GpuComputeCommand_t * command, const int index, const Vector3f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix3x4( GpuComputeCommand_t * command, const int index, const Matrix3x4f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix4x4( GpuComputeCommand_t * command, const int index, const Matrix4x4f_t * value );
 static void GpuComputeCommand_SetDimensions( GpuComputeCommand_t * command, const int x, const int y, const int z );
 
 ================================================================================================================================
@@ -8773,6 +8809,11 @@ static void GpuComputeCommand_SetParmFloatVector3( GpuComputeCommand_t * command
 static void GpuComputeCommand_SetParmFloatVector4( GpuComputeCommand_t * command, const int index, const Vector4f_t * value )
 {
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix3x4( GpuComputeCommand_t * command, const int index, const Matrix3x4f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4, value );
 }
 
 static void GpuComputeCommand_SetParmFloatMatrix4x4( GpuComputeCommand_t * command, const int index, const Matrix4x4f_t * value )
@@ -9268,6 +9309,7 @@ static void GpuCommandBuffer_UpdateProgramParms( const GpuProgramParmLayout_t * 
 					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		GL( glUniform2fv( binding, 1, (const GLfloat *)newData ) ); break;
 					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		GL( glUniform3fv( binding, 1, (const GLfloat *)newData ) ); break;
 					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		GL( glUniform4fv( binding, 1, (const GLfloat *)newData ) ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4:	GL( glUniformMatrix3x4fv( binding, 1, GL_FALSE, (const GLfloat *)newData ) ); break;
 					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	GL( glUniformMatrix4fv( binding, 1, GL_FALSE, (const GLfloat *)newData ) ); break;
 					default: assert( false ); break;
 				}
@@ -9534,7 +9576,7 @@ static const char barGraphVertexProgramGLSL[] =
 	"in mat4 vertexTransform;\n"
 	"out vec4 fragmentColor;\n"
 	"out gl_PerVertex { vec4 gl_Position; };\n"
-	"vec3 multiply3x4( mat4 m, vec3 v )\n"
+	"vec3 multiply4x3( mat4 m, vec3 v )\n"
 	"{\n"
 	"	return vec3(\n"
 	"		m[0].x * v.x + m[1].x * v.y + m[2].x * v.z + m[3].x,\n"
@@ -9543,7 +9585,7 @@ static const char barGraphVertexProgramGLSL[] =
 	"}\n"
 	"void main( void )\n"
 	"{\n"
-	"	gl_Position.xyz = multiply3x4( vertexTransform, vertexPosition );\n"
+	"	gl_Position.xyz = multiply4x3( vertexTransform, vertexPosition );\n"
 	"	gl_Position.w = 1.0;\n"
 	"	fragmentColor.r = vertexTransform[0][3];\n"
 	"	fragmentColor.g = vertexTransform[1][3];\n"
@@ -10410,8 +10452,8 @@ enum
 
 static const GpuProgramParm_t timeWarpSpatialGraphicsProgramParms[] =
 {
-	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"TimeWarpStartTransform",	0 },
-	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,	"TimeWarpEndTransform",		1 },
+	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"TimeWarpStartTransform",	0 },
+	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,	"TimeWarpEndTransform",		1 },
 	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER,		"ArrayLayer",				2 },
 	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE,			"Texture",					0 }
 };
@@ -10419,8 +10461,8 @@ static const GpuProgramParm_t timeWarpSpatialGraphicsProgramParms[] =
 static const char timeWarpSpatialVertexProgramGLSL[] =
 	"#version " GLSL_PROGRAM_VERSION "\n"
 	GLSL_EXTENSIONS
-	"uniform highp mat4 TimeWarpStartTransform;\n"
-	"uniform highp mat4 TimeWarpEndTransform;\n"
+	"uniform highp mat3x4 TimeWarpStartTransform;\n"
+	"uniform highp mat3x4 TimeWarpEndTransform;\n"
 	"in highp vec3 vertexPosition;\n"
 	"in highp vec2 vertexUv1;\n"
 	"out mediump vec2 fragmentUv1;\n"
@@ -10431,8 +10473,8 @@ static const char timeWarpSpatialVertexProgramGLSL[] =
 	"\n"
 	"	float displayFraction = vertexPosition.x * 0.5 + 0.5;\n"	// landscape left-to-right
 	"\n"
-	"	vec3 startUv1 = vec3( TimeWarpStartTransform * vec4( vertexUv1, -1, 1 ) );\n"
-	"	vec3 endUv1 = vec3( TimeWarpEndTransform * vec4( vertexUv1, -1, 1 ) );\n"
+	"	vec3 startUv1 = vec4( vertexUv1, -1, 1 ) * TimeWarpStartTransform;\n"
+	"	vec3 endUv1 = vec4( vertexUv1, -1, 1 ) * TimeWarpEndTransform;\n"
 	"	vec3 curUv1 = mix( startUv1, endUv1, displayFraction );\n"
 	"	fragmentUv1 = curUv1.xy * ( 1.0 / max( curUv1.z, 0.00001 ) );\n"
 	"}\n";
@@ -10451,8 +10493,8 @@ static const char timeWarpSpatialFragmentProgramGLSL[] =
 
 static const GpuProgramParm_t timeWarpChromaticGraphicsProgramParms[] =
 {
-	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"TimeWarpStartTransform",	0 },
-	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,	"TimeWarpEndTransform",		1 },
+	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"TimeWarpStartTransform",	0 },
+	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,	"TimeWarpEndTransform",		1 },
 	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER,		"ArrayLayer",				2 },
 	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE,			"Texture",					0 }
 };
@@ -10460,8 +10502,8 @@ static const GpuProgramParm_t timeWarpChromaticGraphicsProgramParms[] =
 static const char timeWarpChromaticVertexProgramGLSL[] =
 	"#version " GLSL_PROGRAM_VERSION "\n"
 	GLSL_EXTENSIONS
-	"uniform highp mat4 TimeWarpStartTransform;\n"
-	"uniform highp mat4 TimeWarpEndTransform;\n"
+	"uniform highp mat3x4 TimeWarpStartTransform;\n"
+	"uniform highp mat3x4 TimeWarpEndTransform;\n"
 	"in highp vec3 vertexPosition;\n"
 	"in highp vec2 vertexUv0;\n"
 	"in highp vec2 vertexUv1;\n"
@@ -10476,13 +10518,13 @@ static const char timeWarpChromaticVertexProgramGLSL[] =
 	"\n"
 	"	float displayFraction = vertexPosition.x * 0.5 + 0.5;\n"	// landscape left-to-right
 	"\n"
-	"	vec3 startUv0 = vec3( TimeWarpStartTransform * vec4( vertexUv0, -1, 1 ) );\n"
-	"	vec3 startUv1 = vec3( TimeWarpStartTransform * vec4( vertexUv1, -1, 1 ) );\n"
-	"	vec3 startUv2 = vec3( TimeWarpStartTransform * vec4( vertexUv2, -1, 1 ) );\n"
+	"	vec3 startUv0 = vec4( vertexUv0, -1, 1 ) * TimeWarpStartTransform;\n"
+	"	vec3 startUv1 = vec4( vertexUv1, -1, 1 ) * TimeWarpStartTransform;\n"
+	"	vec3 startUv2 = vec4( vertexUv2, -1, 1 ) * TimeWarpStartTransform;\n"
 	"\n"
-	"	vec3 endUv0 = vec3( TimeWarpEndTransform * vec4( vertexUv0, -1, 1 ) );\n"
-	"	vec3 endUv1 = vec3( TimeWarpEndTransform * vec4( vertexUv1, -1, 1 ) );\n"
-	"	vec3 endUv2 = vec3( TimeWarpEndTransform * vec4( vertexUv2, -1, 1 ) );\n"
+	"	vec3 endUv0 = vec4( vertexUv0, -1, 1 ) * TimeWarpEndTransform;\n"
+	"	vec3 endUv1 = vec4( vertexUv1, -1, 1 ) * TimeWarpEndTransform;\n"
+	"	vec3 endUv2 = vec4( vertexUv2, -1, 1 ) * TimeWarpEndTransform;\n"
 	"\n"
 	"	vec3 curUv0 = mix( startUv0, endUv0, displayFraction );\n"
 	"	vec3 curUv1 = mix( startUv1, endUv1, displayFraction );\n"
@@ -10654,6 +10696,11 @@ static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWar
 	CalculateTimeWarpTransform( &timeWarpStartTransform, projectionMatrix, viewMatrix, &displayRefreshStartViewMatrix );
 	CalculateTimeWarpTransform( &timeWarpEndTransform, projectionMatrix, viewMatrix, &displayRefreshEndViewMatrix );
 
+	Matrix3x4f_t timeWarpStartTransform3x4;
+	Matrix3x4f_t timeWarpEndTransform3x4;
+	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpStartTransform3x4, &timeWarpStartTransform );
+	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpEndTransform3x4, &timeWarpEndTransform );
+
 	const ScreenRect_t screenRect = GpuFramebuffer_GetRect( framebuffer );
 
 	GpuCommandBuffer_BeginPrimary( commandBuffer );
@@ -10672,8 +10719,8 @@ static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWar
 		GpuGraphicsCommand_t command;
 		GpuGraphicsCommand_Init( &command );
 		GpuGraphicsCommand_SetPipeline( &command, correctChromaticAberration ? &graphics->timeWarpChromaticPipeline[eye] : &graphics->timeWarpSpatialPipeline[eye] );
-		GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform );
-		GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform );
+		GpuGraphicsCommand_SetParmFloatMatrix3x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform3x4 );
+		GpuGraphicsCommand_SetParmFloatMatrix3x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform3x4 );
 		GpuGraphicsCommand_SetParmInt( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER, &eyeArrayLayer[eye] );
 		GpuGraphicsCommand_SetParmTextureSampled( &command, GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE, eyeTexture[eye] );
 
@@ -10761,8 +10808,8 @@ static const GpuProgramParm_t timeWarpTransformComputeProgramParms[] =
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_SRC,		"src",						1 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,		GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_DIMENSIONS,		"dimensions",				0 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE,				"eye",						1 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"timeWarpStartTransform",	2 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,		"timeWarpEndTransform",		3 }
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"timeWarpStartTransform",	2 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,		"timeWarpEndTransform",		3 }
 };
 
 #define TRANSFORM_LOCAL_SIZE_X		8
@@ -10776,8 +10823,8 @@ static const char timeWarpTransformComputeProgramGLSL[] =
 	"\n"
 	"layout( rgba16f, binding = 0 ) uniform writeonly " ES_HIGHP " image2D dst;\n"
 	"layout( rgba32f, binding = 1 ) uniform readonly " ES_HIGHP " image2D src;\n"
-	"uniform highp mat4 timeWarpStartTransform;\n"
- 	"uniform highp mat4 timeWarpEndTransform;\n"
+	"uniform highp mat3x4 timeWarpStartTransform;\n"
+ 	"uniform highp mat3x4 timeWarpEndTransform;\n"
 	"uniform ivec2 dimensions;\n"
 	"uniform int eye;\n"
 	"\n"
@@ -10794,8 +10841,8 @@ static const char timeWarpTransformComputeProgramGLSL[] =
 	"	vec2 coords = imageLoad( src, mesh ).xy;\n"
 	"\n"
 	"	float displayFraction = float( eye * eyeTilesWide + mesh.x ) / ( float( eyeTilesWide ) * 2.0f );\n"		// landscape left-to-right
-	"	vec3 start = vec3( timeWarpStartTransform * vec4( coords, -1.0f, 1.0f ) );\n"
-	"	vec3 end = vec3( timeWarpEndTransform * vec4( coords, -1.0f, 1.0f ) );\n"
+	"	vec3 start = vec4( coords, -1.0f, 1.0f ) * timeWarpStartTransform;\n"
+	"	vec3 end = vec4( coords, -1.0f, 1.0f ) * timeWarpEndTransform;\n"
 	"	vec3 cur = start + displayFraction * ( end - start );\n"
 	"	float rcpZ = 1.0f / cur.z;\n"
 	"\n"
@@ -10822,8 +10869,8 @@ static const GpuProgramParm_t timeWarpSpatialComputeProgramParms[] =
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_G,		"warpImageG",		1 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE,		"imageScale",		0 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS,		"imageBias",		1 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER,		"imageLayer",		2 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET,	"eyePixelOffset",	3 }
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET,	"eyePixelOffset",	3 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER,		"imageLayer",		2 }
 };
 
 #define SPATIAL_LOCAL_SIZE_X		8
@@ -10844,8 +10891,8 @@ static const char timeWarpSpatialComputeProgramGLSL[] =
 	"uniform highp sampler2D warpImageG;\n"
 	"uniform highp vec2 imageScale;\n"
 	"uniform highp vec2 imageBias;\n"
-	"uniform int imageLayer;\n"
 	"uniform ivec2 eyePixelOffset;\n"
+	"uniform int imageLayer;\n"
 	"\n"
 	"void main()\n"
 	"{\n"
@@ -10867,8 +10914,8 @@ static const GpuProgramParm_t timeWarpChromaticComputeProgramParms[] =
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_B,		"warpImageB",		3 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE,		"imageScale",		0 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS,		"imageBias",		1 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER,		"imageLayer",		2 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET,	"eyePixelOffset",	3 }
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET,	"eyePixelOffset",	3 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER,		"imageLayer",		2 }
 };
 
 #define CHROMATIC_LOCAL_SIZE_X		8
@@ -10891,8 +10938,8 @@ static const char timeWarpChromaticComputeProgramGLSL[] =
 	"uniform highp sampler2D warpImageB;\n"
 	"uniform highp vec2 imageScale;\n"
 	"uniform highp vec2 imageBias;\n"
-	"uniform int imageLayer;\n"
 	"uniform ivec2 eyePixelOffset;\n"
+	"uniform int imageLayer;\n"
 	"\n"
 	"void main()\n"
 	"{\n"
@@ -11014,8 +11061,13 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 	CalculateTimeWarpTransform( &timeWarpStartTransform, projectionMatrix, viewMatrix, &displayRefreshStartViewMatrix );
 	CalculateTimeWarpTransform( &timeWarpEndTransform, projectionMatrix, viewMatrix, &displayRefreshEndViewMatrix );
 
+	Matrix3x4f_t timeWarpStartTransform3x4;
+	Matrix3x4f_t timeWarpEndTransform3x4;
+	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpStartTransform3x4, &timeWarpStartTransform );
+	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpEndTransform3x4, &timeWarpEndTransform );
+
 	GpuCommandBuffer_BeginPrimary( commandBuffer );
-	GpuCommandBuffer_BeginFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_STORAGE );
+	GpuCommandBuffer_BeginFramebuffer( commandBuffer, &compute->framebuffer, 0, GPU_TEXTURE_USAGE_STORAGE );
 
 	GpuCommandBuffer_BeginTimer( commandBuffer, &compute->timeWarpGpuTime );
 
@@ -11040,8 +11092,8 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 			GpuComputeCommand_SetPipeline( &command, &compute->timeWarpTransformPipeline );
 			GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_DST, &compute->timeWarpImage[eye][channel] );
 			GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_SRC, &compute->distortionImage[eye][channel] );
-			GpuComputeCommand_SetParmFloatMatrix4x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform );
-			GpuComputeCommand_SetParmFloatMatrix4x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform );
+			GpuComputeCommand_SetParmFloatMatrix3x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform3x4 );
+			GpuComputeCommand_SetParmFloatMatrix3x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform3x4 );
 			GpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_DIMENSIONS, &dimensions );
 			GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE, &eyeIndex[eye] );
 			GpuComputeCommand_SetDimensions( &command, ( dimensions.x + TRANSFORM_LOCAL_SIZE_X - 1 ) / TRANSFORM_LOCAL_SIZE_X, 
@@ -11060,8 +11112,8 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 	}
 	GpuCommandBuffer_ChangeTextureUsage( commandBuffer, GpuFramebuffer_GetColorTexture( &compute->framebuffer ), GPU_TEXTURE_USAGE_STORAGE );
 
-	const int screenWidth = GpuFramebuffer_GetWidth( framebuffer );
-	const int screenHeight = GpuFramebuffer_GetHeight( framebuffer );
+	const int screenWidth = GpuFramebuffer_GetWidth( &compute->framebuffer );
+	const int screenHeight = GpuFramebuffer_GetHeight( &compute->framebuffer );
 	const int eyePixelsWide = screenWidth / NUM_EYES;
 	const int eyePixelsHigh = screenHeight * EYE_TILES_HIGH * TILE_PIXELS_HIGH / DISPLAY_PIXELS_HIGH;
 	const Vector2f_t imageScale =
@@ -11100,8 +11152,8 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 		GpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_B, &compute->timeWarpImage[eye][2] );
 		GpuComputeCommand_SetParmFloatVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE, &imageScale );
 		GpuComputeCommand_SetParmFloatVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS, &imageBias );
-		GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER, &eyeArrayLayer[eye] );
 		GpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET, &eyePixelOffset[eye] );
+		GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER, &eyeArrayLayer[eye] );
 		GpuComputeCommand_SetDimensions( &command, screenWidth / ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_X : SPATIAL_LOCAL_SIZE_X ) / 2,
 													screenHeight / ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_Y : SPATIAL_LOCAL_SIZE_Y ), 1 );
 
@@ -11119,7 +11171,7 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 
 	GpuCommandBuffer_EndTimer( commandBuffer, &compute->timeWarpGpuTime );
 
-	GpuCommandBuffer_EndFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_PRESENTATION );
+	GpuCommandBuffer_EndFramebuffer( commandBuffer, &compute->framebuffer, 0, GPU_TEXTURE_USAGE_PRESENTATION );
 	GpuCommandBuffer_EndPrimary( commandBuffer );
 
 	GpuCommandBuffer_SubmitPrimary( commandBuffer );
@@ -12284,7 +12336,7 @@ static void DumpGLSL()
 									"glslangValidator -G -o %sSPIRV.spv %sGLSL.%s\r\n",
 									glsl[i].fileName, glsl[i].fileName, glsl[i].extension );
 		batchFileHexLength += sprintf( batchFileHex + batchFileHexLength,
-									"glslangValidator -G -x %sSPIRV.h %sGLSL.%s\r\n",
+									"glslangValidator -G -x -o %sSPIRV.h %sGLSL.%s\r\n",
 									glsl[i].fileName, glsl[i].fileName, glsl[i].extension );
 	}
 
@@ -13149,7 +13201,7 @@ static int StartApplication( int argc, char * argv[] )
 	//startupSettings.simulationPaused = true;
 	//startupSettings.useMultiView = true;
 	//startupSettings.correctChromaticAberration = true;
-	//startupSettings.renderMode = 1;
+	//startupSettings.renderMode = RENDER_MODE_TIME_WARP;
 	//startupSettings.timeWarpImplementation = TIMEWARP_IMPLEMENTATION_COMPUTE;
 
 	Print( "    fullscreen = %d\n",					startupSettings.fullscreen );
