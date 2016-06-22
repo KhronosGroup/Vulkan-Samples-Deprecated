@@ -86,6 +86,10 @@ Windows:
 
 	    HKEY_LOCAL_MACHINE\SOFTWARE\Khronos\Vulkan\ExplicitLayers
 
+	Each key name must be a full path to the JSON manifest file.
+	The Vulkan loader opens the JSON manifest file specified by the key name.
+	The value of the key is a DWORD data set to 0.
+
 	Alternatively, use the VK_LAYER_PATH environment variable to specify where the layer library resides.
 
 Linux:
@@ -138,10 +142,10 @@ Windows:
 		set VK_INSTANCE_LAYERS=VK_LAYER_OCULUS_queue_muxer
 		set VK_DEVICE_LAYERS=VK_LAYER_OCULUS_queue_muxer
 
-	Multiple layers can be enabled simultaneously by separating them with colons.
+	Multiple layers can be enabled simultaneously by separating them with semi-colons.
 
-		set VK_INSTANCE_LAYERS=VK_LAYER_OCULUS_queue_muxer:VK_LAYER_LUNARG_core_validation
-		set VK_DEVICE_LAYERS=VK_LAYER_OCULUS_queue_muxer:VK_LAYER_LUNARG_core_validation
+		set VK_INSTANCE_LAYERS=VK_LAYER_OCULUS_queue_muxer;VK_LAYER_LUNARG_core_validation
+		set VK_DEVICE_LAYERS=VK_LAYER_OCULUS_queue_muxer;VK_LAYER_LUNARG_core_validation
 
 Linux:
 
@@ -212,6 +216,7 @@ VERSION HISTORY
 #endif
 
 #define MIN_QUEUES_PER_FAMILY		16
+#define LAYER_NAME					"VK_LAYER_OCULUS_queue_muxer"
 
 /*
 ================================================================================================================================
@@ -329,7 +334,7 @@ static unsigned int HashMap_HashPointer( HashMap_t * map, const void * key )
 	// HASH_TABLE_SIZE must be a power of two.
 	assert( ( HASH_TABLE_SIZE > 0 ) && ( HASH_TABLE_SIZE & ( HASH_TABLE_SIZE - 1 ) ) == 0 );
 	const size_t value = (size_t)key;
-	return (unsigned int)( ( ( value >> 3 ) ^ ( value >> 11 ) ) & ( HASH_TABLE_SIZE - 1 ) );
+	return (unsigned int)( ( ( value >> 3 ) ^ ( value >> 11 ) ^ ( value >> 19 ) ) & ( HASH_TABLE_SIZE - 1 ) );
 }
 
 static void HashMap_Add( HashMap_t * map, void * key, void * data )
@@ -434,7 +439,9 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
 		VkInstance *					pInstance )
 {
 	VkLayerInstanceCreateInfo * chain_info = (VkLayerInstanceCreateInfo *)pCreateInfo->pNext;
-	while ( chain_info != NULL && !( chain_info->sType == VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO && chain_info->function == VK_LAYER_LINK_INFO ) )
+	while ( chain_info != NULL &&
+			!( chain_info->sType == VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO &&
+				chain_info->function == VK_LAYER_LINK_INFO ) )
 	{
 		chain_info = (VkLayerInstanceCreateInfo *)chain_info->pNext;
 	}
@@ -511,7 +518,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyPropert
 		{
 			if ( pQueueFamilyProperties[i].queueCount < MIN_QUEUES_PER_FAMILY )
 			{
-				Print( "vkGetPhysicalDeviceQueueFamilyProperties: VK_LAYER_OCULUS_queue_muxer increased queueu family %d queue count from %d to %d",
+				Print( "vkGetPhysicalDeviceQueueFamilyProperties: " LAYER_NAME " increased queueu family %d queue count from %d to %d",
 						i, pQueueFamilyProperties[i].queueCount, MIN_QUEUES_PER_FAMILY );
 				pQueueFamilyProperties[i].queueCount = MIN_QUEUES_PER_FAMILY;
 			}
@@ -534,7 +541,9 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 		VkDevice *						pDevice )
 {
 	VkLayerDeviceCreateInfo * chain_info = (VkLayerDeviceCreateInfo *)pCreateInfo->pNext;
-	while ( chain_info != NULL && !( chain_info->sType == VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO && chain_info->function == VK_LAYER_LINK_INFO ) )
+	while ( chain_info != NULL &&
+			!( chain_info->sType == VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO &&
+				chain_info->function == VK_LAYER_LINK_INFO ) )
 	{
 		chain_info = (VkLayerDeviceCreateInfo *)chain_info->pNext;
 	}
@@ -727,6 +736,10 @@ For a layer to be recognized by the Android loader the layer .so must export:
 */
 
 #define ARRAY_SIZE( a )		( sizeof( (a) ) / sizeof( (a)[0] ) )
+#define ADD_HOOK( fn )		if ( strcmp( #fn, funcName ) == 0 ) \
+							{ \
+								return (PFN_vkVoidFunction) fn; \
+							}
 
 static VkResult GetLayerProperties(
 		const uint32_t				count,
@@ -769,8 +782,8 @@ static VkResult GetExtensionProperties(
 static const VkLayerProperties instanceLayerProps[] =
 {
 	{
-		"VK_LAYER_OCULUS_queue_muxer",
-		VK_MAKE_VERSION( 1, 0, 3 ),
+		LAYER_NAME,
+		VK_MAKE_VERSION( 1, 0, 0 ),
 		1,
 		"Oculus Queue Muxer",
 	}
@@ -788,15 +801,19 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionPrope
 		uint32_t *				pCount,
 		VkExtensionProperties *	pProperties)
 {
-	// This layer does not implement any instance extensions.
-	return GetExtensionProperties( 0, NULL, pCount, pProperties );
+	if ( pLayerName != NULL && strcmp( pLayerName, LAYER_NAME ) == 0 )
+	{
+		// This layer does not implement any instance extensions.
+		return GetExtensionProperties( 0, NULL, pCount, pProperties );
+	}
+	return VK_ERROR_LAYER_NOT_PRESENT;
 }
 
 static const VkLayerProperties deviceLayerProps[] =
 {
 	{
-		"VK_LAYER_OCULUS_queue_muxer",
-		VK_MAKE_VERSION( 1, 0, 3 ),
+		LAYER_NAME,
+		VK_MAKE_VERSION( 1, 0, 0 ),
 		1,
 		"Oculus Queue Muxer",
 	}
@@ -816,7 +833,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionPropert
 		uint32_t *				pCount,
 		VkExtensionProperties *	pProperties )
 {
-	if ( pLayerName != NULL && strcmp( pLayerName, deviceLayerProps[0].layerName ) == 0 )
+	if ( pLayerName != NULL && strcmp( pLayerName, LAYER_NAME ) == 0 )
 	{
 		// This layer does not implement any device extensions.
 		return GetExtensionProperties( 0, NULL, pCount, pProperties );
@@ -831,10 +848,6 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionPropert
 
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr( VkInstance instance, const char * funcName )
 {
-#define ADD_HOOK( fn ) \
-	if ( !strncmp( #fn, funcName, sizeof( #fn ) ) ) \
-		return (PFN_vkVoidFunction) fn
-
 	ADD_HOOK( vkEnumerateInstanceLayerProperties );
 	ADD_HOOK( vkEnumerateInstanceExtensionProperties );
 	ADD_HOOK( vkEnumerateDeviceLayerProperties );
@@ -843,7 +856,6 @@ VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr( 
 	ADD_HOOK( vkDestroyInstance );
 	ADD_HOOK( vkGetPhysicalDeviceQueueFamilyProperties );
 	ADD_HOOK( vkCreateDevice );
-#undef ADD_HOOK
 
 	if ( instance == NULL )
 	{
@@ -862,10 +874,6 @@ VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr( 
 
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr( VkDevice device, const char * funcName )
 {
-#define ADD_HOOK( fn ) \
-	if ( !strncmp( #fn, funcName, sizeof( #fn ) ) ) \
-		return (PFN_vkVoidFunction) fn
-
 	ADD_HOOK( vkEnumerateDeviceExtensionProperties );
 	ADD_HOOK( vkGetDeviceProcAddr );
 	ADD_HOOK( vkGetDeviceQueue );
@@ -873,7 +881,6 @@ VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr( Vk
 	ADD_HOOK( vkQueueWaitIdle );
 	ADD_HOOK( vkQueuePresentKHR );
 	ADD_HOOK( vkDestroyDevice );
-#undef ADD_HOOK
 
 	if ( device == NULL )
 	{

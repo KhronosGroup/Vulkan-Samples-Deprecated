@@ -5,8 +5,8 @@ Additional Vulkan functionality may be provided by layers and extensions.
 While a Vulkan extension can add or modify Vulkan commands, a Vulkan layer only
 deals with existing Vulkan commands. A layer is implemented as a separate
 shared object or dynamically linked library. An extensions is typically
-implemented as part of the graphics driver, but an extension can also be
-implemented as part of a layer object.
+implemented as part of the graphics driver. However, an extension can also
+be implemented as part of a layer object.
 
 Layers are typically used for validation. To avoid driver overhead,
 implementations of the Vulkan API perform minimal to no validation.
@@ -24,6 +24,8 @@ dispatched to that instance/device or any of its child objects.
 A layer is inserted into the call chain of any Vulkan commands the layer is
 interested in. Multiple layers can be active at the same time and in some
 cases the ordering of the layers is important.
+
+More information about layers can be found here [LoaderAndLayerInterface](https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/blob/master/loader/LoaderAndLayerInterface.md).
 
 # Layer Compilation
 
@@ -58,6 +60,14 @@ To compile on Android use the project files in projects/android.
 Add a reference to VkLayer_&lt;name&gt;.json to the registry key:
 
     HKEY_LOCAL_MACHINE\SOFTWARE\Khronos\Vulkan\ExplicitLayers
+    HKEY_LOCAL_MACHINE\SOFTWARE\Khronos\Vulkan\ImplicitLayers
+
+Each key name must be a full path to the JSON manifest file.
+The Vulkan loader opens the JSON manifest file specified by the key name.
+The value of the key is a DWORD data set to 0.
+
+Implicit layers are enabled automatically, whereas explicit layers must be enabled explicitly by
+the application.
 
 Alternatively, use the VK_LAYER_PATH environment variable to specify where the layer library resides.
 
@@ -65,11 +75,17 @@ Alternatively, use the VK_LAYER_PATH environment variable to specify where the l
 
 Place the VkLayer_&lt;name&gt;.json and libVkLayer_&lt;name&gt; .so in one of the following folders:
 
-    /usr/share/vulkan/icd.d
-    /etc/vulkan/icd.d
-    $HOME/.local/share/vulkan/icd.d
+    /usr/share/vulkan/explicit_layer.d
+    /usr/share/vulkan/implicit_layer.d
+    /etc/vulkan/explicit_layer.d
+    /etc/vulkan/implicit_layer.d
+    \$HOME/.local/share/vulkan/explicit_layer.d
+    \$HOME/.local/share/vulkan/implicit_layer.d
 
 Where $HOME is the current home directory of the application's user id; this path will be ignored for suid programs.
+
+Implicit layers are enabled automatically, whereas explicit layers must be enabled explicitly by
+the application.
 
 Alternatively, use the VK_LAYER_PATH environment variable to specify where the layer library resides.
 
@@ -129,10 +145,10 @@ Alternatively, on Windows the layer can be enabled for all applications by addin
     set VK_INSTANCE_LAYERS=VK_LAYER_<COMPANY>_<name>
     set VK_DEVICE_LAYERS=VK_LAYER_<COMPANY>_<name>
 
-Multiple layers can be enabled simultaneously by separating them with colons.
+Multiple layers can be enabled simultaneously by separating them with semi-colons.
 
-    set VK_INSTANCE_LAYERS=VK_LAYER_OCULUS_queue_muxer:VK_LAYER_LUNARG_core_validation
-    set VK_DEVICE_LAYERS=VK_LAYER_OCULUS_queue_muxer:VK_LAYER_LUNARG_core_validation
+    set VK_INSTANCE_LAYERS=VK_LAYER_OCULUS_queue_muxer;VK_LAYER_LUNARG_core_validation
+    set VK_DEVICE_LAYERS=VK_LAYER_OCULUS_queue_muxer;VK_LAYER_LUNARG_core_validation
 
 ### Linux
 

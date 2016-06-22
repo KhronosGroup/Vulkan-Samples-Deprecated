@@ -49,6 +49,7 @@ model {
 
 		CFlags.addAll([
 			"-I${file("${ndkDir}/sources/android/native_app_glue")}".toString(),
+			"-I${file("${baseDir}/external/include")}".toString(),
 			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/include")}".toString(),
 			"-I${file("${vkSdkPath}/Include")}".toString()
 		])

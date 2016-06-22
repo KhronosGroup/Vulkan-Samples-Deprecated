@@ -4,7 +4,6 @@ message(STATUS "Cxxflags: ${CMAKE_CXX_FLAGS}")
 
 include_directories(
         "${CMAKE_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/include"
-        "${CMAKE_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/layers"
         "${CMAKE_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers"
         "$ENV{VK_SDK_PATH}/Include"
         "$ENV{VK_SDK_PATH}/Source/layers"
