@@ -47,7 +47,8 @@ model {
 		CFlags.addAll(["-std=c99", "-O3", "-Wall"])
 
 		CFlags.addAll([
-			"-I${file("${ndkDir}/sources/android/native_app_glue")}".toString()
+			"-I${file("${ndkDir}/sources/android/native_app_glue")}".toString(),
+			"-I${file("${baseDir}/external/include")}".toString()
 		])
 
 		ldLibs.addAll(["android", "log", "EGL", "GLESv3"])

@@ -6,8 +6,8 @@ BASE_DIR := ../../../../../../..
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := VkLayer_queue_muxer
-LOCAL_C_INCLUDES := $(BASE_DIR)/Vulkan-LoaderAndValidationLayers/include \
-                    $(BASE_DIR)/Vulkan-LoaderAndValidationLayers/layers \
+LOCAL_C_INCLUDES := $(BASE_DIR)/external/include \
+                    $(BASE_DIR)/Vulkan-LoaderAndValidationLayers/include \
                     $(BASE_DIR)/Vulkan-LoaderAndValidationLayers/build/layers \
                     $(VK_SDK_PATH)/Include \
                     $(VK_SDK_PATH)/Source/layers
