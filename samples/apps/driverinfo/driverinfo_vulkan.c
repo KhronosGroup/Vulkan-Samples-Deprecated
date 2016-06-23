@@ -562,16 +562,16 @@ static void Console_Resize( const short numLines, const short numColumns )
 		return;
 	}
 
-    HANDLE consoleHandle = GetStdHandle( STD_OUTPUT_HANDLE );
+	HANDLE consoleHandle = GetStdHandle( STD_OUTPUT_HANDLE );
 
-    // Set the console window size.
-    CONSOLE_SCREEN_BUFFER_INFO csbi;
-    if ( GetConsoleScreenBufferInfo( consoleHandle, &csbi ) )
-    {
-	    COORD bufferSize;
-        bufferSize.X = numColumns > csbi.dwSize.X ? numColumns : csbi.dwSize.X;
-        bufferSize.Y = numLines > csbi.dwSize.Y ? numLines : csbi.dwSize.Y;
-        SetConsoleScreenBufferSize( consoleHandle, bufferSize );
+	// Set the console window size.
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
+	if ( GetConsoleScreenBufferInfo( consoleHandle, &csbi ) )
+	{
+		COORD bufferSize;
+		bufferSize.X = numColumns > csbi.dwSize.X ? numColumns : csbi.dwSize.X;
+		bufferSize.Y = numLines > csbi.dwSize.Y ? numLines : csbi.dwSize.Y;
+		SetConsoleScreenBufferSize( consoleHandle, bufferSize );
 
 		// Position the console window.
 		SMALL_RECT rect;
@@ -1337,7 +1337,7 @@ int main( int argc, char * argv[] )
 				free( queueFamilyProperties );
 			}
 
-			// Device Extensions
+			// Device Extensions.
 			{
 				uint32_t availableExtensionCount = 0;
 				VK( instance.vkEnumerateDeviceExtensionProperties( physicalDevices[physicalDeviceIndex], NULL, &availableExtensionCount, NULL ) );

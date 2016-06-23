@@ -6,6 +6,6 @@
         "library_path": "./libVkLayer_queue_muxer.so",
         "api_version": "1.0.0",
         "implementation_version": "1",
-        "description": "Queue Muxer Layer",
+        "description": "Queue Muxer Layer"
     }
 }
