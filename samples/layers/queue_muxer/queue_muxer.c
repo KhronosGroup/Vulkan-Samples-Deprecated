@@ -66,7 +66,7 @@ Microsoft Windows: Intel Compiler 14.0
 	icl /Zc:wchar_t /Zc:forScope /Wall /MD /GS /Gy /O2 /Oi /EHsc /I%VK_SDK_PATH%\Include /I%VK_SDK_PATH%\Source\layers /I%VK_SDK_PATH%\Source\loader queue_muxer.cpp /link /DLL /OUT:VkLayer_queue_muxer.dll
 
 Linux: GCC 4.8.2:
-	gcc -std=c++11 -march=native -Wall -g -O2 -m64 -fPIC -shared -o VkLayer_queue_mutex.so -I${VK_SDK_PATH}\Source\layers -I${VK_SDK_PATH}\Source\loader queue_mutex.cpp
+	gcc -std=c++11 -march=native -Wall -g -O2 -m64 -fPIC -shared -o VkLayer_queue_muxer.so -I${VK_SDK_PATH}\Source\layers -I${VK_SDK_PATH}\Source\loader queue_muxer.cpp
 
 Android for ARM from Windows: NDK Revision 11c - Android 21 - ANT/Gradle
 	ANT:
@@ -237,10 +237,10 @@ static void Mutex_Unlock( Mutex_t * pMutex );
 
 typedef CRITICAL_SECTION Mutex_t;
 
-static void Mutex_Create( Mutex_t * pMutex ) { InitializeCriticalSection( pMutex ); }
-static void Mutex_Destroy( Mutex_t * pMutex ) { DeleteCriticalSection( pMutex ); }
-static void Mutex_Lock( Mutex_t * pMutex ) { EnterCriticalSection( pMutex ); }
-static void Mutex_Unlock( Mutex_t * pMutex ) { LeaveCriticalSection( pMutex ); }
+static void Mutex_Create( Mutex_t * mutex ) { InitializeCriticalSection( mutex ); }
+static void Mutex_Destroy( Mutex_t * mutex ) { DeleteCriticalSection( mutex ); }
+static void Mutex_Lock( Mutex_t * mutex ) { EnterCriticalSection( mutex ); }
+static void Mutex_Unlock( Mutex_t * mutex ) { LeaveCriticalSection( mutex ); }
 
 #else
 
@@ -248,10 +248,10 @@ static void Mutex_Unlock( Mutex_t * pMutex ) { LeaveCriticalSection( pMutex ); }
 
 typedef pthread_mutex_t Mutex_t;
 
-static void Mutex_Create( Mutex_t * pMutex ) { pthread_mutex_init( pMutex, NULL ); }
-static void Mutex_Destroy( Mutex_t * pMutex ) { pthread_mutex_destroy( pMutex ); }
-static void Mutex_Lock( Mutex_t * pMutex ) { pthread_mutex_lock( pMutex ); }
-static void Mutex_Unlock( Mutex_t * pMutex ) { pthread_mutex_unlock( pMutex ); }
+static void Mutex_Create( Mutex_t * mutex ) { pthread_mutex_init( mutex, NULL ); }
+static void Mutex_Destroy( Mutex_t * mutex ) { pthread_mutex_destroy( mutex ); }
+static void Mutex_Lock( Mutex_t * mutex ) { pthread_mutex_lock( mutex ); }
+static void Mutex_Unlock( Mutex_t * mutex ) { pthread_mutex_unlock( mutex ); }
 
 #endif
 
@@ -317,6 +317,7 @@ static void HashMap_Grow( HashMap_t * map, const int newCount )
 static void HashMap_Create( HashMap_t * map )
 {
 	memset( map, 0, sizeof( HashMap_t ) );
+	memset( map->table, -1, sizeof( map->table ) );
 	HashMap_Grow( map, 16 );
 }
 
@@ -341,7 +342,7 @@ static void HashMap_Add( HashMap_t * map, void * key, void * data )
 {
 	const unsigned int hash = HashMap_HashPointer( map, key );
 	int * index = NULL;
-	for ( index = &map->table[hash]; *index != -1; index = &map->next[*index] )
+	for ( index = &map->table[hash]; *index >= 0; index = &map->next[*index] )
 	{
 		if ( map->key[*index] == key )
 		{
@@ -362,7 +363,7 @@ static void HashMap_Add( HashMap_t * map, void * key, void * data )
 static void HashMap_Remove( HashMap_t * map, void * key )
 {
 	const unsigned int hash = HashMap_HashPointer( map, key );
-	for ( int * index = &map->table[hash]; *index != -1; index = &map->next[*index] )
+	for ( int * index = &map->table[hash]; *index >= 0; index = &map->next[*index] )
 	{
 		if ( map->key[*index] == key )
 		{
@@ -380,7 +381,7 @@ static void HashMap_Remove( HashMap_t * map, void * key )
 static void * HashMap_Find( HashMap_t * map, void * key )
 {
 	const unsigned int hash = HashMap_HashPointer( map, key );
-	for ( int index = map->table[hash]; index != -1; index = map->next[index] )
+	for ( int index = map->table[hash]; index >= 0; index = map->next[index] )
 	{
 		if ( map->key[index] == key )
 		{
@@ -410,7 +411,6 @@ typedef struct
 	Mutex_t							deviceMutex;
 	uint32_t						queueFamilyCount;
 	VkQueueFamilyProperties *		queueFamilyProperties;
-	PFN_vkQueuePresentKHR			pfnQueuePresentKHR;
 } DeviceData_t;
 
 typedef struct
@@ -595,6 +595,11 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 
 	VkLayerDispatchTable * pDeviceTable = (VkLayerDispatchTable *)malloc( sizeof( VkLayerDispatchTable ) );
 	layer_init_device_dispatch_table( *pDevice, pDeviceTable, pfnGetDeviceProcAddr );
+	pDeviceTable->CreateSwapchainKHR = (PFN_vkCreateSwapchainKHR)pDeviceTable->GetDeviceProcAddr( *pDevice, "vkCreateSwapchainKHR" );
+	pDeviceTable->DestroySwapchainKHR = (PFN_vkDestroySwapchainKHR)pDeviceTable->GetDeviceProcAddr( *pDevice, "vkDestroySwapchainKHR" );
+	pDeviceTable->GetSwapchainImagesKHR = (PFN_vkGetSwapchainImagesKHR)pDeviceTable->GetDeviceProcAddr( *pDevice, "vkGetSwapchainImagesKHR" );
+	pDeviceTable->AcquireNextImageKHR = (PFN_vkAcquireNextImageKHR)pDeviceTable->GetDeviceProcAddr( *pDevice, "vkAcquireNextImageKHR" );
+	pDeviceTable->QueuePresentKHR = (PFN_vkQueuePresentKHR)pDeviceTable->GetDeviceProcAddr( *pDevice, "vkQueuePresentKHR" );
 
 	// Setup device data.
 	DeviceData_t * my_device_data = (DeviceData_t *)malloc( sizeof( DeviceData_t ) );
@@ -602,7 +607,6 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 	my_device_data->deviceDispatchTable = pDeviceTable;
 	my_device_data->queueFamilyCount = queueFamilyCount;
 	my_device_data->queueFamilyProperties = queueFamilyProperties;
-	my_device_data->pfnQueuePresentKHR = (PFN_vkQueuePresentKHR)pDeviceTable->GetDeviceProcAddr( *pDevice, "vkQueuePresentKHR" );
 	Mutex_Create( &my_device_data->deviceMutex );
 
 	HashMap_Add( &device_data_map, GetDispatchTable( *pDevice ), my_device_data );
@@ -712,7 +716,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(
 	QueueData_t * my_queue_data = (QueueData_t *)HashMap_Find( &queue_data_map, queue );
 
 	Mutex_Lock( &my_queue_data->queueMutex );
-	VkResult result = my_device_data->pfnQueuePresentKHR( queue, pPresentInfo );
+	VkResult result = my_device_data->deviceDispatchTable->QueuePresentKHR( queue, pPresentInfo );
 	Mutex_Unlock( &my_queue_data->queueMutex );
 
 	return result;

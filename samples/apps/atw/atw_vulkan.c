@@ -432,6 +432,7 @@ Platform headers / declarations
 
 	// prototype is only included when __USE_GNU is defined but that causes other compile errors
 	extern int pthread_setname_np( pthread_t __target_thread, __const char *__name );
+	extern int pthread_setaffinity_np( pthread_t thread, size_t cpusetsize, const cpu_set_t * cpuset );
 
 	#pragma GCC diagnostic ignored "-Wunused-function"
 
@@ -1263,8 +1264,30 @@ static void Thread_SetAffinity( int mask )
 	}
 #elif defined( OS_MAC )
 	// OS X does not export interfaces that identify processors or control thread placement.
-	// Explicit thread to processor binding is not supported.
 	UNUSED_PARM( mask );
+#elif defined( OS_LINUX )
+	if ( mask == THREAD_AFFINITY_BIG_CORES )
+	{
+		return;
+	}
+	cpu_set_t set;
+	CPU_ZERO( &set );
+	for ( int bit = 0; bit < 32; bit++ )
+	{
+		if ( ( mask & ( 1 << bit ) ) != 0 )
+		{
+			CPU_SET( bit, &set );
+		}
+	}
+	const int result = pthread_setaffinity_np( thread, sizeof( cpu_set_t ), &set );
+	if ( result != 0 )
+	{
+		Print( "Failed to set thread %d affinity.\n", (unsigned int)pthread_self() );
+	}
+	else
+	{
+		Print( "Thread %d affinity set to 0x%02X\n", (unsigned int)pthread_self(), mask );
+	}
 #elif defined( OS_ANDROID )
 	// Optionally use the faster cores of a heterogeneous CPU.
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
@@ -2284,13 +2307,11 @@ VkBool32 DebugReportCallback( VkDebugReportFlagsEXT msgFlags, VkDebugReportObjec
 	{
 		return VK_FALSE;
 	}
-
 	// Error: [DS] Code 14 : Cannot get query results on queryPool 0x170 with index 2 which is in flight.
 	if ( MatchStrings( pMsg, "Cannot get query results on queryPool 0x170 with index 2 which is in flight." ) )
 	{
 		return VK_FALSE;
 	}
-
 	// Error: [MEM] Code 13 : vkQueuePresentKHR(): Cannot read invalid swapchain image 0x5, please fill the memory before using.
 	// https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/676
 	if ( MatchStrings( pMsg, "vkQueuePresentKHR(): Cannot read invalid swapchain image 0x5, please fill the memory before using." ) )
@@ -2353,7 +2374,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 {
 	memset( instance, 0, sizeof( DriverInstance_t ) );
 
-#if 0//defined( _DEBUG )
+#if defined( _DEBUG )
 	instance->validate = VK_TRUE;
 #else
 	instance->validate = VK_FALSE;

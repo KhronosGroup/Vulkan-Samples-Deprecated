@@ -6,6 +6,6 @@
         "library_path": ".\\VkLayer_queue_muxer.dll",
         "api_version": "1.0.0",
         "implementation_version": "1",
-        "description": "Queue Muxer Layer",
+        "description": "Queue Muxer Layer"
     }
 }

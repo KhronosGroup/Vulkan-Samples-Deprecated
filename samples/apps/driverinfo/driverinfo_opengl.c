@@ -556,16 +556,16 @@ static void Console_Resize( const short numLines, const short numColumns )
 		return;
 	}
 
-    HANDLE consoleHandle = GetStdHandle( STD_OUTPUT_HANDLE );
+	HANDLE consoleHandle = GetStdHandle( STD_OUTPUT_HANDLE );
 
-    // Set the console window size.
-    CONSOLE_SCREEN_BUFFER_INFO csbi;
-    if ( GetConsoleScreenBufferInfo( consoleHandle, &csbi ) )
-    {
-	    COORD bufferSize;
-        bufferSize.X = numColumns > csbi.dwSize.X ? numColumns : csbi.dwSize.X;
-        bufferSize.Y = numLines > csbi.dwSize.Y ? numLines : csbi.dwSize.Y;
-        SetConsoleScreenBufferSize( consoleHandle, bufferSize );
+	// Set the console window size.
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
+	if ( GetConsoleScreenBufferInfo( consoleHandle, &csbi ) )
+	{
+		COORD bufferSize;
+		bufferSize.X = numColumns > csbi.dwSize.X ? numColumns : csbi.dwSize.X;
+		bufferSize.Y = numLines > csbi.dwSize.Y ? numLines : csbi.dwSize.Y;
+		SetConsoleScreenBufferSize( consoleHandle, bufferSize );
 
 		// Position the console window.
 		SMALL_RECT rect;
@@ -1445,7 +1445,7 @@ formats[] =
 	FORMAT_ENUM_STRING( GL_R16_SNORM,										false, "1-component, 16-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RG16_SNORM,										false, "2-component, 16-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RGBA16_SNORM,									false, "4-component, 16-bit signed normalized" ),
-#elif defined( GL_R16_EXT )
+#elif defined( GL_R16_SNORM_EXT )
 	FORMAT_ENUM_STRING( GL_R16_SNORM_EXT,									false, "1-component, 16-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RG16_SNORM_EXT,									false, "2-component, 16-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RGB16_SNORM_EXT,									false, "4-component, 16-bit signed normalized" ),
