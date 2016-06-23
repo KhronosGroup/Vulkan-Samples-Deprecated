@@ -257,7 +257,12 @@ Linux x86 or x64
 #define __USE_SSE4__				// SSE4 is only needed for _mm_extract_epi32() and _mm_insert_epi32(), otherwise SSSE3 would suffice
 #define __USE_AVX2__
 
-// prototype is only included when __USE_GNU is defined but that causes other compile errors
+// These prototypes are only included when __USE_GNU is defined but that causes other compile errors.
+typedef struct
+{
+	unsigned long int bits[32];
+} cpu_set_t;
+
 extern int pthread_setname_np( pthread_t __target_thread, __const char *__name );
 extern int pthread_setaffinity_np( pthread_t thread, size_t cpusetsize, const cpu_set_t * cpuset );
 
