@@ -430,7 +430,12 @@ Platform headers / declarations
 	#define VULKAN_LOADER	"libvulkan-1.so"
 	#define OUTPUT_PATH		""
 
-	// prototype is only included when __USE_GNU is defined but that causes other compile errors
+	// These prototypes are only included when __USE_GNU is defined but that causes other compile errors.
+	typedef struct
+	{
+		unsigned long int bits[32];
+	} cpu_set_t;
+
 	extern int pthread_setname_np( pthread_t __target_thread, __const char *__name );
 	extern int pthread_setaffinity_np( pthread_t thread, size_t cpusetsize, const cpu_set_t * cpuset );
 
@@ -1271,15 +1276,15 @@ static void Thread_SetAffinity( int mask )
 		return;
 	}
 	cpu_set_t set;
-	CPU_ZERO( &set );
+	memset( &set, 0, sizeof( cpu_set_t ) );
 	for ( int bit = 0; bit < 32; bit++ )
 	{
 		if ( ( mask & ( 1 << bit ) ) != 0 )
 		{
-			CPU_SET( bit, &set );
+			set.bits[bit / sizeof( set.bits[0] )] |= 1 << ( bit & ( sizeof( set.bits[0] ) - 1 ) );
 		}
 	}
-	const int result = pthread_setaffinity_np( thread, sizeof( cpu_set_t ), &set );
+	const int result = pthread_setaffinity_np( pthread_self(), sizeof( cpu_set_t ), &set );
 	if ( result != 0 )
 	{
 		Print( "Failed to set thread %d affinity.\n", (unsigned int)pthread_self() );

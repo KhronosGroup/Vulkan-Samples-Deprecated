@@ -1307,15 +1307,15 @@ static void Thread_SetAffinity( int mask )
 		return;
 	}
 	cpu_set_t set;
-	CPU_ZERO( &set );
+	memset( &set, 0, sizeof( cpu_set_t ) );
 	for ( int bit = 0; bit < 32; bit++ )
 	{
 		if ( ( mask & ( 1 << bit ) ) != 0 )
 		{
-			CPU_SET( bit, &set );
+			set.bits[bit / sizeof( set.bits[0] )] |= 1 << ( bit & ( sizeof( set.bits[0] ) - 1 ) );
 		}
 	}
-	const int result = pthread_setaffinity_np( thread, sizeof( cpu_set_t ), &set );
+	const int result = pthread_setaffinity_np( pthread_self(), sizeof( cpu_set_t ), &set );
 	if ( result != 0 )
 	{
 		Print( "Failed to set thread %d affinity.\n", (unsigned int)pthread_self() );
