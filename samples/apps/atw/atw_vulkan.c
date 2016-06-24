@@ -286,8 +286,6 @@ VERSION HISTORY
 	#error "unknown platform"
 #endif
 
-//#define ENABLE_OVR_FORMAT_SIZE
-
 /*
 ================================
 Platform headers / declarations
@@ -318,9 +316,6 @@ Platform headers / declarations
 
 	#include "vulkan/vulkan.h"
 	#include "vulkan/vk_sdk_platform.h"
-	#if defined( ENABLE_OVR_FORMAT_SIZE )
-		#include "vulkan/vk_ovr_format_size.h"
-	#endif
 
 	#define VULKAN_LOADER	"vulkan-1.dll"
 	#define OUTPUT_PATH		""
@@ -351,9 +346,6 @@ Platform headers / declarations
 
 	#include "vulkan/vulkan.h"
 	#include "vulkan/vk_sdk_platform.h"
-	#if defined( ENABLE_OVR_FORMAT_SIZE )
-		#include "vulkan/vk_ovr_format_size.h"
-	#endif
 
 	//#define MOLTEN_VK
 	#if defined( MOLTEN_VK )
@@ -423,9 +415,6 @@ Platform headers / declarations
 
 	#include "vulkan/vulkan.h"
 	#include "vulkan/vk_sdk_platform.h"
-	#if defined( ENABLE_OVR_FORMAT_SIZE )
-		#include "vulkan/vk_ovr_format_size.h"
-	#endif
 
 	#define VULKAN_LOADER	"libvulkan-1.so"
 	#define OUTPUT_PATH		""
@@ -460,9 +449,6 @@ Platform headers / declarations
 
 	#include "vulkan/vulkan.h"
 	#include "vulkan/vk_sdk_platform.h"
-	#if defined( ENABLE_OVR_FORMAT_SIZE )
-		#include "vulkan/vk_ovr_format_size.h"
-	#endif
 
 	#define VULKAN_LOADER	"libvulkan.so"
 	#define OUTPUT_PATH		"/sdcard/"
@@ -2192,9 +2178,6 @@ typedef struct
 	PFN_vkGetPhysicalDeviceFormatProperties				vkGetPhysicalDeviceFormatProperties;
 	PFN_vkGetPhysicalDeviceImageFormatProperties		vkGetPhysicalDeviceImageFormatProperties;
 	PFN_vkGetPhysicalDeviceSparseImageFormatProperties	vkGetPhysicalDeviceSparseImageFormatProperties;
-#if defined( ENABLE_OVR_FORMAT_SIZE )
-	PFN_vkGetPhysicalDeviceFormatSizeOVR				vkGetPhysicalDeviceFormatSizeOVR;
-#endif
 	PFN_vkEnumerateDeviceExtensionProperties			vkEnumerateDeviceExtensionProperties;
 	PFN_vkEnumerateDeviceLayerProperties				vkEnumerateDeviceLayerProperties;
 	PFN_vkCreateDevice									vkCreateDevice;
@@ -2474,9 +2457,6 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	GET_INSTANCE_PROC_ADDR( vkGetPhysicalDeviceFormatProperties );
 	GET_INSTANCE_PROC_ADDR( vkGetPhysicalDeviceImageFormatProperties );
 	GET_INSTANCE_PROC_ADDR( vkGetPhysicalDeviceSparseImageFormatProperties );
-#if defined( ENABLE_OVR_FORMAT_SIZE )
-	GET_INSTANCE_PROC_ADDR( vkGetPhysicalDeviceFormatSizeOVR );
-#endif
 	GET_INSTANCE_PROC_ADDR( vkEnumerateDeviceExtensionProperties );
 	GET_INSTANCE_PROC_ADDR( vkEnumerateDeviceLayerProperties );
 	GET_INSTANCE_PROC_ADDR( vkCreateDevice );
@@ -6836,16 +6816,6 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 					bufferImageCopyIndex++;
 
 					uint32_t mipSize = 0;
-#if defined( ENABLE_OVR_FORMAT_SIZE )
-					if ( context->device->instance->vkGetPhysicalDeviceFormatSizeOVR != NULL )
-					{
-						VkFormatSizeOVR formatSize;
-						context->device->instance->vkGetPhysicalDeviceFormatSizeOVR( context->device->physicalDevice, format, &formatSize );
-						mipSize = ( ( mipHeight + formatSize.blockHeight - 1 ) / formatSize.blockHeight ) *
-									( ( mipWidth + formatSize.blockWidth - 1 ) / formatSize.blockWidth ) * formatSize.blockSize;
-						compressed = ( formatSize.flags & VK_FORMAT_SIZE_COMPRESSED_BIT ) != 0;
-					}
-#else
 					switch ( format )
 					{
 						//
@@ -6980,7 +6950,6 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 
 						default: Error( "%s: Unsupported texture format %d", fileName, format );
 					}
-#endif
 
 					dataOffset = mipSize;
 				}
