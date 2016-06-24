@@ -7,12 +7,14 @@ Date		:	08/11/2015
 Language	:	C99
 Format		:	Real tabs with the tab size equal to 4 spaces.
 Copyright	:	Copyright (c) 2016 Oculus VR, LLC. All Rights reserved.
+			:	Portions copyright (c) 2016 The Brenwill Workshop Ltd. All Rights reserved.
 
 
 LICENSE
 =======
 
 Copyright (c) 2016 Oculus VR, LLC.
+Portions of macOS, iOS, and MoltenVK functionality copyright (c) 2016 The Brenwill Workshop Ltd.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -204,7 +206,8 @@ The code is written against version 1.0.2 of the Vulkan Specification.
 Supported platforms are:
 
 	- Microsoft Windows 7 or later
-	- Apple Mac OS X 10.9 or later
+	- Apple macOS 10.11 or later
+	- Apple iOS 9.0 or later
 	- Ubuntu Linux 14.04 or later
 	- Android 5.0 or later
 
@@ -329,29 +332,31 @@ Platform headers / declarations
 	#include <sys/time.h>
 	#include <pthread.h>
 	#include <dlfcn.h>						// for dlopen
-	#include <Cocoa/Cocoa.h>
 
-	#include "TargetConditionals.h"
-	#if TARGET_OS_IOS
+	#include <Availability.h>
+	#if __IPHONE_OS_VERSION_MAX_ALLOWED
 		#define OS_IOS
+        #define VK_USE_PLATFORM_IOS_MVK
+		#include <UIKit/UIKit.h>
 	#endif
-	#if TARGET_OS_MAC
+	#if __MAC_OS_X_VERSION_MAX_ALLOWED
 		#define OS_MAC
+		#define VK_USE_PLATFORM_OSX_MVK
+		#include <AppKit/AppKit.h>
 	#endif
 
 	#include "vulkan/vulkan.h"
-	#include <MoltenVK/vk_mvk_moltenvk.h>
 	#include <QuartzCore/CAMetalLayer.h>
 
-	#if defined( OS_IOS )
-		#define VK_USE_PLATFORM_IOS_MVK
+	#if defined( VK_USE_PLATFORM_IOS_MVK )
+		#include <MoltenVK/vk_mvk_moltenvk.h>
 		#include <MoltenVK/vk_mvk_ios_surface.h>
 		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_MVK_IOS_SURFACE_EXTENSION_NAME
 		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateIOSSurfaceMVK
 		#define vkCreateSurfaceKHR						vkCreateIOSSurfaceMVK
 	#endif
-	#if defined( OS_MAC )
-		#define VK_USE_PLATFORM_OSX_MVK
+	#if defined( VK_USE_PLATFORM_OSX_MVK )
+		#include <MoltenVK/vk_mvk_moltenvk.h>
 		#include <MoltenVK/vk_mvk_osx_surface.h>
 		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_MVK_OSX_SURFACE_EXTENSION_NAME
 		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateOSXSurfaceMVK
@@ -587,7 +592,27 @@ static void Error( const char * format, ... )
 	OutputDebugString( buffer );
 
 	MessageBox( NULL, buffer, "ERROR", MB_OK | MB_ICONINFORMATION );
-#elif defined( OS_APPLE )
+#elif defined( OS_IOS )
+	char buffer[4096];
+	va_list args;
+	va_start( args, format );
+	int length = vsnprintf( buffer, 4096, format, args );
+	va_end( args );
+
+	NSLog( @"%s\n", buffer );
+
+	if ( [NSThread isMainThread] )
+	{
+		NSString * string = [[NSString alloc] initWithBytes:buffer length:length encoding:NSASCIIStringEncoding];
+		UIAlertController* alert = [UIAlertController alertControllerWithTitle: @"Error"
+																	   message: string
+																preferredStyle: UIAlertControllerStyleAlert];
+		[alert addAction: [UIAlertAction actionWithTitle: @"OK"
+												   style: UIAlertActionStyleDefault
+												 handler: ^(UIAlertAction * action) {}]];
+		[UIApplication.sharedApplication.keyWindow.rootViewController presentViewController: alert animated: YES completion: nil];
+	}
+#elif defined( OS_MAC )
 	char buffer[4096];
 	va_list args;
 	va_start( args, format );
@@ -645,27 +670,10 @@ static const char * GetOSVersion()
 	}
 
 	return "Microsoft Windows";
-#elif defined( OS_APPLE )
-	static char version[1024];
-	size_t len;
-	int mib[2] = { CTL_KERN, KERN_OSRELEASE };
-    
-	if ( sysctl( mib, 2, version, &len, NULL, 0 ) == 0 )
-	{
-		const char * dot = strstr( version, "." );
-		if ( dot != NULL )
-		{
-			const int kernelMajor = (int)strtol( version, (char **)NULL, 10 );
-			const int kernelMinor = (int)strtol( dot + 1, (char **)NULL, 10 );
-			const int osxMajor = 10;
-			const int osxMinor = kernelMajor - 4;
-			const int osxSub = kernelMinor + 1;
-			snprintf( version, sizeof( version ), "Apple Mac OS X %d.%d.%d", osxMajor, osxMinor, osxSub );
-			return version;
-		}
-	}
-
-	return "Apple Mac OS X";
+#elif defined( OS_IOS )
+	return [NSString stringWithFormat: @"Apple iOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
+#elif defined( OS_MAC )
+	return [NSString stringWithFormat: @"Apple macOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
 #elif defined( OS_LINUX )
 	static char buffer[1024];
 
@@ -2945,6 +2953,15 @@ static bool GpuDevice_Create( GpuDevice_t * device, DriverInstance_t * instance,
 
 	VK( instance->vkCreateDevice( device->physicalDevice, &deviceCreateInfo, VK_ALLOCATOR, &device->device ) );
 
+#if defined( VK_USE_PLATFORM_IOS_MVK ) || defined( VK_USE_PLATFORM_OSX_MVK )
+	// Specify some helpful MoltenVK extension configuration, such as performance logging.
+	MVKDeviceConfiguration mvkConfig;
+	vkGetMoltenVKDeviceConfigurationMVK(device->device, &mvkConfig);
+	mvkConfig.performanceTracking = true;
+	mvkConfig.performanceLoggingFrameCount = 60;	// Log once per second (actually once every 60 frames)
+	vkSetMoltenVKDeviceConfigurationMVK(device->device, &mvkConfig);
+#endif
+
 	//
 	// Setup the device specific function pointers
 	//
@@ -3945,7 +3962,10 @@ typedef struct
 	HINSTANCE				hInstance;
 	HWND					hWnd;
 	bool					windowActiveState;
-#elif defined( OS_APPLE )
+#elif defined( OS_IOS )
+	UIWindow *				uiWindow;
+	UIView *				uiView;
+#elif defined( OS_MAC )
 	CGDirectDisplayID		display;
 	CGDisplayModeRef		desktopDisplayMode;
 	NSWindow *				nsWindow;
@@ -4312,8 +4332,156 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 	}
 	return GPU_WINDOW_EVENT_NONE;
 }
+#elif defined( OS_IOS )
 
-#elif defined( OS_APPLE )
+typedef enum
+{
+	KEY_ESCAPE			= 0x35,
+	KEY_A				= 0x00,
+	KEY_B				= 0x0B,
+	KEY_C				= 0x08,
+	KEY_D				= 0x02,
+	KEY_E				= 0x0E,
+	KEY_F				= 0x03,
+	KEY_G				= 0x05,
+	KEY_H				= 0x04,
+	KEY_I				= 0x22,
+	KEY_J				= 0x26,
+	KEY_K				= 0x28,
+	KEY_L				= 0x25,
+	KEY_M				= 0x2E,
+	KEY_N				= 0x2D,
+	KEY_O				= 0x1F,
+	KEY_P				= 0x23,
+	KEY_Q				= 0x0C,
+	KEY_R				= 0x0F,
+	KEY_S				= 0x01,
+	KEY_T				= 0x11,
+	KEY_U				= 0x20,
+	KEY_V				= 0x09,
+	KEY_W				= 0x0D,
+	KEY_X				= 0x07,
+	KEY_Y				= 0x10,
+	KEY_Z				= 0x06,
+} KeyboardKey_t;
+
+typedef enum
+{
+	MOUSE_LEFT			= 0,
+	MOUSE_RIGHT			= 1
+} MouseButton_t;
+
+static NSAutoreleasePool * autoReleasePool;
+static UIView* myUIView;
+static UIWindow* myUIWindow;
+
+@interface MyUIView : UIView
+@end
+
+@implementation MyUIView
+
+-(instancetype) initWithFrame:(CGRect)frameRect {
+	self = [super initWithFrame: frameRect];
+	if ( self ) {
+		self.contentScaleFactor = UIScreen.mainScreen.nativeScale;
+	}
+	return self;
+}
+
++(Class) layerClass { return [CAMetalLayer class]; }
+
+@end
+
+@interface MyUIViewController : UIViewController
+@end
+
+@implementation MyUIViewController
+
+-(UIInterfaceOrientationMask) supportedInterfaceOrientations { return UIInterfaceOrientationMaskLandscape; }
+
+-(BOOL) shouldAutorotate { return TRUE; }
+
+@end
+
+static void GpuWindow_Destroy( GpuWindow_t * window )
+{
+	GpuWindow_DestroySurface( window );
+	GpuContext_Destroy( &window->context );
+	GpuDevice_Destroy( &window->device );
+
+	if ( window->uiWindow )
+	{
+		[window->uiWindow release];
+		window->uiWindow = nil;
+	}
+	if ( window->uiView )
+	{
+		[window->uiView release];
+		window->uiView = nil;
+	}
+}
+
+static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
+								const GpuQueueInfo_t * queueInfo, const int queueIndex,
+								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
+								const int width, const int height, const bool fullscreen )
+{
+	memset( window, 0, sizeof( GpuWindow_t ) );
+
+	window->colorFormat = colorFormat;
+	window->depthFormat = depthFormat;
+	window->windowWidth = width;
+	window->windowHeight = height;
+	window->windowSwapInterval = 1;
+	window->windowRefreshRate = 60.0f;
+	window->windowFullscreen = fullscreen;
+	window->windowActive = false;
+	window->windowExit = false;
+	window->lastSwapTime = GetTimeMicroseconds();
+	window->uiView = myUIView;
+	window->uiWindow = myUIWindow;
+
+	VkIOSSurfaceCreateInfoMVK iosSurfaceCreateInfo;
+	iosSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_MVK;
+	iosSurfaceCreateInfo.pNext = NULL;
+	iosSurfaceCreateInfo.flags = 0;
+	iosSurfaceCreateInfo.pView = window->uiView;
+
+	VkSurfaceKHR surface;
+	VK( instance->vkCreateSurfaceKHR( instance->instance, &iosSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
+
+	GpuDevice_Create( &window->device, instance, queueInfo, surface );
+	GpuContext_Create( &window->context, &window->device, queueIndex );
+	GpuWindow_CreateFromSurface( window, surface );
+
+	return true;
+}
+
+static void GpuWindow_Exit( GpuWindow_t * window )
+{
+	window->windowExit = true;
+}
+
+static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
+{
+	[autoReleasePool release];
+	autoReleasePool = [[NSAutoreleasePool alloc] init];
+
+	if ( window->windowExit )
+	{
+		return GPU_WINDOW_EVENT_EXIT;
+	}
+
+	if ( window->windowActive == false )
+	{
+		window->windowActive = true;
+		return GPU_WINDOW_EVENT_ACTIVATED;
+	}
+	
+	return GPU_WINDOW_EVENT_NONE;
+}
+
+#elif defined( OS_MAC )
 
 typedef enum
 {
@@ -15750,7 +15918,49 @@ int APIENTRY WinMain( HINSTANCE hCurrentInst, HINSTANCE hPreviousInst, LPSTR lps
 	return StartApplication( argc, argv );
 }
 
-#elif defined( OS_APPLE )
+#elif defined( OS_IOS )
+
+static int argc_deferred;
+static char** argv_deferred;
+
+@interface MyAppDelegate : NSObject <UIApplicationDelegate> {}
+@end
+
+@implementation MyAppDelegate
+
+-(BOOL) application: (UIApplication*) application didFinishLaunchingWithOptions: (NSDictionary*) launchOptions {
+
+	CGRect screenRect = UIScreen.mainScreen.bounds;
+	myUIView = [[MyUIView alloc] initWithFrame: screenRect];
+	UIViewController* myUIVC = [[[MyUIViewController alloc] init] autorelease];
+	myUIVC.view = myUIView;
+
+	myUIWindow = [[UIWindow alloc] initWithFrame: screenRect];
+	[myUIWindow addSubview: myUIView];
+	myUIWindow.rootViewController = myUIVC;
+	[myUIWindow makeKeyAndVisible];
+
+	// Delay to allow startup runloop to complete.
+	[self performSelector: @selector(startApplication:) withObject: nil afterDelay: 0.25f];
+
+	return YES;
+}
+
+-(void) startApplication: (id) argObj {
+	autoReleasePool = [[NSAutoreleasePool alloc] init];
+	StartApplication(argc_deferred, argv_deferred);
+}
+
+@end
+
+int main(int argc, char * argv[]) {
+	argc_deferred = argc;
+	argv_deferred = argv;
+
+	return UIApplicationMain(argc, argv, nil, @"MyAppDelegate");
+}
+
+#elif defined( OS_MAC )
 
 static const char * FormatString( const char * format, ... )
 {
