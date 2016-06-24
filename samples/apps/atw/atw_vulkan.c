@@ -2270,54 +2270,6 @@ VkBool32 DebugReportCallback( VkDebugReportFlagsEXT msgFlags, VkDebugReportObjec
 	{
 		return VK_FALSE;
 	}
-	// The draw state validation layer incorrectly reports that a present semaphore is still in use.
-	// https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/100
-	// [DS] "Cannot delete semaphore 38d1ea00d0 which is in use."
-	if ( MatchStrings( pMsg, "Cannot delete semaphore 38d1ea00d0 which is in use." ) )
-	{
-		return VK_FALSE;
-	}
-	// The mem tracker validation layer reports a memory leak when calling vkDestroyDebugReportCallbackEXT after vkDestroyDevice,
-	// but before vkDestroyInstance, even though VkDebugReportCallbackEXT is an instance object.
-	// https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/365
-	// [MEM] "Mem Object 148617029248 has not been freed. You should clean up this memory by calling vkFreeMemory(148617029248) prior to vkDestroyDevice()."
-	// [OBJTRACK] "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT object 0x7a613498a0 has not been destroyed."
-	// [OBJTRACK] "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT object 0x8ea68afdf0 has not been destroyed."
-	// [OBJTRACK] "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT object 0x6313f2bc50 has not been destroyed."
-	// [OBJTRACK] "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_EXT object 0x146da272a0 has not been destroyed."
-	if (	MatchStrings( pMsg, "Mem Object 148617029248 has not been freed. You should clean up this memory by calling vkFreeMemory(148617029248) prior to vkDestroyDevice()." ) ||
-			MatchStrings( pMsg, "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT object 0x7a613498a0 has not been destroyed." ) ||
-			MatchStrings( pMsg, "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT object 0x8ea68afdf0 has not been destroyed." ) ||
-			MatchStrings( pMsg, "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT object 0x6313f2bc50 has not been destroyed." ) ||
-			MatchStrings( pMsg, "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_EXT object 0x146da272a0 has not been destroyed." ) )
-	{
-		return VK_FALSE;
-	}
-	// The draw state validation layer incorrectly reports that a query is unavailable.
-	// https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/367
-	// [DS] Cannot get query results on queryPool 408912669008 with index 4 which is unavailable.
-	if ( MatchStrings( pMsg, "Cannot get query results on queryPool 408912669008 with index 4 which is unavailable." ) )
-	{
-		return VK_FALSE;
-	}
-	// The core validation layer incorrectly states that layouts are not compatible.
-	// https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/450
-	// [DS] "Error: [DS] Code 42 : descriptorSet #0 being bound is not compatible with overlapping descriptorSetLayout at index 0 of pipelineLayout 0x42 due to: Binding 0 for DescriptorSetLayout 0000000000000041 has a descriptorCount of 1 but binding 0 for DescriptorSetLayout 000000000000003D has a descriptorCount of 4"
-	if ( MatchStrings( pMsg, "descriptorSet #0 being bound is not compatible with overlapping descriptorSetLayout at index 0 of pipelineLayout 0x42 due to: Binding 0 for DescriptorSetLayout 0000000000000041 has a descriptorCount of 1 but binding 0 for DescriptorSetLayout 000000000000003D has a descriptorCount of 4" ) )
-	{
-		return VK_FALSE;
-	}
-	// Error: [DS] Code 14 : Cannot get query results on queryPool 0x170 with index 2 which is in flight.
-	if ( MatchStrings( pMsg, "Cannot get query results on queryPool 0x170 with index 2 which is in flight." ) )
-	{
-		return VK_FALSE;
-	}
-	// Error: [MEM] Code 13 : vkQueuePresentKHR(): Cannot read invalid swapchain image 0x5, please fill the memory before using.
-	// https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/676
-	if ( MatchStrings( pMsg, "vkQueuePresentKHR(): Cannot read invalid swapchain image 0x5, please fill the memory before using." ) )
-	{
-		return VK_FALSE;
-	}
 
 	const bool warning = ( msgFlags & VK_DEBUG_REPORT_ERROR_BIT_EXT ) == 0 ? true : false;
 	Error( "%s: [%s] Code %d : %s", warning ? "Warning" : "Error", pLayerPrefix, msgCode, pMsg );
@@ -3906,10 +3858,10 @@ static void GpuDepthBuffer_Create( GpuContext_t * context, GpuDepthBuffer_t * de
 		imageViewCreateInfo.image = depthBuffer->image;
 		imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		imageViewCreateInfo.format = depthBuffer->internalFormat;
-		imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_ZERO;
-		imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_ZERO;
-		imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_ZERO;
-		imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_ZERO;
+		imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+		imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+		imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+		imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 		imageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 		imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
 		imageViewCreateInfo.subresourceRange.levelCount = 1;
