@@ -247,13 +247,13 @@ Common defines
 #define WINDOW_TITLE					"DriverInfo"
 
 #if !defined( GL_SR8_EXT )
-	#define GL_SR8_EXT						0x8FBD
+	#define GL_SR8_EXT					0x8FBD
 #endif
 #if !defined( GL_SRG8_EXT )
-	#define GL_SRG8_EXT						0x8FBE
+	#define GL_SRG8_EXT					0x8FBE
 #endif
 #if !defined( EGL_OPENGL_ES3_BIT )
-	#define EGL_OPENGL_ES3_BIT				0x0040
+	#define EGL_OPENGL_ES3_BIT			0x0040
 #endif
 
 /*
@@ -1412,21 +1412,21 @@ formats[] =
 	FORMAT_ENUM_STRING( GL_RG8,												false, "2-component, 8-bit unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_RGBA8,											false, "4-component, 8-bit unsigned normalized" ),
 
-	FORMAT_ENUM_STRING( GL_SR8_EXT,											false, "1-component, 8-bit sRGB" ),
-	FORMAT_ENUM_STRING( GL_SRG8_EXT,										false, "2-component, 8-bit sRGB" ),
-	FORMAT_ENUM_STRING( GL_SRGB8_ALPHA8,									false, "4-component, 8-bit sRGB" ),
-
 	FORMAT_ENUM_STRING( GL_R8_SNORM,										false, "1-component, 8-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RG8_SNORM,										false, "2-component, 8-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RGBA8_SNORM,										false, "4-component, 8-bit signed normalized" ),
+
+	FORMAT_ENUM_STRING( GL_R8UI,											false, "1-component, 8-bit unsigned integer" ),
+	FORMAT_ENUM_STRING( GL_RG8UI,											false, "2-component, 8-bit unsigned integer" ),
+	FORMAT_ENUM_STRING( GL_RGBA8UI,											false, "4-component, 8-bit unsigned integer" ),
 
 	FORMAT_ENUM_STRING( GL_R8I,												false, "1-component, 8-bit signed integer" ),
 	FORMAT_ENUM_STRING( GL_RG8I,											false, "2-component, 8-bit signed integer" ),
 	FORMAT_ENUM_STRING( GL_RGBA8I,											false, "4-component, 8-bit signed integer" ),
 
-	FORMAT_ENUM_STRING( GL_R8UI,											false, "1-component, 8-bit unsigned integer" ),
-	FORMAT_ENUM_STRING( GL_RG8UI,											false, "2-component, 8-bit unsigned integer" ),
-	FORMAT_ENUM_STRING( GL_RGBA8UI,											false, "4-component, 8-bit unsigned integer" ),
+	FORMAT_ENUM_STRING( GL_SR8_EXT,											false, "1-component, 8-bit sRGB" ),
+	FORMAT_ENUM_STRING( GL_SRG8_EXT,										false, "2-component, 8-bit sRGB" ),
+	FORMAT_ENUM_STRING( GL_SRGB8_ALPHA8,									false, "4-component, 8-bit sRGB" ),
 
 	//
 	// 16 bits per component
@@ -1451,13 +1451,13 @@ formats[] =
 	FORMAT_ENUM_STRING( GL_RGB16_SNORM_EXT,									false, "4-component, 16-bit signed normalized" ),
 #endif
 
-	FORMAT_ENUM_STRING( GL_R16I,											false, "1-component, 16-bit signed integer" ),
-	FORMAT_ENUM_STRING( GL_RG16I,											false, "2-component, 16-bit signed integer" ),
-	FORMAT_ENUM_STRING( GL_RGBA16I,											false, "4-component, 16-bit signed integer" ),
-
 	FORMAT_ENUM_STRING( GL_R16UI,											false, "1-component, 16-bit unsigned integer" ),
 	FORMAT_ENUM_STRING( GL_RG16UI,											false, "2-component, 16-bit unsigned integer" ),
 	FORMAT_ENUM_STRING( GL_RGBA16UI,										false, "4-component, 16-bit unsigned integer" ),
+
+	FORMAT_ENUM_STRING( GL_R16I,											false, "1-component, 16-bit signed integer" ),
+	FORMAT_ENUM_STRING( GL_RG16I,											false, "2-component, 16-bit signed integer" ),
+	FORMAT_ENUM_STRING( GL_RGBA16I,											false, "4-component, 16-bit signed integer" ),
 
 	FORMAT_ENUM_STRING( GL_R16F,											false, "1-component, 16-bit floating-point" ),
 	FORMAT_ENUM_STRING( GL_RG16F,											false, "2-component, 16-bit floating-point" ),
@@ -1466,13 +1466,13 @@ formats[] =
 	//
 	// 32 bits per component
 	//
-	FORMAT_ENUM_STRING( GL_R32I,											false, "1-component, 32-bit signed integer" ),
-	FORMAT_ENUM_STRING( GL_RG32I,											false, "2-component, 32-bit signed integer" ),
-	FORMAT_ENUM_STRING( GL_RGBA32I,											false, "4-component, 32-bit signed integer" ),
-
 	FORMAT_ENUM_STRING( GL_R32UI,											false, "1-component, 32-bit unsigned integer" ),
 	FORMAT_ENUM_STRING( GL_RG32UI,											false, "2-component, 32-bit unsigned integer" ),
 	FORMAT_ENUM_STRING( GL_RGBA32UI,										false, "4-component, 32-bit unsigned integer" ),
+
+	FORMAT_ENUM_STRING( GL_R32I,											false, "1-component, 32-bit signed integer" ),
+	FORMAT_ENUM_STRING( GL_RG32I,											false, "2-component, 32-bit signed integer" ),
+	FORMAT_ENUM_STRING( GL_RGBA32I,											false, "4-component, 32-bit signed integer" ),
 
 	FORMAT_ENUM_STRING( GL_R32F,											false, "1-component, 32-bit floating-point" ),
 	FORMAT_ENUM_STRING( GL_RG32F,											false, "2-component, 32-bit floating-point" ),

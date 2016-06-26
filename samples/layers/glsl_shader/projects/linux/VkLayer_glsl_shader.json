@@ -6,6 +6,6 @@
         "library_path": "./libVkLayer_glsl_shader.so",
         "api_version": "1.0.0",
         "implementation_version": "1",
-        "description": "GLSL Shader"
+        "description": "Oculus GLSL Shader"
     }
 }

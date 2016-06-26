@@ -6321,64 +6321,64 @@ typedef enum
 	//
 	// 8 bits per component
 	//
-	GPU_TEXTURE_FORMAT_R8_UNORM				= VK_FORMAT_R8_UNORM,
-	GPU_TEXTURE_FORMAT_R8G8_UNORM			= VK_FORMAT_R8G8_UNORM,
-	GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM		= VK_FORMAT_R8G8B8A8_UNORM,
+	GPU_TEXTURE_FORMAT_R8_UNORM				= VK_FORMAT_R8_UNORM,					// 1-component, 8-bit unsigned normalized
+	GPU_TEXTURE_FORMAT_R8G8_UNORM			= VK_FORMAT_R8G8_UNORM,					// 2-component, 8-bit unsigned normalized
+	GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM		= VK_FORMAT_R8G8B8A8_UNORM,				// 4-component, 8-bit unsigned normalized
 
-	GPU_TEXTURE_FORMAT_R8_SRGB				= VK_FORMAT_R8_SRGB,
-	GPU_TEXTURE_FORMAT_R8G8_SRGB			= VK_FORMAT_R8G8_SRGB,
-	GPU_TEXTURE_FORMAT_R8G8B8A8_SRGB		= VK_FORMAT_R8G8B8A8_SRGB,
+	GPU_TEXTURE_FORMAT_R8_SNORM				= VK_FORMAT_R8_SNORM,					// 1-component, 8-bit signed normalized
+	GPU_TEXTURE_FORMAT_R8G8_SNORM			= VK_FORMAT_R8G8_SNORM,					// 2-component, 8-bit signed normalized
+	GPU_TEXTURE_FORMAT_R8G8B8_SNORM			= VK_FORMAT_R8G8B8_SNORM,				// 4-component, 8-bit signed normalized
 
-	GPU_TEXTURE_FORMAT_R8_SNORM				= VK_FORMAT_R8_SNORM,
-	GPU_TEXTURE_FORMAT_R8G8_SNORM			= VK_FORMAT_R8G8_SNORM,
-	GPU_TEXTURE_FORMAT_R8G8B8_SNORM			= VK_FORMAT_R8G8B8_SNORM,
+	GPU_TEXTURE_FORMAT_R8_UINT				= VK_FORMAT_R8_UINT,					// 1-component, 8-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R8G8_UINT			= VK_FORMAT_R8G8_UINT,					// 2-component, 8-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R8G8B8_UINT			= VK_FORMAT_R8G8B8_UINT,				// 4-component, 8-bit unsigned integer
 
-	GPU_TEXTURE_FORMAT_R8_SINT				= VK_FORMAT_R8_SINT,
-	GPU_TEXTURE_FORMAT_R8G8_SINT			= VK_FORMAT_R8G8_SINT,
-	GPU_TEXTURE_FORMAT_R8G8B8_SINT			= VK_FORMAT_R8G8B8_SINT,
+	GPU_TEXTURE_FORMAT_R8_SINT				= VK_FORMAT_R8_SINT,					// 1-component, 8-bit signed integer
+	GPU_TEXTURE_FORMAT_R8G8_SINT			= VK_FORMAT_R8G8_SINT,					// 2-component, 8-bit signed integer
+	GPU_TEXTURE_FORMAT_R8G8B8_SINT			= VK_FORMAT_R8G8B8_SINT,				// 4-component, 8-bit signed integer
 
-	GPU_TEXTURE_FORMAT_R8_UINT				= VK_FORMAT_R8_UINT,
-	GPU_TEXTURE_FORMAT_R8G8_UINT			= VK_FORMAT_R8G8_UINT,
-	GPU_TEXTURE_FORMAT_R8G8B8_UINT			= VK_FORMAT_R8G8B8_UINT,
+	GPU_TEXTURE_FORMAT_R8_SRGB				= VK_FORMAT_R8_SRGB,					// 1-component, 8-bit sRGB
+	GPU_TEXTURE_FORMAT_R8G8_SRGB			= VK_FORMAT_R8G8_SRGB,					// 2-component, 8-bit sRGB
+	GPU_TEXTURE_FORMAT_R8G8B8A8_SRGB		= VK_FORMAT_R8G8B8A8_SRGB,				// 4-component, 8-bit sRGB
 
 	//
 	// 16 bits per component
 	//
 	GPU_TEXTURE_FORMAT_R16_UNORM			= VK_FORMAT_R16_UNORM,
-	GPU_TEXTURE_FORMAT_R16G16_UNORM			= VK_FORMAT_R16G16_UNORM,
-	GPU_TEXTURE_FORMAT_R16G16B16A16_UNORM	= VK_FORMAT_R16G16B16A16_UNORM,
-
+	GPU_TEXTURE_FORMAT_R16G16_UNORM			= VK_FORMAT_R16G16_UNORM,				// 1-component, 16-bit unsigned normalized
+	GPU_TEXTURE_FORMAT_R16G16B16A16_UNORM	= VK_FORMAT_R16G16B16A16_UNORM,			// 2-component, 16-bit unsigned normalized
+																					// 4-component, 16-bit unsigned normalized
 	GPU_TEXTURE_FORMAT_R16_SNORM			= VK_FORMAT_R16_SNORM,
-	GPU_TEXTURE_FORMAT_R16G16_SNORM			= VK_FORMAT_R16G16_SNORM,
-	GPU_TEXTURE_FORMAT_R16G16B16A16_SNORM	= VK_FORMAT_R16G16B16A16_SNORM,
-
-	GPU_TEXTURE_FORMAT_R16_SINT				= VK_FORMAT_R16_SINT,
-	GPU_TEXTURE_FORMAT_R16G16_SINT			= VK_FORMAT_R16G16_SINT,
-	GPU_TEXTURE_FORMAT_R16G16B16A16_SINT	= VK_FORMAT_R16G16B16A16_SINT,
-
+	GPU_TEXTURE_FORMAT_R16G16_SNORM			= VK_FORMAT_R16G16_SNORM,				// 1-component, 16-bit signed normalized
+	GPU_TEXTURE_FORMAT_R16G16B16A16_SNORM	= VK_FORMAT_R16G16B16A16_SNORM,			// 2-component, 16-bit signed normalized
+																					// 4-component, 16-bit signed normalized
 	GPU_TEXTURE_FORMAT_R16_UINT				= VK_FORMAT_R16_UINT,
-	GPU_TEXTURE_FORMAT_R16G16_UINT			= VK_FORMAT_R16G16_UINT,
-	GPU_TEXTURE_FORMAT_R16G16B16A16_UINT	= VK_FORMAT_R16G16B16A16_UINT,
-
+	GPU_TEXTURE_FORMAT_R16G16_UINT			= VK_FORMAT_R16G16_UINT,				// 1-component, 16-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R16G16B16A16_UINT	= VK_FORMAT_R16G16B16A16_UINT,			// 2-component, 16-bit unsigned integer
+																					// 4-component, 16-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R16_SINT				= VK_FORMAT_R16_SINT,
+	GPU_TEXTURE_FORMAT_R16G16_SINT			= VK_FORMAT_R16G16_SINT,				// 1-component, 16-bit signed integer
+	GPU_TEXTURE_FORMAT_R16G16B16A16_SINT	= VK_FORMAT_R16G16B16A16_SINT,			// 2-component, 16-bit signed integer
+																					// 4-component, 16-bit signed integer
 	GPU_TEXTURE_FORMAT_R16_SFLOAT			= VK_FORMAT_R16_SFLOAT,
-	GPU_TEXTURE_FORMAT_R16G16_SFLOAT		= VK_FORMAT_R16G16_SFLOAT,
-	GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT	= VK_FORMAT_R16G16B16A16_SFLOAT,
-
+	GPU_TEXTURE_FORMAT_R16G16_SFLOAT		= VK_FORMAT_R16G16_SFLOAT,				// 1-component, 16-bit floating-point
+	GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT	= VK_FORMAT_R16G16B16A16_SFLOAT,		// 2-component, 16-bit floating-point
+																					// 4-component, 16-bit floating-point
 	//
 	// 32 bits per component
 	//
-	GPU_TEXTURE_FORMAT_R32_SINT				= VK_FORMAT_R32_SINT,
-	GPU_TEXTURE_FORMAT_R32G32_SINT			= VK_FORMAT_R32G32_SINT,
-	GPU_TEXTURE_FORMAT_R32G32B32A32_SINT	= VK_FORMAT_R32G32B32A32_SINT,
-
 	GPU_TEXTURE_FORMAT_R32_UINT				= VK_FORMAT_R32_UINT,
-	GPU_TEXTURE_FORMAT_R32G32_UINT			= VK_FORMAT_R32G32_UINT,
-	GPU_TEXTURE_FORMAT_R32G32B32A32_UINT	= VK_FORMAT_R32G32B32A32_UINT,
-
+	GPU_TEXTURE_FORMAT_R32G32_UINT			= VK_FORMAT_R32G32_UINT,				// 1-component, 32-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R32G32B32A32_UINT	= VK_FORMAT_R32G32B32A32_UINT,			// 2-component, 32-bit unsigned integer
+																					// 4-component, 32-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R32_SINT				= VK_FORMAT_R32_SINT,
+	GPU_TEXTURE_FORMAT_R32G32_SINT			= VK_FORMAT_R32G32_SINT,				// 1-component, 32-bit signed integer
+	GPU_TEXTURE_FORMAT_R32G32B32A32_SINT	= VK_FORMAT_R32G32B32A32_SINT,			// 2-component, 32-bit signed integer
+																					// 4-component, 32-bit signed integer
 	GPU_TEXTURE_FORMAT_R32_SFLOAT			= VK_FORMAT_R32_SFLOAT,
-	GPU_TEXTURE_FORMAT_R32G32_SFLOAT		= VK_FORMAT_R32G32_SFLOAT,
-	GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT	= VK_FORMAT_R32G32B32A32_SFLOAT,
-
+	GPU_TEXTURE_FORMAT_R32G32_SFLOAT		= VK_FORMAT_R32G32_SFLOAT,				// 1-component, 32-bit floating-point
+	GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT	= VK_FORMAT_R32G32B32A32_SFLOAT,		// 2-component, 32-bit floating-point
+																					// 4-component, 32-bit floating-point
 	//
 	// S3TC/DXT/BC
 	//
@@ -6826,21 +6826,21 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 						case VK_FORMAT_R8G8_UNORM:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned char ); break; }
 						case VK_FORMAT_R8G8B8A8_UNORM:				{ mipSize = mipHeight * mipWidth * 4 * sizeof( unsigned char ); break; }
 
-						case VK_FORMAT_R8_SRGB:						{ mipSize = mipHeight * mipWidth * 1 * sizeof( unsigned char ); break; }
-						case VK_FORMAT_R8G8_SRGB:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned char ); break; }
-						case VK_FORMAT_R8G8B8A8_SRGB:				{ mipSize = mipHeight * mipWidth * 4 * sizeof( unsigned char ); break; }
-
 						case VK_FORMAT_R8_SNORM:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( char ); break; }
 						case VK_FORMAT_R8G8_SNORM:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( char ); break; }
 						case VK_FORMAT_R8G8B8_SNORM:				{ mipSize = mipHeight * mipWidth * 4 * sizeof( char ); break; }
+
+						case VK_FORMAT_R8_UINT:						{ mipSize = mipHeight * mipWidth * 1 * sizeof( unsigned char ); break; }
+						case VK_FORMAT_R8G8_UINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned char ); break; }
+						case VK_FORMAT_R8G8B8_UINT:					{ mipSize = mipHeight * mipWidth * 4 * sizeof( unsigned char ); break; }
 
 						case VK_FORMAT_R8_SINT:						{ mipSize = mipHeight * mipWidth * 1 * sizeof( char ); break; }
 						case VK_FORMAT_R8G8_SINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( char ); break; }
 						case VK_FORMAT_R8G8B8_SINT:					{ mipSize = mipHeight * mipWidth * 4 * sizeof( char ); break; }
 
-						case VK_FORMAT_R8_UINT:						{ mipSize = mipHeight * mipWidth * 1 * sizeof( unsigned char ); break; }
-						case VK_FORMAT_R8G8_UINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned char ); break; }
-						case VK_FORMAT_R8G8B8_UINT:					{ mipSize = mipHeight * mipWidth * 4 * sizeof( unsigned char ); break; }
+						case VK_FORMAT_R8_SRGB:						{ mipSize = mipHeight * mipWidth * 1 * sizeof( unsigned char ); break; }
+						case VK_FORMAT_R8G8_SRGB:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned char ); break; }
+						case VK_FORMAT_R8G8B8A8_SRGB:				{ mipSize = mipHeight * mipWidth * 4 * sizeof( unsigned char ); break; }
 
 						//
 						// 16 bits per component
@@ -6853,13 +6853,13 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 						case VK_FORMAT_R16G16_SNORM:				{ mipSize = mipHeight * mipWidth * 2 * sizeof( short ); break; }
 						case VK_FORMAT_R16G16B16A16_SNORM:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( short ); break; }
 
-						case VK_FORMAT_R16_SINT:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( short ); break; }
-						case VK_FORMAT_R16G16_SINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( short ); break; }
-						case VK_FORMAT_R16G16B16A16_SINT:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( short ); break; }
-
 						case VK_FORMAT_R16_UINT:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( unsigned short ); break; }
 						case VK_FORMAT_R16G16_UINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned short ); break; }
 						case VK_FORMAT_R16G16B16A16_UINT:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( unsigned short ); break; }
+
+						case VK_FORMAT_R16_SINT:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( short ); break; }
+						case VK_FORMAT_R16G16_SINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( short ); break; }
+						case VK_FORMAT_R16G16B16A16_SINT:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( short ); break; }
 
 						case VK_FORMAT_R16_SFLOAT:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( unsigned short ); break; }
 						case VK_FORMAT_R16G16_SFLOAT:				{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned short ); break; }
@@ -6868,13 +6868,13 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 						//
 						// 32 bits per component
 						//
-						case VK_FORMAT_R32_SINT:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( int ); break; }
-						case VK_FORMAT_R32G32_SINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( int ); break; }
-						case VK_FORMAT_R32G32B32A32_SINT:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( int ); break; }
-
 						case VK_FORMAT_R32_UINT:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( unsigned int ); break; }
 						case VK_FORMAT_R32G32_UINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned int ); break; }
 						case VK_FORMAT_R32G32B32A32_UINT:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( unsigned int ); break; }
+
+						case VK_FORMAT_R32_SINT:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( int ); break; }
+						case VK_FORMAT_R32G32_SINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( int ); break; }
+						case VK_FORMAT_R32G32B32A32_SINT:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( int ); break; }
 
 						case VK_FORMAT_R32_SFLOAT:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( float ); break; }
 						case VK_FORMAT_R32G32_SFLOAT:				{ mipSize = mipHeight * mipWidth * 2 * sizeof( float ); break; }
