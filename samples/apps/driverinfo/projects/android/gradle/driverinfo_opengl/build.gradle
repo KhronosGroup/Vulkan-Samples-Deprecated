@@ -23,7 +23,7 @@ if( ndkDir == null )
 	throw new GradleException('Android NDK path not found! Make sure ANDROID_NDK_HOME is set.')
 }
 def baseDir = "../../../../../../.."	// base of the Vulkan-Samples repository
-def buildDir = "${baseDir}/build/android/gradle/apps/driverinfo_opengl/build"
+def buildDir = "${baseDir}/build/android/gradle/apps/driverinfo_opengl"
 
 rootProject.buildDir = file(new File(buildDir))
 

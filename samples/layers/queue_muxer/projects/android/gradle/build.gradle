@@ -23,7 +23,7 @@ if( ndkDir == null )
 	throw new GradleException('Android NDK path not found! Make sure ANDROID_NDK_HOME is set.')
 }
 def baseDir = "../../../../../.."	// base of the Vulkan-Samples repository
-def buildDir = "${baseDir}/build/android/gradle/layers/queue_muxer/build"
+def buildDir = "${baseDir}/build/android/gradle/layers/queue_muxer"
 def vkSdkPath = System.getenv('VK_SDK_PATH')
 
 rootProject.buildDir = file(new File(buildDir))
@@ -77,7 +77,7 @@ model {
 	// Turn on hard float support in armeabi-v7a
 	android.abis {
 		create("armeabi-v7a") {
-			cppFlags.addAll(["-mhard-float", "-D_NDK_MATH_NO_SOFTFP=1", "-mfloat-abi=hard"])
+			CFlags.addAll(["-mhard-float", "-D_NDK_MATH_NO_SOFTFP=1", "-mfloat-abi=hard"])
 			ldLibs.add("m_hard")
 			ldFlags.add("-Wl,--no-warn-mismatch")
 		}

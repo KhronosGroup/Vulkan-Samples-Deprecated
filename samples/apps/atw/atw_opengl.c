@@ -5858,75 +5858,75 @@ typedef enum
 	//
 	// 8 bits per component
 	//
-	GPU_TEXTURE_FORMAT_R8_UNORM				= GL_R8,
-	GPU_TEXTURE_FORMAT_R8G8_UNORM			= GL_RG8,
-	GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM		= GL_RGBA8,
+	GPU_TEXTURE_FORMAT_R8_UNORM				= GL_R8,											// 1-component, 8-bit unsigned normalized
+	GPU_TEXTURE_FORMAT_R8G8_UNORM			= GL_RG8,											// 2-component, 8-bit unsigned normalized
+	GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM		= GL_RGBA8,											// 4-component, 8-bit unsigned normalized
 
-	GPU_TEXTURE_FORMAT_R8_SRGB				= GL_SR8_EXT,
-	GPU_TEXTURE_FORMAT_R8G8_SRGB			= GL_SRG8_EXT,
-	GPU_TEXTURE_FORMAT_R8G8B8A8_SRGB		= GL_SRGB8_ALPHA8,
+	GPU_TEXTURE_FORMAT_R8_SNORM				= GL_R8_SNORM,										// 1-component, 8-bit signed normalized
+	GPU_TEXTURE_FORMAT_R8G8_SNORM			= GL_RG8_SNORM,										// 2-component, 8-bit signed normalized
+	GPU_TEXTURE_FORMAT_R8G8B8_SNORM			= GL_RGBA8_SNORM,									// 4-component, 8-bit signed normalized
 
-	GPU_TEXTURE_FORMAT_R8_SNORM				= GL_R8_SNORM,
-	GPU_TEXTURE_FORMAT_R8G8_SNORM			= GL_RG8_SNORM,
-	GPU_TEXTURE_FORMAT_R8G8B8_SNORM			= GL_RGBA8_SNORM,
+	GPU_TEXTURE_FORMAT_R8_UINT				= GL_R8UI,											// 1-component, 8-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R8G8_UINT			= GL_RG8UI,											// 2-component, 8-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R8G8B8A8_UINT		= GL_RGBA8UI,										// 4-component, 8-bit unsigned integer
 
-	GPU_TEXTURE_FORMAT_R8_SINT				= GL_R8I,
-	GPU_TEXTURE_FORMAT_R8G8_SINT			= GL_RG8I,
-	GPU_TEXTURE_FORMAT_R8G8B8_SINT			= GL_RGBA8I,
+	GPU_TEXTURE_FORMAT_R8_SINT				= GL_R8I,											// 1-component, 8-bit signed integer
+	GPU_TEXTURE_FORMAT_R8G8_SINT			= GL_RG8I,											// 2-component, 8-bit signed integer
+	GPU_TEXTURE_FORMAT_R8G8B8_SINT			= GL_RGBA8I,										// 4-component, 8-bit signed integer
 
-	GPU_TEXTURE_FORMAT_R8_UINT				= GL_R8UI,
-	GPU_TEXTURE_FORMAT_R8G8_UINT			= GL_RG8UI,
-	GPU_TEXTURE_FORMAT_R8G8B8A8_UINT		= GL_RGBA8UI,
+	GPU_TEXTURE_FORMAT_R8_SRGB				= GL_SR8_EXT,										// 1-component, 8-bit sRGB
+	GPU_TEXTURE_FORMAT_R8G8_SRGB			= GL_SRG8_EXT,										// 2-component, 8-bit sRGB
+	GPU_TEXTURE_FORMAT_R8G8B8A8_SRGB		= GL_SRGB8_ALPHA8,									// 4-component, 8-bit sRGB
 
 	//
 	// 16 bits per component
 	//
 #if defined( GL_R16 )
-	GPU_TEXTURE_FORMAT_R16_UNORM			= GL_R16,
-	GPU_TEXTURE_FORMAT_R16G16_UNORM			= GL_RG16,
-	GPU_TEXTURE_FORMAT_R16G16B16A16_UNORM	= GL_RGBA16,
+	GPU_TEXTURE_FORMAT_R16_UNORM			= GL_R16,											// 1-component, 16-bit unsigned normalized
+	GPU_TEXTURE_FORMAT_R16G16_UNORM			= GL_RG16,											// 2-component, 16-bit unsigned normalized
+	GPU_TEXTURE_FORMAT_R16G16B16A16_UNORM	= GL_RGBA16,										// 4-component, 16-bit unsigned normalized
 #elif defined( GL_R16_EXT )
-	GPU_TEXTURE_FORMAT_R16_UNORM			= GL_R16_EXT,
-	GPU_TEXTURE_FORMAT_R16G16_UNORM			= GL_RG16_EXT,
-	GPU_TEXTURE_FORMAT_R16G16B16A16_UNORM	= GL_RGB16_EXT,
+	GPU_TEXTURE_FORMAT_R16_UNORM			= GL_R16_EXT,										// 1-component, 16-bit unsigned normalized
+	GPU_TEXTURE_FORMAT_R16G16_UNORM			= GL_RG16_EXT,										// 2-component, 16-bit unsigned normalized
+	GPU_TEXTURE_FORMAT_R16G16B16A16_UNORM	= GL_RGB16_EXT,										// 4-component, 16-bit unsigned normalized
 #endif
 
 #if defined( GL_R16_SNORM )
-	GPU_TEXTURE_FORMAT_R16_SNORM			= GL_R16_SNORM,
-	GPU_TEXTURE_FORMAT_R16G16_SNORM			= GL_RG16_SNORM,
-	GPU_TEXTURE_FORMAT_R16G16B16A16_SNORM	= GL_RGBA16_SNORM,
+	GPU_TEXTURE_FORMAT_R16_SNORM			= GL_R16_SNORM,										// 1-component, 16-bit signed normalized
+	GPU_TEXTURE_FORMAT_R16G16_SNORM			= GL_RG16_SNORM,									// 2-component, 16-bit signed normalized
+	GPU_TEXTURE_FORMAT_R16G16B16A16_SNORM	= GL_RGBA16_SNORM,									// 4-component, 16-bit signed normalized
 #elif defined( GL_R16_SNORM_EXT )
-	GPU_TEXTURE_FORMAT_R16_SNORM			= GL_R16_SNORM_EXT,
-	GPU_TEXTURE_FORMAT_R16G16_SNORM			= GL_RG16_SNORM_EXT,
-	GPU_TEXTURE_FORMAT_R16G16B16A16_SNORM	= GL_RGB16_SNORM_EXT,
+	GPU_TEXTURE_FORMAT_R16_SNORM			= GL_R16_SNORM_EXT,									// 1-component, 16-bit signed normalized
+	GPU_TEXTURE_FORMAT_R16G16_SNORM			= GL_RG16_SNORM_EXT,								// 2-component, 16-bit signed normalized
+	GPU_TEXTURE_FORMAT_R16G16B16A16_SNORM	= GL_RGB16_SNORM_EXT,								// 4-component, 16-bit signed normalized
 #endif
 
-	GPU_TEXTURE_FORMAT_R16_SINT				= GL_R16I,
-	GPU_TEXTURE_FORMAT_R16G16_SINT			= GL_RG16I,
-	GPU_TEXTURE_FORMAT_R16G16B16A16_SINT	= GL_RGBA16I,
+	GPU_TEXTURE_FORMAT_R16_UINT				= GL_R16UI,											// 1-component, 16-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R16G16_UINT			= GL_RG16UI,										// 2-component, 16-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R16G16B16A16_UINT	= GL_RGBA16UI,										// 4-component, 16-bit unsigned integer
 
-	GPU_TEXTURE_FORMAT_R16_UINT				= GL_R16UI,
-	GPU_TEXTURE_FORMAT_R16G16_UINT			= GL_RG16UI,
-	GPU_TEXTURE_FORMAT_R16G16B16A16_UINT	= GL_RGBA16UI,
+	GPU_TEXTURE_FORMAT_R16_SINT				= GL_R16I,											// 1-component, 16-bit signed integer
+	GPU_TEXTURE_FORMAT_R16G16_SINT			= GL_RG16I,											// 2-component, 16-bit signed integer
+	GPU_TEXTURE_FORMAT_R16G16B16A16_SINT	= GL_RGBA16I,										// 4-component, 16-bit signed integer
 
-	GPU_TEXTURE_FORMAT_R16_SFLOAT			= GL_R16F,
-	GPU_TEXTURE_FORMAT_R16G16_SFLOAT		= GL_RG16F,
-	GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT	= GL_RGBA16F,
+	GPU_TEXTURE_FORMAT_R16_SFLOAT			= GL_R16F,											// 1-component, 16-bit floating-point
+	GPU_TEXTURE_FORMAT_R16G16_SFLOAT		= GL_RG16F,											// 2-component, 16-bit floating-point
+	GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT	= GL_RGBA16F,										// 4-component, 16-bit floating-point
 
 	//
 	// 32 bits per component
 	//
-	GPU_TEXTURE_FORMAT_R32_SINT				= GL_R32I,
-	GPU_TEXTURE_FORMAT_R32G32_SINT			= GL_RG32I,
-	GPU_TEXTURE_FORMAT_R32G32B32A32_SINT	= GL_RGBA32I,
+	GPU_TEXTURE_FORMAT_R32_UINT				= GL_R32UI,											// 1-component, 32-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R32G32_UINT			= GL_RG32UI,										// 2-component, 32-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R32G32B32A32_UINT	= GL_RGBA32UI,										// 4-component, 32-bit unsigned integer
 
-	GPU_TEXTURE_FORMAT_R32_UINT				= GL_R32UI,
-	GPU_TEXTURE_FORMAT_R32G32_UINT			= GL_RG32UI,
-	GPU_TEXTURE_FORMAT_R32G32B32A32_UINT	= GL_RGBA32UI,
+	GPU_TEXTURE_FORMAT_R32_SINT				= GL_R32I,											// 1-component, 32-bit signed integer
+	GPU_TEXTURE_FORMAT_R32G32_SINT			= GL_RG32I,											// 2-component, 32-bit signed integer
+	GPU_TEXTURE_FORMAT_R32G32B32A32_SINT	= GL_RGBA32I,										// 4-component, 32-bit signed integer
 
-	GPU_TEXTURE_FORMAT_R32_SFLOAT			= GL_R32F,
-	GPU_TEXTURE_FORMAT_R32G32_SFLOAT		= GL_RG32F,
-	GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT	= GL_RGBA32F,
+	GPU_TEXTURE_FORMAT_R32_SFLOAT			= GL_R32F,											// 1-component, 32-bit floating-point
+	GPU_TEXTURE_FORMAT_R32G32_SFLOAT		= GL_RG32F,											// 2-component, 32-bit floating-point
+	GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT	= GL_RGBA32F,										// 4-component, 32-bit floating-point
 
 	//
 	// S3TC/DXT/BC
@@ -6178,21 +6178,21 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 				case GL_RG8:			{ mipSize = w * h * d * 2 * sizeof( unsigned char ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_BYTE; break; }
 				case GL_RGBA8:			{ mipSize = w * h * d * 4 * sizeof( unsigned char ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_BYTE; break; }
 
-				case GL_SR8_EXT:		{ mipSize = w * h * d * 1 * sizeof( unsigned char ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_BYTE; break; }
-				case GL_SRG8_EXT:		{ mipSize = w * h * d * 2 * sizeof( unsigned char ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_BYTE; break; }
-				case GL_SRGB8_ALPHA8:	{ mipSize = w * h * d * 4 * sizeof( unsigned char ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_BYTE; break; }
-
 				case GL_R8_SNORM:		{ mipSize = w * h * d * 1 * sizeof( char ); glFormat = GL_RED;  glDataType = GL_BYTE; break; }
 				case GL_RG8_SNORM:		{ mipSize = w * h * d * 2 * sizeof( char ); glFormat = GL_RG;   glDataType = GL_BYTE; break; }
 				case GL_RGBA8_SNORM:	{ mipSize = w * h * d * 4 * sizeof( char ); glFormat = GL_RGBA; glDataType = GL_BYTE; break; }
+
+				case GL_R8UI:			{ mipSize = w * h * d * 1 * sizeof( unsigned char ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_RG8UI:			{ mipSize = w * h * d * 2 * sizeof( unsigned char ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_RGBA8UI:		{ mipSize = w * h * d * 4 * sizeof( unsigned char ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_BYTE; break; }
 
 				case GL_R8I:			{ mipSize = w * h * d * 1 * sizeof( char ); glFormat = GL_RED;  glDataType = GL_BYTE; break; }
 				case GL_RG8I:			{ mipSize = w * h * d * 2 * sizeof( char ); glFormat = GL_RG;   glDataType = GL_BYTE; break; }
 				case GL_RGBA8I:			{ mipSize = w * h * d * 4 * sizeof( char ); glFormat = GL_RGBA; glDataType = GL_BYTE; break; }
 
-				case GL_R8UI:			{ mipSize = w * h * d * 1 * sizeof( unsigned char ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_BYTE; break; }
-				case GL_RG8UI:			{ mipSize = w * h * d * 2 * sizeof( unsigned char ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_BYTE; break; }
-				case GL_RGBA8UI:		{ mipSize = w * h * d * 4 * sizeof( unsigned char ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_SR8_EXT:		{ mipSize = w * h * d * 1 * sizeof( unsigned char ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_SRG8_EXT:		{ mipSize = w * h * d * 2 * sizeof( unsigned char ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_SRGB8_ALPHA8:	{ mipSize = w * h * d * 4 * sizeof( unsigned char ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_BYTE; break; }
 
 				//
 				// 16 bits per component
@@ -6211,19 +6211,19 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 				case GL_R16_SNORM:		{ mipSize = w * h * d * 1 * sizeof( short ); glFormat = GL_RED;  glDataType = GL_SHORT; break; }
 				case GL_RG16_SNORM:		{ mipSize = w * h * d * 2 * sizeof( short ); glFormat = GL_RG;   glDataType = GL_SHORT; break; }
 				case GL_RGBA16_SNORM:	{ mipSize = w * h * d * 4 * sizeof( short ); glFormat = GL_RGBA; glDataType = GL_SHORT; break; }
-#elif defined( GL_R16_EXT )
+#elif defined( GL_R16_SNORM_EXT )
 				case GL_R16_SNORM_EXT:	{ mipSize = w * h * d * 1 * sizeof( short ); glFormat = GL_RED;  glDataType = GL_SHORT; break; }
 				case GL_RG16_SNORM_EXT:	{ mipSize = w * h * d * 2 * sizeof( short ); glFormat = GL_RG;   glDataType = GL_SHORT; break; }
 				case GL_RGB16_SNORM_EXT:{ mipSize = w * h * d * 4 * sizeof( short ); glFormat = GL_RGBA; glDataType = GL_SHORT; break; }
 #endif
 
-				case GL_R16I:			{ mipSize = w * h * d * 1 * sizeof( short ); glFormat = GL_RED;  glDataType = GL_SHORT; break; }
-				case GL_RG16I:			{ mipSize = w * h * d * 2 * sizeof( short ); glFormat = GL_RG;   glDataType = GL_SHORT; break; }
-				case GL_RGBA16I:		{ mipSize = w * h * d * 4 * sizeof( short ); glFormat = GL_RGBA; glDataType = GL_SHORT; break; }
-
 				case GL_R16UI:			{ mipSize = w * h * d * 1 * sizeof( unsigned short ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_SHORT; break; }
 				case GL_RG16UI:			{ mipSize = w * h * d * 2 * sizeof( unsigned short ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_SHORT; break; }
 				case GL_RGBA16UI:		{ mipSize = w * h * d * 4 * sizeof( unsigned short ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_SHORT; break; }
+
+				case GL_R16I:			{ mipSize = w * h * d * 1 * sizeof( short ); glFormat = GL_RED;  glDataType = GL_SHORT; break; }
+				case GL_RG16I:			{ mipSize = w * h * d * 2 * sizeof( short ); glFormat = GL_RG;   glDataType = GL_SHORT; break; }
+				case GL_RGBA16I:		{ mipSize = w * h * d * 4 * sizeof( short ); glFormat = GL_RGBA; glDataType = GL_SHORT; break; }
 
 				case GL_R16F:			{ mipSize = w * h * d * 1 * sizeof( unsigned short ); glFormat = GL_RED;  glDataType = GL_HALF_FLOAT; break; }
 				case GL_RG16F:			{ mipSize = w * h * d * 2 * sizeof( unsigned short ); glFormat = GL_RG;   glDataType = GL_HALF_FLOAT; break; }
@@ -6232,13 +6232,13 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 				//
 				// 32 bits per component
 				//
-				case GL_R32I:			{ mipSize = w * h * d * 1 * sizeof( int ); glFormat = GL_RED;  glDataType = GL_INT; break; }
-				case GL_RG32I:			{ mipSize = w * h * d * 2 * sizeof( int ); glFormat = GL_RG;   glDataType = GL_INT; break; }
-				case GL_RGBA32I:		{ mipSize = w * h * d * 4 * sizeof( int ); glFormat = GL_RGBA; glDataType = GL_INT; break; }
-
 				case GL_R32UI:			{ mipSize = w * h * d * 1 * sizeof( unsigned int ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_INT; break; }
 				case GL_RG32UI:			{ mipSize = w * h * d * 2 * sizeof( unsigned int ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_INT; break; }
 				case GL_RGBA32UI:		{ mipSize = w * h * d * 4 * sizeof( unsigned int ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_INT; break; }
+
+				case GL_R32I:			{ mipSize = w * h * d * 1 * sizeof( int ); glFormat = GL_RED;  glDataType = GL_INT; break; }
+				case GL_RG32I:			{ mipSize = w * h * d * 2 * sizeof( int ); glFormat = GL_RG;   glDataType = GL_INT; break; }
+				case GL_RGBA32I:		{ mipSize = w * h * d * 4 * sizeof( int ); glFormat = GL_RGBA; glDataType = GL_INT; break; }
 
 				case GL_R32F:			{ mipSize = w * h * d * 1 * sizeof( float ); glFormat = GL_RED;  glDataType = GL_FLOAT; break; }
 				case GL_RG32F:			{ mipSize = w * h * d * 2 * sizeof( float ); glFormat = GL_RG;   glDataType = GL_FLOAT; break; }

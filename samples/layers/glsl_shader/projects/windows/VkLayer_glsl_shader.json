@@ -1,0 +1,11 @@
+{
+    "file_format_version" : "1.0.0",
+    "layer" : {
+        "name": "VK_LAYER_OCULUS_glsl_shader",
+        "type": "GLOBAL",
+        "library_path": ".\\VkLayer_glsl_shader.dll",
+        "api_version": "1.0.0",
+        "implementation_version": "1",
+        "description": "Oculus GLSL Shader"
+    }
+}

@@ -41,3 +41,5 @@ make
 Use the build files in the projects/android/ folder inside the sample's folder.
 
 The output will be placed in the build/android/ folder in the base of the repository.
+
+The build_android batch file / shell script in the root of the repository can be used to compile all samples for Android.
