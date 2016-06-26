@@ -2382,6 +2382,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	// Get the instance layers.
 	const DriverFeature_t requestedLayers[] =
 	{
+		{ "VK_LAYER_OCULUS_glsl_shader",			false, false },
 		{ "VK_LAYER_OCULUS_queue_muxer",			false, false },
 		{ "VK_LAYER_GOOGLE_threading",				true, false },
 		{ "VK_LAYER_LUNARG_parameter_validation",	true, false },
@@ -2855,6 +2856,7 @@ static bool GpuDevice_Create( GpuDevice_t * device, DriverInstance_t * instance,
 		// Check the device layers.
 		const DriverFeature_t requestedLayers[] =
 		{
+			{ "VK_LAYER_OCULUS_glsl_shader",			false, false },
 			{ "VK_LAYER_OCULUS_queue_muxer",			false, false },
 			{ "VK_LAYER_GOOGLE_threading",				true, false },
 			{ "VK_LAYER_LUNARG_parameter_validation",	true, false },
@@ -3160,7 +3162,6 @@ static void GpuDevice_CreateShader( GpuDevice_t * device, VkShaderModule * shade
 	VK( device->vkCreateShaderModule( device->device, &moduleCreateInfo, VK_ALLOCATOR, shaderModule ) );
 #else
 	// Create fake SPV structure to feed GLSL to the driver "under the covers".
-	// Try version 0 first: one of the VkShaderStageFlagBits followed by the GLSL text
 	size_t tempCodeSize = 3 * sizeof( uint32_t ) + codeSize + 1;
 	uint32_t * tempCode = (uint32_t *) malloc( tempCodeSize );
 	tempCode[0] = ICD_SPV_MAGIC;

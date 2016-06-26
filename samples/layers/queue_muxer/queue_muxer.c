@@ -51,125 +51,14 @@ REQUIREMENTS
 
 Either the Vulkan SDK (from https://lunarg.com/vulkan-sdk/) or a collocated Vulkan-LoaderAndValidationLayers
 repository (from https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers) right next to the
-Vulkan-Samples repository is needed to compile this layer.
+Vulkan-Samples repository is needed to compile this layer. The paths for the collocated repositories
+will look as follows:
 
+	<path>/Vulkan-Samples/
+	<path>/Vulkan-LoaderAndValidationLayers/
 
-COMMAND-LINE COMPILATION
-========================
-
-Microsoft Windows: Visual Studio 2013 Compiler:
-	"C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\vcvarsall.bat" x64
-	cl /Zc:wchar_t /Zc:forScope /Wall /MD /GS /Gy /O2 /Oi /EHsc /I%VK_SDK_PATH%\Include /I%VK_SDK_PATH%\Source\layers /I%VK_SDK_PATH%\Source\loader queue_muxer.cpp /link /DLL /OUT:VkLayer_queue_muxer.dll
-
-Microsoft Windows: Intel Compiler 14.0
-	"C:\Program Files (x86)\Intel\Composer XE\bin\iclvars.bat" intel64
-	icl /Zc:wchar_t /Zc:forScope /Wall /MD /GS /Gy /O2 /Oi /EHsc /I%VK_SDK_PATH%\Include /I%VK_SDK_PATH%\Source\layers /I%VK_SDK_PATH%\Source\loader queue_muxer.cpp /link /DLL /OUT:VkLayer_queue_muxer.dll
-
-Linux: GCC 4.8.2:
-	gcc -std=c++11 -march=native -Wall -g -O2 -m64 -fPIC -shared -o VkLayer_queue_muxer.so -I${VK_SDK_PATH}\Source\layers -I${VK_SDK_PATH}\Source\loader queue_muxer.cpp
-
-Android for ARM from Windows: NDK Revision 11c - Android 21 - ANT/Gradle
-	ANT:
-		cd projects/android/ant/
-		build
-	Gradle:
-		cd projects/android/gradle/
-		build
-
-
-INSTALLATION
-============
-
-Windows:
-
-	Add a reference to VkLayer_queue_muxer.json to the registry key:
-
-	    HKEY_LOCAL_MACHINE\SOFTWARE\Khronos\Vulkan\ExplicitLayers
-
-	Each key name must be a full path to the JSON manifest file.
-	The Vulkan loader opens the JSON manifest file specified by the key name.
-	The value of the key is a DWORD data set to 0.
-
-	Alternatively, use the VK_LAYER_PATH environment variable to specify where the layer library resides.
-
-Linux:
-
-	Place the VkLayer_queue_muxer.json and libVkLayer_queue_muxer.so in one of the following folders:
-
-		/usr/share/vulkan/icd.d
-		/etc/vulkan/icd.d
-		$HOME/.local/share/vulkan/icd.d
-
-	Where $HOME is the current home directory of the application's user id; this path will be ignored for suid programs.
-	Alternatively, use the VK_LAYER_PATH environment variable to specify where the layer library resides.
-
-Android:
-
-	On Android copy the libVkLayer_queue_muxer.so file to the application's lib folder:
-
-		src/main/jniLibs/
-		    arm64-v8a/
-		        libVkLayer_queue_muxer.so
-		        ...
-		    armeabi-v7a/
-		        libVkLayer_queue_muxer.so
-		        ...
-
-	Recompile the application and use the jar tool to verify that the libraries are actually in the APK:
-
-		jar -tf <filename>.apk
-
-	Alternatively, on a device with root access, the libVkLayer_queue_muxer.so can be placed in
-
-		/data/local/debug/vulkan/
-
-	The Android loader queries layer and extension information directly from the respective libraries,
-	and does not use JSON manifest files as used by the Windows and Linux loaders.
-
-
-ACTIVATION
-==========
-
-To enable the layer, the name of the layer ("VK_LAYER_OCULUS_queue_muxer") should be added
-to the ppEnabledLayerNames member of VkInstanceCreateInfo when creating a VkInstance,
-and the ppEnabledLayerNames member of VkDeviceCreateInfo when creating a VkDevice.
-
-Windows:
-
-	Alternatively, on Windows the layer can be enabled for all applications by adding the layer name
-	("VK_LAYER_OCULUS_queue_muxer") to the VK_INSTANCE_LAYERS and VK_DEVICE_LAYERS environment variables.
-
-		set VK_INSTANCE_LAYERS=VK_LAYER_OCULUS_queue_muxer
-		set VK_DEVICE_LAYERS=VK_LAYER_OCULUS_queue_muxer
-
-	Multiple layers can be enabled simultaneously by separating them with semi-colons.
-
-		set VK_INSTANCE_LAYERS=VK_LAYER_OCULUS_queue_muxer;VK_LAYER_LUNARG_core_validation
-		set VK_DEVICE_LAYERS=VK_LAYER_OCULUS_queue_muxer;VK_LAYER_LUNARG_core_validation
-
-Linux:
-
-	Alternatively, on Linux the layer can be enabled for all applications by adding the layer name
-	("VK_LAYER_OCULUS_queue_muxer") to the VK_INSTANCE_LAYERS and VK_DEVICE_LAYERS environment variables.
-
-		export VK_INSTANCE_LAYERS=VK_LAYER_OCULUS_queue_muxer
-		export VK_DEVICE_LAYERS=VK_LAYER_OCULUS_queue_muxer
-
-	Multiple layers can be enabled simultaneously by separating them with colons.
-
-		export VK_INSTANCE_LAYERS=VK_LAYER_OCULUS_queue_muxer:VK_LAYER_LUNARG_core_validation
-		export VK_DEVICE_LAYERS=VK_LAYER_OCULUS_queue_muxer:VK_LAYER_LUNARG_core_validation
-
-Android:
-
-	Alternatively on Android the layer can be enabled for all applications using
-	the debug.vulkan.layers system property:
-
-		adb shell setprop debug.vulkan.layers VK_LAYER_OCULUS_queue_muxer
-
-	Multiple layers can be enabled simultaneously by separating them with colons.
-
-		adb shell setprop debug.vulkan.layers VK_LAYER_OCULUS_queue_muxer:VK_LAYER_LUNARG_core_validation
+On Windows make sure that the &lt;path&gt; is no more than one folder deep to
+avoid running into maximum path depth compilation issues.
 
 
 VERSION HISTORY

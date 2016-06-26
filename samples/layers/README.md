@@ -29,14 +29,14 @@ More information about layers can be found here [LoaderAndLayerInterface](https:
 
 # Layer Compilation
 
-Either the [Vulkan SDK](https://lunarg.com/vulkan-sdk/) or a collocated
+To compile the layers, a collocated [glslang](https://github.com/KhronosGroup/glslang) repository,
+and either the [Vulkan SDK](https://lunarg.com/vulkan-sdk/) or a collocated
 [Vulkan-LoaderAndValidationLayers](https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers)
-repository right next to the Vulkan-Samples repository is needed.
-When using a collocated [Vulkan-LoaderAndValidationLayers](https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers)
-repository, the paths will look as follows:
+repository are needed. The paths for the collocated repositories will look as follows:
 
     <path>/Vulkan-Samples/
     <path>/Vulkan-LoaderAndValidationLayers/
+    <path>/glslang/
 
 On Windows make sure that the &lt;path&gt; is no more than one folder deep to
 avoid running into maximum path depth compilation issues.
@@ -57,7 +57,7 @@ To compile on Android use the project files in projects/android.
 
 ### Windows 
 
-Add a reference to VkLayer_&lt;name&gt;.json to the registry key:
+Add a reference to VkLayer_&lt;name&gt;.json to one of the registry keys:
 
     HKEY_LOCAL_MACHINE\SOFTWARE\Khronos\Vulkan\ExplicitLayers
     HKEY_LOCAL_MACHINE\SOFTWARE\Khronos\Vulkan\ImplicitLayers
@@ -122,7 +122,7 @@ The output of the jar tool would look similar to the following:
     META-INF/CERT.SF
     META-INF/CERT.RSA
 
-Notice how the libVkLayer_queue_muxer.so is right next to the libatw_vulkan.so in the APK.
+Notice the libVkLayer_queue_muxer.so right next to the libatw_vulkan.so in the APK.
 
 Alternatively, on a device with root access, the libVkLayer_&lt;name&gt; .so can be placed in
 

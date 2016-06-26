@@ -30,6 +30,7 @@ init:
 
 # scripts that run after cloning repository
 install:
+  - git clone https://github.com/KhronosGroup/glslang.git ../glslang
   - git clone https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers.git ../Vulkan-LoaderAndValidationLayers
 
 build:
