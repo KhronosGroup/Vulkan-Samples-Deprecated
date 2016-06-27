@@ -336,12 +336,12 @@ Platform headers / declarations
 	#include <Availability.h>
 	#if __IPHONE_OS_VERSION_MAX_ALLOWED
 		#define OS_IOS
-        #define VK_USE_PLATFORM_IOS_MVK
+		//#define VK_USE_PLATFORM_IOS_MVK
 		#include <UIKit/UIKit.h>
 	#endif
 	#if __MAC_OS_X_VERSION_MAX_ALLOWED
 		#define OS_MAC
-		#define VK_USE_PLATFORM_MACOS_MVK
+		//#define VK_USE_PLATFORM_MACOS_MVK
 		#include <AppKit/AppKit.h>
 	#endif
 
@@ -2970,10 +2970,10 @@ static bool GpuDevice_Create( GpuDevice_t * device, DriverInstance_t * instance,
 #if defined( VK_USE_PLATFORM_IOS_MVK ) || defined( VK_USE_PLATFORM_MACOS_MVK )
 	// Specify some helpful MoltenVK extension configuration, such as performance logging.
 	MVKDeviceConfiguration mvkConfig;
-	vkGetMoltenVKDeviceConfigurationMVK(device->device, &mvkConfig);
+	vkGetMoltenVKDeviceConfigurationMVK( device->device, &mvkConfig );
 	mvkConfig.performanceTracking = true;
 	mvkConfig.performanceLoggingFrameCount = 60;	// Log once per second (actually once every 60 frames)
-	vkSetMoltenVKDeviceConfigurationMVK(device->device, &mvkConfig);
+	vkSetMoltenVKDeviceConfigurationMVK( device->device, &mvkConfig );
 #endif
 
 	//
