@@ -247,7 +247,7 @@ Android for ARM from Windows: NDK Revision 11c - Android 21 - ANT/Gradle
 	Gradle:
 		cd projects/android/gradle/atw_vulkan
 		gradlew build
-		adb install -r build/outputs/apk/atw_vulkan-arm7-debug.apk
+		adb install -r build/outputs/apk/atw_vulkan-all-debug.apk
 
 
 KNOWN ISSUES
@@ -406,8 +406,9 @@ Platform headers / declarations
 	#define VULKAN_LOADER	"libvulkan-1.so"
 	#define OUTPUT_PATH		""
 
-	// prototype is only included when __USE_GNU is defined but that causes other compile errors
+	// These prototypes are only included when __USE_GNU is defined but that causes other compile errors.
 	extern int pthread_setname_np( pthread_t __target_thread, __const char *__name );
+	extern int pthread_setaffinity_np( pthread_t thread, size_t cpusetsize, const cpu_set_t * cpuset );
 
 	#pragma GCC diagnostic ignored "-Wunused-function"
 
@@ -717,7 +718,8 @@ static const char * GetOSVersion()
 	#define PROP_NAME_MAX   32
 	#define PROP_VALUE_MAX  92
 
-	char propval[PROP_VALUE_MAX] = { 0 };
+	char release[PROP_VALUE_MAX] = { 0 };
+	char build[PROP_VALUE_MAX] = { 0 };
 
 	void * handle = dlopen( "libc.so", RTLD_NOLOAD );
 	if ( handle != NULL )
@@ -726,11 +728,12 @@ static const char * GetOSVersion()
 		PFN_SYSTEM_PROP_GET __my_system_property_get = (PFN_SYSTEM_PROP_GET)dlsym( handle, "__system_property_get" );
 		if ( __my_system_property_get != NULL )
 		{
-			__my_system_property_get( "ro.build.version.release", propval );
+			__my_system_property_get( "ro.build.version.release", release );
+			__my_system_property_get( "ro.build.version.incremental", build );
 		}
 	}
 
-	snprintf( version, sizeof( version ), "Android %s", propval );
+	snprintf( version, sizeof( version ), "Android %s (%s)", release, build );
 
 	return version;
 #endif
@@ -1236,9 +1239,32 @@ static void Thread_SetAffinity( int mask )
 		Print( "Thread %p affinity set to 0x%02X\n", thread, mask );
 	}
 #elif defined( OS_APPLE )
-	// macOS does not export interfaces that identify processors or control thread placement.
+	// iOS and macOS do not export interfaces that identify processors or control thread placement.
 	// Explicit thread to processor binding is not supported.
 	UNUSED_PARM( mask );
+#elif defined( OS_LINUX )
+	if ( mask == THREAD_AFFINITY_BIG_CORES )
+	{
+		return;
+	}
+	cpu_set_t set;
+	memset( &set, 0, sizeof( cpu_set_t ) );
+	for ( int bit = 0; bit < 32; bit++ )
+	{
+		if ( ( mask & ( 1 << bit ) ) != 0 )
+		{
+			set.__bits[bit / sizeof( set.__bits[0] )] |= 1 << ( bit & ( sizeof( set.__bits[0] ) - 1 ) );
+		}
+	}
+	const int result = pthread_setaffinity_np( pthread_self(), sizeof( cpu_set_t ), &set );
+	if ( result != 0 )
+	{
+		Print( "Failed to set thread %d affinity.\n", (unsigned int)pthread_self() );
+	}
+	else
+	{
+		Print( "Thread %d affinity set to 0x%02X\n", (unsigned int)pthread_self(), mask );
+	}
 #elif defined( OS_ANDROID )
 	// Optionally use the faster cores of a heterogeneous CPU.
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
@@ -1643,6 +1669,7 @@ Vector4i_t
 Vector2f_t
 Vector3f_t
 Vector4f_t
+Matrix3x4f_t		// This is a column-major matrix.
 Matrix4x4f_t		// This is a column-major matrix.
 
 static void Vector3f_Zero( Vector3f_t * v );
@@ -1710,6 +1737,12 @@ typedef struct
 	float w;
 } Vector4f_t;
 
+// Column-major 3x4 matrix
+typedef struct
+{
+	float m[3][4];
+} Matrix3x4f_t;
+
 // Column-major 4x4 matrix
 typedef struct
 {
@@ -1740,6 +1773,22 @@ static void Vector3f_Normalize( Vector3f_t * v )
 	v->x *= lengthRcp;
 	v->y *= lengthRcp;
 	v->z *= lengthRcp;
+}
+
+static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * dest, const Matrix4x4f_t * source )
+{
+	dest->m[0][0] = source->m[0][0];
+	dest->m[0][1] = source->m[1][0];
+	dest->m[0][2] = source->m[2][0];
+	dest->m[0][3] = source->m[3][0];
+	dest->m[1][0] = source->m[0][1];
+	dest->m[1][1] = source->m[1][1];
+	dest->m[1][2] = source->m[2][1];
+	dest->m[1][3] = source->m[3][1];
+	dest->m[2][0] = source->m[0][2];
+	dest->m[2][1] = source->m[1][2];
+	dest->m[2][2] = source->m[2][2];
+	dest->m[2][3] = source->m[3][2];
 }
 
 // Use left-multiplication to accumulate transformations.
@@ -2195,43 +2244,6 @@ VkBool32 DebugReportCallback( VkDebugReportFlagsEXT msgFlags, VkDebugReportObjec
 	{
 		return VK_FALSE;
 	}
-	// The draw state validation layer incorrectly reports that a present semaphore is still in use.
-	// https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/100
-	// [DS] "Cannot delete semaphore 38d1ea00d0 which is in use."
-	if ( MatchStrings( pMsg, "Cannot delete semaphore 38d1ea00d0 which is in use." ) )
-	{
-		return VK_FALSE;
-	}
-	// The mem tracker validation layer reports a memory leak when calling vkDestroyDebugReportCallbackEXT after vkDestroyDevice,
-	// but before vkDestroyInstance, even though VkDebugReportCallbackEXT is an instance object.
-	// https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/365
-	// [MEM] "Mem Object 148617029248 has not been freed. You should clean up this memory by calling vkFreeMemory(148617029248) prior to vkDestroyDevice()."
-	// [OBJTRACK] "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT object 0x7a613498a0 has not been destroyed."
-	// [OBJTRACK] "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT object 0x8ea68afdf0 has not been destroyed."
-	// [OBJTRACK] "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT object 0x6313f2bc50 has not been destroyed."
-	// [OBJTRACK] "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_EXT object 0x146da272a0 has not been destroyed."
-	if (	MatchStrings( pMsg, "Mem Object 148617029248 has not been freed. You should clean up this memory by calling vkFreeMemory(148617029248) prior to vkDestroyDevice()." ) ||
-			MatchStrings( pMsg, "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT object 0x7a613498a0 has not been destroyed." ) ||
-			MatchStrings( pMsg, "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT object 0x8ea68afdf0 has not been destroyed." ) ||
-			MatchStrings( pMsg, "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT object 0x6313f2bc50 has not been destroyed." ) ||
-			MatchStrings( pMsg, "OBJ ERROR : VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_EXT object 0x146da272a0 has not been destroyed." ) )
-	{
-		return VK_FALSE;
-	}
-	// The draw state validation layer incorrectly reports that a query is unavailable.
-	// https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/367
-	// [DS] Cannot get query results on queryPool 408912669008 with index 4 which is unavailable.
-	if ( MatchStrings( pMsg, "Cannot get query results on queryPool 408912669008 with index 4 which is unavailable." ) )
-	{
-		return VK_FALSE;
-	}
-	// The core validation layer incorrectly states that layouts are not compatible.
-	// https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/450
-	// [DS] "Error: [DS] Code 42 : descriptorSet #0 being bound is not compatible with overlapping descriptorSetLayout at index 0 of pipelineLayout 0x42 due to: Binding 0 for DescriptorSetLayout 0000000000000041 has a descriptorCount of 1 but binding 0 for DescriptorSetLayout 000000000000003D has a descriptorCount of 4"
-	if ( MatchStrings( pMsg, "Error: [DS] Code 42 : descriptorSet #0 being bound is not compatible with overlapping descriptorSetLayout at index 0 of pipelineLayout 0x42 due to: Binding 0 for DescriptorSetLayout 0000000000000041 has a descriptorCount of 1 but binding 0 for DescriptorSetLayout 000000000000003D has a descriptorCount of 4" ) )
-	{
-		return VK_FALSE;
-	}
 
 	const bool warning = ( msgFlags & VK_DEBUG_REPORT_ERROR_BIT_EXT ) == 0 ? true : false;
 	Error( "%s: [%s] Code %d : %s", warning ? "Warning" : "Error", pLayerPrefix, msgCode, pMsg );
@@ -2366,6 +2378,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	// Get the instance layers.
 	const DriverFeature_t requestedLayers[] =
 	{
+		{ "VK_LAYER_OCULUS_glsl_shader",			false, false },
 		{ "VK_LAYER_OCULUS_queue_muxer",			false, false },
 		{ "VK_LAYER_GOOGLE_threading",				true, false },
 		{ "VK_LAYER_LUNARG_parameter_validation",	true, false },
@@ -2839,6 +2852,7 @@ static bool GpuDevice_Create( GpuDevice_t * device, DriverInstance_t * instance,
 		// Check the device layers.
 		const DriverFeature_t requestedLayers[] =
 		{
+			{ "VK_LAYER_OCULUS_glsl_shader",			false, false },
 			{ "VK_LAYER_OCULUS_queue_muxer",			false, false },
 			{ "VK_LAYER_GOOGLE_threading",				true, false },
 			{ "VK_LAYER_LUNARG_parameter_validation",	true, false },
@@ -3153,7 +3167,6 @@ static void GpuDevice_CreateShader( GpuDevice_t * device, VkShaderModule * shade
 	VK( device->vkCreateShaderModule( device->device, &moduleCreateInfo, VK_ALLOCATOR, shaderModule ) );
 #else
 	// Create fake SPV structure to feed GLSL to the driver "under the covers".
-	// Try version 0 first: one of the VkShaderStageFlagBits followed by the GLSL text
 	size_t tempCodeSize = 3 * sizeof( uint32_t ) + codeSize + 1;
 	uint32_t * tempCode = (uint32_t *) malloc( tempCodeSize );
 	tempCode[0] = ICD_SPV_MAGIC;
@@ -3177,7 +3190,7 @@ GPU context.
 
 A context encapsulates a queue that is used to submit command buffers.
 A context can only be used by a single thread.
-For optimal performance, a context should only be created at load time, not at runtime.
+For optimal performance a context should only be created at load time, not at runtime.
 
 GpuContext_t
 
@@ -3325,7 +3338,7 @@ static void GpuContext_FlushSetupCmdBuffer( GpuContext_t * context )
 GPU swapchain.
 
 This encapsulates a platform agnostic swapchain.
-For optimal performance, a swapchain should only be created at load time, not at runtime.
+For optimal performance a swapchain should only be created at load time, not at runtime.
 
 GpuSwapchain_t
 
@@ -3731,7 +3744,7 @@ static Microseconds_t GpuSwapchain_SwapBuffers( GpuContext_t * context, GpuSwapc
 GPU depth buffer.
 
 This encapsulates a platform agnostic depth buffer.
-For optimal performance, a depth buffer should only be created at load time, not at runtime.
+For optimal performance a depth buffer should only be created at load time, not at runtime.
 
 GpuDepthBuffer_t
 
@@ -3831,10 +3844,10 @@ static void GpuDepthBuffer_Create( GpuContext_t * context, GpuDepthBuffer_t * de
 		imageViewCreateInfo.image = depthBuffer->image;
 		imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		imageViewCreateInfo.format = depthBuffer->internalFormat;
-		imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_ZERO;
-		imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_ZERO;
-		imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_ZERO;
-		imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_ZERO;
+		imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+		imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+		imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+		imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 		imageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 		imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
 		imageViewCreateInfo.subresourceRange.levelCount = 1;
@@ -3902,7 +3915,7 @@ static void GpuDepthBuffer_Destroy( GpuContext_t * context, GpuDepthBuffer_t * d
 GPU Window.
 
 Window with associated GPU context for GPU accelerated rendering.
-For optimal performance, a window should only be created at load time, not at runtime.
+For optimal performance a window should only be created at load time, not at runtime.
 
 GpuWindow_t
 GpuWindowEvent_t
@@ -3919,8 +3932,8 @@ static bool GpuWindow_ProcessEvents( GpuWindow_t * window );
 static void GpuWindow_SwapInterval( GpuWindow_t * window, const int swapInterval );
 static void GpuWindow_SwapBuffers( GpuWindow_t * window );
 static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window );
-static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
-static bool GpuWindow_CheckMouseButton( GpuWindow_t * window, const MouseButton_t button );
+static bool GpuWindow_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
+static bool GpuWindow_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button );
 
 ================================================================================================================================
 */
@@ -6231,7 +6244,7 @@ static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window )
 	return window->lastSwapTime + (Microseconds_t)( frameTimeMicroseconds );
 }
 
-static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key )
+static bool GpuWindow_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key )
 {
 	if ( window->keyInput[key] )
 	{
@@ -6241,7 +6254,7 @@ static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_
 	return false;
 }
 
-static bool GpuWindow_CheckMouseButton( GpuWindow_t * window, const MouseButton_t button )
+static bool GpuWindow_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button )
 {
 	if ( window->mouseInput[button] )
 	{
@@ -6257,7 +6270,7 @@ static bool GpuWindow_CheckMouseButton( GpuWindow_t * window, const MouseButton_
 GPU buffer.
 
 A buffer maintains a block of memory for a specific use by GPU programs (vertex, index, uniform, storage).
-For optimal performance, a buffer should only be created at load time, not at runtime.
+For optimal performance a buffer should only be created at load time, not at runtime.
 The best performance is typically achieved when the buffer is not host visible.
 
 GpuBufferType_t
@@ -6425,7 +6438,7 @@ static void GpuBuffer_Destroy( GpuContext_t * context, GpuBuffer_t * buffer )
 GPU texture.
 
 Supports loading textures from raw data.
-For optimal performance, a texture should only be created or modified at load time, not at runtime.
+For optimal performance a texture should only be created or modified at load time, not at runtime.
 Note that the geometry code assumes the texture origin 0,0 = left-top as opposed to left-bottom.
 In other words, textures are expected to be stored top-down as opposed to bottom-up.
 
@@ -6462,75 +6475,135 @@ static void GpuTexture_SetWrapMode( GpuContext_t * context, GpuTexture_t * textu
 // Note that the channel listed first in the name shall occupy the least significant bit.
 typedef enum
 {
-	GPU_TEXTURE_FORMAT_R8_UNORM				= VK_FORMAT_R8_UNORM,
-	GPU_TEXTURE_FORMAT_R8G8_UNORM			= VK_FORMAT_R8G8_UNORM,
-	GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM		= VK_FORMAT_R8G8B8A8_UNORM,
+	//
+	// 8 bits per component
+	//
+	GPU_TEXTURE_FORMAT_R8_UNORM				= VK_FORMAT_R8_UNORM,					// 1-component, 8-bit unsigned normalized
+	GPU_TEXTURE_FORMAT_R8G8_UNORM			= VK_FORMAT_R8G8_UNORM,					// 2-component, 8-bit unsigned normalized
+	GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM		= VK_FORMAT_R8G8B8A8_UNORM,				// 4-component, 8-bit unsigned normalized
 
-	GPU_TEXTURE_FORMAT_R8_SRGB				= VK_FORMAT_R8_SRGB,
-	GPU_TEXTURE_FORMAT_R8G8_SRGB			= VK_FORMAT_R8G8_SRGB,
-	GPU_TEXTURE_FORMAT_R8G8B8A8_SRGB		= VK_FORMAT_R8G8B8A8_SRGB,
+	GPU_TEXTURE_FORMAT_R8_SNORM				= VK_FORMAT_R8_SNORM,					// 1-component, 8-bit signed normalized
+	GPU_TEXTURE_FORMAT_R8G8_SNORM			= VK_FORMAT_R8G8_SNORM,					// 2-component, 8-bit signed normalized
+	GPU_TEXTURE_FORMAT_R8G8B8_SNORM			= VK_FORMAT_R8G8B8_SNORM,				// 4-component, 8-bit signed normalized
 
+	GPU_TEXTURE_FORMAT_R8_UINT				= VK_FORMAT_R8_UINT,					// 1-component, 8-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R8G8_UINT			= VK_FORMAT_R8G8_UINT,					// 2-component, 8-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R8G8B8_UINT			= VK_FORMAT_R8G8B8_UINT,				// 4-component, 8-bit unsigned integer
+
+	GPU_TEXTURE_FORMAT_R8_SINT				= VK_FORMAT_R8_SINT,					// 1-component, 8-bit signed integer
+	GPU_TEXTURE_FORMAT_R8G8_SINT			= VK_FORMAT_R8G8_SINT,					// 2-component, 8-bit signed integer
+	GPU_TEXTURE_FORMAT_R8G8B8_SINT			= VK_FORMAT_R8G8B8_SINT,				// 4-component, 8-bit signed integer
+
+	GPU_TEXTURE_FORMAT_R8_SRGB				= VK_FORMAT_R8_SRGB,					// 1-component, 8-bit sRGB
+	GPU_TEXTURE_FORMAT_R8G8_SRGB			= VK_FORMAT_R8G8_SRGB,					// 2-component, 8-bit sRGB
+	GPU_TEXTURE_FORMAT_R8G8B8A8_SRGB		= VK_FORMAT_R8G8B8A8_SRGB,				// 4-component, 8-bit sRGB
+
+	//
+	// 16 bits per component
+	//
+	GPU_TEXTURE_FORMAT_R16_UNORM			= VK_FORMAT_R16_UNORM,
+	GPU_TEXTURE_FORMAT_R16G16_UNORM			= VK_FORMAT_R16G16_UNORM,				// 1-component, 16-bit unsigned normalized
+	GPU_TEXTURE_FORMAT_R16G16B16A16_UNORM	= VK_FORMAT_R16G16B16A16_UNORM,			// 2-component, 16-bit unsigned normalized
+																					// 4-component, 16-bit unsigned normalized
+	GPU_TEXTURE_FORMAT_R16_SNORM			= VK_FORMAT_R16_SNORM,
+	GPU_TEXTURE_FORMAT_R16G16_SNORM			= VK_FORMAT_R16G16_SNORM,				// 1-component, 16-bit signed normalized
+	GPU_TEXTURE_FORMAT_R16G16B16A16_SNORM	= VK_FORMAT_R16G16B16A16_SNORM,			// 2-component, 16-bit signed normalized
+																					// 4-component, 16-bit signed normalized
+	GPU_TEXTURE_FORMAT_R16_UINT				= VK_FORMAT_R16_UINT,
+	GPU_TEXTURE_FORMAT_R16G16_UINT			= VK_FORMAT_R16G16_UINT,				// 1-component, 16-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R16G16B16A16_UINT	= VK_FORMAT_R16G16B16A16_UINT,			// 2-component, 16-bit unsigned integer
+																					// 4-component, 16-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R16_SINT				= VK_FORMAT_R16_SINT,
+	GPU_TEXTURE_FORMAT_R16G16_SINT			= VK_FORMAT_R16G16_SINT,				// 1-component, 16-bit signed integer
+	GPU_TEXTURE_FORMAT_R16G16B16A16_SINT	= VK_FORMAT_R16G16B16A16_SINT,			// 2-component, 16-bit signed integer
+																					// 4-component, 16-bit signed integer
 	GPU_TEXTURE_FORMAT_R16_SFLOAT			= VK_FORMAT_R16_SFLOAT,
-	GPU_TEXTURE_FORMAT_R16G16_SFLOAT		= VK_FORMAT_R16G16_SFLOAT,
-	GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT	= VK_FORMAT_R16G16B16A16_SFLOAT,
-
+	GPU_TEXTURE_FORMAT_R16G16_SFLOAT		= VK_FORMAT_R16G16_SFLOAT,				// 1-component, 16-bit floating-point
+	GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT	= VK_FORMAT_R16G16B16A16_SFLOAT,		// 2-component, 16-bit floating-point
+																					// 4-component, 16-bit floating-point
+	//
+	// 32 bits per component
+	//
+	GPU_TEXTURE_FORMAT_R32_UINT				= VK_FORMAT_R32_UINT,
+	GPU_TEXTURE_FORMAT_R32G32_UINT			= VK_FORMAT_R32G32_UINT,				// 1-component, 32-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R32G32B32A32_UINT	= VK_FORMAT_R32G32B32A32_UINT,			// 2-component, 32-bit unsigned integer
+																					// 4-component, 32-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R32_SINT				= VK_FORMAT_R32_SINT,
+	GPU_TEXTURE_FORMAT_R32G32_SINT			= VK_FORMAT_R32G32_SINT,				// 1-component, 32-bit signed integer
+	GPU_TEXTURE_FORMAT_R32G32B32A32_SINT	= VK_FORMAT_R32G32B32A32_SINT,			// 2-component, 32-bit signed integer
+																					// 4-component, 32-bit signed integer
 	GPU_TEXTURE_FORMAT_R32_SFLOAT			= VK_FORMAT_R32_SFLOAT,
-	GPU_TEXTURE_FORMAT_R32G32_SFLOAT		= VK_FORMAT_R32G32_SFLOAT,
-	GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT	= VK_FORMAT_R32G32B32A32_SFLOAT,
+	GPU_TEXTURE_FORMAT_R32G32_SFLOAT		= VK_FORMAT_R32G32_SFLOAT,				// 1-component, 32-bit floating-point
+	GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT	= VK_FORMAT_R32G32B32A32_SFLOAT,		// 2-component, 32-bit floating-point
+																					// 4-component, 32-bit floating-point
+	//
+	// S3TC/DXT/BC
+	//
+	GPU_TEXTURE_FORMAT_BC1_R8G8B8_UNORM		= VK_FORMAT_BC1_RGB_UNORM_BLOCK,		// 3-component, line through 3D space, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC1_R8G8B8A1_UNORM	= VK_FORMAT_BC1_RGBA_UNORM_BLOCK,		// 4-component, line through 3D space plus 1-bit alpha, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC2_R8G8B8A8_UNORM	= VK_FORMAT_BC2_UNORM_BLOCK,			// 4-component, line through 3D space plus line through 1D space, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC3_R8G8B8A4_UNORM	= VK_FORMAT_BC3_UNORM_BLOCK,			// 4-component, line through 3D space plus 4-bit alpha, unsigned normalized
 
-	GPU_TEXTURE_FORMAT_BC1_R8G8B8_UNORM		= VK_FORMAT_BC1_RGB_UNORM_BLOCK,		// line through 3D space, unsigned
-	GPU_TEXTURE_FORMAT_BC1_R8G8B8A1_UNORM	= VK_FORMAT_BC1_RGBA_UNORM_BLOCK,		// line through 3D space plus 1-bit alpha, unsigned
-	GPU_TEXTURE_FORMAT_BC2_R8G8B8A8_UNORM	= VK_FORMAT_BC2_UNORM_BLOCK,			// line through 3D space plus line through 1D space, unsigned
-	GPU_TEXTURE_FORMAT_BC3_R8G8B8A4_UNORM	= VK_FORMAT_BC3_UNORM_BLOCK,			// line through 3D space plus 4-bit alpha, unsigned
-
-	GPU_TEXTURE_FORMAT_BC1_R8G8B8_SRGB		= VK_FORMAT_BC1_RGB_SRGB_BLOCK,			// line through 3D space, sRGB
-	GPU_TEXTURE_FORMAT_BC1_R8G8B8A1_SRGB	= VK_FORMAT_BC1_RGBA_SRGB_BLOCK,		// line through 3D space plus 1-bit alpha, sRGB
-	GPU_TEXTURE_FORMAT_BC2_R8G8B8A8_SRGB	= VK_FORMAT_BC2_SRGB_BLOCK,				// line through 3D space plus line through 1D space, sRGB
-	GPU_TEXTURE_FORMAT_BC3_R8G8B8A4_SRGB	= VK_FORMAT_BC3_SRGB_BLOCK,				// line through 3D space plus 4-bit alpha, sRGB
+	GPU_TEXTURE_FORMAT_BC1_R8G8B8_SRGB		= VK_FORMAT_BC1_RGB_SRGB_BLOCK,			// 3-component, line through 3D space, sRGB
+	GPU_TEXTURE_FORMAT_BC1_R8G8B8A1_SRGB	= VK_FORMAT_BC1_RGBA_SRGB_BLOCK,		// 4-component, line through 3D space plus 1-bit alpha, sRGB
+	GPU_TEXTURE_FORMAT_BC2_R8G8B8A8_SRGB	= VK_FORMAT_BC2_SRGB_BLOCK,				// 4-component, line through 3D space plus line through 1D space, sRGB
+	GPU_TEXTURE_FORMAT_BC3_R8G8B8A4_SRGB	= VK_FORMAT_BC3_SRGB_BLOCK,				// 4-component, line through 3D space plus 4-bit alpha, sRGB
     
-	GPU_TEXTURE_FORMAT_BC4_R8_UNORM			= VK_FORMAT_BC4_UNORM_BLOCK,			// line through 1D space, unsigned
-	GPU_TEXTURE_FORMAT_BC5_R8G8_UNORM		= VK_FORMAT_BC5_UNORM_BLOCK,			// line through 2D space, unsigned
+	GPU_TEXTURE_FORMAT_BC4_R8_UNORM			= VK_FORMAT_BC4_UNORM_BLOCK,			// 1-component, line through 1D space, unsigned normalized
+	GPU_TEXTURE_FORMAT_BC5_R8G8_UNORM		= VK_FORMAT_BC5_UNORM_BLOCK,			// 2-component, two lines through 1D space, unsigned normalized
 
-	GPU_TEXTURE_FORMAT_BC4_R8_SNORM			= VK_FORMAT_BC4_SNORM_BLOCK,			// line through 1D space, signed
-	GPU_TEXTURE_FORMAT_BC5_R8G8_SNORM		= VK_FORMAT_BC5_SNORM_BLOCK,			// line through 2D space, signed
+	GPU_TEXTURE_FORMAT_BC4_R8_SNORM			= VK_FORMAT_BC4_SNORM_BLOCK,			// 1-component, line through 1D space, signed normalized
+	GPU_TEXTURE_FORMAT_BC5_R8G8_SNORM		= VK_FORMAT_BC5_SNORM_BLOCK,			// 2-component, two lines through 1D space, signed normalized
 
-	GPU_TEXTURE_FORMAT_ETC2_R8G8B8_UNORM	= VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK,
-	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A1_UNORM	= VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK,
-	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A8_UNORM	= VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK,
+	//
+	// ETC
+	//
+	GPU_TEXTURE_FORMAT_ETC2_R8G8B8_UNORM	= VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK,	// 3-component ETC2, unsigned normalized
+	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A1_UNORM	= VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK,	// 3-component with 1-bit alpha ETC2, unsigned normalized
+	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A8_UNORM	= VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK,	// 4-component ETC2, unsigned normalized
 
-	GPU_TEXTURE_FORMAT_ETC2_R8G8B8_SRGB		= VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK,
-	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A1_SRGB	= VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK,
-	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A8_SRGB	= VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK,
+	GPU_TEXTURE_FORMAT_ETC2_R8G8B8_SRGB		= VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK,		// 3-component ETC2, sRGB
+	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A1_SRGB	= VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK,	// 3-component with 1-bit alpha ETC2, sRGB
+	GPU_TEXTURE_FORMAT_ETC2_R8G8B8A8_SRGB	= VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK,	// 4-component ETC2, sRGB
 
-	GPU_TEXTURE_FORMAT_ASTC_4x4_UNORM		= VK_FORMAT_ASTC_4x4_UNORM_BLOCK,		// four-components ASTC 4x4 block compressed, unsigned
-	GPU_TEXTURE_FORMAT_ASTC_5x4_UNORM		= VK_FORMAT_ASTC_5x4_UNORM_BLOCK,		// four-components ASTC 5x4 block compressed, unsigned
-	GPU_TEXTURE_FORMAT_ASTC_5x5_UNORM		= VK_FORMAT_ASTC_5x5_UNORM_BLOCK,		// four-components ASTC 5x5 block compressed, unsigned
-	GPU_TEXTURE_FORMAT_ASTC_6x5_UNORM		= VK_FORMAT_ASTC_6x5_UNORM_BLOCK,		// four-components ASTC 6x5 block compressed, unsigned
-	GPU_TEXTURE_FORMAT_ASTC_6x6_UNORM		= VK_FORMAT_ASTC_6x6_UNORM_BLOCK,		// four-components ASTC 6x6 block compressed, unsigned
-	GPU_TEXTURE_FORMAT_ASTC_8x5_UNORM		= VK_FORMAT_ASTC_8x5_UNORM_BLOCK,		// four-components ASTC 8x5 block compressed, unsigned
-	GPU_TEXTURE_FORMAT_ASTC_8x6_UNORM		= VK_FORMAT_ASTC_8x6_UNORM_BLOCK,		// four-components ASTC 8x6 block compressed, unsigned
-	GPU_TEXTURE_FORMAT_ASTC_8x8_UNORM		= VK_FORMAT_ASTC_8x8_UNORM_BLOCK,		// four-components ASTC 8x8 block compressed, unsigned
-	GPU_TEXTURE_FORMAT_ASTC_10x5_UNORM		= VK_FORMAT_ASTC_10x5_UNORM_BLOCK,		// four-components ASTC 10x5 block compressed, unsigned
-	GPU_TEXTURE_FORMAT_ASTC_10x6_UNORM		= VK_FORMAT_ASTC_10x6_UNORM_BLOCK,		// four-components ASTC 10x6 block compressed, unsigned
-	GPU_TEXTURE_FORMAT_ASTC_10x8_UNORM		= VK_FORMAT_ASTC_10x8_UNORM_BLOCK,		// four-components ASTC 10x8 block compressed, unsigned
-	GPU_TEXTURE_FORMAT_ASTC_10x10_UNORM		= VK_FORMAT_ASTC_10x10_UNORM_BLOCK,		// four-components ASTC 10x10 block compressed, unsigned
-	GPU_TEXTURE_FORMAT_ASTC_12x10_UNORM		= VK_FORMAT_ASTC_12x10_UNORM_BLOCK,		// four-components ASTC 12x10 block compressed, unsigned
-	GPU_TEXTURE_FORMAT_ASTC_12x12_UNORM		= VK_FORMAT_ASTC_12x12_UNORM_BLOCK,		// four-components ASTC 12x12 block compressed, unsigned
+	GPU_TEXTURE_FORMAT_EAC_R11_UNORM		= VK_FORMAT_EAC_R11_UNORM_BLOCK,		// 1-component ETC, line through 1D space, unsigned normalized
+	GPU_TEXTURE_FORMAT_EAC_R11G11_UNORM		= VK_FORMAT_EAC_R11G11_UNORM_BLOCK,		// 2-component ETC, two lines through 1D space, unsigned normalized
+
+	GPU_TEXTURE_FORMAT_EAC_R11_SNORM		= VK_FORMAT_EAC_R11_SNORM_BLOCK,		// 1-component ETC, line through 1D space, signed normalized
+	GPU_TEXTURE_FORMAT_EAC_R11G11_SNORM		= VK_FORMAT_EAC_R11G11_SNORM_BLOCK,		// 2-component ETC, two lines through 1D space, signed normalized
+
+	//
+	// ASTC
+	//
+	GPU_TEXTURE_FORMAT_ASTC_4x4_UNORM		= VK_FORMAT_ASTC_4x4_UNORM_BLOCK,		// 4-component ASTC, 4x4 blocks, unsigned normalized
+	GPU_TEXTURE_FORMAT_ASTC_5x4_UNORM		= VK_FORMAT_ASTC_5x4_UNORM_BLOCK,		// 4-component ASTC, 5x4 blocks, unsigned normalized
+	GPU_TEXTURE_FORMAT_ASTC_5x5_UNORM		= VK_FORMAT_ASTC_5x5_UNORM_BLOCK,		// 4-component ASTC, 5x5 blocks, unsigned normalized
+	GPU_TEXTURE_FORMAT_ASTC_6x5_UNORM		= VK_FORMAT_ASTC_6x5_UNORM_BLOCK,		// 4-component ASTC, 6x5 blocks, unsigned normalized
+	GPU_TEXTURE_FORMAT_ASTC_6x6_UNORM		= VK_FORMAT_ASTC_6x6_UNORM_BLOCK,		// 4-component ASTC, 6x6 blocks, unsigned normalized
+	GPU_TEXTURE_FORMAT_ASTC_8x5_UNORM		= VK_FORMAT_ASTC_8x5_UNORM_BLOCK,		// 4-component ASTC, 8x5 blocks, unsigned normalized
+	GPU_TEXTURE_FORMAT_ASTC_8x6_UNORM		= VK_FORMAT_ASTC_8x6_UNORM_BLOCK,		// 4-component ASTC, 8x6 blocks, unsigned normalized
+	GPU_TEXTURE_FORMAT_ASTC_8x8_UNORM		= VK_FORMAT_ASTC_8x8_UNORM_BLOCK,		// 4-component ASTC, 8x8 blocks, unsigned normalized
+	GPU_TEXTURE_FORMAT_ASTC_10x5_UNORM		= VK_FORMAT_ASTC_10x5_UNORM_BLOCK,		// 4-component ASTC, 10x5 blocks, unsigned normalized
+	GPU_TEXTURE_FORMAT_ASTC_10x6_UNORM		= VK_FORMAT_ASTC_10x6_UNORM_BLOCK,		// 4-component ASTC, 10x6 blocks, unsigned normalized
+	GPU_TEXTURE_FORMAT_ASTC_10x8_UNORM		= VK_FORMAT_ASTC_10x8_UNORM_BLOCK,		// 4-component ASTC, 10x8 blocks, unsigned normalized
+	GPU_TEXTURE_FORMAT_ASTC_10x10_UNORM		= VK_FORMAT_ASTC_10x10_UNORM_BLOCK,		// 4-component ASTC, 10x10 blocks, unsigned normalized
+	GPU_TEXTURE_FORMAT_ASTC_12x10_UNORM		= VK_FORMAT_ASTC_12x10_UNORM_BLOCK,		// 4-component ASTC, 12x10 blocks, unsigned normalized
+	GPU_TEXTURE_FORMAT_ASTC_12x12_UNORM		= VK_FORMAT_ASTC_12x12_UNORM_BLOCK,		// 4-component ASTC, 12x12 blocks, unsigned normalized
 	
-	GPU_TEXTURE_FORMAT_ASTC_4x4_SRGB		= VK_FORMAT_ASTC_4x4_SRGB_BLOCK,		// four-components ASTC 4x4 block compressed, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_5x4_SRGB		= VK_FORMAT_ASTC_5x4_SRGB_BLOCK,		// four-components ASTC 5x4 block compressed, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_5x5_SRGB		= VK_FORMAT_ASTC_5x5_SRGB_BLOCK,		// four-components ASTC 5x5 block compressed, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_6x5_SRGB		= VK_FORMAT_ASTC_6x5_SRGB_BLOCK,		// four-components ASTC 6x5 block compressed, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_6x6_SRGB		= VK_FORMAT_ASTC_6x6_SRGB_BLOCK,		// four-components ASTC 6x6 block compressed, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_8x5_SRGB		= VK_FORMAT_ASTC_8x5_SRGB_BLOCK,		// four-components ASTC 8x5 block compressed, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_8x6_SRGB		= VK_FORMAT_ASTC_8x6_SRGB_BLOCK,		// four-components ASTC 8x6 block compressed, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_8x8_SRGB		= VK_FORMAT_ASTC_8x8_SRGB_BLOCK,		// four-components ASTC 8x8 block compressed, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_10x5_SRGB		= VK_FORMAT_ASTC_10x5_SRGB_BLOCK,		// four-components ASTC 10x5 block compressed, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_10x6_SRGB		= VK_FORMAT_ASTC_10x6_SRGB_BLOCK,		// four-components ASTC 10x6 block compressed, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_10x8_SRGB		= VK_FORMAT_ASTC_10x8_SRGB_BLOCK,		// four-components ASTC 10x8 block compressed, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_10x10_SRGB		= VK_FORMAT_ASTC_10x10_SRGB_BLOCK,		// four-components ASTC 10x10 block compressed, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_12x10_SRGB		= VK_FORMAT_ASTC_12x10_SRGB_BLOCK,		// four-components ASTC 12x10 block compressed, sRGB
-	GPU_TEXTURE_FORMAT_ASTC_12x12_SRGB		= VK_FORMAT_ASTC_12x12_SRGB_BLOCK,		// four-components ASTC 12x12 block compressed, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_4x4_SRGB		= VK_FORMAT_ASTC_4x4_SRGB_BLOCK,		// 4-component ASTC, 4x4 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_5x4_SRGB		= VK_FORMAT_ASTC_5x4_SRGB_BLOCK,		// 4-component ASTC, 5x4 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_5x5_SRGB		= VK_FORMAT_ASTC_5x5_SRGB_BLOCK,		// 4-component ASTC, 5x5 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_6x5_SRGB		= VK_FORMAT_ASTC_6x5_SRGB_BLOCK,		// 4-component ASTC, 6x5 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_6x6_SRGB		= VK_FORMAT_ASTC_6x6_SRGB_BLOCK,		// 4-component ASTC, 6x6 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_8x5_SRGB		= VK_FORMAT_ASTC_8x5_SRGB_BLOCK,		// 4-component ASTC, 8x5 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_8x6_SRGB		= VK_FORMAT_ASTC_8x6_SRGB_BLOCK,		// 4-component ASTC, 8x6 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_8x8_SRGB		= VK_FORMAT_ASTC_8x8_SRGB_BLOCK,		// 4-component ASTC, 8x8 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_10x5_SRGB		= VK_FORMAT_ASTC_10x5_SRGB_BLOCK,		// 4-component ASTC, 10x5 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_10x6_SRGB		= VK_FORMAT_ASTC_10x6_SRGB_BLOCK,		// 4-component ASTC, 10x6 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_10x8_SRGB		= VK_FORMAT_ASTC_10x8_SRGB_BLOCK,		// 4-component ASTC, 10x8 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_10x10_SRGB		= VK_FORMAT_ASTC_10x10_SRGB_BLOCK,		// 4-component ASTC, 10x10 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_12x10_SRGB		= VK_FORMAT_ASTC_12x10_SRGB_BLOCK,		// 4-component ASTC, 12x10 blocks, sRGB
+	GPU_TEXTURE_FORMAT_ASTC_12x12_SRGB		= VK_FORMAT_ASTC_12x12_SRGB_BLOCK,		// 4-component ASTC, 12x12 blocks, sRGB
 } GpuTextureFormat_t;
 
 typedef enum
@@ -6612,7 +6685,7 @@ static void GpuTexture_UpdateSampler( GpuContext_t * context, GpuTexture_t * tex
 	samplerCreateInfo.compareEnable = VK_FALSE;
 	samplerCreateInfo.compareOp = VK_COMPARE_OP_NEVER;
 	samplerCreateInfo.minLod = 0.0f;
-	samplerCreateInfo.maxLod = 0.0f;
+	samplerCreateInfo.maxLod = (float)texture->mipCount;
 	samplerCreateInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
 	samplerCreateInfo.unnormalizedCoordinates = VK_FALSE;
 
@@ -6692,12 +6765,10 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	VkFormatProperties props;
 	VC( context->device->instance->vkGetPhysicalDeviceFormatProperties( context->device->physicalDevice, format, &props ) );
 
-	if (	// Copy from linear staging image.
-			( props.linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT ) == 0 &&
-			// Blit from tiled image to create mip maps.
-			( props.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT ) == 0 &&
-			// Blit to tiled image from linear staging image, or to create mip maps.
-			( props.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT ) == 0 &&
+	if (	// Blit from tiled image to create mip maps.
+			( props.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT ) == 0 ||
+			// Blit to tiled image from a buffer, or to create mip maps.
+			( props.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT ) == 0 ||
 			// Sample texture during rendering.
 			( props.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT ) == 0 )
 	{
@@ -6761,27 +6832,29 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 		GpuContext_CreateSetupCmdBuffer( context );
 
 		// Set optimal image layout for shader read access.
-		VkImageMemoryBarrier imageMemoryBarrier;
-		imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrier.pNext = NULL;
-		imageMemoryBarrier.srcAccessMask = 0;
-		imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		imageMemoryBarrier.image = texture->image;
-		imageMemoryBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		imageMemoryBarrier.subresourceRange.baseMipLevel = 0;
-		imageMemoryBarrier.subresourceRange.levelCount = numStorageLevels;
-		imageMemoryBarrier.subresourceRange.baseArrayLayer = 0;
-		imageMemoryBarrier.subresourceRange.layerCount = arrayLayerCount;
+		{
+			VkImageMemoryBarrier imageMemoryBarrier;
+			imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			imageMemoryBarrier.pNext = NULL;
+			imageMemoryBarrier.srcAccessMask = 0;
+			imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+			imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			imageMemoryBarrier.image = texture->image;
+			imageMemoryBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			imageMemoryBarrier.subresourceRange.baseMipLevel = 0;
+			imageMemoryBarrier.subresourceRange.levelCount = numStorageLevels;
+			imageMemoryBarrier.subresourceRange.baseArrayLayer = 0;
+			imageMemoryBarrier.subresourceRange.layerCount = arrayLayerCount;
 
-		const VkPipelineStageFlags src_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-		const VkPipelineStageFlags dst_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-		const VkDependencyFlags flags = 0;
+			const VkPipelineStageFlags src_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			const VkPipelineStageFlags dst_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			const VkDependencyFlags flags = 0;
 
-		VC( context->device->vkCmdPipelineBarrier( context->setupCommandBuffer, src_stages, dst_stages, flags, 0, NULL, 0, NULL, 1, &imageMemoryBarrier ) );
+			VC( context->device->vkCmdPipelineBarrier( context->setupCommandBuffer, src_stages, dst_stages, flags, 0, NULL, 0, NULL, 1, &imageMemoryBarrier ) );
+		}
 
 		GpuContext_FlushSetupCmdBuffer( context );
 	}
@@ -6790,36 +6863,91 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 		GpuContext_CreateSetupCmdBuffer( context );
 
 		// Set optimal image layout for transfer destination.
-		VkImageMemoryBarrier imageMemoryBarrier;
-		imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrier.pNext = NULL;
-		imageMemoryBarrier.srcAccessMask = 0;
-		imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		imageMemoryBarrier.image = texture->image;
-		imageMemoryBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		imageMemoryBarrier.subresourceRange.baseMipLevel = 0;
-		imageMemoryBarrier.subresourceRange.levelCount = numStorageLevels;
-		imageMemoryBarrier.subresourceRange.baseArrayLayer = 0;
-		imageMemoryBarrier.subresourceRange.layerCount = arrayLayerCount;
+		{
+			VkImageMemoryBarrier imageMemoryBarrier;
+			imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			imageMemoryBarrier.pNext = NULL;
+			imageMemoryBarrier.srcAccessMask = 0;
+			imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			imageMemoryBarrier.image = texture->image;
+			imageMemoryBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			imageMemoryBarrier.subresourceRange.baseMipLevel = 0;
+			imageMemoryBarrier.subresourceRange.levelCount = numStorageLevels;
+			imageMemoryBarrier.subresourceRange.baseArrayLayer = 0;
+			imageMemoryBarrier.subresourceRange.layerCount = arrayLayerCount;
 
-		const VkPipelineStageFlags src_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-		const VkPipelineStageFlags dst_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-		const VkDependencyFlags flags = 0;
+			const VkPipelineStageFlags src_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			const VkPipelineStageFlags dst_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			const VkDependencyFlags flags = 0;
 
-		VC( context->device->vkCmdPipelineBarrier( context->setupCommandBuffer, src_stages, dst_stages, flags, 0, NULL, 0, NULL, 1, &imageMemoryBarrier ) );
+			VC( context->device->vkCmdPipelineBarrier( context->setupCommandBuffer, src_stages, dst_stages, flags, 0, NULL, 0, NULL, 1, &imageMemoryBarrier ) );
+		}
 
 		const int numDataLevels = ( numberOfMipmapLevels >= 1 ) ? numberOfMipmapLevels : 1;
-
-		VkImage * linearImage = (VkImage *) malloc( numDataLevels * arrayLayerCount * depth * sizeof( VkImage ) );
-		VkDeviceMemory * linearMemory = (VkDeviceMemory *) malloc( numDataLevels * arrayLayerCount * depth * sizeof( VkDeviceMemory ) );
-
-		int dataOffset = 0;
-		int imageIndex = 0;
 		bool compressed = false;
+
+		// Using a staging buffer to initialize the tiled image is preferred over using a linear
+		// staging image, because the Vulkan specification requires vkCmdCopyBufferToImage while
+		// support for linear images is implementation dependent. Some implementations do not
+		// support any linear images.
+		VkBufferCreateInfo bufferCreateInfo;
+		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferCreateInfo.pNext = NULL;
+		bufferCreateInfo.flags = 0;
+		bufferCreateInfo.size = dataSize;
+		bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		bufferCreateInfo.queueFamilyIndexCount = 0;
+		bufferCreateInfo.pQueueFamilyIndices = NULL;
+
+		VkBuffer stagingBuffer;
+		VK( context->device->vkCreateBuffer( context->device->device, &bufferCreateInfo, VK_ALLOCATOR, &stagingBuffer ) );
+
+		VkMemoryRequirements memoryRequirements;
+		VC( context->device->vkGetBufferMemoryRequirements( context->device->device, stagingBuffer, &memoryRequirements ) );
+
+		VkMemoryAllocateInfo memoryAllocateInfo;
+		memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		memoryAllocateInfo.pNext = NULL;
+		memoryAllocateInfo.allocationSize = memoryRequirements.size;
+		memoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
+
+		VkDeviceMemory stagingMemory;
+		VK( context->device->vkAllocateMemory( context->device->device, &memoryAllocateInfo, VK_ALLOCATOR, &stagingMemory ) );
+		VK( context->device->vkBindBufferMemory( context->device->device, stagingBuffer, stagingMemory, 0 ) );
+
+		uint8_t * mapped;
+		VK( context->device->vkMapMemory( context->device->device, stagingMemory, 0, memoryRequirements.size, 0, (void **)&mapped ) );
+		memcpy( mapped, data, dataSize );
+		VC( context->device->vkUnmapMemory( context->device->device, stagingMemory ) );
+
+		// Make sure the CPU writes to the buffer are flushed.
+		{
+			VkBufferMemoryBarrier bufferMemoryBarrier;
+			bufferMemoryBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+			bufferMemoryBarrier.pNext = NULL;
+			bufferMemoryBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+			bufferMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+			bufferMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			bufferMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			bufferMemoryBarrier.buffer = stagingBuffer;
+			bufferMemoryBarrier.offset = 0;
+			bufferMemoryBarrier.size = dataSize;
+
+			const VkPipelineStageFlags src_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			const VkPipelineStageFlags dst_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			const VkDependencyFlags flags = 0;
+
+			VC( context->device->vkCmdPipelineBarrier( context->setupCommandBuffer, src_stages, dst_stages, flags, 0, NULL, 1, &bufferMemoryBarrier, 0, NULL ) );
+		}
+
+		VkBufferImageCopy * bufferImageCopy = (VkBufferImageCopy *) malloc( numDataLevels * arrayLayerCount * depth * sizeof( VkBufferImageCopy ) );
+		uint32_t bufferImageCopyIndex = 0;
+		uint32_t dataOffset = 0;
 		for ( int mipLevel = 0; mipLevel < numDataLevels; mipLevel++ )
 		{
 			const int mipWidth = ( width >> mipLevel ) >= 1 ? ( width >> mipLevel ) : 1;
@@ -6830,204 +6958,168 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 			{
 				for ( int depthIndex = 0; depthIndex < mipDepth; depthIndex++ )
 				{
-					// Create linear image for each mip/layer/depth.
-					VkImageCreateInfo imageCreateInfo;
-					imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-					imageCreateInfo.pNext = NULL;
-					imageCreateInfo.flags = 0;
-					imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
-					imageCreateInfo.format = format;
-					imageCreateInfo.extent.width = mipWidth;
-					imageCreateInfo.extent.height = mipHeight;
-					imageCreateInfo.extent.depth = 1;
-					imageCreateInfo.mipLevels = 1;
-					imageCreateInfo.arrayLayers = 1;
-					imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-					imageCreateInfo.tiling = VK_IMAGE_TILING_LINEAR;
-					imageCreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-					imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-					imageCreateInfo.queueFamilyIndexCount = 0;
-					imageCreateInfo.pQueueFamilyIndices = NULL;
-					imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+					bufferImageCopy[bufferImageCopyIndex].bufferOffset = dataOffset;
+					bufferImageCopy[bufferImageCopyIndex].bufferRowLength = 0;
+					bufferImageCopy[bufferImageCopyIndex].bufferImageHeight = 0;
+					bufferImageCopy[bufferImageCopyIndex].imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+					bufferImageCopy[bufferImageCopyIndex].imageSubresource.mipLevel = mipLevel;
+					bufferImageCopy[bufferImageCopyIndex].imageSubresource.baseArrayLayer = layerIndex;
+					bufferImageCopy[bufferImageCopyIndex].imageSubresource.layerCount = 1;
+					bufferImageCopy[bufferImageCopyIndex].imageOffset.x = 0;
+					bufferImageCopy[bufferImageCopyIndex].imageOffset.y = 0;
+					bufferImageCopy[bufferImageCopyIndex].imageOffset.z = depthIndex;
+					bufferImageCopy[bufferImageCopyIndex].imageExtent.width = mipWidth;
+					bufferImageCopy[bufferImageCopyIndex].imageExtent.height = mipHeight;
+					bufferImageCopy[bufferImageCopyIndex].imageExtent.depth = 1;
+					bufferImageCopyIndex++;
 
-					VK( context->device->vkCreateImage( context->device->device, &imageCreateInfo, VK_ALLOCATOR, &linearImage[imageIndex] ) );
-
-					VkMemoryRequirements memoryRequirements;
-					VC( context->device->vkGetImageMemoryRequirements( context->device->device, linearImage[imageIndex], &memoryRequirements ) );
-
-					VkMemoryAllocateInfo memoryAllocateInfo;
-					memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-					memoryAllocateInfo.pNext = NULL;
-					memoryAllocateInfo.allocationSize = memoryRequirements.size;
-					memoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
-
-					VK( context->device->vkAllocateMemory( context->device->device, &memoryAllocateInfo, VK_ALLOCATOR, &linearMemory[imageIndex] ) );
-					VK( context->device->vkBindImageMemory( context->device->device, linearImage[imageIndex], linearMemory[imageIndex], 0 ) );
-
-					// Get the source data row size.
-					int dataRowCount = 0;
-					int dataRowSize = 0;
+					uint32_t mipSize = 0;
 					switch ( format )
 					{
-						case VK_FORMAT_R8_UNORM:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( unsigned char ); break; }
-						case VK_FORMAT_R8G8_UNORM:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( unsigned char ); break; }
-						case VK_FORMAT_R8G8B8A8_UNORM:				{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( unsigned char ); break; }
+						//
+						// 8 bits per component
+						//
+						case VK_FORMAT_R8_UNORM:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( unsigned char ); break; }
+						case VK_FORMAT_R8G8_UNORM:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned char ); break; }
+						case VK_FORMAT_R8G8B8A8_UNORM:				{ mipSize = mipHeight * mipWidth * 4 * sizeof( unsigned char ); break; }
 
-						case VK_FORMAT_R8_SRGB:						{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( unsigned char ); break; }
-						case VK_FORMAT_R8G8_SRGB:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( unsigned char ); break; }
-						case VK_FORMAT_R8G8B8A8_SRGB:				{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( unsigned char ); break; }
+						case VK_FORMAT_R8_SNORM:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( char ); break; }
+						case VK_FORMAT_R8G8_SNORM:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( char ); break; }
+						case VK_FORMAT_R8G8B8_SNORM:				{ mipSize = mipHeight * mipWidth * 4 * sizeof( char ); break; }
 
-						case VK_FORMAT_R16_SFLOAT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( unsigned short ); break; }
-						case VK_FORMAT_R16G16_SFLOAT:				{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( unsigned short ); break; }
-						case VK_FORMAT_R16G16B16A16_SFLOAT:			{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( unsigned short ); break; }
+						case VK_FORMAT_R8_UINT:						{ mipSize = mipHeight * mipWidth * 1 * sizeof( unsigned char ); break; }
+						case VK_FORMAT_R8G8_UINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned char ); break; }
+						case VK_FORMAT_R8G8B8_UINT:					{ mipSize = mipHeight * mipWidth * 4 * sizeof( unsigned char ); break; }
 
-						case VK_FORMAT_R32_SFLOAT:					{ dataRowCount = mipHeight; dataRowSize = mipWidth * 1 * sizeof( float ); break; }
-						case VK_FORMAT_R32G32_SFLOAT:				{ dataRowCount = mipHeight; dataRowSize = mipWidth * 2 * sizeof( float ); break; }
-						case VK_FORMAT_R32G32B32A32_SFLOAT:			{ dataRowCount = mipHeight; dataRowSize = mipWidth * 4 * sizeof( float ); break; }
+						case VK_FORMAT_R8_SINT:						{ mipSize = mipHeight * mipWidth * 1 * sizeof( char ); break; }
+						case VK_FORMAT_R8G8_SINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( char ); break; }
+						case VK_FORMAT_R8G8B8_SINT:					{ mipSize = mipHeight * mipWidth * 4 * sizeof( char ); break; }
 
-						case VK_FORMAT_BC1_RGB_UNORM_BLOCK:			{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
-						case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
-						case VK_FORMAT_BC2_UNORM_BLOCK:				{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
-						case VK_FORMAT_BC3_UNORM_BLOCK:				{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
+						case VK_FORMAT_R8_SRGB:						{ mipSize = mipHeight * mipWidth * 1 * sizeof( unsigned char ); break; }
+						case VK_FORMAT_R8G8_SRGB:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned char ); break; }
+						case VK_FORMAT_R8G8B8A8_SRGB:				{ mipSize = mipHeight * mipWidth * 4 * sizeof( unsigned char ); break; }
 
-						case VK_FORMAT_BC1_RGB_SRGB_BLOCK:			{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
-						case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:			{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
-						case VK_FORMAT_BC2_SRGB_BLOCK:				{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
-						case VK_FORMAT_BC3_SRGB_BLOCK:				{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
+						//
+						// 16 bits per component
+						//
+						case VK_FORMAT_R16_UNORM:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( unsigned short ); break; }
+						case VK_FORMAT_R16G16_UNORM:				{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned short ); break; }
+						case VK_FORMAT_R16G16B16A16_UNORM:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( unsigned short ); break; }
 
-						case VK_FORMAT_BC4_UNORM_BLOCK:			
-						case VK_FORMAT_BC5_UNORM_BLOCK:				{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_R16_SNORM:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( short ); break; }
+						case VK_FORMAT_R16G16_SNORM:				{ mipSize = mipHeight * mipWidth * 2 * sizeof( short ); break; }
+						case VK_FORMAT_R16G16B16A16_SNORM:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( short ); break; }
 
-						case VK_FORMAT_BC4_SNORM_BLOCK:			
-						case VK_FORMAT_BC5_SNORM_BLOCK:				{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
+						case VK_FORMAT_R16_UINT:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( unsigned short ); break; }
+						case VK_FORMAT_R16G16_UINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned short ); break; }
+						case VK_FORMAT_R16G16B16A16_UINT:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( unsigned short ); break; }
 
-						case VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
-						case VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK:	{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
-						case VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK:	{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
+						case VK_FORMAT_R16_SINT:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( short ); break; }
+						case VK_FORMAT_R16G16_SINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( short ); break; }
+						case VK_FORMAT_R16G16B16A16_SINT:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( short ); break; }
 
-						case VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK:		{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
-						case VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK:	{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 8; compressed = true; break; }
-						case VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK:	{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
+						case VK_FORMAT_R16_SFLOAT:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( unsigned short ); break; }
+						case VK_FORMAT_R16G16_SFLOAT:				{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned short ); break; }
+						case VK_FORMAT_R16G16B16A16_SFLOAT:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( unsigned short ); break; }
 
-						case VK_FORMAT_ASTC_4x4_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_5x4_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+4)/5) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_5x5_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+4)/5); dataRowSize = ((mipWidth+4)/5) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_6x5_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+4)/5); dataRowSize = ((mipWidth+5)/6) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_6x6_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+5)/6); dataRowSize = ((mipWidth+5)/6) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_8x5_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+4)/5); dataRowSize = ((mipWidth+7)/8) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_8x6_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+5)/6); dataRowSize = ((mipWidth+7)/8) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_8x8_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+7)/8); dataRowSize = ((mipWidth+7)/8) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_10x5_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+4)/5); dataRowSize = ((mipWidth+9)/10) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_10x6_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+5)/6); dataRowSize = ((mipWidth+9)/10) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_10x8_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+7)/8); dataRowSize = ((mipWidth+9)/10) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_10x10_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+9)/10); dataRowSize = ((mipWidth+9)/10) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_12x10_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+9)/10); dataRowSize = ((mipWidth+11)/12) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_12x12_UNORM_BLOCK:		{ dataRowCount = ((mipHeight+11)/12); dataRowSize = ((mipWidth+11)/12) * 16; compressed = true; break; }
+						//
+						// 32 bits per component
+						//
+						case VK_FORMAT_R32_UINT:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( unsigned int ); break; }
+						case VK_FORMAT_R32G32_UINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( unsigned int ); break; }
+						case VK_FORMAT_R32G32B32A32_UINT:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( unsigned int ); break; }
 
-						case VK_FORMAT_ASTC_4x4_SRGB_BLOCK:			{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+3)/4) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_5x4_SRGB_BLOCK:			{ dataRowCount = ((mipHeight+3)/4); dataRowSize = ((mipWidth+4)/5) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_5x5_SRGB_BLOCK:			{ dataRowCount = ((mipHeight+4)/5); dataRowSize = ((mipWidth+4)/5) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_6x5_SRGB_BLOCK:			{ dataRowCount = ((mipHeight+4)/5); dataRowSize = ((mipWidth+5)/6) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_6x6_SRGB_BLOCK:			{ dataRowCount = ((mipHeight+5)/6); dataRowSize = ((mipWidth+5)/6) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_8x5_SRGB_BLOCK:			{ dataRowCount = ((mipHeight+4)/5); dataRowSize = ((mipWidth+7)/8) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_8x6_SRGB_BLOCK:			{ dataRowCount = ((mipHeight+5)/6); dataRowSize = ((mipWidth+7)/8) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_8x8_SRGB_BLOCK:			{ dataRowCount = ((mipHeight+7)/8); dataRowSize = ((mipWidth+7)/8) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_10x5_SRGB_BLOCK:		{ dataRowCount = ((mipHeight+4)/5); dataRowSize = ((mipWidth+9)/10) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_10x6_SRGB_BLOCK:		{ dataRowCount = ((mipHeight+5)/6); dataRowSize = ((mipWidth+9)/10) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_10x8_SRGB_BLOCK:		{ dataRowCount = ((mipHeight+7)/8); dataRowSize = ((mipWidth+9)/10) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_10x10_SRGB_BLOCK:		{ dataRowCount = ((mipHeight+9)/10); dataRowSize = ((mipWidth+9)/10) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_12x10_SRGB_BLOCK:		{ dataRowCount = ((mipHeight+9)/10); dataRowSize = ((mipWidth+11)/12) * 16; compressed = true; break; }
-						case VK_FORMAT_ASTC_12x12_SRGB_BLOCK:		{ dataRowCount = ((mipHeight+11)/12); dataRowSize = ((mipWidth+11)/12) * 16; compressed = true; break; }
+						case VK_FORMAT_R32_SINT:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( int ); break; }
+						case VK_FORMAT_R32G32_SINT:					{ mipSize = mipHeight * mipWidth * 2 * sizeof( int ); break; }
+						case VK_FORMAT_R32G32B32A32_SINT:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( int ); break; }
+
+						case VK_FORMAT_R32_SFLOAT:					{ mipSize = mipHeight * mipWidth * 1 * sizeof( float ); break; }
+						case VK_FORMAT_R32G32_SFLOAT:				{ mipSize = mipHeight * mipWidth * 2 * sizeof( float ); break; }
+						case VK_FORMAT_R32G32B32A32_SFLOAT:			{ mipSize = mipHeight * mipWidth * 4 * sizeof( float ); break; }
+
+						//
+						// S3TC/DXT/BC
+						//
+						case VK_FORMAT_BC1_RGB_UNORM_BLOCK:			{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:		{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_BC2_UNORM_BLOCK:				{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 16; compressed = true; break; }
+						case VK_FORMAT_BC3_UNORM_BLOCK:				{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 16; compressed = true; break; }
+
+						case VK_FORMAT_BC1_RGB_SRGB_BLOCK:			{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:			{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_BC2_SRGB_BLOCK:				{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 16; compressed = true; break; }
+						case VK_FORMAT_BC3_SRGB_BLOCK:				{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 16; compressed = true; break; }
+
+						case VK_FORMAT_BC4_UNORM_BLOCK:				{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_BC5_UNORM_BLOCK:				{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 16; compressed = true; break; }
+
+						case VK_FORMAT_BC4_SNORM_BLOCK:				{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_BC5_SNORM_BLOCK:				{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 16; compressed = true; break; }
+
+						//
+						// ETC
+						//
+						case VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK:		{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK:	{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK:	{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 16; compressed = true; break; }
+
+						case VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK:		{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK:	{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK:	{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 16; compressed = true; break; }
+
+						case VK_FORMAT_EAC_R11_UNORM_BLOCK:			{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_EAC_R11G11_UNORM_BLOCK:		{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 16; compressed = true; break; }
+
+						case VK_FORMAT_EAC_R11_SNORM_BLOCK:			{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 8; compressed = true; break; }
+						case VK_FORMAT_EAC_R11G11_SNORM_BLOCK:		{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 16; compressed = true; break; }
+
+						//
+						// ASTC
+						//
+						case VK_FORMAT_ASTC_4x4_UNORM_BLOCK:		{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_5x4_UNORM_BLOCK:		{ mipSize = ((mipHeight+3)/4) * ((mipWidth+4)/5) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_5x5_UNORM_BLOCK:		{ mipSize = ((mipHeight+4)/5) * ((mipWidth+4)/5) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_6x5_UNORM_BLOCK:		{ mipSize = ((mipHeight+4)/5) * ((mipWidth+5)/6) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_6x6_UNORM_BLOCK:		{ mipSize = ((mipHeight+5)/6) * ((mipWidth+5)/6) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_8x5_UNORM_BLOCK:		{ mipSize = ((mipHeight+4)/5) * ((mipWidth+7)/8) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_8x6_UNORM_BLOCK:		{ mipSize = ((mipHeight+5)/6) * ((mipWidth+7)/8) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_8x8_UNORM_BLOCK:		{ mipSize = ((mipHeight+7)/8) * ((mipWidth+7)/8) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_10x5_UNORM_BLOCK:		{ mipSize = ((mipHeight+4)/5) * ((mipWidth+9)/10) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_10x6_UNORM_BLOCK:		{ mipSize = ((mipHeight+5)/6) * ((mipWidth+9)/10) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_10x8_UNORM_BLOCK:		{ mipSize = ((mipHeight+7)/8) * ((mipWidth+9)/10) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_10x10_UNORM_BLOCK:		{ mipSize = ((mipHeight+9)/10) * ((mipWidth+9)/10) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_12x10_UNORM_BLOCK:		{ mipSize = ((mipHeight+9)/10) * ((mipWidth+11)/12) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_12x12_UNORM_BLOCK:		{ mipSize = ((mipHeight+11)/12) * ((mipWidth+11)/12) * 16; compressed = true; break; }
+
+						case VK_FORMAT_ASTC_4x4_SRGB_BLOCK:			{ mipSize = ((mipHeight+3)/4) * ((mipWidth+3)/4) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_5x4_SRGB_BLOCK:			{ mipSize = ((mipHeight+3)/4) * ((mipWidth+4)/5) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_5x5_SRGB_BLOCK:			{ mipSize = ((mipHeight+4)/5) * ((mipWidth+4)/5) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_6x5_SRGB_BLOCK:			{ mipSize = ((mipHeight+4)/5) * ((mipWidth+5)/6) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_6x6_SRGB_BLOCK:			{ mipSize = ((mipHeight+5)/6) * ((mipWidth+5)/6) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_8x5_SRGB_BLOCK:			{ mipSize = ((mipHeight+4)/5) * ((mipWidth+7)/8) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_8x6_SRGB_BLOCK:			{ mipSize = ((mipHeight+5)/6) * ((mipWidth+7)/8) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_8x8_SRGB_BLOCK:			{ mipSize = ((mipHeight+7)/8) * ((mipWidth+7)/8) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_10x5_SRGB_BLOCK:		{ mipSize = ((mipHeight+4)/5) * ((mipWidth+9)/10) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_10x6_SRGB_BLOCK:		{ mipSize = ((mipHeight+5)/6) * ((mipWidth+9)/10) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_10x8_SRGB_BLOCK:		{ mipSize = ((mipHeight+7)/8) * ((mipWidth+9)/10) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_10x10_SRGB_BLOCK:		{ mipSize = ((mipHeight+9)/10) * ((mipWidth+9)/10) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_12x10_SRGB_BLOCK:		{ mipSize = ((mipHeight+9)/10) * ((mipWidth+11)/12) * 16; compressed = true; break; }
+						case VK_FORMAT_ASTC_12x12_SRGB_BLOCK:		{ mipSize = ((mipHeight+11)/12) * ((mipWidth+11)/12) * 16; compressed = true; break; }
 
 						default: Error( "%s: Unsupported texture format %d", fileName, format );
 					}
 
-					// Copy the source data into the linear image.
-					VkImageSubresource subres;
-					subres.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-					subres.mipLevel = 0;
-					subres.arrayLayer = 0;
-
-					VkSubresourceLayout layout;
-					VC( context->device->vkGetImageSubresourceLayout( context->device->device, linearImage[imageIndex], &subres, &layout ) );
-
-					assert( (VkDeviceSize)( dataRowCount * dataRowSize ) <= layout.size );
-					assert( (size_t)( dataOffset + dataRowCount * dataRowSize ) <= dataSize );
-
-					void * mapped;
-					VK( context->device->vkMapMemory( context->device->device, linearMemory[imageIndex], 0, memoryRequirements.size, 0, &mapped ) );
-
-					const size_t copyBytes = (size_t)( ( (VkDeviceSize) dataRowSize < layout.rowPitch ) ? (VkDeviceSize) dataRowSize : layout.rowPitch );
-					for ( int y = 0; y < dataRowCount; y++ )
-					{
-						memcpy( (char *)mapped + layout.offset + y * layout.rowPitch,
-									(char *)data + dataOffset + y * dataRowSize, copyBytes );
-					}
-
-					VC( context->device->vkUnmapMemory( context->device->device, linearMemory[imageIndex] ) );
-
-					// Make sure the CPU writes to the linear image are flushed and set optimal image layout for transfer source.
-					{
-						VkImageMemoryBarrier imageMemoryBarrier;
-						imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-						imageMemoryBarrier.pNext = NULL;
-						imageMemoryBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-						imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-						imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
-						imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-						imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-						imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-						imageMemoryBarrier.image = linearImage[imageIndex];
-						imageMemoryBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-						imageMemoryBarrier.subresourceRange.baseMipLevel = 0;
-						imageMemoryBarrier.subresourceRange.levelCount = 1;
-						imageMemoryBarrier.subresourceRange.baseArrayLayer = 0;
-						imageMemoryBarrier.subresourceRange.layerCount = 1;
-
-						const VkPipelineStageFlags src_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-						const VkPipelineStageFlags dst_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-						const VkDependencyFlags flags = 0;
-
-						VC( context->device->vkCmdPipelineBarrier( context->setupCommandBuffer, src_stages, dst_stages, flags, 0, NULL, 0, NULL, 1, &imageMemoryBarrier ) );
-					}
-
-					// Copy from the linear image to the tiled image.
-					{
-						VkImageCopy imageCopy;
-						imageCopy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-						imageCopy.srcSubresource.mipLevel = 0;
-						imageCopy.srcSubresource.baseArrayLayer = 0;
-						imageCopy.srcSubresource.layerCount = 1;
-						imageCopy.srcOffset.x = 0;
-						imageCopy.srcOffset.y = 0;
-						imageCopy.srcOffset.z = 0;
-						imageCopy.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-						imageCopy.dstSubresource.mipLevel = 0;
-						imageCopy.dstSubresource.baseArrayLayer = layerIndex;
-						imageCopy.dstSubresource.layerCount = 1;
-						imageCopy.dstOffset.x = 0;
-						imageCopy.dstOffset.y = 0;
-						imageCopy.dstOffset.z = depthIndex;
-						imageCopy.extent.width = mipWidth;
-						imageCopy.extent.height = mipHeight;
-						imageCopy.extent.depth = 1;
-
-						VC( context->device->vkCmdCopyImage( context->setupCommandBuffer,
-										linearImage[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-										texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-										1, &imageCopy ) );
-					}
-
-					dataOffset += dataRowCount * dataRowSize;
-					imageIndex++;
+					dataOffset = mipSize;
 				}
 			}
 		}
 
+		VC( context->device->vkCmdCopyBufferToImage( context->setupCommandBuffer, stagingBuffer, texture->image,
+					VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, numDataLevels * arrayLayerCount * depth, bufferImageCopy ) );
+
 		if ( numberOfMipmapLevels < 1 )
 		{
-			// Can ony generate mip levels for uncompressed textures.
-			assert( compressed == false );
+			assert( !compressed );
 			UNUSED_PARM( compressed );
 
 			// Generate mip levels for the tiled image in place.
@@ -7071,9 +7163,9 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 					imageBlit.srcOffsets[0].x = 0;
 					imageBlit.srcOffsets[0].y = 0;
 					imageBlit.srcOffsets[0].z = 0;
-					imageBlit.srcOffsets[1].x = ( width >> prevMipLevel ) >= 1 ? ( width >> prevMipLevel ) - 1 : 0;
-					imageBlit.srcOffsets[1].y = ( height >> prevMipLevel ) >= 1 ? ( height >> prevMipLevel ) - 1 : 0;
-					imageBlit.srcOffsets[1].z = ( depth >> prevMipLevel ) >= 1 ? ( depth >> prevMipLevel ) - 1 : 0;
+					imageBlit.srcOffsets[1].x = ( width >> prevMipLevel ) >= 1 ? ( width >> prevMipLevel ) : 0;
+					imageBlit.srcOffsets[1].y = ( height >> prevMipLevel ) >= 1 ? ( height >> prevMipLevel ) : 0;
+					imageBlit.srcOffsets[1].z = ( depth >> prevMipLevel ) >= 1 ? ( depth >> prevMipLevel ) : 0;
 					imageBlit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 					imageBlit.dstSubresource.mipLevel = mipLevel;
 					imageBlit.dstSubresource.baseArrayLayer = 0;
@@ -7081,9 +7173,9 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 					imageBlit.dstOffsets[0].x = 0;
 					imageBlit.dstOffsets[0].y = 0;
 					imageBlit.dstOffsets[0].z = 0;
-					imageBlit.dstOffsets[1].x = ( width >> mipLevel ) >= 1 ? ( width >> mipLevel ) - 1 : 0;
-					imageBlit.dstOffsets[1].y = ( height >> mipLevel ) >= 1 ? ( height >> mipLevel ) - 1 : 0;
-					imageBlit.dstOffsets[1].z = ( depth >> mipLevel ) >= 1 ? ( depth >> mipLevel ) - 1 : 0;
+					imageBlit.dstOffsets[1].x = ( width >> mipLevel ) >= 1 ? ( width >> mipLevel ) : 0;
+					imageBlit.dstOffsets[1].y = ( height >> mipLevel ) >= 1 ? ( height >> mipLevel ) : 0;
+					imageBlit.dstOffsets[1].z = ( depth >> mipLevel ) >= 1 ? ( depth >> mipLevel ) : 0;
 
 					VC( context->device->vkCmdBlitImage( context->setupCommandBuffer,
 									texture->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -7120,15 +7212,9 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 
 		GpuContext_FlushSetupCmdBuffer( context );
 
-		// Free the linear images.
-		for ( int i = 0; i < imageIndex; i++ )
-		{
-			VC( context->device->vkDestroyImage( context->device->device, linearImage[i], VK_ALLOCATOR ) );
-			VC( context->device->vkFreeMemory( context->device->device, linearMemory[i], VK_ALLOCATOR ) );
-		}
-
-		free( linearImage );
-		free( linearMemory );
+		VC( context->device->vkFreeMemory( context->device->device, stagingMemory, VK_ALLOCATOR ) );
+		VC( context->device->vkDestroyBuffer( context->device->device, stagingBuffer, VK_ALLOCATOR ) );
+		free( bufferImageCopy );
 	}
 
 	texture->usage = GPU_TEXTURE_USAGE_SAMPLED;
@@ -7396,7 +7482,7 @@ static void GpuTexture_SetAniso( GpuContext_t * context, GpuTexture_t * texture,
 
 GPU geometry.
 
-For optimal performance, geometry should only be created at load time, not at runtime.
+For optimal performance geometry should only be created at load time, not at runtime.
 The vertex, index and instance buffers are placed in device memory for optimal performance.
 The vertex attributes are not packed. Each attribute is stored in a separate array for
 optimal binning on tiling GPUs that only transform the vertex position for the binning pass.
@@ -7876,7 +7962,7 @@ static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeomet
 GPU render pass.
 
 A render pass encapsulates a sequence of graphics commands that can be executed in a single tiling pass.
-For optimal performance, a render pass should only be created at load time, not at runtime.
+For optimal performance a render pass should only be created at load time, not at runtime.
 Render passes cannot overlap and cannot be nested.
 
 GpuRenderPassType_t
@@ -7994,7 +8080,7 @@ static void GpuRenderPass_Destroy( GpuContext_t * context, GpuRenderPass_t * ren
 GPU framebuffer.
 
 A framebuffer encapsulates either a swapchain or a buffered set of textures.
-For optimal performance, a framebuffer should only be created at load time, not at runtime.
+For optimal performance a framebuffer should only be created at load time, not at runtime.
 
 GpuFramebuffer_t
 
@@ -8331,6 +8417,7 @@ typedef enum
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,		// float[2]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3,		// float[3]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4,		// float[4]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	// float[3][4]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	// float[4][4]
 	GPU_PROGRAM_PARM_TYPE_MAX
 } GpuProgramParmType_t;
@@ -8402,6 +8489,7 @@ static int GpuProgramParm_GetPushConstantSize( GpuProgramParmType_t type )
 		(unsigned int)sizeof( float[2] ),
 		(unsigned int)sizeof( float[3] ),
 		(unsigned int)sizeof( float[4] ),
+		(unsigned int)sizeof( float[3][4] ),
 		(unsigned int)sizeof( float[4][4] )
 	};
 	return parmSize[type];
@@ -8470,9 +8558,12 @@ static void GpuProgramParmLayout_Create( GpuContext_t * context, GpuProgramParmL
 		assert( layout->bindings[binding] != NULL );
 	}
 
-	// Make sure no push constants overlap.
+	// Verify the push constant layout.
 	for ( int push0 = 0; push0 < layout->numPushConstants; push0++ )
 	{
+		// The push constants for a pipeline cannot use more than 'maxPushConstantsSize' bytes.
+		assert( layout->pushConstants[push0]->binding + GpuProgramParm_GetPushConstantSize( layout->pushConstants[push0]->type ) <= (int)context->device->physicalDeviceProperties.limits.maxPushConstantsSize );
+		// Make sure no push constants overlap.
 		for ( int push1 = push0 + 1; push1 < layout->numPushConstants; push1++ )
 		{
 			assert( layout->pushConstants[push0]->binding >= layout->pushConstants[push1]->binding + GpuProgramParm_GetPushConstantSize( layout->pushConstants[push1]->type ) ||
@@ -8575,7 +8666,7 @@ static void GpuProgramParmLayout_Destroy( GpuContext_t * context, GpuProgramParm
 GPU graphics program.
 
 A graphics program encapsulates a vertex and fragment program that are used to render geometry.
-For optimal performance, a graphics program should only be created at load time, not at runtime.
+For optimal performance a graphics program should only be created at load time, not at runtime.
 
 GpuGraphicsProgram_t
 
@@ -8643,7 +8734,7 @@ static void GpuGraphicsProgram_Destroy( GpuContext_t * context, GpuGraphicsProgr
 
 GPU compute program.
 
-For optimal performance, a compute program should only be created at load time, not at runtime.
+For optimal performance a compute program should only be created at load time, not at runtime.
 
 GpuComputeProgram_t
 
@@ -8694,7 +8785,7 @@ static void GpuComputeProgram_Destroy( GpuContext_t * context, GpuComputeProgram
 GPU graphics pipeline.
 
 A graphics pipeline encapsulates the geometry, program and ROP state that is used to render.
-For optimal performance, a graphics pipeline should only be created at load time, not at runtime.
+For optimal performance a graphics pipeline should only be created at load time, not at runtime.
 The vertex attribute locations are assigned here, when both the geometry and program are known,
 to avoid binding vertex attributes that are not used by the vertex shader, and to avoid binding
 to a discontinuous set of vertex attribute locations.
@@ -9019,7 +9110,7 @@ static void GpuGraphicsPipeline_Destroy( GpuContext_t * context, GpuGraphicsPipe
 GPU compute pipeline.
 
 A compute pipeline encapsulates a compute program.
-For optimal performance, a compute pipeline should only be created at load time, not at runtime.
+For optimal performance a compute pipeline should only be created at load time, not at runtime.
 
 GpuComputePipeline_t
 
@@ -9066,7 +9157,7 @@ static void GpuComputePipeline_Destroy( GpuContext_t * context, GpuComputePipeli
 GPU fence.
 
 A fence is used to notify completion of a command buffer.
-For optimal performance, a fence should only be created at load time, not at runtime.
+For optimal performance a fence should only be created at load time, not at runtime.
 
 GpuFence_t
 
@@ -9125,7 +9216,7 @@ static bool GpuFence_IsSignalled( GpuContext_t * context, GpuFence_t * fence )
 GPU timer.
 
 A timer is used to measure the amount of time it takes to complete GPU commands.
-For optimal performance, a timer should only be created at load time, not at runtime.
+For optimal performance a timer should only be created at load time, not at runtime.
 To avoid synchronization, GpuTimer_GetMilliseconds() reports the time from GPU_TIMER_FRAMES_DELAYED frames ago.
 Timer queries are allowed to overlap and can be nested.
 Timer queries that are issued inside a render pass may not produce accurate times on tiling GPUs.
@@ -9323,6 +9414,8 @@ static void GpuGraphicsCommand_SetParmFloat( GpuGraphicsCommand_t * command, con
 static void GpuGraphicsCommand_SetParmFloatVector2( GpuGraphicsCommand_t * command, const int index, const Vector2f_t * value );
 static void GpuGraphicsCommand_SetParmFloatVector3( GpuGraphicsCommand_t * command, const int index, const Vector3f_t * value );
 static void GpuGraphicsCommand_SetParmFloatVector4( GpuGraphicsCommand_t * command, const int index, const Vector3f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix3x4( GpuGraphicsCommand_t * command, const int index, const Matrix3x4f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix4x4( GpuGraphicsCommand_t * command, const int index, const Matrix4x4f_t * value );
 static void GpuGraphicsCommand_SetNumInstances( GpuGraphicsCommand_t * command, const int numInstances );
 
 ================================================================================================================================
@@ -9421,6 +9514,11 @@ static void GpuGraphicsCommand_SetParmFloatVector4( GpuGraphicsCommand_t * comma
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4, value );
 }
 
+static void GpuGraphicsCommand_SetParmFloatMatrix3x4( GpuGraphicsCommand_t * command, const int index, const Matrix3x4f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4, value );
+}
+
 static void GpuGraphicsCommand_SetParmFloatMatrix4x4( GpuGraphicsCommand_t * command, const int index, const Matrix4x4f_t * value )
 {
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4, value );
@@ -9458,6 +9556,8 @@ static void GpuComputeCommand_SetParmFloat( GpuComputeCommand_t * command, const
 static void GpuComputeCommand_SetParmFloatVector2( GpuComputeCommand_t * command, const int index, const Vector2f_t * value );
 static void GpuComputeCommand_SetParmFloatVector3( GpuComputeCommand_t * command, const int index, const Vector3f_t * value );
 static void GpuComputeCommand_SetParmFloatVector4( GpuComputeCommand_t * command, const int index, const Vector3f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix3x4( GpuComputeCommand_t * command, const int index, const Matrix3x4f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix4x4( GpuComputeCommand_t * command, const int index, const Matrix4x4f_t * value );
 static void GpuComputeCommand_SetDimensions( GpuComputeCommand_t * command, const int x, const int y, const int z );
 
 ================================================================================================================================
@@ -9544,6 +9644,11 @@ static void GpuComputeCommand_SetParmFloatVector3( GpuComputeCommand_t * command
 static void GpuComputeCommand_SetParmFloatVector4( GpuComputeCommand_t * command, const int index, const Vector4f_t * value )
 {
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix3x4( GpuComputeCommand_t * command, const int index, const Matrix3x4f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4, value );
 }
 
 static void GpuComputeCommand_SetParmFloatMatrix4x4( GpuComputeCommand_t * command, const int index, const Matrix4x4f_t * value )
@@ -9736,7 +9841,7 @@ static void GpuPipelineResources_Destroy( GpuContext_t * context, GpuPipelineRes
 GPU command buffer.
 
 A command buffer is used to record graphics and compute commands.
-For optimal performance, a command buffer should only be created at load time, not at runtime.
+For optimal performance a command buffer should only be created at load time, not at runtime.
 When a command is submitted, the state of the command is compared with the currently saved state,
 and only the state that has changed translates into Vulkan function calls.
 
@@ -10700,7 +10805,7 @@ static const char barGraphVertexProgramGLSL[] =
 	"layout( location = 1 ) in mat4 vertexTransform;\n"
 	"layout( location = 0 ) out vec4 fragmentColor;\n"
 	"out gl_PerVertex { vec4 gl_Position; };\n"
-	"vec3 multiply3x4( mat4 m, vec3 v )\n"
+	"vec3 multiply4x3( mat4 m, vec3 v )\n"
 	"{\n"
 	"	return vec3(\n"
 	"		m[0].x * v.x + m[1].x * v.y + m[2].x * v.z + m[3].x,\n"
@@ -10709,7 +10814,7 @@ static const char barGraphVertexProgramGLSL[] =
 	"}\n"
 	"void main( void )\n"
 	"{\n"
-	"	gl_Position.xyz = multiply3x4( vertexTransform, vertexPosition );\n"
+	"	gl_Position.xyz = multiply4x3( vertexTransform, vertexPosition );\n"
 	"	gl_Position.w = 1.0;\n"
 	"	fragmentColor.r = vertexTransform[0][3];\n"
 	"	fragmentColor.g = vertexTransform[1][3];\n"
@@ -11790,9 +11895,9 @@ enum
 
 static const GpuProgramParm_t timeWarpSpatialGraphicsProgramParms[] =
 {
-	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"TimeWarpStartTransform",	0 },
-	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,	"TimeWarpEndTransform",		64 },
-	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER,		"ArrayLayer",				128 },
+	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"TimeWarpStartTransform",	0 },
+	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,	"TimeWarpEndTransform",		48 },
+	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER,		"ArrayLayer",				96 },
 	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE,			"Texture",					0 }
 };
 
@@ -11801,8 +11906,8 @@ static const char timeWarpSpatialVertexProgramGLSL[] =
 	GLSL_EXTENSIONS
 	"layout( std140, push_constant ) uniform PushConstants\n"
 	"{\n"
-	"	layout( offset =  0 ) highp mat4 TimeWarpStartTransform;\n"
-	"	layout( offset = 64 ) highp mat4 TimeWarpEndTransform;\n"
+	"	layout( offset =  0 ) highp mat3x4 TimeWarpStartTransform;\n"
+	"	layout( offset = 48 ) highp mat3x4 TimeWarpEndTransform;\n"
 	"} pc;\n"
 	"layout( location = 0 ) in highp vec3 vertexPosition;\n"
 	"layout( location = 1 ) in highp vec2 vertexUv1;\n"
@@ -11814,8 +11919,8 @@ static const char timeWarpSpatialVertexProgramGLSL[] =
 	"\n"
 	"	float displayFraction = vertexPosition.x * 0.5 + 0.5;\n"	// landscape left-to-right
 	"\n"
-	"	vec3 startUv1 = vec3( pc.TimeWarpStartTransform * vec4( vertexUv1, -1, 1 ) );\n"
-	"	vec3 endUv1 = vec3( pc.TimeWarpEndTransform * vec4( vertexUv1, -1, 1 ) );\n"
+	"	vec3 startUv1 = vec4( vertexUv1, -1, 1 ) * pc.TimeWarpStartTransform;\n"
+	"	vec3 endUv1 = vec4( vertexUv1, -1, 1 ) * pc.TimeWarpEndTransform;\n"
 	"	vec3 curUv1 = mix( startUv1, endUv1, displayFraction );\n"
 	"	fragmentUv1 = curUv1.xy * ( 1.0 / max( curUv1.z, 0.00001 ) );\n"
 	"}\n";
@@ -11823,77 +11928,73 @@ static const char timeWarpSpatialVertexProgramGLSL[] =
 static const unsigned int timeWarpSpatialVertexProgramSPIRV[] =
 {
 	// SPIRV99.947 15-Feb-2016
-	0x07230203,0x00010000,0x00080001,0x00000056,0x00000000,0x00020011,0x00000001,0x0006000b,
+	0x07230203,0x00010000,0x00080001,0x0000004e,0x00000000,0x00020011,0x00000001,0x0006000b,
 	0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
-	0x0009000f,0x00000000,0x00000004,0x6e69616d,0x00000000,0x0000000a,0x0000000f,0x0000002d,
-	0x0000004c,0x00030003,0x00000002,0x000001b8,0x00040005,0x00000004,0x6e69616d,0x00000000,
-	0x00060005,0x00000008,0x505f6c67,0x65567265,0x78657472,0x00000000,0x00060006,0x00000008,
-	0x00000000,0x505f6c67,0x7469736f,0x006e6f69,0x00030005,0x0000000a,0x00000000,0x00060005,
-	0x0000000f,0x74726576,0x6f507865,0x69746973,0x00006e6f,0x00060005,0x00000019,0x70736964,
-	0x4679616c,0x74636172,0x006e6f69,0x00050005,0x00000023,0x72617473,0x31765574,0x00000000,
-	0x00060005,0x00000025,0x68737550,0x736e6f43,0x746e6174,0x00000073,0x00090006,0x00000025,
-	0x00000000,0x656d6954,0x70726157,0x72617453,0x61725474,0x6f66736e,0x00006d72,0x00090006,
-	0x00000025,0x00000001,0x656d6954,0x70726157,0x54646e45,0x736e6172,0x6d726f66,0x00000000,
-	0x00030005,0x00000027,0x00006370,0x00050005,0x0000002d,0x74726576,0x76557865,0x00000031,
-	0x00040005,0x00000038,0x55646e65,0x00003176,0x00040005,0x00000045,0x55727563,0x00003176,
-	0x00050005,0x0000004c,0x67617266,0x746e656d,0x00317655,0x00050048,0x00000008,0x00000000,
-	0x0000000b,0x00000000,0x00030047,0x00000008,0x00000002,0x00040047,0x0000000f,0x0000001e,
-	0x00000000,0x00040048,0x00000025,0x00000000,0x00000005,0x00050048,0x00000025,0x00000000,
-	0x00000023,0x00000000,0x00050048,0x00000025,0x00000000,0x00000007,0x00000010,0x00040048,
-	0x00000025,0x00000001,0x00000005,0x00050048,0x00000025,0x00000001,0x00000023,0x00000040,
-	0x00050048,0x00000025,0x00000001,0x00000007,0x00000010,0x00030047,0x00000025,0x00000002,
-	0x00040047,0x00000027,0x00000022,0x00000000,0x00040047,0x0000002d,0x0000001e,0x00000001,
-	0x00040047,0x0000004c,0x0000001e,0x00000000,0x00020013,0x00000002,0x00030021,0x00000003,
-	0x00000002,0x00030016,0x00000006,0x00000020,0x00040017,0x00000007,0x00000006,0x00000004,
-	0x0003001e,0x00000008,0x00000007,0x00040020,0x00000009,0x00000003,0x00000008,0x0004003b,
-	0x00000009,0x0000000a,0x00000003,0x00040015,0x0000000b,0x00000020,0x00000001,0x0004002b,
-	0x0000000b,0x0000000c,0x00000000,0x00040017,0x0000000d,0x00000006,0x00000003,0x00040020,
-	0x0000000e,0x00000001,0x0000000d,0x0004003b,0x0000000e,0x0000000f,0x00000001,0x0004002b,
-	0x00000006,0x00000011,0x3f800000,0x00040020,0x00000016,0x00000003,0x00000007,0x00040020,
-	0x00000018,0x00000007,0x00000006,0x00040015,0x0000001a,0x00000020,0x00000000,0x0004002b,
-	0x0000001a,0x0000001b,0x00000000,0x00040020,0x0000001c,0x00000001,0x00000006,0x0004002b,
-	0x00000006,0x0000001f,0x3f000000,0x00040020,0x00000022,0x00000007,0x0000000d,0x00040018,
-	0x00000024,0x00000007,0x00000004,0x0004001e,0x00000025,0x00000024,0x00000024,0x00040020,
-	0x00000026,0x00000009,0x00000025,0x0004003b,0x00000026,0x00000027,0x00000009,0x00040020,
-	0x00000028,0x00000009,0x00000024,0x00040017,0x0000002b,0x00000006,0x00000002,0x00040020,
-	0x0000002c,0x00000001,0x0000002b,0x0004003b,0x0000002c,0x0000002d,0x00000001,0x0004002b,
-	0x00000006,0x0000002f,0xbf800000,0x0004002b,0x0000000b,0x00000039,0x00000001,0x00040020,
-	0x0000004b,0x00000003,0x0000002b,0x0004003b,0x0000004b,0x0000004c,0x00000003,0x0004002b,
-	0x0000001a,0x0000004f,0x00000002,0x0004002b,0x00000006,0x00000052,0x3727c5ac,0x00050036,
-	0x00000002,0x00000004,0x00000000,0x00000003,0x000200f8,0x00000005,0x0004003b,0x00000018,
-	0x00000019,0x00000007,0x0004003b,0x00000022,0x00000023,0x00000007,0x0004003b,0x00000022,
-	0x00000038,0x00000007,0x0004003b,0x00000022,0x00000045,0x00000007,0x0004003d,0x0000000d,
-	0x00000010,0x0000000f,0x00050051,0x00000006,0x00000012,0x00000010,0x00000000,0x00050051,
-	0x00000006,0x00000013,0x00000010,0x00000001,0x00050051,0x00000006,0x00000014,0x00000010,
-	0x00000002,0x00070050,0x00000007,0x00000015,0x00000012,0x00000013,0x00000014,0x00000011,
-	0x00050041,0x00000016,0x00000017,0x0000000a,0x0000000c,0x0003003e,0x00000017,0x00000015,
-	0x00050041,0x0000001c,0x0000001d,0x0000000f,0x0000001b,0x0004003d,0x00000006,0x0000001e,
-	0x0000001d,0x00050085,0x00000006,0x00000020,0x0000001e,0x0000001f,0x00050081,0x00000006,
-	0x00000021,0x00000020,0x0000001f,0x0003003e,0x00000019,0x00000021,0x00050041,0x00000028,
-	0x00000029,0x00000027,0x0000000c,0x0004003d,0x00000024,0x0000002a,0x00000029,0x0004003d,
-	0x0000002b,0x0000002e,0x0000002d,0x00050051,0x00000006,0x00000030,0x0000002e,0x00000000,
-	0x00050051,0x00000006,0x00000031,0x0000002e,0x00000001,0x00070050,0x00000007,0x00000032,
-	0x00000030,0x00000031,0x0000002f,0x00000011,0x00050091,0x00000007,0x00000033,0x0000002a,
-	0x00000032,0x00050051,0x00000006,0x00000034,0x00000033,0x00000000,0x00050051,0x00000006,
-	0x00000035,0x00000033,0x00000001,0x00050051,0x00000006,0x00000036,0x00000033,0x00000002,
-	0x00060050,0x0000000d,0x00000037,0x00000034,0x00000035,0x00000036,0x0003003e,0x00000023,
-	0x00000037,0x00050041,0x00000028,0x0000003a,0x00000027,0x00000039,0x0004003d,0x00000024,
-	0x0000003b,0x0000003a,0x0004003d,0x0000002b,0x0000003c,0x0000002d,0x00050051,0x00000006,
-	0x0000003d,0x0000003c,0x00000000,0x00050051,0x00000006,0x0000003e,0x0000003c,0x00000001,
-	0x00070050,0x00000007,0x0000003f,0x0000003d,0x0000003e,0x0000002f,0x00000011,0x00050091,
-	0x00000007,0x00000040,0x0000003b,0x0000003f,0x00050051,0x00000006,0x00000041,0x00000040,
-	0x00000000,0x00050051,0x00000006,0x00000042,0x00000040,0x00000001,0x00050051,0x00000006,
-	0x00000043,0x00000040,0x00000002,0x00060050,0x0000000d,0x00000044,0x00000041,0x00000042,
-	0x00000043,0x0003003e,0x00000038,0x00000044,0x0004003d,0x0000000d,0x00000046,0x00000023,
-	0x0004003d,0x0000000d,0x00000047,0x00000038,0x0004003d,0x00000006,0x00000048,0x00000019,
-	0x00060050,0x0000000d,0x00000049,0x00000048,0x00000048,0x00000048,0x0008000c,0x0000000d,
-	0x0000004a,0x00000001,0x0000002e,0x00000046,0x00000047,0x00000049,0x0003003e,0x00000045,
-	0x0000004a,0x0004003d,0x0000000d,0x0000004d,0x00000045,0x0007004f,0x0000002b,0x0000004e,
-	0x0000004d,0x0000004d,0x00000000,0x00000001,0x00050041,0x00000018,0x00000050,0x00000045,
-	0x0000004f,0x0004003d,0x00000006,0x00000051,0x00000050,0x0007000c,0x00000006,0x00000053,
-	0x00000001,0x00000028,0x00000051,0x00000052,0x00050088,0x00000006,0x00000054,0x00000011,
-	0x00000053,0x0005008e,0x0000002b,0x00000055,0x0000004e,0x00000054,0x0003003e,0x0000004c,
-	0x00000055,0x000100fd,0x00010038
+	0x0009000f,0x00000000,0x00000004,0x6e69616d,0x00000000,0x0000000a,0x0000000f,0x00000026,
+	0x00000044,0x00030003,0x00000001,0x00000136,0x00070004,0x415f4c47,0x655f4252,0x6e61686e,
+	0x5f646563,0x6f79616c,0x00737475,0x00070004,0x455f4c47,0x735f5458,0x65646168,0x6f695f72,
+	0x6f6c625f,0x00736b63,0x00040005,0x00000004,0x6e69616d,0x00000000,0x00060005,0x00000008,
+	0x505f6c67,0x65567265,0x78657472,0x00000000,0x00060006,0x00000008,0x00000000,0x505f6c67,
+	0x7469736f,0x006e6f69,0x00030005,0x0000000a,0x00000000,0x00060005,0x0000000f,0x74726576,
+	0x6f507865,0x69746973,0x00006e6f,0x00060005,0x00000019,0x70736964,0x4679616c,0x74636172,
+	0x006e6f69,0x00050005,0x00000023,0x72617473,0x31765574,0x00000000,0x00050005,0x00000026,
+	0x74726576,0x76557865,0x00000031,0x00060005,0x0000002d,0x68737550,0x736e6f43,0x746e6174,
+	0x00000073,0x00090006,0x0000002d,0x00000000,0x656d6954,0x70726157,0x72617453,0x61725474,
+	0x6f66736e,0x00006d72,0x00090006,0x0000002d,0x00000001,0x656d6954,0x70726157,0x54646e45,
+	0x736e6172,0x6d726f66,0x00000000,0x00030005,0x0000002f,0x00006370,0x00040005,0x00000034,
+	0x55646e65,0x00003176,0x00040005,0x0000003d,0x55727563,0x00003176,0x00050005,0x00000044,
+	0x67617266,0x746e656d,0x00317655,0x00050048,0x00000008,0x00000000,0x0000000b,0x00000000,
+	0x00030047,0x00000008,0x00000002,0x00040047,0x0000000f,0x0000001e,0x00000000,0x00040047,
+	0x00000026,0x0000001e,0x00000001,0x00040048,0x0000002d,0x00000000,0x00000005,0x00050048,
+	0x0000002d,0x00000000,0x00000023,0x00000000,0x00050048,0x0000002d,0x00000000,0x00000007,
+	0x00000010,0x00040048,0x0000002d,0x00000001,0x00000005,0x00050048,0x0000002d,0x00000001,
+	0x00000023,0x00000030,0x00050048,0x0000002d,0x00000001,0x00000007,0x00000010,0x00030047,
+	0x0000002d,0x00000002,0x00030047,0x00000044,0x00000000,0x00040047,0x00000044,0x0000001e,
+	0x00000000,0x00020013,0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,0x00000006,
+	0x00000020,0x00040017,0x00000007,0x00000006,0x00000004,0x0003001e,0x00000008,0x00000007,
+	0x00040020,0x00000009,0x00000003,0x00000008,0x0004003b,0x00000009,0x0000000a,0x00000003,
+	0x00040015,0x0000000b,0x00000020,0x00000001,0x0004002b,0x0000000b,0x0000000c,0x00000000,
+	0x00040017,0x0000000d,0x00000006,0x00000003,0x00040020,0x0000000e,0x00000001,0x0000000d,
+	0x0004003b,0x0000000e,0x0000000f,0x00000001,0x0004002b,0x00000006,0x00000011,0x3f800000,
+	0x00040020,0x00000016,0x00000003,0x00000007,0x00040020,0x00000018,0x00000007,0x00000006,
+	0x00040015,0x0000001a,0x00000020,0x00000000,0x0004002b,0x0000001a,0x0000001b,0x00000000,
+	0x00040020,0x0000001c,0x00000001,0x00000006,0x0004002b,0x00000006,0x0000001f,0x3f000000,
+	0x00040020,0x00000022,0x00000007,0x0000000d,0x00040017,0x00000024,0x00000006,0x00000002,
+	0x00040020,0x00000025,0x00000001,0x00000024,0x0004003b,0x00000025,0x00000026,0x00000001,
+	0x0004002b,0x00000006,0x00000028,0xbf800000,0x00040018,0x0000002c,0x00000007,0x00000003,
+	0x0004001e,0x0000002d,0x0000002c,0x0000002c,0x00040020,0x0000002e,0x00000009,0x0000002d,
+	0x0004003b,0x0000002e,0x0000002f,0x00000009,0x00040020,0x00000030,0x00000009,0x0000002c,
+	0x0004002b,0x0000000b,0x00000039,0x00000001,0x00040020,0x00000043,0x00000003,0x00000024,
+	0x0004003b,0x00000043,0x00000044,0x00000003,0x0004002b,0x0000001a,0x00000047,0x00000002,
+	0x0004002b,0x00000006,0x0000004a,0x3727c5ac,0x00050036,0x00000002,0x00000004,0x00000000,
+	0x00000003,0x000200f8,0x00000005,0x0004003b,0x00000018,0x00000019,0x00000007,0x0004003b,
+	0x00000022,0x00000023,0x00000007,0x0004003b,0x00000022,0x00000034,0x00000007,0x0004003b,
+	0x00000022,0x0000003d,0x00000007,0x0004003d,0x0000000d,0x00000010,0x0000000f,0x00050051,
+	0x00000006,0x00000012,0x00000010,0x00000000,0x00050051,0x00000006,0x00000013,0x00000010,
+	0x00000001,0x00050051,0x00000006,0x00000014,0x00000010,0x00000002,0x00070050,0x00000007,
+	0x00000015,0x00000012,0x00000013,0x00000014,0x00000011,0x00050041,0x00000016,0x00000017,
+	0x0000000a,0x0000000c,0x0003003e,0x00000017,0x00000015,0x00050041,0x0000001c,0x0000001d,
+	0x0000000f,0x0000001b,0x0004003d,0x00000006,0x0000001e,0x0000001d,0x00050085,0x00000006,
+	0x00000020,0x0000001e,0x0000001f,0x00050081,0x00000006,0x00000021,0x00000020,0x0000001f,
+	0x0003003e,0x00000019,0x00000021,0x0004003d,0x00000024,0x00000027,0x00000026,0x00050051,
+	0x00000006,0x00000029,0x00000027,0x00000000,0x00050051,0x00000006,0x0000002a,0x00000027,
+	0x00000001,0x00070050,0x00000007,0x0000002b,0x00000029,0x0000002a,0x00000028,0x00000011,
+	0x00050041,0x00000030,0x00000031,0x0000002f,0x0000000c,0x0004003d,0x0000002c,0x00000032,
+	0x00000031,0x00050090,0x0000000d,0x00000033,0x0000002b,0x00000032,0x0003003e,0x00000023,
+	0x00000033,0x0004003d,0x00000024,0x00000035,0x00000026,0x00050051,0x00000006,0x00000036,
+	0x00000035,0x00000000,0x00050051,0x00000006,0x00000037,0x00000035,0x00000001,0x00070050,
+	0x00000007,0x00000038,0x00000036,0x00000037,0x00000028,0x00000011,0x00050041,0x00000030,
+	0x0000003a,0x0000002f,0x00000039,0x0004003d,0x0000002c,0x0000003b,0x0000003a,0x00050090,
+	0x0000000d,0x0000003c,0x00000038,0x0000003b,0x0003003e,0x00000034,0x0000003c,0x0004003d,
+	0x0000000d,0x0000003e,0x00000023,0x0004003d,0x0000000d,0x0000003f,0x00000034,0x0004003d,
+	0x00000006,0x00000040,0x00000019,0x00060050,0x0000000d,0x00000041,0x00000040,0x00000040,
+	0x00000040,0x0008000c,0x0000000d,0x00000042,0x00000001,0x0000002e,0x0000003e,0x0000003f,
+	0x00000041,0x0003003e,0x0000003d,0x00000042,0x0004003d,0x0000000d,0x00000045,0x0000003d,
+	0x0007004f,0x00000024,0x00000046,0x00000045,0x00000045,0x00000000,0x00000001,0x00050041,
+	0x00000018,0x00000048,0x0000003d,0x00000047,0x0004003d,0x00000006,0x00000049,0x00000048,
+	0x0007000c,0x00000006,0x0000004b,0x00000001,0x00000028,0x00000049,0x0000004a,0x00050088,
+	0x00000006,0x0000004c,0x00000011,0x0000004b,0x0005008e,0x00000024,0x0000004d,0x00000046,
+	0x0000004c,0x0003003e,0x00000044,0x0000004d,0x000100fd,0x00010038
 };
 
 static const char timeWarpSpatialFragmentProgramGLSL[] =
@@ -11901,7 +12002,7 @@ static const char timeWarpSpatialFragmentProgramGLSL[] =
 	GLSL_EXTENSIONS
 	"layout( std140, push_constant ) uniform PushConstants\n"
 	"{\n"
-	"	layout( offset = 128 ) int ArrayLayer;\n"
+	"	layout( offset = 96 ) int ArrayLayer;\n"
 	"} pc;\n"
 	"layout( binding = 0 ) uniform highp sampler2DArray Texture;\n"
 	"layout( location = 0 ) in mediump vec2 fragmentUv1;\n"
@@ -11917,38 +12018,42 @@ static const unsigned int timeWarpSpatialFragmentProgramSPIRV[] =
 	0x07230203,0x00010000,0x00080001,0x00000021,0x00000000,0x00020011,0x00000001,0x0006000b,
 	0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
 	0x0007000f,0x00000004,0x00000004,0x6e69616d,0x00000000,0x00000009,0x00000011,0x00030010,
-	0x00000004,0x00000007,0x00030003,0x00000002,0x000001b8,0x00040005,0x00000004,0x6e69616d,
-	0x00000000,0x00050005,0x00000009,0x4374756f,0x726f6c6f,0x00000000,0x00040005,0x0000000d,
-	0x74786554,0x00657275,0x00050005,0x00000011,0x67617266,0x746e656d,0x00317655,0x00060005,
-	0x00000014,0x68737550,0x736e6f43,0x746e6174,0x00000073,0x00060006,0x00000014,0x00000000,
-	0x61727241,0x79614c79,0x00007265,0x00030005,0x00000016,0x00006370,0x00040047,0x00000009,
-	0x0000001e,0x00000000,0x00040047,0x0000000d,0x00000022,0x00000000,0x00040047,0x0000000d,
-	0x00000021,0x00000000,0x00040047,0x00000011,0x0000001e,0x00000000,0x00050048,0x00000014,
-	0x00000000,0x00000023,0x00000080,0x00030047,0x00000014,0x00000002,0x00040047,0x00000016,
-	0x00000022,0x00000000,0x00020013,0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,
-	0x00000006,0x00000020,0x00040017,0x00000007,0x00000006,0x00000004,0x00040020,0x00000008,
-	0x00000003,0x00000007,0x0004003b,0x00000008,0x00000009,0x00000003,0x00090019,0x0000000a,
-	0x00000006,0x00000001,0x00000000,0x00000001,0x00000000,0x00000001,0x00000000,0x0003001b,
-	0x0000000b,0x0000000a,0x00040020,0x0000000c,0x00000000,0x0000000b,0x0004003b,0x0000000c,
-	0x0000000d,0x00000000,0x00040017,0x0000000f,0x00000006,0x00000002,0x00040020,0x00000010,
-	0x00000001,0x0000000f,0x0004003b,0x00000010,0x00000011,0x00000001,0x00040015,0x00000013,
-	0x00000020,0x00000001,0x0003001e,0x00000014,0x00000013,0x00040020,0x00000015,0x00000009,
-	0x00000014,0x0004003b,0x00000015,0x00000016,0x00000009,0x0004002b,0x00000013,0x00000017,
-	0x00000000,0x00040020,0x00000018,0x00000009,0x00000013,0x00040017,0x0000001c,0x00000006,
-	0x00000003,0x00050036,0x00000002,0x00000004,0x00000000,0x00000003,0x000200f8,0x00000005,
-	0x0004003d,0x0000000b,0x0000000e,0x0000000d,0x0004003d,0x0000000f,0x00000012,0x00000011,
-	0x00050041,0x00000018,0x00000019,0x00000016,0x00000017,0x0004003d,0x00000013,0x0000001a,
-	0x00000019,0x0004006f,0x00000006,0x0000001b,0x0000001a,0x00050051,0x00000006,0x0000001d,
-	0x00000012,0x00000000,0x00050051,0x00000006,0x0000001e,0x00000012,0x00000001,0x00060050,
-	0x0000001c,0x0000001f,0x0000001d,0x0000001e,0x0000001b,0x00050057,0x00000007,0x00000020,
-	0x0000000e,0x0000001f,0x0003003e,0x00000009,0x00000020,0x000100fd,0x00010038
+	0x00000004,0x00000007,0x00030003,0x00000001,0x00000136,0x00070004,0x415f4c47,0x655f4252,
+	0x6e61686e,0x5f646563,0x6f79616c,0x00737475,0x00070004,0x455f4c47,0x735f5458,0x65646168,
+	0x6f695f72,0x6f6c625f,0x00736b63,0x00040005,0x00000004,0x6e69616d,0x00000000,0x00050005,
+	0x00000009,0x4374756f,0x726f6c6f,0x00000000,0x00040005,0x0000000d,0x74786554,0x00657275,
+	0x00050005,0x00000011,0x67617266,0x746e656d,0x00317655,0x00060005,0x00000014,0x68737550,
+	0x736e6f43,0x746e6174,0x00000073,0x00060006,0x00000014,0x00000000,0x61727241,0x79614c79,
+	0x00007265,0x00030005,0x00000016,0x00006370,0x00030047,0x00000009,0x00000000,0x00040047,
+	0x00000009,0x0000001e,0x00000000,0x00040047,0x0000000d,0x00000022,0x00000000,0x00040047,
+	0x0000000d,0x00000021,0x00000000,0x00030047,0x00000011,0x00000000,0x00040047,0x00000011,
+	0x0000001e,0x00000000,0x00030047,0x00000012,0x00000000,0x00040048,0x00000014,0x00000000,
+	0x00000000,0x00050048,0x00000014,0x00000000,0x00000023,0x00000060,0x00030047,0x00000014,
+	0x00000002,0x00030047,0x0000001a,0x00000000,0x00020013,0x00000002,0x00030021,0x00000003,
+	0x00000002,0x00030016,0x00000006,0x00000020,0x00040017,0x00000007,0x00000006,0x00000004,
+	0x00040020,0x00000008,0x00000003,0x00000007,0x0004003b,0x00000008,0x00000009,0x00000003,
+	0x00090019,0x0000000a,0x00000006,0x00000001,0x00000000,0x00000001,0x00000000,0x00000001,
+	0x00000000,0x0003001b,0x0000000b,0x0000000a,0x00040020,0x0000000c,0x00000000,0x0000000b,
+	0x0004003b,0x0000000c,0x0000000d,0x00000000,0x00040017,0x0000000f,0x00000006,0x00000002,
+	0x00040020,0x00000010,0x00000001,0x0000000f,0x0004003b,0x00000010,0x00000011,0x00000001,
+	0x00040015,0x00000013,0x00000020,0x00000001,0x0003001e,0x00000014,0x00000013,0x00040020,
+	0x00000015,0x00000009,0x00000014,0x0004003b,0x00000015,0x00000016,0x00000009,0x0004002b,
+	0x00000013,0x00000017,0x00000000,0x00040020,0x00000018,0x00000009,0x00000013,0x00040017,
+	0x0000001c,0x00000006,0x00000003,0x00050036,0x00000002,0x00000004,0x00000000,0x00000003,
+	0x000200f8,0x00000005,0x0004003d,0x0000000b,0x0000000e,0x0000000d,0x0004003d,0x0000000f,
+	0x00000012,0x00000011,0x00050041,0x00000018,0x00000019,0x00000016,0x00000017,0x0004003d,
+	0x00000013,0x0000001a,0x00000019,0x0004006f,0x00000006,0x0000001b,0x0000001a,0x00050051,
+	0x00000006,0x0000001d,0x00000012,0x00000000,0x00050051,0x00000006,0x0000001e,0x00000012,
+	0x00000001,0x00060050,0x0000001c,0x0000001f,0x0000001d,0x0000001e,0x0000001b,0x00050057,
+	0x00000007,0x00000020,0x0000000e,0x0000001f,0x0003003e,0x00000009,0x00000020,0x000100fd,
+	0x00010038
 };
 
 static const GpuProgramParm_t timeWarpChromaticGraphicsProgramParms[] =
 {
-	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"TimeWarpStartTransform",	0 },
-	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,	"TimeWarpEndTransform",		64 },
-	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER,		"ArrayLayer",				128 },
+	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"TimeWarpStartTransform",	0 },
+	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,	"TimeWarpEndTransform",		48 },
+	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER,		"ArrayLayer",				96 },
 	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE,			"Texture",					0 }
 };
 
@@ -11957,8 +12062,8 @@ static const char timeWarpChromaticVertexProgramGLSL[] =
 	GLSL_EXTENSIONS
 	"layout( std140, push_constant ) uniform PushConstants\n"
 	"{\n"
-	"	layout( offset =  0 ) highp mat4 TimeWarpStartTransform;\n"
-	"	layout( offset = 64 ) highp mat4 TimeWarpEndTransform;\n"
+	"	layout( offset =  0 ) highp mat3x4 TimeWarpStartTransform;\n"
+	"	layout( offset = 48 ) highp mat3x4 TimeWarpEndTransform;\n"
 	"} pc;\n"
 	"layout( location = 0 ) in highp vec3 vertexPosition;\n"
 	"layout( location = 1 ) in highp vec2 vertexUv0;\n"
@@ -11974,13 +12079,13 @@ static const char timeWarpChromaticVertexProgramGLSL[] =
 	"\n"
 	"	float displayFraction = vertexPosition.x * 0.5 + 0.5;\n"	// landscape left-to-right
 	"\n"
-	"	vec3 startUv0 = vec3( pc.TimeWarpStartTransform * vec4( vertexUv0, -1, 1 ) );\n"
-	"	vec3 startUv1 = vec3( pc.TimeWarpStartTransform * vec4( vertexUv1, -1, 1 ) );\n"
-	"	vec3 startUv2 = vec3( pc.TimeWarpStartTransform * vec4( vertexUv2, -1, 1 ) );\n"
+	"	vec3 startUv0 = vec4( vertexUv0, -1, 1 ) * pc.TimeWarpStartTransform;\n"
+	"	vec3 startUv1 = vec4( vertexUv1, -1, 1 ) * pc.TimeWarpStartTransform;\n"
+	"	vec3 startUv2 = vec4( vertexUv2, -1, 1 ) * pc.TimeWarpStartTransform;\n"
 	"\n"
-	"	vec3 endUv0 = vec3( pc.TimeWarpEndTransform * vec4( vertexUv0, -1, 1 ) );\n"
-	"	vec3 endUv1 = vec3( pc.TimeWarpEndTransform * vec4( vertexUv1, -1, 1 ) );\n"
-	"	vec3 endUv2 = vec3( pc.TimeWarpEndTransform * vec4( vertexUv2, -1, 1 ) );\n"
+	"	vec3 endUv0 = vec4( vertexUv0, -1, 1 ) * pc.TimeWarpEndTransform;\n"
+	"	vec3 endUv1 = vec4( vertexUv1, -1, 1 ) * pc.TimeWarpEndTransform;\n"
+	"	vec3 endUv2 = vec4( vertexUv2, -1, 1 ) * pc.TimeWarpEndTransform;\n"
 	"\n"
 	"	vec3 curUv0 = mix( startUv0, endUv0, displayFraction );\n"
 	"	vec3 curUv1 = mix( startUv1, endUv1, displayFraction );\n"
@@ -11994,137 +12099,123 @@ static const char timeWarpChromaticVertexProgramGLSL[] =
 static const unsigned int timeWarpChromaticVertexProgramSPIRV[] =
 {
 	// SPIRV99.947 15-Feb-2016
-	0x07230203,0x00010000,0x00080001,0x000000a4,0x00000000,0x00020011,0x00000001,0x0006000b,
+	0x07230203,0x00010000,0x00080001,0x0000008c,0x00000000,0x00020011,0x00000001,0x0006000b,
 	0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
-	0x000d000f,0x00000000,0x00000004,0x6e69616d,0x00000000,0x0000000a,0x0000000f,0x0000002d,
-	0x0000003b,0x00000048,0x0000008a,0x00000094,0x0000009c,0x00030003,0x00000002,0x000001b8,
-	0x00040005,0x00000004,0x6e69616d,0x00000000,0x00060005,0x00000008,0x505f6c67,0x65567265,
-	0x78657472,0x00000000,0x00060006,0x00000008,0x00000000,0x505f6c67,0x7469736f,0x006e6f69,
-	0x00030005,0x0000000a,0x00000000,0x00060005,0x0000000f,0x74726576,0x6f507865,0x69746973,
-	0x00006e6f,0x00060005,0x00000019,0x70736964,0x4679616c,0x74636172,0x006e6f69,0x00050005,
-	0x00000023,0x72617473,0x30765574,0x00000000,0x00060005,0x00000025,0x68737550,0x736e6f43,
-	0x746e6174,0x00000073,0x00090006,0x00000025,0x00000000,0x656d6954,0x70726157,0x72617453,
-	0x61725474,0x6f66736e,0x00006d72,0x00090006,0x00000025,0x00000001,0x656d6954,0x70726157,
-	0x54646e45,0x736e6172,0x6d726f66,0x00000000,0x00030005,0x00000027,0x00006370,0x00050005,
-	0x0000002d,0x74726576,0x76557865,0x00000030,0x00050005,0x00000038,0x72617473,0x31765574,
-	0x00000000,0x00050005,0x0000003b,0x74726576,0x76557865,0x00000031,0x00050005,0x00000045,
-	0x72617473,0x32765574,0x00000000,0x00050005,0x00000048,0x74726576,0x76557865,0x00000032,
-	0x00040005,0x00000052,0x55646e65,0x00003076,0x00040005,0x0000005f,0x55646e65,0x00003176,
-	0x00040005,0x0000006b,0x55646e65,0x00003276,0x00040005,0x00000077,0x55727563,0x00003076,
-	0x00040005,0x0000007d,0x55727563,0x00003176,0x00040005,0x00000083,0x55727563,0x00003276,
-	0x00050005,0x0000008a,0x67617266,0x746e656d,0x00307655,0x00050005,0x00000094,0x67617266,
-	0x746e656d,0x00317655,0x00050005,0x0000009c,0x67617266,0x746e656d,0x00327655,0x00050048,
-	0x00000008,0x00000000,0x0000000b,0x00000000,0x00030047,0x00000008,0x00000002,0x00040047,
-	0x0000000f,0x0000001e,0x00000000,0x00040048,0x00000025,0x00000000,0x00000005,0x00050048,
-	0x00000025,0x00000000,0x00000023,0x00000000,0x00050048,0x00000025,0x00000000,0x00000007,
-	0x00000010,0x00040048,0x00000025,0x00000001,0x00000005,0x00050048,0x00000025,0x00000001,
-	0x00000023,0x00000040,0x00050048,0x00000025,0x00000001,0x00000007,0x00000010,0x00030047,
-	0x00000025,0x00000002,0x00040047,0x00000027,0x00000022,0x00000000,0x00040047,0x0000002d,
-	0x0000001e,0x00000001,0x00040047,0x0000003b,0x0000001e,0x00000002,0x00040047,0x00000048,
-	0x0000001e,0x00000003,0x00040047,0x0000008a,0x0000001e,0x00000000,0x00040047,0x00000094,
-	0x0000001e,0x00000001,0x00040047,0x0000009c,0x0000001e,0x00000002,0x00020013,0x00000002,
-	0x00030021,0x00000003,0x00000002,0x00030016,0x00000006,0x00000020,0x00040017,0x00000007,
-	0x00000006,0x00000004,0x0003001e,0x00000008,0x00000007,0x00040020,0x00000009,0x00000003,
-	0x00000008,0x0004003b,0x00000009,0x0000000a,0x00000003,0x00040015,0x0000000b,0x00000020,
-	0x00000001,0x0004002b,0x0000000b,0x0000000c,0x00000000,0x00040017,0x0000000d,0x00000006,
-	0x00000003,0x00040020,0x0000000e,0x00000001,0x0000000d,0x0004003b,0x0000000e,0x0000000f,
-	0x00000001,0x0004002b,0x00000006,0x00000011,0x3f800000,0x00040020,0x00000016,0x00000003,
-	0x00000007,0x00040020,0x00000018,0x00000007,0x00000006,0x00040015,0x0000001a,0x00000020,
-	0x00000000,0x0004002b,0x0000001a,0x0000001b,0x00000000,0x00040020,0x0000001c,0x00000001,
-	0x00000006,0x0004002b,0x00000006,0x0000001f,0x3f000000,0x00040020,0x00000022,0x00000007,
-	0x0000000d,0x00040018,0x00000024,0x00000007,0x00000004,0x0004001e,0x00000025,0x00000024,
-	0x00000024,0x00040020,0x00000026,0x00000009,0x00000025,0x0004003b,0x00000026,0x00000027,
-	0x00000009,0x00040020,0x00000028,0x00000009,0x00000024,0x00040017,0x0000002b,0x00000006,
-	0x00000002,0x00040020,0x0000002c,0x00000001,0x0000002b,0x0004003b,0x0000002c,0x0000002d,
-	0x00000001,0x0004002b,0x00000006,0x0000002f,0xbf800000,0x0004003b,0x0000002c,0x0000003b,
-	0x00000001,0x0004003b,0x0000002c,0x00000048,0x00000001,0x0004002b,0x0000000b,0x00000053,
-	0x00000001,0x00040020,0x00000089,0x00000003,0x0000002b,0x0004003b,0x00000089,0x0000008a,
-	0x00000003,0x0004002b,0x0000001a,0x0000008d,0x00000002,0x0004002b,0x00000006,0x00000090,
-	0x3727c5ac,0x0004003b,0x00000089,0x00000094,0x00000003,0x0004003b,0x00000089,0x0000009c,
-	0x00000003,0x00050036,0x00000002,0x00000004,0x00000000,0x00000003,0x000200f8,0x00000005,
-	0x0004003b,0x00000018,0x00000019,0x00000007,0x0004003b,0x00000022,0x00000023,0x00000007,
-	0x0004003b,0x00000022,0x00000038,0x00000007,0x0004003b,0x00000022,0x00000045,0x00000007,
-	0x0004003b,0x00000022,0x00000052,0x00000007,0x0004003b,0x00000022,0x0000005f,0x00000007,
-	0x0004003b,0x00000022,0x0000006b,0x00000007,0x0004003b,0x00000022,0x00000077,0x00000007,
-	0x0004003b,0x00000022,0x0000007d,0x00000007,0x0004003b,0x00000022,0x00000083,0x00000007,
-	0x0004003d,0x0000000d,0x00000010,0x0000000f,0x00050051,0x00000006,0x00000012,0x00000010,
-	0x00000000,0x00050051,0x00000006,0x00000013,0x00000010,0x00000001,0x00050051,0x00000006,
-	0x00000014,0x00000010,0x00000002,0x00070050,0x00000007,0x00000015,0x00000012,0x00000013,
-	0x00000014,0x00000011,0x00050041,0x00000016,0x00000017,0x0000000a,0x0000000c,0x0003003e,
-	0x00000017,0x00000015,0x00050041,0x0000001c,0x0000001d,0x0000000f,0x0000001b,0x0004003d,
-	0x00000006,0x0000001e,0x0000001d,0x00050085,0x00000006,0x00000020,0x0000001e,0x0000001f,
-	0x00050081,0x00000006,0x00000021,0x00000020,0x0000001f,0x0003003e,0x00000019,0x00000021,
-	0x00050041,0x00000028,0x00000029,0x00000027,0x0000000c,0x0004003d,0x00000024,0x0000002a,
-	0x00000029,0x0004003d,0x0000002b,0x0000002e,0x0000002d,0x00050051,0x00000006,0x00000030,
-	0x0000002e,0x00000000,0x00050051,0x00000006,0x00000031,0x0000002e,0x00000001,0x00070050,
-	0x00000007,0x00000032,0x00000030,0x00000031,0x0000002f,0x00000011,0x00050091,0x00000007,
-	0x00000033,0x0000002a,0x00000032,0x00050051,0x00000006,0x00000034,0x00000033,0x00000000,
-	0x00050051,0x00000006,0x00000035,0x00000033,0x00000001,0x00050051,0x00000006,0x00000036,
-	0x00000033,0x00000002,0x00060050,0x0000000d,0x00000037,0x00000034,0x00000035,0x00000036,
-	0x0003003e,0x00000023,0x00000037,0x00050041,0x00000028,0x00000039,0x00000027,0x0000000c,
-	0x0004003d,0x00000024,0x0000003a,0x00000039,0x0004003d,0x0000002b,0x0000003c,0x0000003b,
-	0x00050051,0x00000006,0x0000003d,0x0000003c,0x00000000,0x00050051,0x00000006,0x0000003e,
-	0x0000003c,0x00000001,0x00070050,0x00000007,0x0000003f,0x0000003d,0x0000003e,0x0000002f,
-	0x00000011,0x00050091,0x00000007,0x00000040,0x0000003a,0x0000003f,0x00050051,0x00000006,
-	0x00000041,0x00000040,0x00000000,0x00050051,0x00000006,0x00000042,0x00000040,0x00000001,
-	0x00050051,0x00000006,0x00000043,0x00000040,0x00000002,0x00060050,0x0000000d,0x00000044,
-	0x00000041,0x00000042,0x00000043,0x0003003e,0x00000038,0x00000044,0x00050041,0x00000028,
-	0x00000046,0x00000027,0x0000000c,0x0004003d,0x00000024,0x00000047,0x00000046,0x0004003d,
-	0x0000002b,0x00000049,0x00000048,0x00050051,0x00000006,0x0000004a,0x00000049,0x00000000,
-	0x00050051,0x00000006,0x0000004b,0x00000049,0x00000001,0x00070050,0x00000007,0x0000004c,
-	0x0000004a,0x0000004b,0x0000002f,0x00000011,0x00050091,0x00000007,0x0000004d,0x00000047,
-	0x0000004c,0x00050051,0x00000006,0x0000004e,0x0000004d,0x00000000,0x00050051,0x00000006,
-	0x0000004f,0x0000004d,0x00000001,0x00050051,0x00000006,0x00000050,0x0000004d,0x00000002,
-	0x00060050,0x0000000d,0x00000051,0x0000004e,0x0000004f,0x00000050,0x0003003e,0x00000045,
-	0x00000051,0x00050041,0x00000028,0x00000054,0x00000027,0x00000053,0x0004003d,0x00000024,
-	0x00000055,0x00000054,0x0004003d,0x0000002b,0x00000056,0x0000002d,0x00050051,0x00000006,
-	0x00000057,0x00000056,0x00000000,0x00050051,0x00000006,0x00000058,0x00000056,0x00000001,
-	0x00070050,0x00000007,0x00000059,0x00000057,0x00000058,0x0000002f,0x00000011,0x00050091,
-	0x00000007,0x0000005a,0x00000055,0x00000059,0x00050051,0x00000006,0x0000005b,0x0000005a,
-	0x00000000,0x00050051,0x00000006,0x0000005c,0x0000005a,0x00000001,0x00050051,0x00000006,
-	0x0000005d,0x0000005a,0x00000002,0x00060050,0x0000000d,0x0000005e,0x0000005b,0x0000005c,
-	0x0000005d,0x0003003e,0x00000052,0x0000005e,0x00050041,0x00000028,0x00000060,0x00000027,
-	0x00000053,0x0004003d,0x00000024,0x00000061,0x00000060,0x0004003d,0x0000002b,0x00000062,
-	0x0000003b,0x00050051,0x00000006,0x00000063,0x00000062,0x00000000,0x00050051,0x00000006,
-	0x00000064,0x00000062,0x00000001,0x00070050,0x00000007,0x00000065,0x00000063,0x00000064,
-	0x0000002f,0x00000011,0x00050091,0x00000007,0x00000066,0x00000061,0x00000065,0x00050051,
-	0x00000006,0x00000067,0x00000066,0x00000000,0x00050051,0x00000006,0x00000068,0x00000066,
-	0x00000001,0x00050051,0x00000006,0x00000069,0x00000066,0x00000002,0x00060050,0x0000000d,
-	0x0000006a,0x00000067,0x00000068,0x00000069,0x0003003e,0x0000005f,0x0000006a,0x00050041,
-	0x00000028,0x0000006c,0x00000027,0x00000053,0x0004003d,0x00000024,0x0000006d,0x0000006c,
-	0x0004003d,0x0000002b,0x0000006e,0x00000048,0x00050051,0x00000006,0x0000006f,0x0000006e,
-	0x00000000,0x00050051,0x00000006,0x00000070,0x0000006e,0x00000001,0x00070050,0x00000007,
-	0x00000071,0x0000006f,0x00000070,0x0000002f,0x00000011,0x00050091,0x00000007,0x00000072,
-	0x0000006d,0x00000071,0x00050051,0x00000006,0x00000073,0x00000072,0x00000000,0x00050051,
-	0x00000006,0x00000074,0x00000072,0x00000001,0x00050051,0x00000006,0x00000075,0x00000072,
-	0x00000002,0x00060050,0x0000000d,0x00000076,0x00000073,0x00000074,0x00000075,0x0003003e,
-	0x0000006b,0x00000076,0x0004003d,0x0000000d,0x00000078,0x00000023,0x0004003d,0x0000000d,
-	0x00000079,0x00000052,0x0004003d,0x00000006,0x0000007a,0x00000019,0x00060050,0x0000000d,
-	0x0000007b,0x0000007a,0x0000007a,0x0000007a,0x0008000c,0x0000000d,0x0000007c,0x00000001,
-	0x0000002e,0x00000078,0x00000079,0x0000007b,0x0003003e,0x00000077,0x0000007c,0x0004003d,
-	0x0000000d,0x0000007e,0x00000038,0x0004003d,0x0000000d,0x0000007f,0x0000005f,0x0004003d,
-	0x00000006,0x00000080,0x00000019,0x00060050,0x0000000d,0x00000081,0x00000080,0x00000080,
-	0x00000080,0x0008000c,0x0000000d,0x00000082,0x00000001,0x0000002e,0x0000007e,0x0000007f,
-	0x00000081,0x0003003e,0x0000007d,0x00000082,0x0004003d,0x0000000d,0x00000084,0x00000045,
-	0x0004003d,0x0000000d,0x00000085,0x0000006b,0x0004003d,0x00000006,0x00000086,0x00000019,
-	0x00060050,0x0000000d,0x00000087,0x00000086,0x00000086,0x00000086,0x0008000c,0x0000000d,
-	0x00000088,0x00000001,0x0000002e,0x00000084,0x00000085,0x00000087,0x0003003e,0x00000083,
-	0x00000088,0x0004003d,0x0000000d,0x0000008b,0x00000077,0x0007004f,0x0000002b,0x0000008c,
-	0x0000008b,0x0000008b,0x00000000,0x00000001,0x00050041,0x00000018,0x0000008e,0x00000077,
-	0x0000008d,0x0004003d,0x00000006,0x0000008f,0x0000008e,0x0007000c,0x00000006,0x00000091,
-	0x00000001,0x00000028,0x0000008f,0x00000090,0x00050088,0x00000006,0x00000092,0x00000011,
-	0x00000091,0x0005008e,0x0000002b,0x00000093,0x0000008c,0x00000092,0x0003003e,0x0000008a,
-	0x00000093,0x0004003d,0x0000000d,0x00000095,0x0000007d,0x0007004f,0x0000002b,0x00000096,
-	0x00000095,0x00000095,0x00000000,0x00000001,0x00050041,0x00000018,0x00000097,0x0000007d,
-	0x0000008d,0x0004003d,0x00000006,0x00000098,0x00000097,0x0007000c,0x00000006,0x00000099,
-	0x00000001,0x00000028,0x00000098,0x00000090,0x00050088,0x00000006,0x0000009a,0x00000011,
-	0x00000099,0x0005008e,0x0000002b,0x0000009b,0x00000096,0x0000009a,0x0003003e,0x00000094,
-	0x0000009b,0x0004003d,0x0000000d,0x0000009d,0x00000083,0x0007004f,0x0000002b,0x0000009e,
-	0x0000009d,0x0000009d,0x00000000,0x00000001,0x00050041,0x00000018,0x0000009f,0x00000083,
-	0x0000008d,0x0004003d,0x00000006,0x000000a0,0x0000009f,0x0007000c,0x00000006,0x000000a1,
-	0x00000001,0x00000028,0x000000a0,0x00000090,0x00050088,0x00000006,0x000000a2,0x00000011,
-	0x000000a1,0x0005008e,0x0000002b,0x000000a3,0x0000009e,0x000000a2,0x0003003e,0x0000009c,
-	0x000000a3,0x000100fd,0x00010038
+	0x000d000f,0x00000000,0x00000004,0x6e69616d,0x00000000,0x0000000a,0x0000000f,0x00000026,
+	0x00000035,0x0000003e,0x00000072,0x0000007c,0x00000084,0x00030003,0x00000001,0x00000136,
+	0x00070004,0x415f4c47,0x655f4252,0x6e61686e,0x5f646563,0x6f79616c,0x00737475,0x00070004,
+	0x455f4c47,0x735f5458,0x65646168,0x6f695f72,0x6f6c625f,0x00736b63,0x00040005,0x00000004,
+	0x6e69616d,0x00000000,0x00060005,0x00000008,0x505f6c67,0x65567265,0x78657472,0x00000000,
+	0x00060006,0x00000008,0x00000000,0x505f6c67,0x7469736f,0x006e6f69,0x00030005,0x0000000a,
+	0x00000000,0x00060005,0x0000000f,0x74726576,0x6f507865,0x69746973,0x00006e6f,0x00060005,
+	0x00000019,0x70736964,0x4679616c,0x74636172,0x006e6f69,0x00050005,0x00000023,0x72617473,
+	0x30765574,0x00000000,0x00050005,0x00000026,0x74726576,0x76557865,0x00000030,0x00060005,
+	0x0000002d,0x68737550,0x736e6f43,0x746e6174,0x00000073,0x00090006,0x0000002d,0x00000000,
+	0x656d6954,0x70726157,0x72617453,0x61725474,0x6f66736e,0x00006d72,0x00090006,0x0000002d,
+	0x00000001,0x656d6954,0x70726157,0x54646e45,0x736e6172,0x6d726f66,0x00000000,0x00030005,
+	0x0000002f,0x00006370,0x00050005,0x00000034,0x72617473,0x31765574,0x00000000,0x00050005,
+	0x00000035,0x74726576,0x76557865,0x00000031,0x00050005,0x0000003d,0x72617473,0x32765574,
+	0x00000000,0x00050005,0x0000003e,0x74726576,0x76557865,0x00000032,0x00040005,0x00000046,
+	0x55646e65,0x00003076,0x00040005,0x0000004f,0x55646e65,0x00003176,0x00040005,0x00000057,
+	0x55646e65,0x00003276,0x00040005,0x0000005f,0x55727563,0x00003076,0x00040005,0x00000065,
+	0x55727563,0x00003176,0x00040005,0x0000006b,0x55727563,0x00003276,0x00050005,0x00000072,
+	0x67617266,0x746e656d,0x00307655,0x00050005,0x0000007c,0x67617266,0x746e656d,0x00317655,
+	0x00050005,0x00000084,0x67617266,0x746e656d,0x00327655,0x00050048,0x00000008,0x00000000,
+	0x0000000b,0x00000000,0x00030047,0x00000008,0x00000002,0x00040047,0x0000000f,0x0000001e,
+	0x00000000,0x00040047,0x00000026,0x0000001e,0x00000001,0x00040048,0x0000002d,0x00000000,
+	0x00000005,0x00050048,0x0000002d,0x00000000,0x00000023,0x00000000,0x00050048,0x0000002d,
+	0x00000000,0x00000007,0x00000010,0x00040048,0x0000002d,0x00000001,0x00000005,0x00050048,
+	0x0000002d,0x00000001,0x00000023,0x00000030,0x00050048,0x0000002d,0x00000001,0x00000007,
+	0x00000010,0x00030047,0x0000002d,0x00000002,0x00040047,0x00000035,0x0000001e,0x00000002,
+	0x00040047,0x0000003e,0x0000001e,0x00000003,0x00030047,0x00000072,0x00000000,0x00040047,
+	0x00000072,0x0000001e,0x00000000,0x00030047,0x0000007c,0x00000000,0x00040047,0x0000007c,
+	0x0000001e,0x00000001,0x00030047,0x00000084,0x00000000,0x00040047,0x00000084,0x0000001e,
+	0x00000002,0x00020013,0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,0x00000006,
+	0x00000020,0x00040017,0x00000007,0x00000006,0x00000004,0x0003001e,0x00000008,0x00000007,
+	0x00040020,0x00000009,0x00000003,0x00000008,0x0004003b,0x00000009,0x0000000a,0x00000003,
+	0x00040015,0x0000000b,0x00000020,0x00000001,0x0004002b,0x0000000b,0x0000000c,0x00000000,
+	0x00040017,0x0000000d,0x00000006,0x00000003,0x00040020,0x0000000e,0x00000001,0x0000000d,
+	0x0004003b,0x0000000e,0x0000000f,0x00000001,0x0004002b,0x00000006,0x00000011,0x3f800000,
+	0x00040020,0x00000016,0x00000003,0x00000007,0x00040020,0x00000018,0x00000007,0x00000006,
+	0x00040015,0x0000001a,0x00000020,0x00000000,0x0004002b,0x0000001a,0x0000001b,0x00000000,
+	0x00040020,0x0000001c,0x00000001,0x00000006,0x0004002b,0x00000006,0x0000001f,0x3f000000,
+	0x00040020,0x00000022,0x00000007,0x0000000d,0x00040017,0x00000024,0x00000006,0x00000002,
+	0x00040020,0x00000025,0x00000001,0x00000024,0x0004003b,0x00000025,0x00000026,0x00000001,
+	0x0004002b,0x00000006,0x00000028,0xbf800000,0x00040018,0x0000002c,0x00000007,0x00000003,
+	0x0004001e,0x0000002d,0x0000002c,0x0000002c,0x00040020,0x0000002e,0x00000009,0x0000002d,
+	0x0004003b,0x0000002e,0x0000002f,0x00000009,0x00040020,0x00000030,0x00000009,0x0000002c,
+	0x0004003b,0x00000025,0x00000035,0x00000001,0x0004003b,0x00000025,0x0000003e,0x00000001,
+	0x0004002b,0x0000000b,0x0000004b,0x00000001,0x00040020,0x00000071,0x00000003,0x00000024,
+	0x0004003b,0x00000071,0x00000072,0x00000003,0x0004002b,0x0000001a,0x00000075,0x00000002,
+	0x0004002b,0x00000006,0x00000078,0x3727c5ac,0x0004003b,0x00000071,0x0000007c,0x00000003,
+	0x0004003b,0x00000071,0x00000084,0x00000003,0x00050036,0x00000002,0x00000004,0x00000000,
+	0x00000003,0x000200f8,0x00000005,0x0004003b,0x00000018,0x00000019,0x00000007,0x0004003b,
+	0x00000022,0x00000023,0x00000007,0x0004003b,0x00000022,0x00000034,0x00000007,0x0004003b,
+	0x00000022,0x0000003d,0x00000007,0x0004003b,0x00000022,0x00000046,0x00000007,0x0004003b,
+	0x00000022,0x0000004f,0x00000007,0x0004003b,0x00000022,0x00000057,0x00000007,0x0004003b,
+	0x00000022,0x0000005f,0x00000007,0x0004003b,0x00000022,0x00000065,0x00000007,0x0004003b,
+	0x00000022,0x0000006b,0x00000007,0x0004003d,0x0000000d,0x00000010,0x0000000f,0x00050051,
+	0x00000006,0x00000012,0x00000010,0x00000000,0x00050051,0x00000006,0x00000013,0x00000010,
+	0x00000001,0x00050051,0x00000006,0x00000014,0x00000010,0x00000002,0x00070050,0x00000007,
+	0x00000015,0x00000012,0x00000013,0x00000014,0x00000011,0x00050041,0x00000016,0x00000017,
+	0x0000000a,0x0000000c,0x0003003e,0x00000017,0x00000015,0x00050041,0x0000001c,0x0000001d,
+	0x0000000f,0x0000001b,0x0004003d,0x00000006,0x0000001e,0x0000001d,0x00050085,0x00000006,
+	0x00000020,0x0000001e,0x0000001f,0x00050081,0x00000006,0x00000021,0x00000020,0x0000001f,
+	0x0003003e,0x00000019,0x00000021,0x0004003d,0x00000024,0x00000027,0x00000026,0x00050051,
+	0x00000006,0x00000029,0x00000027,0x00000000,0x00050051,0x00000006,0x0000002a,0x00000027,
+	0x00000001,0x00070050,0x00000007,0x0000002b,0x00000029,0x0000002a,0x00000028,0x00000011,
+	0x00050041,0x00000030,0x00000031,0x0000002f,0x0000000c,0x0004003d,0x0000002c,0x00000032,
+	0x00000031,0x00050090,0x0000000d,0x00000033,0x0000002b,0x00000032,0x0003003e,0x00000023,
+	0x00000033,0x0004003d,0x00000024,0x00000036,0x00000035,0x00050051,0x00000006,0x00000037,
+	0x00000036,0x00000000,0x00050051,0x00000006,0x00000038,0x00000036,0x00000001,0x00070050,
+	0x00000007,0x00000039,0x00000037,0x00000038,0x00000028,0x00000011,0x00050041,0x00000030,
+	0x0000003a,0x0000002f,0x0000000c,0x0004003d,0x0000002c,0x0000003b,0x0000003a,0x00050090,
+	0x0000000d,0x0000003c,0x00000039,0x0000003b,0x0003003e,0x00000034,0x0000003c,0x0004003d,
+	0x00000024,0x0000003f,0x0000003e,0x00050051,0x00000006,0x00000040,0x0000003f,0x00000000,
+	0x00050051,0x00000006,0x00000041,0x0000003f,0x00000001,0x00070050,0x00000007,0x00000042,
+	0x00000040,0x00000041,0x00000028,0x00000011,0x00050041,0x00000030,0x00000043,0x0000002f,
+	0x0000000c,0x0004003d,0x0000002c,0x00000044,0x00000043,0x00050090,0x0000000d,0x00000045,
+	0x00000042,0x00000044,0x0003003e,0x0000003d,0x00000045,0x0004003d,0x00000024,0x00000047,
+	0x00000026,0x00050051,0x00000006,0x00000048,0x00000047,0x00000000,0x00050051,0x00000006,
+	0x00000049,0x00000047,0x00000001,0x00070050,0x00000007,0x0000004a,0x00000048,0x00000049,
+	0x00000028,0x00000011,0x00050041,0x00000030,0x0000004c,0x0000002f,0x0000004b,0x0004003d,
+	0x0000002c,0x0000004d,0x0000004c,0x00050090,0x0000000d,0x0000004e,0x0000004a,0x0000004d,
+	0x0003003e,0x00000046,0x0000004e,0x0004003d,0x00000024,0x00000050,0x00000035,0x00050051,
+	0x00000006,0x00000051,0x00000050,0x00000000,0x00050051,0x00000006,0x00000052,0x00000050,
+	0x00000001,0x00070050,0x00000007,0x00000053,0x00000051,0x00000052,0x00000028,0x00000011,
+	0x00050041,0x00000030,0x00000054,0x0000002f,0x0000004b,0x0004003d,0x0000002c,0x00000055,
+	0x00000054,0x00050090,0x0000000d,0x00000056,0x00000053,0x00000055,0x0003003e,0x0000004f,
+	0x00000056,0x0004003d,0x00000024,0x00000058,0x0000003e,0x00050051,0x00000006,0x00000059,
+	0x00000058,0x00000000,0x00050051,0x00000006,0x0000005a,0x00000058,0x00000001,0x00070050,
+	0x00000007,0x0000005b,0x00000059,0x0000005a,0x00000028,0x00000011,0x00050041,0x00000030,
+	0x0000005c,0x0000002f,0x0000004b,0x0004003d,0x0000002c,0x0000005d,0x0000005c,0x00050090,
+	0x0000000d,0x0000005e,0x0000005b,0x0000005d,0x0003003e,0x00000057,0x0000005e,0x0004003d,
+	0x0000000d,0x00000060,0x00000023,0x0004003d,0x0000000d,0x00000061,0x00000046,0x0004003d,
+	0x00000006,0x00000062,0x00000019,0x00060050,0x0000000d,0x00000063,0x00000062,0x00000062,
+	0x00000062,0x0008000c,0x0000000d,0x00000064,0x00000001,0x0000002e,0x00000060,0x00000061,
+	0x00000063,0x0003003e,0x0000005f,0x00000064,0x0004003d,0x0000000d,0x00000066,0x00000034,
+	0x0004003d,0x0000000d,0x00000067,0x0000004f,0x0004003d,0x00000006,0x00000068,0x00000019,
+	0x00060050,0x0000000d,0x00000069,0x00000068,0x00000068,0x00000068,0x0008000c,0x0000000d,
+	0x0000006a,0x00000001,0x0000002e,0x00000066,0x00000067,0x00000069,0x0003003e,0x00000065,
+	0x0000006a,0x0004003d,0x0000000d,0x0000006c,0x0000003d,0x0004003d,0x0000000d,0x0000006d,
+	0x00000057,0x0004003d,0x00000006,0x0000006e,0x00000019,0x00060050,0x0000000d,0x0000006f,
+	0x0000006e,0x0000006e,0x0000006e,0x0008000c,0x0000000d,0x00000070,0x00000001,0x0000002e,
+	0x0000006c,0x0000006d,0x0000006f,0x0003003e,0x0000006b,0x00000070,0x0004003d,0x0000000d,
+	0x00000073,0x0000005f,0x0007004f,0x00000024,0x00000074,0x00000073,0x00000073,0x00000000,
+	0x00000001,0x00050041,0x00000018,0x00000076,0x0000005f,0x00000075,0x0004003d,0x00000006,
+	0x00000077,0x00000076,0x0007000c,0x00000006,0x00000079,0x00000001,0x00000028,0x00000077,
+	0x00000078,0x00050088,0x00000006,0x0000007a,0x00000011,0x00000079,0x0005008e,0x00000024,
+	0x0000007b,0x00000074,0x0000007a,0x0003003e,0x00000072,0x0000007b,0x0004003d,0x0000000d,
+	0x0000007d,0x00000065,0x0007004f,0x00000024,0x0000007e,0x0000007d,0x0000007d,0x00000000,
+	0x00000001,0x00050041,0x00000018,0x0000007f,0x00000065,0x00000075,0x0004003d,0x00000006,
+	0x00000080,0x0000007f,0x0007000c,0x00000006,0x00000081,0x00000001,0x00000028,0x00000080,
+	0x00000078,0x00050088,0x00000006,0x00000082,0x00000011,0x00000081,0x0005008e,0x00000024,
+	0x00000083,0x0000007e,0x00000082,0x0003003e,0x0000007c,0x00000083,0x0004003d,0x0000000d,
+	0x00000085,0x0000006b,0x0007004f,0x00000024,0x00000086,0x00000085,0x00000085,0x00000000,
+	0x00000001,0x00050041,0x00000018,0x00000087,0x0000006b,0x00000075,0x0004003d,0x00000006,
+	0x00000088,0x00000087,0x0007000c,0x00000006,0x00000089,0x00000001,0x00000028,0x00000088,
+	0x00000078,0x00050088,0x00000006,0x0000008a,0x00000011,0x00000089,0x0005008e,0x00000024,
+	0x0000008b,0x00000086,0x0000008a,0x0003003e,0x00000084,0x0000008b,0x000100fd,0x00010038
 };
 
 static const char timeWarpChromaticFragmentProgramGLSL[] =
@@ -12132,7 +12223,7 @@ static const char timeWarpChromaticFragmentProgramGLSL[] =
 	GLSL_EXTENSIONS
 	"layout( std140, push_constant ) uniform PushConstants\n"
 	"{\n"
-	"	layout( offset = 128 ) int ArrayLayer;\n"
+	"	layout( offset = 96 ) int ArrayLayer;\n"
 	"} pc;\n"
 	"layout( binding = 0 ) uniform highp sampler2DArray Texture;\n"
 	"layout( location = 0 ) in mediump vec2 fragmentUv0;\n"
@@ -12153,54 +12244,60 @@ static const unsigned int timeWarpChromaticFragmentProgramSPIRV[] =
 	0x07230203,0x00010000,0x00080001,0x00000043,0x00000000,0x00020011,0x00000001,0x0006000b,
 	0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
 	0x0009000f,0x00000004,0x00000004,0x6e69616d,0x00000000,0x00000009,0x00000011,0x00000027,
-	0x00000034,0x00030010,0x00000004,0x00000007,0x00030003,0x00000002,0x000001b8,0x00040005,
-	0x00000004,0x6e69616d,0x00000000,0x00050005,0x00000009,0x4374756f,0x726f6c6f,0x00000000,
-	0x00040005,0x0000000d,0x74786554,0x00657275,0x00050005,0x00000011,0x67617266,0x746e656d,
-	0x00307655,0x00060005,0x00000014,0x68737550,0x736e6f43,0x746e6174,0x00000073,0x00060006,
-	0x00000014,0x00000000,0x61727241,0x79614c79,0x00007265,0x00030005,0x00000016,0x00006370,
-	0x00050005,0x00000027,0x67617266,0x746e656d,0x00317655,0x00050005,0x00000034,0x67617266,
-	0x746e656d,0x00327655,0x00040047,0x00000009,0x0000001e,0x00000000,0x00040047,0x0000000d,
-	0x00000022,0x00000000,0x00040047,0x0000000d,0x00000021,0x00000000,0x00040047,0x00000011,
-	0x0000001e,0x00000000,0x00050048,0x00000014,0x00000000,0x00000023,0x00000080,0x00030047,
-	0x00000014,0x00000002,0x00040047,0x00000016,0x00000022,0x00000000,0x00040047,0x00000027,
-	0x0000001e,0x00000001,0x00040047,0x00000034,0x0000001e,0x00000002,0x00020013,0x00000002,
-	0x00030021,0x00000003,0x00000002,0x00030016,0x00000006,0x00000020,0x00040017,0x00000007,
-	0x00000006,0x00000004,0x00040020,0x00000008,0x00000003,0x00000007,0x0004003b,0x00000008,
-	0x00000009,0x00000003,0x00090019,0x0000000a,0x00000006,0x00000001,0x00000000,0x00000001,
-	0x00000000,0x00000001,0x00000000,0x0003001b,0x0000000b,0x0000000a,0x00040020,0x0000000c,
-	0x00000000,0x0000000b,0x0004003b,0x0000000c,0x0000000d,0x00000000,0x00040017,0x0000000f,
-	0x00000006,0x00000002,0x00040020,0x00000010,0x00000001,0x0000000f,0x0004003b,0x00000010,
-	0x00000011,0x00000001,0x00040015,0x00000013,0x00000020,0x00000001,0x0003001e,0x00000014,
-	0x00000013,0x00040020,0x00000015,0x00000009,0x00000014,0x0004003b,0x00000015,0x00000016,
-	0x00000009,0x0004002b,0x00000013,0x00000017,0x00000000,0x00040020,0x00000018,0x00000009,
-	0x00000013,0x00040017,0x0000001c,0x00000006,0x00000003,0x00040015,0x00000021,0x00000020,
-	0x00000000,0x0004002b,0x00000021,0x00000022,0x00000000,0x00040020,0x00000024,0x00000003,
-	0x00000006,0x0004003b,0x00000010,0x00000027,0x00000001,0x0004002b,0x00000021,0x00000030,
-	0x00000001,0x0004003b,0x00000010,0x00000034,0x00000001,0x0004002b,0x00000021,0x0000003d,
-	0x00000002,0x0004002b,0x00000006,0x00000040,0x3f800000,0x0004002b,0x00000021,0x00000041,
-	0x00000003,0x00050036,0x00000002,0x00000004,0x00000000,0x00000003,0x000200f8,0x00000005,
-	0x0004003d,0x0000000b,0x0000000e,0x0000000d,0x0004003d,0x0000000f,0x00000012,0x00000011,
-	0x00050041,0x00000018,0x00000019,0x00000016,0x00000017,0x0004003d,0x00000013,0x0000001a,
-	0x00000019,0x0004006f,0x00000006,0x0000001b,0x0000001a,0x00050051,0x00000006,0x0000001d,
-	0x00000012,0x00000000,0x00050051,0x00000006,0x0000001e,0x00000012,0x00000001,0x00060050,
-	0x0000001c,0x0000001f,0x0000001d,0x0000001e,0x0000001b,0x00050057,0x00000007,0x00000020,
-	0x0000000e,0x0000001f,0x00050051,0x00000006,0x00000023,0x00000020,0x00000000,0x00050041,
-	0x00000024,0x00000025,0x00000009,0x00000022,0x0003003e,0x00000025,0x00000023,0x0004003d,
-	0x0000000b,0x00000026,0x0000000d,0x0004003d,0x0000000f,0x00000028,0x00000027,0x00050041,
-	0x00000018,0x00000029,0x00000016,0x00000017,0x0004003d,0x00000013,0x0000002a,0x00000029,
-	0x0004006f,0x00000006,0x0000002b,0x0000002a,0x00050051,0x00000006,0x0000002c,0x00000028,
-	0x00000000,0x00050051,0x00000006,0x0000002d,0x00000028,0x00000001,0x00060050,0x0000001c,
-	0x0000002e,0x0000002c,0x0000002d,0x0000002b,0x00050057,0x00000007,0x0000002f,0x00000026,
-	0x0000002e,0x00050051,0x00000006,0x00000031,0x0000002f,0x00000001,0x00050041,0x00000024,
-	0x00000032,0x00000009,0x00000030,0x0003003e,0x00000032,0x00000031,0x0004003d,0x0000000b,
-	0x00000033,0x0000000d,0x0004003d,0x0000000f,0x00000035,0x00000034,0x00050041,0x00000018,
-	0x00000036,0x00000016,0x00000017,0x0004003d,0x00000013,0x00000037,0x00000036,0x0004006f,
-	0x00000006,0x00000038,0x00000037,0x00050051,0x00000006,0x00000039,0x00000035,0x00000000,
-	0x00050051,0x00000006,0x0000003a,0x00000035,0x00000001,0x00060050,0x0000001c,0x0000003b,
-	0x00000039,0x0000003a,0x00000038,0x00050057,0x00000007,0x0000003c,0x00000033,0x0000003b,
-	0x00050051,0x00000006,0x0000003e,0x0000003c,0x00000002,0x00050041,0x00000024,0x0000003f,
-	0x00000009,0x0000003d,0x0003003e,0x0000003f,0x0000003e,0x00050041,0x00000024,0x00000042,
-	0x00000009,0x00000041,0x0003003e,0x00000042,0x00000040,0x000100fd,0x00010038
+	0x00000034,0x00030010,0x00000004,0x00000007,0x00030003,0x00000001,0x00000136,0x00070004,
+	0x415f4c47,0x655f4252,0x6e61686e,0x5f646563,0x6f79616c,0x00737475,0x00070004,0x455f4c47,
+	0x735f5458,0x65646168,0x6f695f72,0x6f6c625f,0x00736b63,0x00040005,0x00000004,0x6e69616d,
+	0x00000000,0x00050005,0x00000009,0x4374756f,0x726f6c6f,0x00000000,0x00040005,0x0000000d,
+	0x74786554,0x00657275,0x00050005,0x00000011,0x67617266,0x746e656d,0x00307655,0x00060005,
+	0x00000014,0x68737550,0x736e6f43,0x746e6174,0x00000073,0x00060006,0x00000014,0x00000000,
+	0x61727241,0x79614c79,0x00007265,0x00030005,0x00000016,0x00006370,0x00050005,0x00000027,
+	0x67617266,0x746e656d,0x00317655,0x00050005,0x00000034,0x67617266,0x746e656d,0x00327655,
+	0x00030047,0x00000009,0x00000000,0x00040047,0x00000009,0x0000001e,0x00000000,0x00040047,
+	0x0000000d,0x00000022,0x00000000,0x00040047,0x0000000d,0x00000021,0x00000000,0x00030047,
+	0x00000011,0x00000000,0x00040047,0x00000011,0x0000001e,0x00000000,0x00030047,0x00000012,
+	0x00000000,0x00040048,0x00000014,0x00000000,0x00000000,0x00050048,0x00000014,0x00000000,
+	0x00000023,0x00000060,0x00030047,0x00000014,0x00000002,0x00030047,0x0000001a,0x00000000,
+	0x00030047,0x00000027,0x00000000,0x00040047,0x00000027,0x0000001e,0x00000001,0x00030047,
+	0x00000028,0x00000000,0x00030047,0x0000002a,0x00000000,0x00030047,0x00000034,0x00000000,
+	0x00040047,0x00000034,0x0000001e,0x00000002,0x00030047,0x00000035,0x00000000,0x00030047,
+	0x00000037,0x00000000,0x00020013,0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,
+	0x00000006,0x00000020,0x00040017,0x00000007,0x00000006,0x00000004,0x00040020,0x00000008,
+	0x00000003,0x00000007,0x0004003b,0x00000008,0x00000009,0x00000003,0x00090019,0x0000000a,
+	0x00000006,0x00000001,0x00000000,0x00000001,0x00000000,0x00000001,0x00000000,0x0003001b,
+	0x0000000b,0x0000000a,0x00040020,0x0000000c,0x00000000,0x0000000b,0x0004003b,0x0000000c,
+	0x0000000d,0x00000000,0x00040017,0x0000000f,0x00000006,0x00000002,0x00040020,0x00000010,
+	0x00000001,0x0000000f,0x0004003b,0x00000010,0x00000011,0x00000001,0x00040015,0x00000013,
+	0x00000020,0x00000001,0x0003001e,0x00000014,0x00000013,0x00040020,0x00000015,0x00000009,
+	0x00000014,0x0004003b,0x00000015,0x00000016,0x00000009,0x0004002b,0x00000013,0x00000017,
+	0x00000000,0x00040020,0x00000018,0x00000009,0x00000013,0x00040017,0x0000001c,0x00000006,
+	0x00000003,0x00040015,0x00000021,0x00000020,0x00000000,0x0004002b,0x00000021,0x00000022,
+	0x00000000,0x00040020,0x00000024,0x00000003,0x00000006,0x0004003b,0x00000010,0x00000027,
+	0x00000001,0x0004002b,0x00000021,0x00000030,0x00000001,0x0004003b,0x00000010,0x00000034,
+	0x00000001,0x0004002b,0x00000021,0x0000003d,0x00000002,0x0004002b,0x00000006,0x00000040,
+	0x3f800000,0x0004002b,0x00000021,0x00000041,0x00000003,0x00050036,0x00000002,0x00000004,
+	0x00000000,0x00000003,0x000200f8,0x00000005,0x0004003d,0x0000000b,0x0000000e,0x0000000d,
+	0x0004003d,0x0000000f,0x00000012,0x00000011,0x00050041,0x00000018,0x00000019,0x00000016,
+	0x00000017,0x0004003d,0x00000013,0x0000001a,0x00000019,0x0004006f,0x00000006,0x0000001b,
+	0x0000001a,0x00050051,0x00000006,0x0000001d,0x00000012,0x00000000,0x00050051,0x00000006,
+	0x0000001e,0x00000012,0x00000001,0x00060050,0x0000001c,0x0000001f,0x0000001d,0x0000001e,
+	0x0000001b,0x00050057,0x00000007,0x00000020,0x0000000e,0x0000001f,0x00050051,0x00000006,
+	0x00000023,0x00000020,0x00000000,0x00050041,0x00000024,0x00000025,0x00000009,0x00000022,
+	0x0003003e,0x00000025,0x00000023,0x0004003d,0x0000000b,0x00000026,0x0000000d,0x0004003d,
+	0x0000000f,0x00000028,0x00000027,0x00050041,0x00000018,0x00000029,0x00000016,0x00000017,
+	0x0004003d,0x00000013,0x0000002a,0x00000029,0x0004006f,0x00000006,0x0000002b,0x0000002a,
+	0x00050051,0x00000006,0x0000002c,0x00000028,0x00000000,0x00050051,0x00000006,0x0000002d,
+	0x00000028,0x00000001,0x00060050,0x0000001c,0x0000002e,0x0000002c,0x0000002d,0x0000002b,
+	0x00050057,0x00000007,0x0000002f,0x00000026,0x0000002e,0x00050051,0x00000006,0x00000031,
+	0x0000002f,0x00000001,0x00050041,0x00000024,0x00000032,0x00000009,0x00000030,0x0003003e,
+	0x00000032,0x00000031,0x0004003d,0x0000000b,0x00000033,0x0000000d,0x0004003d,0x0000000f,
+	0x00000035,0x00000034,0x00050041,0x00000018,0x00000036,0x00000016,0x00000017,0x0004003d,
+	0x00000013,0x00000037,0x00000036,0x0004006f,0x00000006,0x00000038,0x00000037,0x00050051,
+	0x00000006,0x00000039,0x00000035,0x00000000,0x00050051,0x00000006,0x0000003a,0x00000035,
+	0x00000001,0x00060050,0x0000001c,0x0000003b,0x00000039,0x0000003a,0x00000038,0x00050057,
+	0x00000007,0x0000003c,0x00000033,0x0000003b,0x00050051,0x00000006,0x0000003e,0x0000003c,
+	0x00000002,0x00050041,0x00000024,0x0000003f,0x00000009,0x0000003d,0x0003003e,0x0000003f,
+	0x0000003e,0x00050041,0x00000024,0x00000042,0x00000009,0x00000041,0x0003003e,0x00000042,
+	0x00000040,0x000100fd,0x00010038
 };
 
 static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics, GpuRenderPass_t * renderPass )
@@ -12347,6 +12444,11 @@ static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWar
 	CalculateTimeWarpTransform( &timeWarpStartTransform, projectionMatrix, viewMatrix, &displayRefreshStartViewMatrix );
 	CalculateTimeWarpTransform( &timeWarpEndTransform, projectionMatrix, viewMatrix, &displayRefreshEndViewMatrix );
 
+	Matrix3x4f_t timeWarpStartTransform3x4;
+	Matrix3x4f_t timeWarpEndTransform3x4;
+	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpStartTransform3x4, &timeWarpStartTransform );
+	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpEndTransform3x4, &timeWarpEndTransform );
+
 	const ScreenRect_t screenRect = GpuFramebuffer_GetRect( framebuffer );
 
 	GpuCommandBuffer_BeginPrimary( commandBuffer );
@@ -12365,8 +12467,8 @@ static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWar
 		GpuGraphicsCommand_t command;
 		GpuGraphicsCommand_Init( &command );
 		GpuGraphicsCommand_SetPipeline( &command, correctChromaticAberration ? &graphics->timeWarpChromaticPipeline[eye] : &graphics->timeWarpSpatialPipeline[eye] );
-		GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform );
-		GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform );
+		GpuGraphicsCommand_SetParmFloatMatrix3x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform3x4 );
+		GpuGraphicsCommand_SetParmFloatMatrix3x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform3x4 );
 		GpuGraphicsCommand_SetParmInt( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER, &eyeArrayLayer[eye] );
 		GpuGraphicsCommand_SetParmTextureSampled( &command, GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE, eyeTexture[eye] );
 
@@ -12445,10 +12547,10 @@ static const GpuProgramParm_t timeWarpTransformComputeProgramParms[] =
 {
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,					GPU_PROGRAM_PARM_ACCESS_WRITE_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_DST,		"dst",						0 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_SRC,		"src",						1 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,		GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_DIMENSIONS,		"dimensions",				128 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE,				"eye",						136 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"timeWarpStartTransform",	0 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,		"timeWarpEndTransform",		64 }
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,		GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_DIMENSIONS,		"dimensions",				96 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE,				"eye",						104 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"timeWarpStartTransform",	0 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,		"timeWarpEndTransform",		48 }
 };
 
 #define TRANSFORM_LOCAL_SIZE_X		8
@@ -12464,10 +12566,10 @@ static const char timeWarpTransformComputeProgramGLSL[] =
 	"layout( rgba32f, binding = 1 ) uniform readonly image2D src;\n"
 	"layout( std140, push_constant ) uniform PushConstants\n"
 	"{\n"
-	"	layout( offset =   0 ) highp mat4 timeWarpStartTransform;\n"
-	"	layout( offset =  64 ) highp mat4 timeWarpEndTransform;\n"
-	"	layout( offset = 128 ) ivec2 dimensions;\n"
-	"	layout( offset = 136 ) int eye;\n"
+	"	layout( offset =   0 ) highp mat3x4 timeWarpStartTransform;\n"
+	"	layout( offset =  48 ) highp mat3x4 timeWarpEndTransform;\n"
+	"	layout( offset =  96 ) ivec2 dimensions;\n"
+	"	layout( offset = 104 ) int eye;\n"
 	"} pc;\n"
 	"\n"
 	"void main()\n"
@@ -12483,8 +12585,8 @@ static const char timeWarpTransformComputeProgramGLSL[] =
 	"	vec2 coords = imageLoad( src, mesh ).xy;\n"
 	"\n"
 	"	float displayFraction = float( pc.eye * eyeTilesWide + mesh.x ) / ( float( eyeTilesWide ) * 2.0f );\n"		// landscape left-to-right
-	"	vec3 start = vec3( pc.timeWarpStartTransform * vec4( coords, -1.0f, 1.0f ) );\n"
-	"	vec3 end = vec3( pc.timeWarpEndTransform * vec4( coords, -1.0f, 1.0f ) );\n"
+	"	vec3 start = vec4( coords, -1.0f, 1.0f ) * pc.timeWarpStartTransform;\n"
+	"	vec3 end = vec4( coords, -1.0f, 1.0f ) * pc.timeWarpEndTransform;\n"
 	"	vec3 cur = start + displayFraction * ( end - start );\n"
 	"	float rcpZ = 1.0f / cur.z;\n"
 	"\n"
@@ -12494,32 +12596,34 @@ static const char timeWarpTransformComputeProgramGLSL[] =
 static const unsigned int timeWarpTransformComputeProgramSPIRV[] =
 {
 	// SPIRV99.947 15-Feb-2016
-	0x07230203,0x00010000,0x00080001,0x00000092,0x00000000,0x00020011,0x00000001,0x0006000b,
+	0x07230203,0x00010000,0x00080001,0x0000008a,0x00000000,0x00020011,0x00000001,0x0006000b,
 	0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
 	0x0007000f,0x00000005,0x00000004,0x6e69616d,0x00000000,0x0000000d,0x00000030,0x00060010,
 	0x00000004,0x00000011,0x00000008,0x00000008,0x00000001,0x00030003,0x00000002,0x000001b8,
-	0x00040005,0x00000004,0x6e69616d,0x00000000,0x00040005,0x00000009,0x6873656d,0x00000000,
-	0x00080005,0x0000000d,0x475f6c67,0x61626f6c,0x766e496c,0x7461636f,0x496e6f69,0x00000044,
-	0x00060005,0x0000001a,0x68737550,0x736e6f43,0x746e6174,0x00000073,0x00090006,0x0000001a,
-	0x00000000,0x656d6974,0x70726157,0x72617453,0x61725474,0x6f66736e,0x00006d72,0x00090006,
-	0x0000001a,0x00000001,0x656d6974,0x70726157,0x54646e45,0x736e6172,0x6d726f66,0x00000000,
-	0x00060006,0x0000001a,0x00000002,0x656d6964,0x6f69736e,0x0000736e,0x00040006,0x0000001a,
-	0x00000003,0x00657965,0x00030005,0x0000001c,0x00006370,0x00060005,0x0000002f,0x54657965,
-	0x73656c69,0x65646957,0x00000000,0x00070005,0x00000030,0x4e5f6c67,0x6f576d75,0x72476b72,
-	0x7370756f,0x00000000,0x00060005,0x00000039,0x54657965,0x73656c69,0x68676948,0x00000000,
-	0x00040005,0x00000041,0x726f6f63,0x00007364,0x00030005,0x00000044,0x00637273,0x00060005,
-	0x0000004a,0x70736964,0x4679616c,0x74636172,0x006e6f69,0x00040005,0x0000005b,0x72617473,
-	0x00000074,0x00030005,0x0000006b,0x00646e65,0x00030005,0x00000077,0x00727563,0x00040005,
-	0x0000007f,0x5a706372,0x00000000,0x00030005,0x00000086,0x00747364,0x00040047,0x0000000d,
-	0x0000000b,0x0000001c,0x00040048,0x0000001a,0x00000000,0x00000005,0x00050048,0x0000001a,
-	0x00000000,0x00000023,0x00000000,0x00050048,0x0000001a,0x00000000,0x00000007,0x00000010,
-	0x00040048,0x0000001a,0x00000001,0x00000005,0x00050048,0x0000001a,0x00000001,0x00000023,
-	0x00000040,0x00050048,0x0000001a,0x00000001,0x00000007,0x00000010,0x00050048,0x0000001a,
-	0x00000002,0x00000023,0x00000080,0x00050048,0x0000001a,0x00000003,0x00000023,0x00000088,
-	0x00030047,0x0000001a,0x00000002,0x00040047,0x0000001c,0x00000022,0x00000000,0x00040047,
-	0x00000030,0x0000000b,0x00000018,0x00040047,0x00000044,0x00000022,0x00000000,0x00040047,
-	0x00000044,0x00000021,0x00000001,0x00040047,0x00000086,0x00000022,0x00000000,0x00040047,
-	0x00000086,0x00000021,0x00000000,0x00040047,0x00000091,0x0000000b,0x00000019,0x00020013,
+	0x00070004,0x415f4c47,0x655f4252,0x6e61686e,0x5f646563,0x6f79616c,0x00737475,0x00070004,
+	0x455f4c47,0x735f5458,0x65646168,0x6f695f72,0x6f6c625f,0x00736b63,0x00040005,0x00000004,
+	0x6e69616d,0x00000000,0x00040005,0x00000009,0x6873656d,0x00000000,0x00080005,0x0000000d,
+	0x475f6c67,0x61626f6c,0x766e496c,0x7461636f,0x496e6f69,0x00000044,0x00060005,0x0000001a,
+	0x68737550,0x736e6f43,0x746e6174,0x00000073,0x00090006,0x0000001a,0x00000000,0x656d6974,
+	0x70726157,0x72617453,0x61725474,0x6f66736e,0x00006d72,0x00090006,0x0000001a,0x00000001,
+	0x656d6974,0x70726157,0x54646e45,0x736e6172,0x6d726f66,0x00000000,0x00060006,0x0000001a,
+	0x00000002,0x656d6964,0x6f69736e,0x0000736e,0x00040006,0x0000001a,0x00000003,0x00657965,
+	0x00030005,0x0000001c,0x00006370,0x00060005,0x0000002f,0x54657965,0x73656c69,0x65646957,
+	0x00000000,0x00070005,0x00000030,0x4e5f6c67,0x6f576d75,0x72476b72,0x7370756f,0x00000000,
+	0x00060005,0x00000039,0x54657965,0x73656c69,0x68676948,0x00000000,0x00040005,0x00000041,
+	0x726f6f63,0x00007364,0x00030005,0x00000044,0x00637273,0x00060005,0x0000004a,0x70736964,
+	0x4679616c,0x74636172,0x006e6f69,0x00040005,0x0000005b,0x72617473,0x00000074,0x00030005,
+	0x00000067,0x00646e65,0x00030005,0x0000006f,0x00727563,0x00040005,0x00000077,0x5a706372,
+	0x00000000,0x00030005,0x0000007e,0x00747364,0x00040047,0x0000000d,0x0000000b,0x0000001c,
+	0x00040048,0x0000001a,0x00000000,0x00000005,0x00050048,0x0000001a,0x00000000,0x00000023,
+	0x00000000,0x00050048,0x0000001a,0x00000000,0x00000007,0x00000010,0x00040048,0x0000001a,
+	0x00000001,0x00000005,0x00050048,0x0000001a,0x00000001,0x00000023,0x00000030,0x00050048,
+	0x0000001a,0x00000001,0x00000007,0x00000010,0x00050048,0x0000001a,0x00000002,0x00000023,
+	0x00000060,0x00050048,0x0000001a,0x00000003,0x00000023,0x00000068,0x00030047,0x0000001a,
+	0x00000002,0x00040047,0x00000030,0x0000000b,0x00000018,0x00040047,0x00000044,0x00000022,
+	0x00000000,0x00040047,0x00000044,0x00000021,0x00000001,0x00030047,0x00000044,0x00000018,
+	0x00040047,0x0000007e,0x00000022,0x00000000,0x00040047,0x0000007e,0x00000021,0x00000000,
+	0x00030047,0x0000007e,0x00000019,0x00040047,0x00000089,0x0000000b,0x00000019,0x00020013,
 	0x00000002,0x00030021,0x00000003,0x00000002,0x00040015,0x00000006,0x00000020,0x00000001,
 	0x00040017,0x00000007,0x00000006,0x00000002,0x00040020,0x00000008,0x00000007,0x00000007,
 	0x00040015,0x0000000a,0x00000020,0x00000000,0x00040017,0x0000000b,0x0000000a,0x00000003,
@@ -12527,7 +12631,7 @@ static const unsigned int timeWarpTransformComputeProgramSPIRV[] =
 	0x00040017,0x0000000e,0x0000000a,0x00000002,0x00020014,0x00000012,0x0004002b,0x0000000a,
 	0x00000013,0x00000000,0x00040020,0x00000014,0x00000007,0x00000006,0x00030016,0x00000017,
 	0x00000020,0x00040017,0x00000018,0x00000017,0x00000004,0x00040018,0x00000019,0x00000018,
-	0x00000004,0x0006001e,0x0000001a,0x00000019,0x00000019,0x00000007,0x00000006,0x00040020,
+	0x00000003,0x0006001e,0x0000001a,0x00000019,0x00000019,0x00000007,0x00000006,0x00040020,
 	0x0000001b,0x00000009,0x0000001a,0x0004003b,0x0000001b,0x0000001c,0x00000009,0x0004002b,
 	0x00000006,0x0000001d,0x00000002,0x00040020,0x0000001e,0x00000009,0x00000006,0x0004002b,
 	0x0000000a,0x00000025,0x00000001,0x0004003b,0x0000000c,0x00000030,0x00000001,0x00040020,
@@ -12538,18 +12642,18 @@ static const unsigned int timeWarpTransformComputeProgramSPIRV[] =
 	0x0004003b,0x00000043,0x00000044,0x00000000,0x00040020,0x00000049,0x00000007,0x00000017,
 	0x0004002b,0x00000006,0x0000004b,0x00000003,0x0004002b,0x00000017,0x00000056,0x40000000,
 	0x00040017,0x00000059,0x00000017,0x00000003,0x00040020,0x0000005a,0x00000007,0x00000059,
-	0x0004002b,0x00000006,0x0000005c,0x00000000,0x00040020,0x0000005d,0x00000009,0x00000019,
-	0x0004002b,0x00000017,0x00000061,0xbf800000,0x0004002b,0x00000017,0x00000062,0x3f800000,
-	0x0004002b,0x0000000a,0x00000080,0x00000002,0x00090019,0x00000084,0x00000017,0x00000001,
-	0x00000000,0x00000000,0x00000000,0x00000002,0x00000002,0x00040020,0x00000085,0x00000000,
-	0x00000084,0x0004003b,0x00000085,0x00000086,0x00000000,0x0004002b,0x00000017,0x0000008d,
-	0x00000000,0x0006002c,0x0000000b,0x00000091,0x00000034,0x00000034,0x00000025,0x00050036,
+	0x0004002b,0x00000017,0x0000005d,0xbf800000,0x0004002b,0x00000017,0x0000005e,0x3f800000,
+	0x0004002b,0x00000006,0x00000062,0x00000000,0x00040020,0x00000063,0x00000009,0x00000019,
+	0x0004002b,0x0000000a,0x00000078,0x00000002,0x00090019,0x0000007c,0x00000017,0x00000001,
+	0x00000000,0x00000000,0x00000000,0x00000002,0x00000002,0x00040020,0x0000007d,0x00000000,
+	0x0000007c,0x0004003b,0x0000007d,0x0000007e,0x00000000,0x0004002b,0x00000017,0x00000085,
+	0x00000000,0x0006002c,0x0000000b,0x00000089,0x00000034,0x00000034,0x00000025,0x00050036,
 	0x00000002,0x00000004,0x00000000,0x00000003,0x000200f8,0x00000005,0x0004003b,0x00000008,
 	0x00000009,0x00000007,0x0004003b,0x00000014,0x0000002f,0x00000007,0x0004003b,0x00000014,
 	0x00000039,0x00000007,0x0004003b,0x00000040,0x00000041,0x00000007,0x0004003b,0x00000049,
 	0x0000004a,0x00000007,0x0004003b,0x0000005a,0x0000005b,0x00000007,0x0004003b,0x0000005a,
-	0x0000006b,0x00000007,0x0004003b,0x0000005a,0x00000077,0x00000007,0x0004003b,0x00000049,
-	0x0000007f,0x00000007,0x0004003d,0x0000000b,0x0000000f,0x0000000d,0x0007004f,0x0000000e,
+	0x00000067,0x00000007,0x0004003b,0x0000005a,0x0000006f,0x00000007,0x0004003b,0x00000049,
+	0x00000077,0x00000007,0x0004003d,0x0000000b,0x0000000f,0x0000000d,0x0007004f,0x0000000e,
 	0x00000010,0x0000000f,0x0000000f,0x00000000,0x00000001,0x0004007c,0x00000007,0x00000011,
 	0x00000010,0x0003003e,0x00000009,0x00000011,0x00050041,0x00000014,0x00000015,0x00000009,
 	0x00000013,0x0004003d,0x00000006,0x00000016,0x00000015,0x00060041,0x0000001e,0x0000001f,
@@ -12578,34 +12682,29 @@ static const unsigned int timeWarpTransformComputeProgramSPIRV[] =
 	0x00000052,0x0000004f,0x00000051,0x0004006f,0x00000017,0x00000053,0x00000052,0x0004003d,
 	0x00000006,0x00000054,0x0000002f,0x0004006f,0x00000017,0x00000055,0x00000054,0x00050085,
 	0x00000017,0x00000057,0x00000055,0x00000056,0x00050088,0x00000017,0x00000058,0x00000053,
-	0x00000057,0x0003003e,0x0000004a,0x00000058,0x00050041,0x0000005d,0x0000005e,0x0000001c,
-	0x0000005c,0x0004003d,0x00000019,0x0000005f,0x0000005e,0x0004003d,0x0000003f,0x00000060,
-	0x00000041,0x00050051,0x00000017,0x00000063,0x00000060,0x00000000,0x00050051,0x00000017,
-	0x00000064,0x00000060,0x00000001,0x00070050,0x00000018,0x00000065,0x00000063,0x00000064,
-	0x00000061,0x00000062,0x00050091,0x00000018,0x00000066,0x0000005f,0x00000065,0x00050051,
-	0x00000017,0x00000067,0x00000066,0x00000000,0x00050051,0x00000017,0x00000068,0x00000066,
-	0x00000001,0x00050051,0x00000017,0x00000069,0x00000066,0x00000002,0x00060050,0x00000059,
-	0x0000006a,0x00000067,0x00000068,0x00000069,0x0003003e,0x0000005b,0x0000006a,0x00050041,
-	0x0000005d,0x0000006c,0x0000001c,0x00000037,0x0004003d,0x00000019,0x0000006d,0x0000006c,
-	0x0004003d,0x0000003f,0x0000006e,0x00000041,0x00050051,0x00000017,0x0000006f,0x0000006e,
-	0x00000000,0x00050051,0x00000017,0x00000070,0x0000006e,0x00000001,0x00070050,0x00000018,
-	0x00000071,0x0000006f,0x00000070,0x00000061,0x00000062,0x00050091,0x00000018,0x00000072,
-	0x0000006d,0x00000071,0x00050051,0x00000017,0x00000073,0x00000072,0x00000000,0x00050051,
-	0x00000017,0x00000074,0x00000072,0x00000001,0x00050051,0x00000017,0x00000075,0x00000072,
-	0x00000002,0x00060050,0x00000059,0x00000076,0x00000073,0x00000074,0x00000075,0x0003003e,
-	0x0000006b,0x00000076,0x0004003d,0x00000059,0x00000078,0x0000005b,0x0004003d,0x00000017,
-	0x00000079,0x0000004a,0x0004003d,0x00000059,0x0000007a,0x0000006b,0x0004003d,0x00000059,
-	0x0000007b,0x0000005b,0x00050083,0x00000059,0x0000007c,0x0000007a,0x0000007b,0x0005008e,
-	0x00000059,0x0000007d,0x0000007c,0x00000079,0x00050081,0x00000059,0x0000007e,0x00000078,
-	0x0000007d,0x0003003e,0x00000077,0x0000007e,0x00050041,0x00000049,0x00000081,0x00000077,
-	0x00000080,0x0004003d,0x00000017,0x00000082,0x00000081,0x00050088,0x00000017,0x00000083,
-	0x00000062,0x00000082,0x0003003e,0x0000007f,0x00000083,0x0004003d,0x00000084,0x00000087,
-	0x00000086,0x0004003d,0x00000007,0x00000088,0x00000009,0x0004003d,0x00000059,0x00000089,
-	0x00000077,0x0007004f,0x0000003f,0x0000008a,0x00000089,0x00000089,0x00000000,0x00000001,
-	0x0004003d,0x00000017,0x0000008b,0x0000007f,0x0005008e,0x0000003f,0x0000008c,0x0000008a,
-	0x0000008b,0x00050051,0x00000017,0x0000008e,0x0000008c,0x00000000,0x00050051,0x00000017,
-	0x0000008f,0x0000008c,0x00000001,0x00070050,0x00000018,0x00000090,0x0000008e,0x0000008f,
-	0x0000008d,0x0000008d,0x00040063,0x00000087,0x00000088,0x00000090,0x000100fd,0x00010038
+	0x00000057,0x0003003e,0x0000004a,0x00000058,0x0004003d,0x0000003f,0x0000005c,0x00000041,
+	0x00050051,0x00000017,0x0000005f,0x0000005c,0x00000000,0x00050051,0x00000017,0x00000060,
+	0x0000005c,0x00000001,0x00070050,0x00000018,0x00000061,0x0000005f,0x00000060,0x0000005d,
+	0x0000005e,0x00050041,0x00000063,0x00000064,0x0000001c,0x00000062,0x0004003d,0x00000019,
+	0x00000065,0x00000064,0x00050090,0x00000059,0x00000066,0x00000061,0x00000065,0x0003003e,
+	0x0000005b,0x00000066,0x0004003d,0x0000003f,0x00000068,0x00000041,0x00050051,0x00000017,
+	0x00000069,0x00000068,0x00000000,0x00050051,0x00000017,0x0000006a,0x00000068,0x00000001,
+	0x00070050,0x00000018,0x0000006b,0x00000069,0x0000006a,0x0000005d,0x0000005e,0x00050041,
+	0x00000063,0x0000006c,0x0000001c,0x00000037,0x0004003d,0x00000019,0x0000006d,0x0000006c,
+	0x00050090,0x00000059,0x0000006e,0x0000006b,0x0000006d,0x0003003e,0x00000067,0x0000006e,
+	0x0004003d,0x00000059,0x00000070,0x0000005b,0x0004003d,0x00000017,0x00000071,0x0000004a,
+	0x0004003d,0x00000059,0x00000072,0x00000067,0x0004003d,0x00000059,0x00000073,0x0000005b,
+	0x00050083,0x00000059,0x00000074,0x00000072,0x00000073,0x0005008e,0x00000059,0x00000075,
+	0x00000074,0x00000071,0x00050081,0x00000059,0x00000076,0x00000070,0x00000075,0x0003003e,
+	0x0000006f,0x00000076,0x00050041,0x00000049,0x00000079,0x0000006f,0x00000078,0x0004003d,
+	0x00000017,0x0000007a,0x00000079,0x00050088,0x00000017,0x0000007b,0x0000005e,0x0000007a,
+	0x0003003e,0x00000077,0x0000007b,0x0004003d,0x0000007c,0x0000007f,0x0000007e,0x0004003d,
+	0x00000007,0x00000080,0x00000009,0x0004003d,0x00000059,0x00000081,0x0000006f,0x0007004f,
+	0x0000003f,0x00000082,0x00000081,0x00000081,0x00000000,0x00000001,0x0004003d,0x00000017,
+	0x00000083,0x00000077,0x0005008e,0x0000003f,0x00000084,0x00000082,0x00000083,0x00050051,
+	0x00000017,0x00000086,0x00000084,0x00000000,0x00050051,0x00000017,0x00000087,0x00000084,
+	0x00000001,0x00070050,0x00000018,0x00000088,0x00000086,0x00000087,0x00000085,0x00000085,
+	0x00040063,0x0000007f,0x00000080,0x00000088,0x000100fd,0x00010038
 };
 
 enum
@@ -12628,8 +12727,8 @@ static const GpuProgramParm_t timeWarpSpatialComputeProgramParms[] =
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_G,		"warpImageG",		2 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE,		"imageScale",		0 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS,		"imageBias",		8 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER,		"imageLayer",		16 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET,	"eyePixelOffset",	24 }
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET,	"eyePixelOffset",	16 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER,		"imageLayer",		24 }
 };
 
 #define SPATIAL_LOCAL_SIZE_X		8
@@ -12652,8 +12751,8 @@ static const char timeWarpSpatialComputeProgramGLSL[] =
 	"{\n"
 	"	layout( offset =  0 ) highp vec2 imageScale;\n"
 	"	layout( offset =  8 ) highp vec2 imageBias;\n"
-	"	layout( offset = 16 ) int imageLayer;\n"
-	"	layout( offset = 24 ) ivec2 eyePixelOffset;\n"
+	"	layout( offset = 16 ) ivec2 eyePixelOffset;\n"
+	"	layout( offset = 24 ) int imageLayer;\n"
 	"} pc;\n"
 	"\n"
 	"void main()\n"
@@ -12673,70 +12772,71 @@ static const unsigned int timeWarpSpatialComputeProgramSPIRV[] =
 	0x07230203,0x00010000,0x00080001,0x00000050,0x00000000,0x00020011,0x00000001,0x0006000b,
 	0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
 	0x0006000f,0x00000005,0x00000004,0x6e69616d,0x00000000,0x0000000d,0x00060010,0x00000004,
-	0x00000011,0x00000008,0x00000008,0x00000001,0x00030003,0x00000002,0x000001b8,0x00040005,
-	0x00000004,0x6e69616d,0x00000000,0x00040005,0x00000009,0x656c6974,0x00000000,0x00080005,
-	0x0000000d,0x475f6c67,0x61626f6c,0x766e496c,0x7461636f,0x496e6f69,0x00000044,0x00060005,
-	0x00000017,0x68737550,0x736e6f43,0x746e6174,0x00000073,0x00060006,0x00000017,0x00000000,
-	0x67616d69,0x61635365,0x0000656c,0x00060006,0x00000017,0x00000001,0x67616d69,0x61694265,
-	0x00000073,0x00060006,0x00000017,0x00000002,0x67616d69,0x79614c65,0x00007265,0x00070006,
-	0x00000017,0x00000003,0x50657965,0x6c657869,0x7366664f,0x00007465,0x00030005,0x00000019,
-	0x00006370,0x00050005,0x00000023,0x43657965,0x64726f6f,0x00000073,0x00050005,0x00000027,
-	0x70726177,0x67616d49,0x00004765,0x00040005,0x0000002f,0x61626772,0x00000000,0x00050005,
-	0x00000033,0x49657965,0x6567616d,0x00000000,0x00040005,0x00000042,0x74736564,0x00000000,
-	0x00040047,0x0000000d,0x0000000b,0x0000001c,0x00050048,0x00000017,0x00000000,0x00000023,
-	0x00000000,0x00050048,0x00000017,0x00000001,0x00000023,0x00000008,0x00050048,0x00000017,
-	0x00000002,0x00000023,0x00000010,0x00050048,0x00000017,0x00000003,0x00000023,0x00000018,
-	0x00030047,0x00000017,0x00000002,0x00040047,0x00000019,0x00000022,0x00000000,0x00040047,
-	0x00000027,0x00000022,0x00000000,0x00040047,0x00000027,0x00000021,0x00000002,0x00040047,
-	0x00000033,0x00000022,0x00000000,0x00040047,0x00000033,0x00000021,0x00000001,0x00040047,
-	0x00000042,0x00000022,0x00000000,0x00040047,0x00000042,0x00000021,0x00000000,0x00040047,
-	0x0000004f,0x0000000b,0x00000019,0x00020013,0x00000002,0x00030021,0x00000003,0x00000002,
-	0x00030016,0x00000006,0x00000020,0x00040017,0x00000007,0x00000006,0x00000002,0x00040020,
-	0x00000008,0x00000007,0x00000007,0x00040015,0x0000000a,0x00000020,0x00000000,0x00040017,
-	0x0000000b,0x0000000a,0x00000003,0x00040020,0x0000000c,0x00000001,0x0000000b,0x0004003b,
-	0x0000000c,0x0000000d,0x00000001,0x00040017,0x0000000e,0x0000000a,0x00000002,0x0004002b,
-	0x00000006,0x00000012,0x3f000000,0x0005002c,0x00000007,0x00000013,0x00000012,0x00000012,
-	0x00040015,0x00000015,0x00000020,0x00000001,0x00040017,0x00000016,0x00000015,0x00000002,
-	0x0006001e,0x00000017,0x00000007,0x00000007,0x00000015,0x00000016,0x00040020,0x00000018,
-	0x00000009,0x00000017,0x0004003b,0x00000018,0x00000019,0x00000009,0x0004002b,0x00000015,
-	0x0000001a,0x00000000,0x00040020,0x0000001b,0x00000009,0x00000007,0x0004002b,0x00000015,
-	0x0000001f,0x00000001,0x00090019,0x00000024,0x00000006,0x00000001,0x00000000,0x00000000,
-	0x00000000,0x00000001,0x00000000,0x0003001b,0x00000025,0x00000024,0x00040020,0x00000026,
-	0x00000000,0x00000025,0x0004003b,0x00000026,0x00000027,0x00000000,0x00040017,0x0000002a,
-	0x00000006,0x00000004,0x0004002b,0x00000006,0x0000002b,0x00000000,0x00040020,0x0000002e,
-	0x00000007,0x0000002a,0x00090019,0x00000030,0x00000006,0x00000001,0x00000000,0x00000001,
-	0x00000000,0x00000001,0x00000000,0x0003001b,0x00000031,0x00000030,0x00040020,0x00000032,
-	0x00000000,0x00000031,0x0004003b,0x00000032,0x00000033,0x00000000,0x0004002b,0x00000015,
-	0x00000036,0x00000002,0x00040020,0x00000037,0x00000009,0x00000015,0x00040017,0x0000003b,
-	0x00000006,0x00000003,0x00090019,0x00000040,0x00000006,0x00000001,0x00000000,0x00000000,
-	0x00000000,0x00000002,0x00000004,0x00040020,0x00000041,0x00000000,0x00000040,0x0004003b,
-	0x00000041,0x00000042,0x00000000,0x0004002b,0x00000015,0x00000047,0x00000003,0x00040020,
-	0x00000048,0x00000009,0x00000016,0x0004002b,0x0000000a,0x0000004d,0x00000008,0x0004002b,
-	0x0000000a,0x0000004e,0x00000001,0x0006002c,0x0000000b,0x0000004f,0x0000004d,0x0000004d,
-	0x0000004e,0x00050036,0x00000002,0x00000004,0x00000000,0x00000003,0x000200f8,0x00000005,
-	0x0004003b,0x00000008,0x00000009,0x00000007,0x0004003b,0x00000008,0x00000023,0x00000007,
-	0x0004003b,0x0000002e,0x0000002f,0x00000007,0x0004003d,0x0000000b,0x0000000f,0x0000000d,
-	0x0007004f,0x0000000e,0x00000010,0x0000000f,0x0000000f,0x00000000,0x00000001,0x00040070,
-	0x00000007,0x00000011,0x00000010,0x00050081,0x00000007,0x00000014,0x00000011,0x00000013,
-	0x00050041,0x0000001b,0x0000001c,0x00000019,0x0000001a,0x0004003d,0x00000007,0x0000001d,
-	0x0000001c,0x00050085,0x00000007,0x0000001e,0x00000014,0x0000001d,0x00050041,0x0000001b,
-	0x00000020,0x00000019,0x0000001f,0x0004003d,0x00000007,0x00000021,0x00000020,0x00050081,
-	0x00000007,0x00000022,0x0000001e,0x00000021,0x0003003e,0x00000009,0x00000022,0x0004003d,
-	0x00000025,0x00000028,0x00000027,0x0004003d,0x00000007,0x00000029,0x00000009,0x00070058,
-	0x0000002a,0x0000002c,0x00000028,0x00000029,0x00000002,0x0000002b,0x0007004f,0x00000007,
-	0x0000002d,0x0000002c,0x0000002c,0x00000000,0x00000001,0x0003003e,0x00000023,0x0000002d,
-	0x0004003d,0x00000031,0x00000034,0x00000033,0x0004003d,0x00000007,0x00000035,0x00000023,
-	0x00050041,0x00000037,0x00000038,0x00000019,0x00000036,0x0004003d,0x00000015,0x00000039,
-	0x00000038,0x0004006f,0x00000006,0x0000003a,0x00000039,0x00050051,0x00000006,0x0000003c,
-	0x00000035,0x00000000,0x00050051,0x00000006,0x0000003d,0x00000035,0x00000001,0x00060050,
-	0x0000003b,0x0000003e,0x0000003c,0x0000003d,0x0000003a,0x00070058,0x0000002a,0x0000003f,
-	0x00000034,0x0000003e,0x00000002,0x0000002b,0x0003003e,0x0000002f,0x0000003f,0x0004003d,
-	0x00000040,0x00000043,0x00000042,0x0004003d,0x0000000b,0x00000044,0x0000000d,0x0007004f,
-	0x0000000e,0x00000045,0x00000044,0x00000044,0x00000000,0x00000001,0x0004007c,0x00000016,
-	0x00000046,0x00000045,0x00050041,0x00000048,0x00000049,0x00000019,0x00000047,0x0004003d,
-	0x00000016,0x0000004a,0x00000049,0x00050080,0x00000016,0x0000004b,0x00000046,0x0000004a,
-	0x0004003d,0x0000002a,0x0000004c,0x0000002f,0x00040063,0x00000043,0x0000004b,0x0000004c,
-	0x000100fd,0x00010038
+	0x00000011,0x00000008,0x00000008,0x00000001,0x00030003,0x00000002,0x000001b8,0x00070004,
+	0x415f4c47,0x655f4252,0x6e61686e,0x5f646563,0x6f79616c,0x00737475,0x00070004,0x455f4c47,
+	0x735f5458,0x65646168,0x6f695f72,0x6f6c625f,0x00736b63,0x00040005,0x00000004,0x6e69616d,
+	0x00000000,0x00040005,0x00000009,0x656c6974,0x00000000,0x00080005,0x0000000d,0x475f6c67,
+	0x61626f6c,0x766e496c,0x7461636f,0x496e6f69,0x00000044,0x00060005,0x00000017,0x68737550,
+	0x736e6f43,0x746e6174,0x00000073,0x00060006,0x00000017,0x00000000,0x67616d69,0x61635365,
+	0x0000656c,0x00060006,0x00000017,0x00000001,0x67616d69,0x61694265,0x00000073,0x00070006,
+	0x00000017,0x00000002,0x50657965,0x6c657869,0x7366664f,0x00007465,0x00060006,0x00000017,
+	0x00000003,0x67616d69,0x79614c65,0x00007265,0x00030005,0x00000019,0x00006370,0x00050005,
+	0x00000023,0x43657965,0x64726f6f,0x00000073,0x00050005,0x00000027,0x70726177,0x67616d49,
+	0x00004765,0x00040005,0x0000002f,0x61626772,0x00000000,0x00050005,0x00000033,0x49657965,
+	0x6567616d,0x00000000,0x00040005,0x00000042,0x74736564,0x00000000,0x00040047,0x0000000d,
+	0x0000000b,0x0000001c,0x00050048,0x00000017,0x00000000,0x00000023,0x00000000,0x00050048,
+	0x00000017,0x00000001,0x00000023,0x00000008,0x00050048,0x00000017,0x00000002,0x00000023,
+	0x00000010,0x00050048,0x00000017,0x00000003,0x00000023,0x00000018,0x00030047,0x00000017,
+	0x00000002,0x00040047,0x00000027,0x00000022,0x00000000,0x00040047,0x00000027,0x00000021,
+	0x00000002,0x00040047,0x00000033,0x00000022,0x00000000,0x00040047,0x00000033,0x00000021,
+	0x00000001,0x00040047,0x00000042,0x00000022,0x00000000,0x00040047,0x00000042,0x00000021,
+	0x00000000,0x00030047,0x00000042,0x00000019,0x00040047,0x0000004f,0x0000000b,0x00000019,
+	0x00020013,0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,0x00000006,0x00000020,
+	0x00040017,0x00000007,0x00000006,0x00000002,0x00040020,0x00000008,0x00000007,0x00000007,
+	0x00040015,0x0000000a,0x00000020,0x00000000,0x00040017,0x0000000b,0x0000000a,0x00000003,
+	0x00040020,0x0000000c,0x00000001,0x0000000b,0x0004003b,0x0000000c,0x0000000d,0x00000001,
+	0x00040017,0x0000000e,0x0000000a,0x00000002,0x0004002b,0x00000006,0x00000012,0x3f000000,
+	0x0005002c,0x00000007,0x00000013,0x00000012,0x00000012,0x00040015,0x00000015,0x00000020,
+	0x00000001,0x00040017,0x00000016,0x00000015,0x00000002,0x0006001e,0x00000017,0x00000007,
+	0x00000007,0x00000016,0x00000015,0x00040020,0x00000018,0x00000009,0x00000017,0x0004003b,
+	0x00000018,0x00000019,0x00000009,0x0004002b,0x00000015,0x0000001a,0x00000000,0x00040020,
+	0x0000001b,0x00000009,0x00000007,0x0004002b,0x00000015,0x0000001f,0x00000001,0x00090019,
+	0x00000024,0x00000006,0x00000001,0x00000000,0x00000000,0x00000000,0x00000001,0x00000000,
+	0x0003001b,0x00000025,0x00000024,0x00040020,0x00000026,0x00000000,0x00000025,0x0004003b,
+	0x00000026,0x00000027,0x00000000,0x00040017,0x0000002a,0x00000006,0x00000004,0x0004002b,
+	0x00000006,0x0000002b,0x00000000,0x00040020,0x0000002e,0x00000007,0x0000002a,0x00090019,
+	0x00000030,0x00000006,0x00000001,0x00000000,0x00000001,0x00000000,0x00000001,0x00000000,
+	0x0003001b,0x00000031,0x00000030,0x00040020,0x00000032,0x00000000,0x00000031,0x0004003b,
+	0x00000032,0x00000033,0x00000000,0x0004002b,0x00000015,0x00000036,0x00000003,0x00040020,
+	0x00000037,0x00000009,0x00000015,0x00040017,0x0000003b,0x00000006,0x00000003,0x00090019,
+	0x00000040,0x00000006,0x00000001,0x00000000,0x00000000,0x00000000,0x00000002,0x00000004,
+	0x00040020,0x00000041,0x00000000,0x00000040,0x0004003b,0x00000041,0x00000042,0x00000000,
+	0x0004002b,0x00000015,0x00000047,0x00000002,0x00040020,0x00000048,0x00000009,0x00000016,
+	0x0004002b,0x0000000a,0x0000004d,0x00000008,0x0004002b,0x0000000a,0x0000004e,0x00000001,
+	0x0006002c,0x0000000b,0x0000004f,0x0000004d,0x0000004d,0x0000004e,0x00050036,0x00000002,
+	0x00000004,0x00000000,0x00000003,0x000200f8,0x00000005,0x0004003b,0x00000008,0x00000009,
+	0x00000007,0x0004003b,0x00000008,0x00000023,0x00000007,0x0004003b,0x0000002e,0x0000002f,
+	0x00000007,0x0004003d,0x0000000b,0x0000000f,0x0000000d,0x0007004f,0x0000000e,0x00000010,
+	0x0000000f,0x0000000f,0x00000000,0x00000001,0x00040070,0x00000007,0x00000011,0x00000010,
+	0x00050081,0x00000007,0x00000014,0x00000011,0x00000013,0x00050041,0x0000001b,0x0000001c,
+	0x00000019,0x0000001a,0x0004003d,0x00000007,0x0000001d,0x0000001c,0x00050085,0x00000007,
+	0x0000001e,0x00000014,0x0000001d,0x00050041,0x0000001b,0x00000020,0x00000019,0x0000001f,
+	0x0004003d,0x00000007,0x00000021,0x00000020,0x00050081,0x00000007,0x00000022,0x0000001e,
+	0x00000021,0x0003003e,0x00000009,0x00000022,0x0004003d,0x00000025,0x00000028,0x00000027,
+	0x0004003d,0x00000007,0x00000029,0x00000009,0x00070058,0x0000002a,0x0000002c,0x00000028,
+	0x00000029,0x00000002,0x0000002b,0x0007004f,0x00000007,0x0000002d,0x0000002c,0x0000002c,
+	0x00000000,0x00000001,0x0003003e,0x00000023,0x0000002d,0x0004003d,0x00000031,0x00000034,
+	0x00000033,0x0004003d,0x00000007,0x00000035,0x00000023,0x00050041,0x00000037,0x00000038,
+	0x00000019,0x00000036,0x0004003d,0x00000015,0x00000039,0x00000038,0x0004006f,0x00000006,
+	0x0000003a,0x00000039,0x00050051,0x00000006,0x0000003c,0x00000035,0x00000000,0x00050051,
+	0x00000006,0x0000003d,0x00000035,0x00000001,0x00060050,0x0000003b,0x0000003e,0x0000003c,
+	0x0000003d,0x0000003a,0x00070058,0x0000002a,0x0000003f,0x00000034,0x0000003e,0x00000002,
+	0x0000002b,0x0003003e,0x0000002f,0x0000003f,0x0004003d,0x00000040,0x00000043,0x00000042,
+	0x0004003d,0x0000000b,0x00000044,0x0000000d,0x0007004f,0x0000000e,0x00000045,0x00000044,
+	0x00000044,0x00000000,0x00000001,0x0004007c,0x00000016,0x00000046,0x00000045,0x00050041,
+	0x00000048,0x00000049,0x00000019,0x00000047,0x0004003d,0x00000016,0x0000004a,0x00000049,
+	0x00050080,0x00000016,0x0000004b,0x00000046,0x0000004a,0x0004003d,0x0000002a,0x0000004c,
+	0x0000002f,0x00040063,0x00000043,0x0000004b,0x0000004c,0x000100fd,0x00010038
 };
 
 static const GpuProgramParm_t timeWarpChromaticComputeProgramParms[] =
@@ -12748,8 +12848,8 @@ static const GpuProgramParm_t timeWarpChromaticComputeProgramParms[] =
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_B,		"warpImageB",		4 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE,		"imageScale",		0 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS,		"imageBias",		8 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER,		"imageLayer",		16 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET,	"eyePixelOffset",	24 }
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET,	"eyePixelOffset",	16 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER,		"imageLayer",		24 }
 };
 
 #define CHROMATIC_LOCAL_SIZE_X		8
@@ -12774,8 +12874,8 @@ static const char timeWarpChromaticComputeProgramGLSL[] =
 	"{\n"
 	"	layout( offset =  0 ) highp vec2 imageScale;\n"
 	"	layout( offset =  8 ) highp vec2 imageBias;\n"
-	"	layout( offset = 16 ) int imageLayer;\n"
-	"	layout( offset = 24 ) ivec2 eyePixelOffset;\n"
+	"	layout( offset = 16 ) ivec2 eyePixelOffset;\n"
+	"	layout( offset = 24 ) int imageLayer;\n"
 	"} pc;\n"
 	"\n"
 	"void main()\n"
@@ -12801,101 +12901,103 @@ static const unsigned int timeWarpChromaticComputeProgramSPIRV[] =
 	0x07230203,0x00010000,0x00080001,0x0000007a,0x00000000,0x00020011,0x00000001,0x0006000b,
 	0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
 	0x0006000f,0x00000005,0x00000004,0x6e69616d,0x00000000,0x0000000d,0x00060010,0x00000004,
-	0x00000011,0x00000008,0x00000008,0x00000001,0x00030003,0x00000002,0x000001b8,0x00040005,
-	0x00000004,0x6e69616d,0x00000000,0x00040005,0x00000009,0x656c6974,0x00000000,0x00080005,
-	0x0000000d,0x475f6c67,0x61626f6c,0x766e496c,0x7461636f,0x496e6f69,0x00000044,0x00060005,
-	0x00000017,0x68737550,0x736e6f43,0x746e6174,0x00000073,0x00060006,0x00000017,0x00000000,
-	0x67616d69,0x61635365,0x0000656c,0x00060006,0x00000017,0x00000001,0x67616d69,0x61694265,
-	0x00000073,0x00060006,0x00000017,0x00000002,0x67616d69,0x79614c65,0x00007265,0x00070006,
-	0x00000017,0x00000003,0x50657965,0x6c657869,0x7366664f,0x00007465,0x00030005,0x00000019,
-	0x00006370,0x00050005,0x00000023,0x43657965,0x64726f6f,0x00005273,0x00050005,0x00000027,
-	0x70726177,0x67616d49,0x00005265,0x00050005,0x0000002e,0x43657965,0x64726f6f,0x00004773,
-	0x00050005,0x0000002f,0x70726177,0x67616d49,0x00004765,0x00050005,0x00000034,0x43657965,
-	0x64726f6f,0x00004273,0x00050005,0x00000035,0x70726177,0x67616d49,0x00004265,0x00040005,
-	0x0000003b,0x61626772,0x00000000,0x00050005,0x0000003f,0x49657965,0x6567616d,0x00000000,
-	0x00040005,0x0000006d,0x74736564,0x00000000,0x00040047,0x0000000d,0x0000000b,0x0000001c,
-	0x00050048,0x00000017,0x00000000,0x00000023,0x00000000,0x00050048,0x00000017,0x00000001,
-	0x00000023,0x00000008,0x00050048,0x00000017,0x00000002,0x00000023,0x00000010,0x00050048,
-	0x00000017,0x00000003,0x00000023,0x00000018,0x00030047,0x00000017,0x00000002,0x00040047,
-	0x00000019,0x00000022,0x00000000,0x00040047,0x00000027,0x00000022,0x00000000,0x00040047,
-	0x00000027,0x00000021,0x00000002,0x00040047,0x0000002f,0x00000022,0x00000000,0x00040047,
-	0x0000002f,0x00000021,0x00000003,0x00040047,0x00000035,0x00000022,0x00000000,0x00040047,
-	0x00000035,0x00000021,0x00000004,0x00040047,0x0000003f,0x00000022,0x00000000,0x00040047,
-	0x0000003f,0x00000021,0x00000001,0x00040047,0x0000006d,0x00000022,0x00000000,0x00040047,
-	0x0000006d,0x00000021,0x00000000,0x00040047,0x00000079,0x0000000b,0x00000019,0x00020013,
-	0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,0x00000006,0x00000020,0x00040017,
-	0x00000007,0x00000006,0x00000002,0x00040020,0x00000008,0x00000007,0x00000007,0x00040015,
-	0x0000000a,0x00000020,0x00000000,0x00040017,0x0000000b,0x0000000a,0x00000003,0x00040020,
-	0x0000000c,0x00000001,0x0000000b,0x0004003b,0x0000000c,0x0000000d,0x00000001,0x00040017,
-	0x0000000e,0x0000000a,0x00000002,0x0004002b,0x00000006,0x00000012,0x3f000000,0x0005002c,
-	0x00000007,0x00000013,0x00000012,0x00000012,0x00040015,0x00000015,0x00000020,0x00000001,
-	0x00040017,0x00000016,0x00000015,0x00000002,0x0006001e,0x00000017,0x00000007,0x00000007,
-	0x00000015,0x00000016,0x00040020,0x00000018,0x00000009,0x00000017,0x0004003b,0x00000018,
-	0x00000019,0x00000009,0x0004002b,0x00000015,0x0000001a,0x00000000,0x00040020,0x0000001b,
-	0x00000009,0x00000007,0x0004002b,0x00000015,0x0000001f,0x00000001,0x00090019,0x00000024,
-	0x00000006,0x00000001,0x00000000,0x00000000,0x00000000,0x00000001,0x00000000,0x0003001b,
-	0x00000025,0x00000024,0x00040020,0x00000026,0x00000000,0x00000025,0x0004003b,0x00000026,
-	0x00000027,0x00000000,0x00040017,0x0000002a,0x00000006,0x00000004,0x0004002b,0x00000006,
-	0x0000002b,0x00000000,0x0004003b,0x00000026,0x0000002f,0x00000000,0x0004003b,0x00000026,
-	0x00000035,0x00000000,0x00040020,0x0000003a,0x00000007,0x0000002a,0x00090019,0x0000003c,
-	0x00000006,0x00000001,0x00000000,0x00000001,0x00000000,0x00000001,0x00000000,0x0003001b,
-	0x0000003d,0x0000003c,0x00040020,0x0000003e,0x00000000,0x0000003d,0x0004003b,0x0000003e,
-	0x0000003f,0x00000000,0x0004002b,0x00000015,0x00000042,0x00000002,0x00040020,0x00000043,
-	0x00000009,0x00000015,0x00040017,0x00000047,0x00000006,0x00000003,0x0004002b,0x0000000a,
-	0x0000004c,0x00000000,0x00040020,0x0000004e,0x00000007,0x00000006,0x0004002b,0x0000000a,
-	0x00000059,0x00000001,0x0004002b,0x0000000a,0x00000065,0x00000002,0x0004002b,0x00000006,
-	0x00000068,0x3f800000,0x0004002b,0x0000000a,0x00000069,0x00000003,0x00090019,0x0000006b,
-	0x00000006,0x00000001,0x00000000,0x00000000,0x00000000,0x00000002,0x00000004,0x00040020,
-	0x0000006c,0x00000000,0x0000006b,0x0004003b,0x0000006c,0x0000006d,0x00000000,0x0004002b,
-	0x00000015,0x00000072,0x00000003,0x00040020,0x00000073,0x00000009,0x00000016,0x0004002b,
-	0x0000000a,0x00000078,0x00000008,0x0006002c,0x0000000b,0x00000079,0x00000078,0x00000078,
-	0x00000059,0x00050036,0x00000002,0x00000004,0x00000000,0x00000003,0x000200f8,0x00000005,
-	0x0004003b,0x00000008,0x00000009,0x00000007,0x0004003b,0x00000008,0x00000023,0x00000007,
-	0x0004003b,0x00000008,0x0000002e,0x00000007,0x0004003b,0x00000008,0x00000034,0x00000007,
-	0x0004003b,0x0000003a,0x0000003b,0x00000007,0x0004003d,0x0000000b,0x0000000f,0x0000000d,
-	0x0007004f,0x0000000e,0x00000010,0x0000000f,0x0000000f,0x00000000,0x00000001,0x00040070,
-	0x00000007,0x00000011,0x00000010,0x00050081,0x00000007,0x00000014,0x00000011,0x00000013,
-	0x00050041,0x0000001b,0x0000001c,0x00000019,0x0000001a,0x0004003d,0x00000007,0x0000001d,
-	0x0000001c,0x00050085,0x00000007,0x0000001e,0x00000014,0x0000001d,0x00050041,0x0000001b,
-	0x00000020,0x00000019,0x0000001f,0x0004003d,0x00000007,0x00000021,0x00000020,0x00050081,
-	0x00000007,0x00000022,0x0000001e,0x00000021,0x0003003e,0x00000009,0x00000022,0x0004003d,
-	0x00000025,0x00000028,0x00000027,0x0004003d,0x00000007,0x00000029,0x00000009,0x00070058,
-	0x0000002a,0x0000002c,0x00000028,0x00000029,0x00000002,0x0000002b,0x0007004f,0x00000007,
-	0x0000002d,0x0000002c,0x0000002c,0x00000000,0x00000001,0x0003003e,0x00000023,0x0000002d,
-	0x0004003d,0x00000025,0x00000030,0x0000002f,0x0004003d,0x00000007,0x00000031,0x00000009,
-	0x00070058,0x0000002a,0x00000032,0x00000030,0x00000031,0x00000002,0x0000002b,0x0007004f,
-	0x00000007,0x00000033,0x00000032,0x00000032,0x00000000,0x00000001,0x0003003e,0x0000002e,
-	0x00000033,0x0004003d,0x00000025,0x00000036,0x00000035,0x0004003d,0x00000007,0x00000037,
-	0x00000009,0x00070058,0x0000002a,0x00000038,0x00000036,0x00000037,0x00000002,0x0000002b,
-	0x0007004f,0x00000007,0x00000039,0x00000038,0x00000038,0x00000000,0x00000001,0x0003003e,
-	0x00000034,0x00000039,0x0004003d,0x0000003d,0x00000040,0x0000003f,0x0004003d,0x00000007,
-	0x00000041,0x00000023,0x00050041,0x00000043,0x00000044,0x00000019,0x00000042,0x0004003d,
-	0x00000015,0x00000045,0x00000044,0x0004006f,0x00000006,0x00000046,0x00000045,0x00050051,
-	0x00000006,0x00000048,0x00000041,0x00000000,0x00050051,0x00000006,0x00000049,0x00000041,
-	0x00000001,0x00060050,0x00000047,0x0000004a,0x00000048,0x00000049,0x00000046,0x00070058,
-	0x0000002a,0x0000004b,0x00000040,0x0000004a,0x00000002,0x0000002b,0x00050051,0x00000006,
-	0x0000004d,0x0000004b,0x00000000,0x00050041,0x0000004e,0x0000004f,0x0000003b,0x0000004c,
-	0x0003003e,0x0000004f,0x0000004d,0x0004003d,0x0000003d,0x00000050,0x0000003f,0x0004003d,
-	0x00000007,0x00000051,0x0000002e,0x00050041,0x00000043,0x00000052,0x00000019,0x00000042,
-	0x0004003d,0x00000015,0x00000053,0x00000052,0x0004006f,0x00000006,0x00000054,0x00000053,
-	0x00050051,0x00000006,0x00000055,0x00000051,0x00000000,0x00050051,0x00000006,0x00000056,
-	0x00000051,0x00000001,0x00060050,0x00000047,0x00000057,0x00000055,0x00000056,0x00000054,
-	0x00070058,0x0000002a,0x00000058,0x00000050,0x00000057,0x00000002,0x0000002b,0x00050051,
-	0x00000006,0x0000005a,0x00000058,0x00000001,0x00050041,0x0000004e,0x0000005b,0x0000003b,
-	0x00000059,0x0003003e,0x0000005b,0x0000005a,0x0004003d,0x0000003d,0x0000005c,0x0000003f,
-	0x0004003d,0x00000007,0x0000005d,0x00000034,0x00050041,0x00000043,0x0000005e,0x00000019,
-	0x00000042,0x0004003d,0x00000015,0x0000005f,0x0000005e,0x0004006f,0x00000006,0x00000060,
-	0x0000005f,0x00050051,0x00000006,0x00000061,0x0000005d,0x00000000,0x00050051,0x00000006,
-	0x00000062,0x0000005d,0x00000001,0x00060050,0x00000047,0x00000063,0x00000061,0x00000062,
-	0x00000060,0x00070058,0x0000002a,0x00000064,0x0000005c,0x00000063,0x00000002,0x0000002b,
-	0x00050051,0x00000006,0x00000066,0x00000064,0x00000002,0x00050041,0x0000004e,0x00000067,
-	0x0000003b,0x00000065,0x0003003e,0x00000067,0x00000066,0x00050041,0x0000004e,0x0000006a,
-	0x0000003b,0x00000069,0x0003003e,0x0000006a,0x00000068,0x0004003d,0x0000006b,0x0000006e,
-	0x0000006d,0x0004003d,0x0000000b,0x0000006f,0x0000000d,0x0007004f,0x0000000e,0x00000070,
-	0x0000006f,0x0000006f,0x00000000,0x00000001,0x0004007c,0x00000016,0x00000071,0x00000070,
-	0x00050041,0x00000073,0x00000074,0x00000019,0x00000072,0x0004003d,0x00000016,0x00000075,
-	0x00000074,0x00050080,0x00000016,0x00000076,0x00000071,0x00000075,0x0004003d,0x0000002a,
-	0x00000077,0x0000003b,0x00040063,0x0000006e,0x00000076,0x00000077,0x000100fd,0x00010038
+	0x00000011,0x00000008,0x00000008,0x00000001,0x00030003,0x00000002,0x000001b8,0x00070004,
+	0x415f4c47,0x655f4252,0x6e61686e,0x5f646563,0x6f79616c,0x00737475,0x00070004,0x455f4c47,
+	0x735f5458,0x65646168,0x6f695f72,0x6f6c625f,0x00736b63,0x00040005,0x00000004,0x6e69616d,
+	0x00000000,0x00040005,0x00000009,0x656c6974,0x00000000,0x00080005,0x0000000d,0x475f6c67,
+	0x61626f6c,0x766e496c,0x7461636f,0x496e6f69,0x00000044,0x00060005,0x00000017,0x68737550,
+	0x736e6f43,0x746e6174,0x00000073,0x00060006,0x00000017,0x00000000,0x67616d69,0x61635365,
+	0x0000656c,0x00060006,0x00000017,0x00000001,0x67616d69,0x61694265,0x00000073,0x00070006,
+	0x00000017,0x00000002,0x50657965,0x6c657869,0x7366664f,0x00007465,0x00060006,0x00000017,
+	0x00000003,0x67616d69,0x79614c65,0x00007265,0x00030005,0x00000019,0x00006370,0x00050005,
+	0x00000023,0x43657965,0x64726f6f,0x00005273,0x00050005,0x00000027,0x70726177,0x67616d49,
+	0x00005265,0x00050005,0x0000002e,0x43657965,0x64726f6f,0x00004773,0x00050005,0x0000002f,
+	0x70726177,0x67616d49,0x00004765,0x00050005,0x00000034,0x43657965,0x64726f6f,0x00004273,
+	0x00050005,0x00000035,0x70726177,0x67616d49,0x00004265,0x00040005,0x0000003b,0x61626772,
+	0x00000000,0x00050005,0x0000003f,0x49657965,0x6567616d,0x00000000,0x00040005,0x0000006d,
+	0x74736564,0x00000000,0x00040047,0x0000000d,0x0000000b,0x0000001c,0x00050048,0x00000017,
+	0x00000000,0x00000023,0x00000000,0x00050048,0x00000017,0x00000001,0x00000023,0x00000008,
+	0x00050048,0x00000017,0x00000002,0x00000023,0x00000010,0x00050048,0x00000017,0x00000003,
+	0x00000023,0x00000018,0x00030047,0x00000017,0x00000002,0x00040047,0x00000027,0x00000022,
+	0x00000000,0x00040047,0x00000027,0x00000021,0x00000002,0x00040047,0x0000002f,0x00000022,
+	0x00000000,0x00040047,0x0000002f,0x00000021,0x00000003,0x00040047,0x00000035,0x00000022,
+	0x00000000,0x00040047,0x00000035,0x00000021,0x00000004,0x00040047,0x0000003f,0x00000022,
+	0x00000000,0x00040047,0x0000003f,0x00000021,0x00000001,0x00040047,0x0000006d,0x00000022,
+	0x00000000,0x00040047,0x0000006d,0x00000021,0x00000000,0x00030047,0x0000006d,0x00000019,
+	0x00040047,0x00000079,0x0000000b,0x00000019,0x00020013,0x00000002,0x00030021,0x00000003,
+	0x00000002,0x00030016,0x00000006,0x00000020,0x00040017,0x00000007,0x00000006,0x00000002,
+	0x00040020,0x00000008,0x00000007,0x00000007,0x00040015,0x0000000a,0x00000020,0x00000000,
+	0x00040017,0x0000000b,0x0000000a,0x00000003,0x00040020,0x0000000c,0x00000001,0x0000000b,
+	0x0004003b,0x0000000c,0x0000000d,0x00000001,0x00040017,0x0000000e,0x0000000a,0x00000002,
+	0x0004002b,0x00000006,0x00000012,0x3f000000,0x0005002c,0x00000007,0x00000013,0x00000012,
+	0x00000012,0x00040015,0x00000015,0x00000020,0x00000001,0x00040017,0x00000016,0x00000015,
+	0x00000002,0x0006001e,0x00000017,0x00000007,0x00000007,0x00000016,0x00000015,0x00040020,
+	0x00000018,0x00000009,0x00000017,0x0004003b,0x00000018,0x00000019,0x00000009,0x0004002b,
+	0x00000015,0x0000001a,0x00000000,0x00040020,0x0000001b,0x00000009,0x00000007,0x0004002b,
+	0x00000015,0x0000001f,0x00000001,0x00090019,0x00000024,0x00000006,0x00000001,0x00000000,
+	0x00000000,0x00000000,0x00000001,0x00000000,0x0003001b,0x00000025,0x00000024,0x00040020,
+	0x00000026,0x00000000,0x00000025,0x0004003b,0x00000026,0x00000027,0x00000000,0x00040017,
+	0x0000002a,0x00000006,0x00000004,0x0004002b,0x00000006,0x0000002b,0x00000000,0x0004003b,
+	0x00000026,0x0000002f,0x00000000,0x0004003b,0x00000026,0x00000035,0x00000000,0x00040020,
+	0x0000003a,0x00000007,0x0000002a,0x00090019,0x0000003c,0x00000006,0x00000001,0x00000000,
+	0x00000001,0x00000000,0x00000001,0x00000000,0x0003001b,0x0000003d,0x0000003c,0x00040020,
+	0x0000003e,0x00000000,0x0000003d,0x0004003b,0x0000003e,0x0000003f,0x00000000,0x0004002b,
+	0x00000015,0x00000042,0x00000003,0x00040020,0x00000043,0x00000009,0x00000015,0x00040017,
+	0x00000047,0x00000006,0x00000003,0x0004002b,0x0000000a,0x0000004c,0x00000000,0x00040020,
+	0x0000004e,0x00000007,0x00000006,0x0004002b,0x0000000a,0x00000059,0x00000001,0x0004002b,
+	0x0000000a,0x00000065,0x00000002,0x0004002b,0x00000006,0x00000068,0x3f800000,0x0004002b,
+	0x0000000a,0x00000069,0x00000003,0x00090019,0x0000006b,0x00000006,0x00000001,0x00000000,
+	0x00000000,0x00000000,0x00000002,0x00000004,0x00040020,0x0000006c,0x00000000,0x0000006b,
+	0x0004003b,0x0000006c,0x0000006d,0x00000000,0x0004002b,0x00000015,0x00000072,0x00000002,
+	0x00040020,0x00000073,0x00000009,0x00000016,0x0004002b,0x0000000a,0x00000078,0x00000008,
+	0x0006002c,0x0000000b,0x00000079,0x00000078,0x00000078,0x00000059,0x00050036,0x00000002,
+	0x00000004,0x00000000,0x00000003,0x000200f8,0x00000005,0x0004003b,0x00000008,0x00000009,
+	0x00000007,0x0004003b,0x00000008,0x00000023,0x00000007,0x0004003b,0x00000008,0x0000002e,
+	0x00000007,0x0004003b,0x00000008,0x00000034,0x00000007,0x0004003b,0x0000003a,0x0000003b,
+	0x00000007,0x0004003d,0x0000000b,0x0000000f,0x0000000d,0x0007004f,0x0000000e,0x00000010,
+	0x0000000f,0x0000000f,0x00000000,0x00000001,0x00040070,0x00000007,0x00000011,0x00000010,
+	0x00050081,0x00000007,0x00000014,0x00000011,0x00000013,0x00050041,0x0000001b,0x0000001c,
+	0x00000019,0x0000001a,0x0004003d,0x00000007,0x0000001d,0x0000001c,0x00050085,0x00000007,
+	0x0000001e,0x00000014,0x0000001d,0x00050041,0x0000001b,0x00000020,0x00000019,0x0000001f,
+	0x0004003d,0x00000007,0x00000021,0x00000020,0x00050081,0x00000007,0x00000022,0x0000001e,
+	0x00000021,0x0003003e,0x00000009,0x00000022,0x0004003d,0x00000025,0x00000028,0x00000027,
+	0x0004003d,0x00000007,0x00000029,0x00000009,0x00070058,0x0000002a,0x0000002c,0x00000028,
+	0x00000029,0x00000002,0x0000002b,0x0007004f,0x00000007,0x0000002d,0x0000002c,0x0000002c,
+	0x00000000,0x00000001,0x0003003e,0x00000023,0x0000002d,0x0004003d,0x00000025,0x00000030,
+	0x0000002f,0x0004003d,0x00000007,0x00000031,0x00000009,0x00070058,0x0000002a,0x00000032,
+	0x00000030,0x00000031,0x00000002,0x0000002b,0x0007004f,0x00000007,0x00000033,0x00000032,
+	0x00000032,0x00000000,0x00000001,0x0003003e,0x0000002e,0x00000033,0x0004003d,0x00000025,
+	0x00000036,0x00000035,0x0004003d,0x00000007,0x00000037,0x00000009,0x00070058,0x0000002a,
+	0x00000038,0x00000036,0x00000037,0x00000002,0x0000002b,0x0007004f,0x00000007,0x00000039,
+	0x00000038,0x00000038,0x00000000,0x00000001,0x0003003e,0x00000034,0x00000039,0x0004003d,
+	0x0000003d,0x00000040,0x0000003f,0x0004003d,0x00000007,0x00000041,0x00000023,0x00050041,
+	0x00000043,0x00000044,0x00000019,0x00000042,0x0004003d,0x00000015,0x00000045,0x00000044,
+	0x0004006f,0x00000006,0x00000046,0x00000045,0x00050051,0x00000006,0x00000048,0x00000041,
+	0x00000000,0x00050051,0x00000006,0x00000049,0x00000041,0x00000001,0x00060050,0x00000047,
+	0x0000004a,0x00000048,0x00000049,0x00000046,0x00070058,0x0000002a,0x0000004b,0x00000040,
+	0x0000004a,0x00000002,0x0000002b,0x00050051,0x00000006,0x0000004d,0x0000004b,0x00000000,
+	0x00050041,0x0000004e,0x0000004f,0x0000003b,0x0000004c,0x0003003e,0x0000004f,0x0000004d,
+	0x0004003d,0x0000003d,0x00000050,0x0000003f,0x0004003d,0x00000007,0x00000051,0x0000002e,
+	0x00050041,0x00000043,0x00000052,0x00000019,0x00000042,0x0004003d,0x00000015,0x00000053,
+	0x00000052,0x0004006f,0x00000006,0x00000054,0x00000053,0x00050051,0x00000006,0x00000055,
+	0x00000051,0x00000000,0x00050051,0x00000006,0x00000056,0x00000051,0x00000001,0x00060050,
+	0x00000047,0x00000057,0x00000055,0x00000056,0x00000054,0x00070058,0x0000002a,0x00000058,
+	0x00000050,0x00000057,0x00000002,0x0000002b,0x00050051,0x00000006,0x0000005a,0x00000058,
+	0x00000001,0x00050041,0x0000004e,0x0000005b,0x0000003b,0x00000059,0x0003003e,0x0000005b,
+	0x0000005a,0x0004003d,0x0000003d,0x0000005c,0x0000003f,0x0004003d,0x00000007,0x0000005d,
+	0x00000034,0x00050041,0x00000043,0x0000005e,0x00000019,0x00000042,0x0004003d,0x00000015,
+	0x0000005f,0x0000005e,0x0004006f,0x00000006,0x00000060,0x0000005f,0x00050051,0x00000006,
+	0x00000061,0x0000005d,0x00000000,0x00050051,0x00000006,0x00000062,0x0000005d,0x00000001,
+	0x00060050,0x00000047,0x00000063,0x00000061,0x00000062,0x00000060,0x00070058,0x0000002a,
+	0x00000064,0x0000005c,0x00000063,0x00000002,0x0000002b,0x00050051,0x00000006,0x00000066,
+	0x00000064,0x00000002,0x00050041,0x0000004e,0x00000067,0x0000003b,0x00000065,0x0003003e,
+	0x00000067,0x00000066,0x00050041,0x0000004e,0x0000006a,0x0000003b,0x00000069,0x0003003e,
+	0x0000006a,0x00000068,0x0004003d,0x0000006b,0x0000006e,0x0000006d,0x0004003d,0x0000000b,
+	0x0000006f,0x0000000d,0x0007004f,0x0000000e,0x00000070,0x0000006f,0x0000006f,0x00000000,
+	0x00000001,0x0004007c,0x00000016,0x00000071,0x00000070,0x00050041,0x00000073,0x00000074,
+	0x00000019,0x00000072,0x0004003d,0x00000016,0x00000075,0x00000074,0x00050080,0x00000016,
+	0x00000076,0x00000071,0x00000075,0x0004003d,0x0000002a,0x00000077,0x0000003b,0x00040063,
+	0x0000006e,0x00000076,0x00000077,0x000100fd,0x00010038
 };
 
 static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, GpuRenderPass_t * renderPass )
@@ -12999,6 +13101,11 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 	CalculateTimeWarpTransform( &timeWarpStartTransform, projectionMatrix, viewMatrix, &displayRefreshStartViewMatrix );
 	CalculateTimeWarpTransform( &timeWarpEndTransform, projectionMatrix, viewMatrix, &displayRefreshEndViewMatrix );
 
+	Matrix3x4f_t timeWarpStartTransform3x4;
+	Matrix3x4f_t timeWarpEndTransform3x4;
+	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpStartTransform3x4, &timeWarpStartTransform );
+	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpEndTransform3x4, &timeWarpEndTransform );
+
 	GpuCommandBuffer_BeginPrimary( commandBuffer );
 	GpuCommandBuffer_BeginFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_STORAGE );
 
@@ -13025,8 +13132,8 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 			GpuComputeCommand_SetPipeline( &command, &compute->timeWarpTransformPipeline );
 			GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_DST, &compute->timeWarpImage[eye][channel] );
 			GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_SRC, &compute->distortionImage[eye][channel] );
-			GpuComputeCommand_SetParmFloatMatrix4x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform );
-			GpuComputeCommand_SetParmFloatMatrix4x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform );
+			GpuComputeCommand_SetParmFloatMatrix3x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform3x4 );
+			GpuComputeCommand_SetParmFloatMatrix3x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform3x4 );
 			GpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_DIMENSIONS, &dimensions );
 			GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE, &eyeIndex[eye] );
 			GpuComputeCommand_SetDimensions( &command, ( dimensions.x + TRANSFORM_LOCAL_SIZE_X - 1 ) / TRANSFORM_LOCAL_SIZE_X, 
@@ -13084,8 +13191,8 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 		GpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_B, &compute->timeWarpImage[eye][2] );
 		GpuComputeCommand_SetParmFloatVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE, &imageScale );
 		GpuComputeCommand_SetParmFloatVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS, &imageBias );
-		GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER, &eyeArrayLayer[eye] );
 		GpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET, &eyePixelOffset[eye] );
+		GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER, &eyeArrayLayer[eye] );
 		GpuComputeCommand_SetDimensions( &command, screenWidth / ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_X : SPATIAL_LOCAL_SIZE_X ) / 2,
 													screenHeight / ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_Y : SPATIAL_LOCAL_SIZE_Y ), 1 );
 
@@ -14971,7 +15078,7 @@ static void DumpGLSL()
 									"glslangValidator -V -o %sSPIRV.spv %sGLSL.%s\r\n",
 									glsl[i].fileName, glsl[i].fileName, glsl[i].extension );
 		batchFileHexLength += sprintf( batchFileHex + batchFileHexLength,
-									"glslangValidator -V -x %sSPIRV.h %sGLSL.%s\r\n",
+									"glslangValidator -V -x -o %sSPIRV.h %sGLSL.%s\r\n",
 									glsl[i].fileName, glsl[i].fileName, glsl[i].extension );
 	}
 
@@ -15327,15 +15434,15 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
 			break;	// change render mode
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
 			SceneThread_Destroy( &sceneThread, &sceneThreadData );
@@ -15352,61 +15459,61 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
 			SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
 			sceneThreadData.openFrameLog = true;
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_P ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_P ) )
 		{
 			SceneSettings_ToggleSimulationPaused( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_G ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_G ) )
 		{
 			TimeWarp_CycleBarGraphState( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_Q ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_Q ) )
 		{
 			SceneSettings_CycleDrawCallLevel( &sceneSettings );
 			TimeWarp_SetDrawCallLevel( &timeWarp, SceneSettings_GetDrawCallLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_W ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_W ) )
 		{
 			SceneSettings_CycleTriangleLevel( &sceneSettings );
 			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_E ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_E ) )
 		{
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_I ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_I ) )
 		{
 			TimeWarp_CycleImplementation( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_C ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_C ) )
 		{
 			TimeWarp_ToggleChromaticAberrationCorrection( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_M ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_M ) )
 		{
 			SceneSettings_ToggleMultiView( &sceneSettings );
 			TimeWarp_SetMultiView( &timeWarp, SceneSettings_GetMultiView( &sceneSettings ) );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
 		{
 			DumpGLSL();
 		}
@@ -15490,15 +15597,15 @@ bool RenderTimeWarp( const StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
 			break;	// change render mode
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
 			TimeWarp_Destroy( &timeWarp, &window );
@@ -15510,36 +15617,36 @@ bool RenderTimeWarp( const StartupSettings_t * startupSettings )
 							fullscreen );
 			TimeWarp_Create( &timeWarp, &window );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_G ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_G ) )
 		{
 			TimeWarp_CycleBarGraphState( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_I ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_I ) )
 		{
 			TimeWarp_CycleImplementation( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_C ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_C ) )
 		{
 			TimeWarp_ToggleChromaticAberrationCorrection( &timeWarp );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
 		{
 			DumpGLSL();
 		}
@@ -15645,15 +15752,15 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
 			break;	// change render mode
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
 			Scene_Destroy( &window.context, &scene );
@@ -15676,40 +15783,40 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 			GpuTimer_Create( &window.context, &timer );
 			Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_scene.txt", 10 );
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_P ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_P ) )
 		{
 			SceneSettings_ToggleSimulationPaused( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_Q ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_Q ) )
 		{
 			SceneSettings_CycleDrawCallLevel( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_W ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_W ) )
 		{
 			SceneSettings_CycleTriangleLevel( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_E ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_E ) )
 		{
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
 		}
-		if ( GpuWindow_CheckKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
 		{
 			DumpGLSL();
 		}
@@ -15843,11 +15950,13 @@ static int StartApplication( int argc, char * argv[] )
 		}
 	}
 
+	DumpGLSL();
+
 	//startupSettings.headRotationDisabled = true;
 	//startupSettings.simulationPaused = true;
 	//startupSettings.useMultiView = true;
 	//startupSettings.correctChromaticAberration = true;
-	//startupSettings.renderMode = 1;
+	//startupSettings.renderMode = RENDER_MODE_TIME_WARP;
 	//startupSettings.timeWarpImplementation = TIMEWARP_IMPLEMENTATION_COMPUTE;
 
 	Print( "    fullscreen = %d\n",					startupSettings.fullscreen );

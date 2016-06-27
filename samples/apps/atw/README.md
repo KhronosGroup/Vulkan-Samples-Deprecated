@@ -1,6 +1,6 @@
 
 These samples implement the simplest form of time warp transform for virtual reality.
-This transform corrects for optical aberration of the optics used in a virtual
+This transform corrects for optical aberration of the lenses used in a virtual
 reality headset, and only rotates the stereoscopic images based on the very latest
 head orientation to reduce the motion-to-photon delay (or end-to-end latency).
 

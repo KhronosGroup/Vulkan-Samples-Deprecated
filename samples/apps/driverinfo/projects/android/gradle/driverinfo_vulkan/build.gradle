@@ -1,0 +1,91 @@
+
+buildscript {
+	repositories {
+		jcenter()
+	}
+
+	dependencies {
+		classpath 'com.android.tools.build:gradle-experimental:0.6.0-beta5'
+        //classpath 'com.android.tools.build:gradle-experimental:0.7.0-alpha1'
+	}
+}
+
+apply plugin: 'com.android.model.application'
+
+def ndkDir = System.getenv('ANDROID_NDK_HOME')
+if( ndkDir == null ) { ndkDir = System.getenv('ANDROID_NDK_ROOT') }
+if( ndkDir == null ) { ndkDir = System.getenv('ANDROID_NDK') }
+if( ndkDir == null ) { ndkDir = System.getenv('NDK_HOME') }
+if( ndkDir == null ) { ndkDir = System.getenv('NDK_ROOT') }
+if( ndkDir == null ) { ndkDir = System.getenv('NDKROOT') }
+if( ndkDir == null )
+{
+	throw new GradleException('Android NDK path not found! Make sure ANDROID_NDK_HOME is set.')
+}
+def baseDir = "../../../../../../.."	// base of the Vulkan-Samples repository
+def buildDir = "${baseDir}/build/android/gradle/apps/driverinfo_vulkan"
+def vkSdkPath = System.getenv('VK_SDK_PATH')
+
+rootProject.buildDir = file(new File(buildDir))
+
+model {
+	android {
+		compileSdkVersion = 23
+		buildToolsVersion = "23.0.2"
+
+		defaultConfig.with {
+			applicationId = "com.vulkansamples.driverinfo_vulkan"
+			minSdkVersion.apiLevel = 21
+			targetSdkVersion.apiLevel = 21
+			versionCode = 1
+			versionName = "1.0"
+		}
+	}
+
+	android.ndk {
+		moduleName = "driverinfo_vulkan"
+
+		CFlags.addAll(["-std=c99", "-O3", "-Wall"])
+
+		CFlags.addAll([
+			"-I${file("${ndkDir}/sources/android/native_app_glue")}".toString(),
+			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/include")}".toString(),
+			"-I${file("${vkSdkPath}/Include")}".toString()
+		])
+
+		ldLibs.addAll(["android", "log", "dl"])
+	}
+
+	android.sources {
+		main {
+			manifest.source {
+				srcDir './'
+				include 'AndroidManifest.xml'
+			}
+			jni.source {
+				srcDir "${ndkDir}/sources/android/native_app_glue"
+				include "android_native_app_glue.c"
+				srcDir "${baseDir}/samples/apps/driverinfo"
+				include "driverinfo_vulkan.c"
+				exclude "driverinfo_opengl.c"
+			}
+		}
+	}
+
+	android.buildTypes {
+		release {
+			ndk.with {
+				debuggable = true
+			}
+		}
+	}
+
+	android.productFlavors {
+		create ("all") {
+			ndk.abiFilters.addAll([	"armeabi-v7a",
+									"arm64-v8a",
+									"x86",
+									"x86_64" ])
+		}
+	}
+}

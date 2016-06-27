@@ -1,0 +1,8 @@
+LIBRARY VKLayer_glsl_shader
+EXPORTS
+vkEnumerateInstanceLayerProperties
+vkEnumerateInstanceExtensionProperties
+vkEnumerateDeviceLayerProperties
+vkEnumerateDeviceExtensionProperties
+vkGetInstanceProcAddr
+vkGetDeviceProcAddr

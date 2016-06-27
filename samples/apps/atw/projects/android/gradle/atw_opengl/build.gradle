@@ -23,7 +23,7 @@ if( ndkDir == null )
 	throw new GradleException('Android NDK path not found! Make sure ANDROID_NDK_HOME is set.')
 }
 def baseDir = "../../../../../../.."	// base of the Vulkan-Samples repository
-def buildDir = "${baseDir}/build/android/gradle/apps/atw_opengl/build"
+def buildDir = "${baseDir}/build/android/gradle/apps/atw_opengl"
 
 rootProject.buildDir = file(new File(buildDir))
 
@@ -47,7 +47,8 @@ model {
 		CFlags.addAll(["-std=c99", "-O3", "-Wall"])
 
 		CFlags.addAll([
-			"-I${file("${ndkDir}/sources/android/native_app_glue")}".toString()
+			"-I${file("${ndkDir}/sources/android/native_app_glue")}".toString(),
+			"-I${file("${baseDir}/external/include")}".toString()
 		])
 
 		ldLibs.addAll(["android", "log", "EGL", "GLESv3"])
@@ -56,8 +57,8 @@ model {
 	android.sources {
 		main {
 			manifest.source {
-				srcDir "./"
-				include "AndroidManifest.xml"
+				srcDir './'
+				include 'AndroidManifest.xml'
 			}
 			jni.source {
 				srcDir "${ndkDir}/sources/android/native_app_glue"

@@ -23,7 +23,7 @@ if( ndkDir == null )
 	throw new GradleException('Android NDK path not found! Make sure ANDROID_NDK_HOME is set.')
 }
 def baseDir = "../../../../../../.."	// base of the Vulkan-Samples repository
-def buildDir = "${baseDir}/build/android/gradle/apps/atw_vulkan/build"
+def buildDir = "${baseDir}/build/android/gradle/apps/atw_vulkan"
 def vkSdkPath = System.getenv('VK_SDK_PATH')
 
 rootProject.buildDir = file(new File(buildDir))
@@ -49,6 +49,7 @@ model {
 
 		CFlags.addAll([
 			"-I${file("${ndkDir}/sources/android/native_app_glue")}".toString(),
+			"-I${file("${baseDir}/external/include")}".toString(),
 			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/include")}".toString(),
 			"-I${file("${vkSdkPath}/Include")}".toString()
 		])
