@@ -223,7 +223,7 @@ Microsoft Windows: Intel Compiler 14.0
 	"C:\Program Files (x86)\Intel\Composer XE\bin\iclvars.bat" intel64
 	icl /Qstd=c99 /Zc:wchar_t /Zc:forScope /Wall /MD /GS /Gy /O2 /Oi /I%VK_SDK_PATH%\Include atw_vulkan.c /link user32.lib gdi32.lib Advapi32.lib Shlwapi.lib
 
-Apple Mac OS X: Apple LLVM 6.0:
+Apple macOS: Apple LLVM 6.0:
 	clang -std=c99 -x objective-c -fno-objc-arc -Wall -g -O2 -m64 -o atw_vulkan atw_vulkan.c -framework Cocoa
 
 Linux: GCC 4.8.2 Xlib:
@@ -341,7 +341,7 @@ Platform headers / declarations
 	#endif
 	#if __MAC_OS_X_VERSION_MAX_ALLOWED
 		#define OS_MAC
-		#define VK_USE_PLATFORM_OSX_MVK
+		#define VK_USE_PLATFORM_MACOS_MVK
 		#include <AppKit/AppKit.h>
 	#endif
 
@@ -355,12 +355,12 @@ Platform headers / declarations
 		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateIOSSurfaceMVK
 		#define vkCreateSurfaceKHR						vkCreateIOSSurfaceMVK
 	#endif
-	#if defined( VK_USE_PLATFORM_OSX_MVK )
+	#if defined( VK_USE_PLATFORM_MACOS_MVK )
 		#include <MoltenVK/vk_mvk_moltenvk.h>
-		#include <MoltenVK/vk_mvk_osx_surface.h>
-		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_MVK_OSX_SURFACE_EXTENSION_NAME
-		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateOSXSurfaceMVK
-		#define vkCreateSurfaceKHR						vkCreateOSXSurfaceMVK
+		#include <MoltenVK/vk_mvk_macos_surface.h>
+		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_MVK_MACOS_SURFACE_EXTENSION_NAME
+		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateMacOSSurfaceMVK
+		#define vkCreateSurfaceKHR						vkCreateMacOSSurfaceMVK
 	#endif
 
 	#define OUTPUT_PATH		""
@@ -1236,7 +1236,7 @@ static void Thread_SetAffinity( int mask )
 		Print( "Thread %p affinity set to 0x%02X\n", thread, mask );
 	}
 #elif defined( OS_APPLE )
-	// OS X does not export interfaces that identify processors or control thread placement.
+	// macOS does not export interfaces that identify processors or control thread placement.
 	// Explicit thread to processor binding is not supported.
 	UNUSED_PARM( mask );
 #elif defined( OS_ANDROID )
@@ -2953,7 +2953,7 @@ static bool GpuDevice_Create( GpuDevice_t * device, DriverInstance_t * instance,
 
 	VK( instance->vkCreateDevice( device->physicalDevice, &deviceCreateInfo, VK_ALLOCATOR, &device->device ) );
 
-#if defined( VK_USE_PLATFORM_IOS_MVK ) || defined( VK_USE_PLATFORM_OSX_MVK )
+#if defined( VK_USE_PLATFORM_IOS_MVK ) || defined( VK_USE_PLATFORM_MACOS_MVK )
 	// Specify some helpful MoltenVK extension configuration, such as performance logging.
 	MVKDeviceConfiguration mvkConfig;
 	vkGetMoltenVKDeviceConfigurationMVK(device->device, &mvkConfig);
@@ -4001,8 +4001,8 @@ static void GpuWindow_CreateFromSurface( GpuWindow_t * window, const VkSurfaceKH
 	GpuDepthBuffer_Create( &window->context, &window->depthBuffer, window->depthFormat, window->windowWidth, window->windowHeight, 1 );
 
 #if defined( OS_APPLE )
-    window->windowWidth = window->swapchain.width;			// iOS/OSX patch for Retina displays
-    window->windowHeight = window->swapchain.height;		// iOS/OSX patch for Retina displays
+    window->windowWidth = window->swapchain.width;			// iOS/macOS patch for Retina displays
+    window->windowHeight = window->swapchain.height;		// iOS/macOS patch for Retina displays
 #endif
 
 	assert( window->swapchain.width == window->windowWidth && window->swapchain.height == window->windowHeight );
@@ -4719,14 +4719,14 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 		[window->nsWindow makeFirstResponder:nil];
 	}
 
-	VkOSXSurfaceCreateInfoMVK osxSurfaceCreateInfo;
-	osxSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_OSX_SURFACE_CREATE_INFO_MVK;
-	osxSurfaceCreateInfo.pNext = NULL;
-	osxSurfaceCreateInfo.flags = 0;
-	osxSurfaceCreateInfo.pView = window->nsView;
+	VkMacOSSurfaceCreateInfoMVK macosSurfaceCreateInfo;
+	macosSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK;
+	macosSurfaceCreateInfo.pNext = NULL;
+	macosSurfaceCreateInfo.flags = 0;
+	macosSurfaceCreateInfo.pView = window->nsView;
 
 	VkSurfaceKHR surface;
-	VK( instance->vkCreateSurfaceKHR( instance->instance, &osxSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
+	VK( instance->vkCreateSurfaceKHR( instance->instance, &macosSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
 
 	GpuDevice_Create( &window->device, instance, queueInfo, surface );
 	GpuContext_Create( &window->context, &window->device, queueIndex );
@@ -16105,7 +16105,7 @@ void SetBundleCWD( const char * bundledExecutablePath )
 int main( int argc, char * argv[] )
 {
 	/*
-		When an application executable is not launched from a bundle, Mac OS X
+		When an application executable is not launched from a bundle, macOS
 		considers the application to be a console application with only text output
 		and console keyboard input. As a result, an application will not receive
 		keyboard events unless the application is launched from a bundle.
