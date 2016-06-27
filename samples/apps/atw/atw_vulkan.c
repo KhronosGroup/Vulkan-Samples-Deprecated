@@ -1,4 +1,4 @@
-﻿/*
+/*
 ================================================================================================
 
 Description	:	Asynchronous Time Warp test utility for Vulkan.
@@ -7,12 +7,14 @@ Date		:	08/11/2015
 Language	:	C99
 Format		:	Real tabs with the tab size equal to 4 spaces.
 Copyright	:	Copyright (c) 2016 Oculus VR, LLC. All Rights reserved.
+			:	Portions copyright (c) 2016 The Brenwill Workshop Ltd. All Rights reserved.
 
 
 LICENSE
 =======
 
 Copyright (c) 2016 Oculus VR, LLC.
+Portions of macOS, iOS, and MoltenVK functionality copyright (c) 2016 The Brenwill Workshop Ltd.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -204,7 +206,8 @@ The code is written against version 1.0.2 of the Vulkan Specification.
 Supported platforms are:
 
 	- Microsoft Windows 7 or later
-	- Apple Mac OS X 10.9 or later
+	- Apple macOS 10.11 or later
+	- Apple iOS 9.0 or later
 	- Ubuntu Linux 14.04 or later
 	- Android 5.0 or later
 
@@ -220,7 +223,7 @@ Microsoft Windows: Intel Compiler 14.0
 	"C:\Program Files (x86)\Intel\Composer XE\bin\iclvars.bat" intel64
 	icl /Qstd=c99 /Zc:wchar_t /Zc:forScope /Wall /MD /GS /Gy /O2 /Oi /I%VK_SDK_PATH%\Include atw_vulkan.c /link user32.lib gdi32.lib Advapi32.lib Shlwapi.lib
 
-Apple Mac OS X: Apple LLVM 6.0:
+Apple macOS: Apple LLVM 6.0:
 	clang -std=c99 -x objective-c -fno-objc-arc -Wall -g -O2 -m64 -o atw_vulkan atw_vulkan.c -framework Cocoa
 
 Linux: GCC 4.8.2 Xlib:
@@ -277,7 +280,7 @@ VERSION HISTORY
 #elif defined( __ANDROID__ )
 	#define OS_ANDROID
 #elif defined( __APPLE__ )
-	#define OS_MAC
+	#define OS_APPLE
 #elif defined( __linux__ )
 	#define OS_LINUX
 	//#define OS_LINUX_XLIB
@@ -322,58 +325,42 @@ Platform headers / declarations
 
 	#define __thread	__declspec( thread )
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 
 	#include <sys/param.h>
 	#include <sys/sysctl.h>
 	#include <sys/time.h>
 	#include <pthread.h>
 	#include <dlfcn.h>						// for dlopen
-	#include <Cocoa/Cocoa.h>
 
-	#include "TargetConditionals.h"
-	#if TARGET_OS_IPHONE
-		#define VK_USE_PLATFORM_IOS_KHR
-		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_KHR_IOS_SURFACE_EXTENSION_NAME
-		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateIosSurfaceKHR
-		#define vkCreateSurfaceKHR						vkCreateIosSurfaceKHR
-	#else
-		#define VK_USE_PLATFORM_OSX_KHR
-		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_KHR_OSX_SURFACE_EXTENSION_NAME
-		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateOsxSurfaceKHR
-		#define vkCreateSurfaceKHR						vkCreateOsxSurfaceKHR
+	#include <Availability.h>
+	#if __IPHONE_OS_VERSION_MAX_ALLOWED
+		#define OS_IOS
+        #define VK_USE_PLATFORM_IOS_MVK
+		#include <UIKit/UIKit.h>
+	#endif
+	#if __MAC_OS_X_VERSION_MAX_ALLOWED
+		#define OS_MAC
+		#define VK_USE_PLATFORM_MACOS_MVK
+		#include <AppKit/AppKit.h>
 	#endif
 
 	#include "vulkan/vulkan.h"
-	#include "vulkan/vk_sdk_platform.h"
+	#include <QuartzCore/CAMetalLayer.h>
 
-	//#define MOLTEN_VK
-	#if defined( MOLTEN_VK )
-		#import <QuartzCore/CAMetalLayer.h>
-	#elif TARGET_OS_IPHONE
-		typedef VkFlags VkIosSurfaceCreateFlagsKHR;
-		typedef struct VkIos2SurfaceCreateInfoKHR {
-			VkStructureType				sType;
-			const void *				pNext;
-			VkIosSurfaceCreateFlagsKHR	flags;
-			NSView *					nsview;
-		} VkIosSurfaceCreateInfoKHR;
-		#define VK_KHR_IOS_SURFACE_EXTENSION_NAME				"VK_KHR_ios_surface"
-		#define VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR	1000015000
-		typedef VkResult (VKAPI_PTR *PFN_vkCreateIosSurfaceKHR)(VkInstance instance, const VkIosSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
-		#define VULKAN_LOADER									"libvulkan.dylib"
-	#else
-		typedef VkFlags VkOsxSurfaceCreateFlagsKHR;
-		typedef struct VkOsxSurfaceCreateInfoKHR {
-			VkStructureType				sType;
-			const void *				pNext;
-			VkOsxSurfaceCreateFlagsKHR	flags;
-			NSView *					nsview;
-		} VkOsxSurfaceCreateInfoKHR;
-		#define VK_KHR_OSX_SURFACE_EXTENSION_NAME				"VK_KHR_osx_surface"
-		#define VK_STRUCTURE_TYPE_OSX_SURFACE_CREATE_INFO_KHR	1000015000
-		typedef VkResult (VKAPI_PTR *PFN_vkCreateOsxSurfaceKHR)(VkInstance instance, const VkOsxSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
-		#define VULKAN_LOADER									"libvulkan.dylib"
+	#if defined( VK_USE_PLATFORM_IOS_MVK )
+		#include <MoltenVK/vk_mvk_moltenvk.h>
+		#include <MoltenVK/vk_mvk_ios_surface.h>
+		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_MVK_IOS_SURFACE_EXTENSION_NAME
+		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateIOSSurfaceMVK
+		#define vkCreateSurfaceKHR						vkCreateIOSSurfaceMVK
+	#endif
+	#if defined( VK_USE_PLATFORM_MACOS_MVK )
+		#include <MoltenVK/vk_mvk_moltenvk.h>
+		#include <MoltenVK/vk_mvk_macos_surface.h>
+		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_MVK_MACOS_SURFACE_EXTENSION_NAME
+		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateMacOSSurfaceMVK
+		#define vkCreateSurfaceKHR						vkCreateMacOSSurfaceMVK
 	#endif
 
 	#define OUTPUT_PATH		""
@@ -542,7 +529,7 @@ static void * AllocAlignedMemory( size_t size, size_t alignment )
 	alignment = ( alignment < sizeof( void * ) ) ? sizeof( void * ) : alignment;
 #if defined( OS_WINDOWS )
 	return _aligned_malloc( size, alignment );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	void * ptr = NULL;
 	return ( posix_memalign( &ptr, alignment, size ) == 0 ) ? ptr : NULL;
 #else
@@ -569,7 +556,7 @@ static void Print( const char * format, ... )
 	va_end( args );
 
 	OutputDebugString( buffer );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	char buffer[4096];
 	va_list args;
 	va_start( args, format );
@@ -606,6 +593,26 @@ static void Error( const char * format, ... )
 	OutputDebugString( buffer );
 
 	MessageBox( NULL, buffer, "ERROR", MB_OK | MB_ICONINFORMATION );
+#elif defined( OS_IOS )
+	char buffer[4096];
+	va_list args;
+	va_start( args, format );
+	int length = vsnprintf( buffer, 4096, format, args );
+	va_end( args );
+
+	NSLog( @"%s\n", buffer );
+
+	if ( [NSThread isMainThread] )
+	{
+		NSString * string = [[NSString alloc] initWithBytes:buffer length:length encoding:NSASCIIStringEncoding];
+		UIAlertController* alert = [UIAlertController alertControllerWithTitle: @"Error"
+																	   message: string
+																preferredStyle: UIAlertControllerStyleAlert];
+		[alert addAction: [UIAlertAction actionWithTitle: @"OK"
+												   style: UIAlertActionStyleDefault
+												 handler: ^(UIAlertAction * action) {}]];
+		[UIApplication.sharedApplication.keyWindow.rootViewController presentViewController: alert animated: YES completion: nil];
+	}
 #elif defined( OS_MAC )
 	char buffer[4096];
 	va_list args;
@@ -664,27 +671,10 @@ static const char * GetOSVersion()
 	}
 
 	return "Microsoft Windows";
+#elif defined( OS_IOS )
+	return [NSString stringWithFormat: @"Apple iOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
 #elif defined( OS_MAC )
-	static char version[1024];
-	size_t len;
-	int mib[2] = { CTL_KERN, KERN_OSRELEASE };
-    
-	if ( sysctl( mib, 2, version, &len, NULL, 0 ) == 0 )
-	{
-		const char * dot = strstr( version, "." );
-		if ( dot != NULL )
-		{
-			const int kernelMajor = (int)strtol( version, (char **)NULL, 10 );
-			const int kernelMinor = (int)strtol( dot + 1, (char **)NULL, 10 );
-			const int osxMajor = 10;
-			const int osxMinor = kernelMajor - 4;
-			const int osxSub = kernelMinor + 1;
-			snprintf( version, sizeof( version ), "Apple Mac OS X %d.%d.%d", osxMajor, osxMinor, osxSub );
-			return version;
-		}
-	}
-
-	return "Apple Mac OS X";
+	return [NSString stringWithFormat: @"Apple macOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
 #elif defined( OS_LINUX )
 	static char buffer[1024];
 
@@ -763,7 +753,7 @@ static const char * GetCPUVersion()
 			return processor;
 		}
 	}
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	static char processor[1024];
 	size_t processor_length = sizeof( processor );
 	sysctlbyname( "machdep.cpu.brand_string", &processor, &processor_length, NULL, 0 );
@@ -1220,7 +1210,7 @@ static void Thread_SetName( const char * name )
 	{
 		info.dwFlags = 0;
 	}
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	pthread_setname_np( name );
 #elif defined( OS_LINUX )
 	pthread_setname_np( pthread_self(), name );
@@ -1248,8 +1238,9 @@ static void Thread_SetAffinity( int mask )
 	{
 		Print( "Thread %p affinity set to 0x%02X\n", thread, mask );
 	}
-#elif defined( OS_MAC )
-	// OS X does not export interfaces that identify processors or control thread placement.
+#elif defined( OS_APPLE )
+	// iOS and macOS do not export interfaces that identify processors or control thread placement.
+	// Explicit thread to processor binding is not supported.
 	UNUSED_PARM( mask );
 #elif defined( OS_LINUX )
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
@@ -1381,7 +1372,7 @@ static void Thread_SetRealTimePriority( int priority )
 	{
 		Print( "Thread %p priority set to critical.\n", thread );
 	}
-#elif defined( OS_MAC ) || defined( OS_LINUX )
+#elif defined( OS_APPLE ) || defined( OS_LINUX )
 	struct sched_param sp;
 	memset( &sp, 0, sizeof( struct sched_param ) );
 	sp.sched_priority = priority;
@@ -2329,7 +2320,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	instance->vkEnumerateInstanceLayerProperties = (PFN_vkEnumerateInstanceLayerProperties)GetProcAddress( instance->loader, "vkEnumerateInstanceLayerProperties" );
 	instance->vkEnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)GetProcAddress( instance->loader, "vkEnumerateInstanceExtensionProperties" );
 	instance->vkCreateInstance = (PFN_vkCreateInstance)GetProcAddress( instance->loader, "vkCreateInstance" );
-#elif defined( OS_LINUX ) || defined( OS_ANDROID ) || defined( OS_MAC )
+#elif defined( OS_LINUX ) || defined( OS_ANDROID )
 	instance->loader = dlopen( VULKAN_LOADER, RTLD_NOW | RTLD_LOCAL );
 	if ( instance->loader == NULL )
 	{
@@ -2340,6 +2331,11 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	instance->vkEnumerateInstanceLayerProperties = (PFN_vkEnumerateInstanceLayerProperties)dlsym( instance->loader, "vkEnumerateInstanceLayerProperties" );
 	instance->vkEnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)dlsym( instance->loader, "vkEnumerateInstanceExtensionProperties" );
 	instance->vkCreateInstance = (PFN_vkCreateInstance)dlsym( instance->loader, "vkCreateInstance" );
+#elif defined( OS_APPLE )
+	instance->vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+	GET_INSTANCE_PROC_ADDR( vkEnumerateInstanceLayerProperties );
+	GET_INSTANCE_PROC_ADDR( vkEnumerateInstanceExtensionProperties );
+	GET_INSTANCE_PROC_ADDR( vkCreateInstance );
 #else
 	instance->vkGetInstanceProcAddr = vkGetInstanceProcAddr;
 	GET_INSTANCE_PROC_ADDR( vkEnumerateInstanceLayerProperties );
@@ -2970,6 +2966,15 @@ static bool GpuDevice_Create( GpuDevice_t * device, DriverInstance_t * instance,
 	deviceCreateInfo.pEnabledFeatures = NULL;
 
 	VK( instance->vkCreateDevice( device->physicalDevice, &deviceCreateInfo, VK_ALLOCATOR, &device->device ) );
+
+#if defined( VK_USE_PLATFORM_IOS_MVK ) || defined( VK_USE_PLATFORM_MACOS_MVK )
+	// Specify some helpful MoltenVK extension configuration, such as performance logging.
+	MVKDeviceConfiguration mvkConfig;
+	vkGetMoltenVKDeviceConfigurationMVK(device->device, &mvkConfig);
+	mvkConfig.performanceTracking = true;
+	mvkConfig.performanceLoggingFrameCount = 60;	// Log once per second (actually once every 60 frames)
+	vkSetMoltenVKDeviceConfigurationMVK(device->device, &mvkConfig);
+#endif
 
 	//
 	// Setup the device specific function pointers
@@ -3970,6 +3975,9 @@ typedef struct
 	HINSTANCE				hInstance;
 	HWND					hWnd;
 	bool					windowActiveState;
+#elif defined( OS_IOS )
+	UIWindow *				uiWindow;
+	UIView *				uiView;
 #elif defined( OS_MAC )
 	CGDirectDisplayID		display;
 	CGDisplayModeRef		desktopDisplayMode;
@@ -4004,6 +4012,11 @@ static void GpuWindow_CreateFromSurface( GpuWindow_t * window, const VkSurfaceKH
 {
 	GpuSwapchain_Create( &window->context, &window->swapchain, surface, window->colorFormat, window->windowWidth, window->windowHeight, window->windowSwapInterval );
 	GpuDepthBuffer_Create( &window->context, &window->depthBuffer, window->depthFormat, window->windowWidth, window->windowHeight, 1 );
+
+#if defined( OS_APPLE )
+    window->windowWidth = window->swapchain.width;			// iOS/macOS patch for Retina displays
+    window->windowHeight = window->swapchain.height;		// iOS/macOS patch for Retina displays
+#endif
 
 	assert( window->swapchain.width == window->windowWidth && window->swapchain.height == window->windowHeight );
 
@@ -4332,6 +4345,154 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 	}
 	return GPU_WINDOW_EVENT_NONE;
 }
+#elif defined( OS_IOS )
+
+typedef enum
+{
+	KEY_ESCAPE			= 0x35,
+	KEY_A				= 0x00,
+	KEY_B				= 0x0B,
+	KEY_C				= 0x08,
+	KEY_D				= 0x02,
+	KEY_E				= 0x0E,
+	KEY_F				= 0x03,
+	KEY_G				= 0x05,
+	KEY_H				= 0x04,
+	KEY_I				= 0x22,
+	KEY_J				= 0x26,
+	KEY_K				= 0x28,
+	KEY_L				= 0x25,
+	KEY_M				= 0x2E,
+	KEY_N				= 0x2D,
+	KEY_O				= 0x1F,
+	KEY_P				= 0x23,
+	KEY_Q				= 0x0C,
+	KEY_R				= 0x0F,
+	KEY_S				= 0x01,
+	KEY_T				= 0x11,
+	KEY_U				= 0x20,
+	KEY_V				= 0x09,
+	KEY_W				= 0x0D,
+	KEY_X				= 0x07,
+	KEY_Y				= 0x10,
+	KEY_Z				= 0x06,
+} KeyboardKey_t;
+
+typedef enum
+{
+	MOUSE_LEFT			= 0,
+	MOUSE_RIGHT			= 1
+} MouseButton_t;
+
+static NSAutoreleasePool * autoReleasePool;
+static UIView* myUIView;
+static UIWindow* myUIWindow;
+
+@interface MyUIView : UIView
+@end
+
+@implementation MyUIView
+
+-(instancetype) initWithFrame:(CGRect)frameRect {
+	self = [super initWithFrame: frameRect];
+	if ( self ) {
+		self.contentScaleFactor = UIScreen.mainScreen.nativeScale;
+	}
+	return self;
+}
+
++(Class) layerClass { return [CAMetalLayer class]; }
+
+@end
+
+@interface MyUIViewController : UIViewController
+@end
+
+@implementation MyUIViewController
+
+-(UIInterfaceOrientationMask) supportedInterfaceOrientations { return UIInterfaceOrientationMaskLandscape; }
+
+-(BOOL) shouldAutorotate { return TRUE; }
+
+@end
+
+static void GpuWindow_Destroy( GpuWindow_t * window )
+{
+	GpuWindow_DestroySurface( window );
+	GpuContext_Destroy( &window->context );
+	GpuDevice_Destroy( &window->device );
+
+	if ( window->uiWindow )
+	{
+		[window->uiWindow release];
+		window->uiWindow = nil;
+	}
+	if ( window->uiView )
+	{
+		[window->uiView release];
+		window->uiView = nil;
+	}
+}
+
+static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
+								const GpuQueueInfo_t * queueInfo, const int queueIndex,
+								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
+								const int width, const int height, const bool fullscreen )
+{
+	memset( window, 0, sizeof( GpuWindow_t ) );
+
+	window->colorFormat = colorFormat;
+	window->depthFormat = depthFormat;
+	window->windowWidth = width;
+	window->windowHeight = height;
+	window->windowSwapInterval = 1;
+	window->windowRefreshRate = 60.0f;
+	window->windowFullscreen = fullscreen;
+	window->windowActive = false;
+	window->windowExit = false;
+	window->lastSwapTime = GetTimeMicroseconds();
+	window->uiView = myUIView;
+	window->uiWindow = myUIWindow;
+
+	VkIOSSurfaceCreateInfoMVK iosSurfaceCreateInfo;
+	iosSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_MVK;
+	iosSurfaceCreateInfo.pNext = NULL;
+	iosSurfaceCreateInfo.flags = 0;
+	iosSurfaceCreateInfo.pView = window->uiView;
+
+	VkSurfaceKHR surface;
+	VK( instance->vkCreateSurfaceKHR( instance->instance, &iosSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
+
+	GpuDevice_Create( &window->device, instance, queueInfo, surface );
+	GpuContext_Create( &window->context, &window->device, queueIndex );
+	GpuWindow_CreateFromSurface( window, surface );
+
+	return true;
+}
+
+static void GpuWindow_Exit( GpuWindow_t * window )
+{
+	window->windowExit = true;
+}
+
+static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
+{
+	[autoReleasePool release];
+	autoReleasePool = [[NSAutoreleasePool alloc] init];
+
+	if ( window->windowExit )
+	{
+		return GPU_WINDOW_EVENT_EXIT;
+	}
+
+	if ( window->windowActive == false )
+	{
+		window->windowActive = true;
+		return GPU_WINDOW_EVENT_ACTIVATED;
+	}
+	
+	return GPU_WINDOW_EVENT_NONE;
+}
 
 #elif defined( OS_MAC )
 
@@ -4397,8 +4558,6 @@ NSAutoreleasePool * autoReleasePool;
 - (BOOL)acceptsFirstResponder { return YES; }
 - (void)keyDown:(NSEvent *)event {}
 
-#if defined( MOLTEN_VK )
-
 -(instancetype) initWithFrame:(NSRect)frameRect {
 	self = [super initWithFrame: frameRect];
 	if ( self ) {
@@ -4417,8 +4576,6 @@ NSAutoreleasePool * autoReleasePool;
 	layer.contentsScale = MIN( viewScale.width, viewScale.height );
 	return layer;
 }
-
-#endif
 
 @end
 
@@ -4575,14 +4732,14 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 		[window->nsWindow makeFirstResponder:nil];
 	}
 
-	VkOsxSurfaceCreateInfoKHR osxSurfaceCreateInfo;
-	osxSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_OSX_SURFACE_CREATE_INFO_KHR;
-	osxSurfaceCreateInfo.pNext = NULL;
-	osxSurfaceCreateInfo.flags = 0;
-	osxSurfaceCreateInfo.nsview = window->nsView;
+	VkMacOSSurfaceCreateInfoMVK macosSurfaceCreateInfo;
+	macosSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK;
+	macosSurfaceCreateInfo.pNext = NULL;
+	macosSurfaceCreateInfo.flags = 0;
+	macosSurfaceCreateInfo.pView = window->nsView;
 
 	VkSurfaceKHR surface;
-	VK( instance->vkCreateSurfaceKHR( instance->instance, &osxSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
+	VK( instance->vkCreateSurfaceKHR( instance->instance, &macosSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
 
 	GpuDevice_Create( &window->device, instance, queueInfo, surface );
 	GpuContext_Create( &window->context, &window->device, queueIndex );
@@ -15870,6 +16027,48 @@ int APIENTRY WinMain( HINSTANCE hCurrentInst, HINSTANCE hPreviousInst, LPSTR lps
 	return StartApplication( argc, argv );
 }
 
+#elif defined( OS_IOS )
+
+static int argc_deferred;
+static char** argv_deferred;
+
+@interface MyAppDelegate : NSObject <UIApplicationDelegate> {}
+@end
+
+@implementation MyAppDelegate
+
+-(BOOL) application: (UIApplication*) application didFinishLaunchingWithOptions: (NSDictionary*) launchOptions {
+
+	CGRect screenRect = UIScreen.mainScreen.bounds;
+	myUIView = [[MyUIView alloc] initWithFrame: screenRect];
+	UIViewController* myUIVC = [[[MyUIViewController alloc] init] autorelease];
+	myUIVC.view = myUIView;
+
+	myUIWindow = [[UIWindow alloc] initWithFrame: screenRect];
+	[myUIWindow addSubview: myUIView];
+	myUIWindow.rootViewController = myUIVC;
+	[myUIWindow makeKeyAndVisible];
+
+	// Delay to allow startup runloop to complete.
+	[self performSelector: @selector(startApplication:) withObject: nil afterDelay: 0.25f];
+
+	return YES;
+}
+
+-(void) startApplication: (id) argObj {
+	autoReleasePool = [[NSAutoreleasePool alloc] init];
+	StartApplication(argc_deferred, argv_deferred);
+}
+
+@end
+
+int main(int argc, char * argv[]) {
+	argc_deferred = argc;
+	argv_deferred = argv;
+
+	return UIApplicationMain(argc, argv, nil, @"MyAppDelegate");
+}
+
 #elif defined( OS_MAC )
 
 static const char * FormatString( const char * format, ... )
@@ -16015,7 +16214,7 @@ void SetBundleCWD( const char * bundledExecutablePath )
 int main( int argc, char * argv[] )
 {
 	/*
-		When an application executable is not launched from a bundle, Mac OS X
+		When an application executable is not launched from a bundle, macOS
 		considers the application to be a console application with only text output
 		and console keyboard input. As a result, an application will not receive
 		keyboard events unless the application is launched from a bundle.
