@@ -357,7 +357,7 @@ Platform headers / declarations
 				VkStructureType				sType;
 				const void *				pNext;
 				VkIOSSurfaceCreateFlagsKHR	flags;
-				NSView *					nsview;
+				NSView *					pView;
 			} VkIOSSurfaceCreateInfoKHR;
 			#define VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR	1000015000
 			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			"VK_KHR_ios_surface"
@@ -387,7 +387,7 @@ Platform headers / declarations
 				VkStructureType					sType;
 				const void *					pNext;
 				VkMacOSSurfaceCreateFlagsKHR	flags;
-				NSView *						pview;
+				NSView *						pView;
 			} VkMacOSSurfaceCreateInfoKHR;
 			#define VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_KHR	1000015000
 			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			"VK_KHR_macos_surface"
@@ -4379,6 +4379,7 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 	}
 	return GPU_WINDOW_EVENT_NONE;
 }
+
 #elif defined( OS_IOS )
 
 typedef enum
