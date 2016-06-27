@@ -12,10 +12,10 @@ set_target_properties( VkLayer_glsl_shader PROPERTIES FOLDER layers )
 
 if ( WIN32 )
     macro( link_glslang_lib lib )
-        find_library( ${lib}_DLIB NAMES ${lib} HINTS "${CMAKE_BINARY_DIR}/external/libs/glslang/Debug" )
-        find_library( ${lib}_LIB NAMES ${lib} HINTS "${CMAKE_BINARY_DIR}/external/libs/glslang/Release" )
         add_library( "${lib}_target" STATIC IMPORTED )
-        set_target_properties( "${lib}_target" PROPERTIES IMPORTED_LOCATION "${${lib}_LIB}" IMPORTED_LOCATION_DEBUG "${${lib}_DLIB}" )
+        set_target_properties( "${lib}_target" PROPERTIES
+			IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/external/libs/glslang/Release/${lib}.lib"
+			IMPORTED_LOCATION_DEBUG "${CMAKE_BINARY_DIR}/external/libs/glslang/Debug/${lib}.lib" )
         target_link_libraries( VkLayer_glsl_shader "${lib}_target" )
     endmacro()
 
