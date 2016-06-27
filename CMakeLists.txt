@@ -20,6 +20,5 @@ if( NOT WIN32 )
     set( XCB_LIBRARIES xcb xcb-keysyms xcb-randr )
 endif()
 
-add_subdirectory( external/include/GL )
 add_subdirectory( external/libs/glslang )
 add_subdirectory( samples )
