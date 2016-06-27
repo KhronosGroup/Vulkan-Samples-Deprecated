@@ -364,6 +364,7 @@ Platform headers / declarations
 			typedef VkResult (VKAPI_PTR *PFN_vkCreateIOSSurfaceKHR)(VkInstance instance, const VkIOSSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
 			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateIOSSurfaceKHR
 			#define vkCreateSurfaceKHR								vkCreateIOSSurfaceKHR
+			#define VULKAN_LOADER									"libvulkan.dylib"
 		#endif
 	#endif
 
@@ -394,6 +395,7 @@ Platform headers / declarations
 			typedef VkResult (VKAPI_PTR *PFN_vkCreateMacOSSurfaceKHR)(VkInstance instance, const VkMacOSSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
 			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateMacOSSurfaceKHR
 			#define vkCreateSurfaceKHR								vkCreateMacOSSurfaceKHR
+			#define VULKAN_LOADER									"libvulkan.dylib"
 		#endif
 	#endif
 
@@ -2354,7 +2356,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	instance->vkEnumerateInstanceLayerProperties = (PFN_vkEnumerateInstanceLayerProperties)GetProcAddress( instance->loader, "vkEnumerateInstanceLayerProperties" );
 	instance->vkEnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)GetProcAddress( instance->loader, "vkEnumerateInstanceExtensionProperties" );
 	instance->vkCreateInstance = (PFN_vkCreateInstance)GetProcAddress( instance->loader, "vkCreateInstance" );
-#elif defined( OS_LINUX ) || defined( OS_ANDROID )
+#elif defined( OS_LINUX ) || defined( OS_ANDROID ) || ( defined( OS_APPLE ) && !defined( VK_USE_PLATFORM_IOS_MVK ) && !defined( VK_USE_PLATFORM_MACOS_MVK ) )
 	instance->loader = dlopen( VULKAN_LOADER, RTLD_NOW | RTLD_LOCAL );
 	if ( instance->loader == NULL )
 	{
@@ -2365,11 +2367,6 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	instance->vkEnumerateInstanceLayerProperties = (PFN_vkEnumerateInstanceLayerProperties)dlsym( instance->loader, "vkEnumerateInstanceLayerProperties" );
 	instance->vkEnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)dlsym( instance->loader, "vkEnumerateInstanceExtensionProperties" );
 	instance->vkCreateInstance = (PFN_vkCreateInstance)dlsym( instance->loader, "vkCreateInstance" );
-#elif defined( OS_APPLE )
-	instance->vkGetInstanceProcAddr = vkGetInstanceProcAddr;
-	GET_INSTANCE_PROC_ADDR( vkEnumerateInstanceLayerProperties );
-	GET_INSTANCE_PROC_ADDR( vkEnumerateInstanceExtensionProperties );
-	GET_INSTANCE_PROC_ADDR( vkCreateInstance );
 #else
 	instance->vkGetInstanceProcAddr = vkGetInstanceProcAddr;
 	GET_INSTANCE_PROC_ADDR( vkEnumerateInstanceLayerProperties );
