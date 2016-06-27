@@ -4,6 +4,7 @@ cmake_policy( VERSION 2.8 )
 project( VULKAN_SAMPLES )
 
 set_property( GLOBAL PROPERTY USE_FOLDERS ON )
+set_property( GLOBAL PROPERTY PREDEFINED_TARGETS_FOLDER "" )
 
 # The MAJOR number of the Vulkan version.
 # Used in naming vulkan-<major>.dll.
@@ -19,5 +20,6 @@ if( NOT WIN32 )
     set( XCB_LIBRARIES xcb xcb-keysyms xcb-randr )
 endif()
 
+add_subdirectory( external/include/GL )
 add_subdirectory( external/libs/glslang )
 add_subdirectory( samples )
