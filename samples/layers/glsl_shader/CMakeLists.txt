@@ -6,7 +6,8 @@ include_directories(
         "$ENV{VK_SDK_PATH}/Source/layers"
         )
 
-add_library(VkLayer_glsl_shader SHARED glsl_shader.cpp VkLayer_glsl_shader.json)
+add_library( VkLayer_glsl_shader SHARED glsl_shader.cpp VkLayer_glsl_shader.json )
+add_dependencies( VkLayer_glsl_shader glslang )
 set_target_properties( VkLayer_glsl_shader PROPERTIES CXX_FLAGS "" )
 set_target_properties( VkLayer_glsl_shader PROPERTIES FOLDER layers )
 
