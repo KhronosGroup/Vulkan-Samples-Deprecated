@@ -339,8 +339,6 @@ Platform headers / declarations
 	#if __IPHONE_OS_VERSION_MAX_ALLOWED
 		#define OS_IOS
 		#include <UIKit/UIKit.h>
-		// Uncomment this define to enable MoltenVK for iOS.
-		//#define VK_USE_PLATFORM_IOS_MVK
 		#if defined( VK_USE_PLATFORM_IOS_MVK )
 			#include <QuartzCore/CAMetalLayer.h>
 			#include <MoltenVK/vk_mvk_moltenvk.h>
@@ -357,7 +355,7 @@ Platform headers / declarations
 				VkStructureType				sType;
 				const void *				pNext;
 				VkIOSSurfaceCreateFlagsKHR	flags;
-				NSView *					pView;
+				UIView *					pView;
 			} VkIOSSurfaceCreateInfoKHR;
 			#define VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR	1000015000
 			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			"VK_KHR_ios_surface"
@@ -371,8 +369,6 @@ Platform headers / declarations
 	#if __MAC_OS_X_VERSION_MAX_ALLOWED
 		#define OS_MAC
 		#include <AppKit/AppKit.h>
-		// Uncomment this define to enable MoltenVK for Mac OS.
-		//#define VK_USE_PLATFORM_MACOS_MVK
 		#if defined( VK_USE_PLATFORM_MACOS_MVK )
 			#include <QuartzCore/CAMetalLayer.h>
 			#include <MoltenVK/vk_mvk_moltenvk.h>
@@ -381,6 +377,7 @@ Platform headers / declarations
 			#define VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_KHR	VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK
 			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			VK_MVK_MACOS_SURFACE_EXTENSION_NAME
 			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateMacOSSurfaceMVK
+            #define vkCreateSurfaceKHR								vkCreateMacOSSurfaceMVK
 		#else
 			// Only here to make the code compile.
 			typedef VkFlags VkMacOSSurfaceCreateFlagsKHR;
