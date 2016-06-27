@@ -387,9 +387,9 @@ Platform headers / declarations
 				VkStructureType					sType;
 				const void *					pNext;
 				VkMacOSSurfaceCreateFlagsKHR	flags;
-				NSView *						nsview;
+				NSView *						pview;
 			} VkMacOSSurfaceCreateInfoKHR;
-			#define VK_STRUCTURE_TYPE_OSX_SURFACE_CREATE_INFO_KHR	1000015000
+			#define VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_KHR	1000015000
 			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			"VK_KHR_macos_surface"
 			typedef VkResult (VKAPI_PTR *PFN_vkCreateMacOSSurfaceKHR)(VkInstance instance, const VkMacOSSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
 			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateMacOSSurfaceKHR
@@ -4592,6 +4592,8 @@ NSAutoreleasePool * autoReleasePool;
 - (BOOL)acceptsFirstResponder { return YES; }
 - (void)keyDown:(NSEvent *)event {}
 
+#if defined( VK_USE_PLATFORM_MACOS_MVK )
+
 -(instancetype) initWithFrame:(NSRect)frameRect {
 	self = [super initWithFrame: frameRect];
 	if ( self ) {
@@ -4610,6 +4612,8 @@ NSAutoreleasePool * autoReleasePool;
 	layer.contentsScale = MIN( viewScale.width, viewScale.height );
 	return layer;
 }
+
+#endif
 
 @end
 
