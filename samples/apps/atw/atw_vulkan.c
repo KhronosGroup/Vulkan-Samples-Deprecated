@@ -333,34 +333,68 @@ Platform headers / declarations
 	#include <pthread.h>
 	#include <dlfcn.h>						// for dlopen
 
+	#include "vulkan/vulkan.h"
+
 	#include <Availability.h>
 	#if __IPHONE_OS_VERSION_MAX_ALLOWED
 		#define OS_IOS
-		//#define VK_USE_PLATFORM_IOS_MVK
 		#include <UIKit/UIKit.h>
+		// Uncomment this define to enable MoltenVK for iOS.
+		//#define VK_USE_PLATFORM_IOS_MVK
+		#if defined( VK_USE_PLATFORM_IOS_MVK )
+			#include <QuartzCore/CAMetalLayer.h>
+			#include <MoltenVK/vk_mvk_moltenvk.h>
+			#include <MoltenVK/vk_mvk_ios_surface.h>
+			#define VkIOSSurfaceCreateInfoKHR						VkIOSSurfaceCreateInfoMVK
+			#define VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR	VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_MVK
+			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			VK_MVK_IOS_SURFACE_EXTENSION_NAME
+			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateIOSSurfaceMVK
+			#define vkCreateSurfaceKHR								vkCreateIOSSurfaceMVK
+		#else
+			// Only here to make the code compile.
+			typedef VkFlags VkIOSSurfaceCreateFlagsKHR;
+			typedef struct VkIOSSurfaceCreateInfoKHR {
+				VkStructureType				sType;
+				const void *				pNext;
+				VkIOSSurfaceCreateFlagsKHR	flags;
+				NSView *					nsview;
+			} VkIOSSurfaceCreateInfoKHR;
+			#define VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR	1000015000
+			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			"VK_KHR_ios_surface"
+			typedef VkResult (VKAPI_PTR *PFN_vkCreateIOSSurfaceKHR)(VkInstance instance, const VkIOSSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
+			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateIOSSurfaceKHR
+			#define vkCreateSurfaceKHR								vkCreateIOSSurfaceKHR
+		#endif
 	#endif
+
 	#if __MAC_OS_X_VERSION_MAX_ALLOWED
 		#define OS_MAC
-		//#define VK_USE_PLATFORM_MACOS_MVK
 		#include <AppKit/AppKit.h>
-	#endif
-
-	#include "vulkan/vulkan.h"
-	#include <QuartzCore/CAMetalLayer.h>
-
-	#if defined( VK_USE_PLATFORM_IOS_MVK )
-		#include <MoltenVK/vk_mvk_moltenvk.h>
-		#include <MoltenVK/vk_mvk_ios_surface.h>
-		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_MVK_IOS_SURFACE_EXTENSION_NAME
-		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateIOSSurfaceMVK
-		#define vkCreateSurfaceKHR						vkCreateIOSSurfaceMVK
-	#endif
-	#if defined( VK_USE_PLATFORM_MACOS_MVK )
-		#include <MoltenVK/vk_mvk_moltenvk.h>
-		#include <MoltenVK/vk_mvk_macos_surface.h>
-		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_MVK_MACOS_SURFACE_EXTENSION_NAME
-		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateMacOSSurfaceMVK
-		#define vkCreateSurfaceKHR						vkCreateMacOSSurfaceMVK
+		// Uncomment this define to enable MoltenVK for Mac OS.
+		//#define VK_USE_PLATFORM_MACOS_MVK
+		#if defined( VK_USE_PLATFORM_MACOS_MVK )
+			#include <QuartzCore/CAMetalLayer.h>
+			#include <MoltenVK/vk_mvk_moltenvk.h>
+			#include <MoltenVK/vk_mvk_macos_surface.h>
+			#define VkMacOSSurfaceCreateInfoKHR						VkMacOSSurfaceCreateInfoMVK
+			#define VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_KHR	VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK
+			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			VK_MVK_MACOS_SURFACE_EXTENSION_NAME
+			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateMacOSSurfaceMVK
+		#else
+			// Only here to make the code compile.
+			typedef VkFlags VkMacOSSurfaceCreateFlagsKHR;
+			typedef struct VkMacOSSurfaceCreateInfoKHR {
+				VkStructureType					sType;
+				const void *					pNext;
+				VkMacOSSurfaceCreateFlagsKHR	flags;
+				NSView *						nsview;
+			} VkMacOSSurfaceCreateInfoKHR;
+			#define VK_STRUCTURE_TYPE_OSX_SURFACE_CREATE_INFO_KHR	1000015000
+			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			"VK_KHR_macos_surface"
+			typedef VkResult (VKAPI_PTR *PFN_vkCreateMacOSSurfaceKHR)(VkInstance instance, const VkMacOSSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
+			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateMacOSSurfaceKHR
+			#define vkCreateSurfaceKHR								vkCreateMacOSSurfaceKHR
+		#endif
 	#endif
 
 	#define OUTPUT_PATH		""
@@ -4454,8 +4488,8 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	window->uiView = myUIView;
 	window->uiWindow = myUIWindow;
 
-	VkIOSSurfaceCreateInfoMVK iosSurfaceCreateInfo;
-	iosSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_MVK;
+	VkIOSSurfaceCreateInfoKHR iosSurfaceCreateInfo;
+	iosSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR;
 	iosSurfaceCreateInfo.pNext = NULL;
 	iosSurfaceCreateInfo.flags = 0;
 	iosSurfaceCreateInfo.pView = window->uiView;
@@ -4732,8 +4766,8 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 		[window->nsWindow makeFirstResponder:nil];
 	}
 
-	VkMacOSSurfaceCreateInfoMVK macosSurfaceCreateInfo;
-	macosSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK;
+	VkMacOSSurfaceCreateInfoKHR macosSurfaceCreateInfo;
+	macosSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_KHR;
 	macosSurfaceCreateInfo.pNext = NULL;
 	macosSurfaceCreateInfo.flags = 0;
 	macosSurfaceCreateInfo.pView = window->nsView;
