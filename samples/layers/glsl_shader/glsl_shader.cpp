@@ -573,7 +573,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
 	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchTable( device ) );
 
 	const unsigned int * header = (unsigned int *)pCreateInfo->pCode;
-	if ( header[0] == ICD_SPV_MAGIC )
+	if ( header[0] == ICD_SPV_MAGIC && header[1] == 0 )
 	{
 		const VkShaderStageFlagBits stage = (VkShaderStageFlagBits) header[2];
 		const char * shaderSource = (const char *)&header[3];
