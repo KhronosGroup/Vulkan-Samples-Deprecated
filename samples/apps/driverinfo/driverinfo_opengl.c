@@ -686,15 +686,16 @@ typedef struct
 	NSOpenGLContext *		nsContext;
 	CGLContextObj			cglContext;
 #elif defined( OS_LINUX_XLIB )
-	Display *				xDisplay;
-	int						xScreen;
+	Display *				display;
+	int						screen;
 	uint32_t				visualid;
 	GLXFBConfig				glxFBConfig;
 	GLXDrawable				glxDrawable;
 	GLXContext				glxContext;
 #elif defined( OS_LINUX_XCB )
+	Display *				display;
+	uint32_t				screen;
 	xcb_connection_t *		connection;
-	uint32_t				screen_number;
 	xcb_glx_fbconfig_t		fbconfigid;
 	xcb_visualid_t			visualid;
 	xcb_glx_drawable_t		glxDrawable;
@@ -766,17 +767,18 @@ static void GpuContext_Destroy( GpuContext_t * context )
 	}
 	context->cglContext = nil;
 #elif defined( OS_LINUX_XLIB )
-	glXDestroyContext( context->xDisplay, context->glxContext );
-	XCloseDisplay( context->xDisplay );
-	context->xDisplay = NULL;
+	glXDestroyContext( context->display, context->glxContext );
+	XCloseDisplay( context->display );
+	context->display = NULL;
 	context->visualid = 0;
 	context->glxFBConfig = NULL;
 	context->glxDrawable = 0;
 	context->glxContext = NULL;
 #elif defined( OS_LINUX_XCB )
+	XCloseDisplay( context->display );
 	xcb_glx_destroy_context( context->connection, context->glxContext );
 	context->connection = NULL;
-	context->screen_number = 0;
+	context->screen = 0;
 	context->fbconfigid = 0;
 	context->visualid = 0;
 	context->glxDrawable = 0;
@@ -1027,17 +1029,17 @@ static bool GpuContext_Create( GpuContext_t * context )
 	memset( context, 0, sizeof( GpuContext_t ) );
 
 	const char * displayName = NULL;
-	context->xDisplay = XOpenDisplay( displayName );
-	if ( !context->xDisplay )
+	context->display = XOpenDisplay( displayName );
+	if ( !context->display )
 	{
 		Error( "Unable to open X Display." );
 		return false;
 	}
-	context->xScreen = XDefaultScreen( context->xDisplay );
+	context->screen = XDefaultScreen( context->display );
 
 	int glxErrorBase;
 	int glxEventBase;
-	if ( !glXQueryExtension( context->xDisplay, &glxErrorBase, &glxEventBase ) )
+	if ( !glXQueryExtension( context->display, &glxErrorBase, &glxEventBase ) )
 	{
 		Error( "X display does not support the GLX extension." );
 		return false;
@@ -1045,14 +1047,14 @@ static bool GpuContext_Create( GpuContext_t * context )
 
 	int glxVersionMajor;
 	int glxVersionMinor;
-	if ( !glXQueryVersion( context->xDisplay, &glxVersionMajor, &glxVersionMinor ) )
+	if ( !glXQueryVersion( context->display, &glxVersionMajor, &glxVersionMinor ) )
 	{
 		Error( "Unable to retrieve GLX version." );
 		return false;
 	}
 
 	int fbConfigCount = 0;
-	GLXFBConfig * fbConfigs = glXGetFBConfigs( context->xDisplay, context->xScreen, &fbConfigCount );
+	GLXFBConfig * fbConfigs = glXGetFBConfigs( context->display, context->screen, &fbConfigCount );
 	if ( fbConfigCount == 0 )
 	{
 		Error( "No valid framebuffer configurations found." );
@@ -1062,18 +1064,18 @@ static bool GpuContext_Create( GpuContext_t * context )
 	bool foundFbConfig = false;
 	for ( int i = 0; i < fbConfigCount; i++ )
 	{
-		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_FBCONFIG_ID ) == 0 ) { continue; }
-		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_VISUAL_ID ) == 0 ) { continue; }
-		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_DOUBLEBUFFER ) == 0 ) { continue; }
-		if ( ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_RENDER_TYPE ) & GLX_RGBA_BIT ) == 0 ) { continue; }
-		if ( ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_DRAWABLE_TYPE ) & GLX_WINDOW_BIT ) == 0 ) { continue; }
-		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_RED_SIZE )   != 8 ) { continue; }
-		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_GREEN_SIZE ) != 8 ) { continue; }
-		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_BLUE_SIZE )  != 8 ) { continue; }
-		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_ALPHA_SIZE ) != 8 ) { continue; }
-		if ( glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_DEPTH_SIZE ) != 0 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->display, fbConfigs[i], GLX_FBCONFIG_ID ) == 0 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->display, fbConfigs[i], GLX_VISUAL_ID ) == 0 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->display, fbConfigs[i], GLX_DOUBLEBUFFER ) == 0 ) { continue; }
+		if ( ( glxGetFBConfigAttrib2( context->display, fbConfigs[i], GLX_RENDER_TYPE ) & GLX_RGBA_BIT ) == 0 ) { continue; }
+		if ( ( glxGetFBConfigAttrib2( context->display, fbConfigs[i], GLX_DRAWABLE_TYPE ) & GLX_WINDOW_BIT ) == 0 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->display, fbConfigs[i], GLX_RED_SIZE )   != 8 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->display, fbConfigs[i], GLX_GREEN_SIZE ) != 8 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->display, fbConfigs[i], GLX_BLUE_SIZE )  != 8 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->display, fbConfigs[i], GLX_ALPHA_SIZE ) != 8 ) { continue; }
+		if ( glxGetFBConfigAttrib2( context->display, fbConfigs[i], GLX_DEPTH_SIZE ) != 0 ) { continue; }
 
-		context->visualid = glxGetFBConfigAttrib2( context->xDisplay, fbConfigs[i], GLX_VISUAL_ID );
+		context->visualid = glxGetFBConfigAttrib2( context->display, fbConfigs[i], GLX_VISUAL_ID );
 		context->glxFBConfig = fbConfigs[i];
 		foundFbConfig = true;
 		break;
@@ -1098,7 +1100,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 		0
 	};
 
-	context->glxContext = glXCreateContextAttribsARB( context->xDisplay,		// Display *	dpy
+	context->glxContext = glXCreateContextAttribsARB( context->display,			// Display *	dpy
 														context->glxFBConfig,	// GLXFBConfig	config
 														NULL,					// GLXContext	share_context
 														True,					// Bool			direct
@@ -1110,7 +1112,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 		return false;
 	}
 
-	if ( !glXIsDirect( context->xDisplay, context->glxContext ) )
+	if ( !glXIsDirect( context->display, context->glxContext ) )
 	{
 		Error( "Unable to create direct rendering context." );
 		return false;
@@ -1138,8 +1140,14 @@ static bool GpuContext_Create( GpuContext_t * context )
 	memset( context, 0, sizeof( GpuContext_t ) );
 
 	const char * displayName = NULL;
-	context->screen_number = 0;
-	context->connection = xcb_connect( displayName, &context->screen_number );
+	context->display = XOpenDisplay( displayName );
+	if ( !context->display )
+	{
+		Error( "Unable to open X Display." );
+		return false;
+	}
+	context->screen = 0;
+	context->connection = xcb_connect( displayName, &context->screen );
 	if ( xcb_connection_has_error( context->connection ) )
 	{
 		Error( "Failed to open XCB connection." );
@@ -1155,7 +1163,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 	}
 	free( glx_query_version_reply );
 
-	xcb_glx_get_fb_configs_cookie_t get_fb_configs_cookie = xcb_glx_get_fb_configs( context->connection, context->screen_number );
+	xcb_glx_get_fb_configs_cookie_t get_fb_configs_cookie = xcb_glx_get_fb_configs( context->connection, context->screen );
 	xcb_glx_get_fb_configs_reply_t * get_fb_configs_reply = xcb_glx_get_fb_configs_reply( context->connection, get_fb_configs_cookie, NULL );
 
 	if ( get_fb_configs_reply == NULL || get_fb_configs_reply->num_FB_configs == 0 )
@@ -1215,7 +1223,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 	xcb_glx_create_context_attribs_arb( context->connection,	// xcb_connection_t *	connection
 										context->glxContext,	// xcb_glx_context_t	context
 										context->fbconfigid,	// xcb_glx_fbconfig_t	fbconfig
-										context->screen_number,	// uint32_t				screen
+										context->screen,		// uint32_t				screen
 										0,						// xcb_glx_context_t	share_list
 										1,						// uint8_t				is_direct
 										4,						// uint32_t				num_attribs
@@ -1345,7 +1353,7 @@ static void GpuContext_SetCurrent( GpuContext_t * context )
 #elif defined( OS_MAC )
 	CGLSetCurrentContext( context->cglContext );
 #elif defined( OS_LINUX_XLIB )
-	glXMakeCurrent( context->xDisplay, context->glxDrawable, context->glxContext );
+	glXMakeCurrent( context->display, context->glxDrawable, context->glxContext );
 #elif defined( OS_LINUX_XCB )
 	xcb_glx_make_current_cookie_t glx_make_current_cookie = xcb_glx_make_current( context->connection, context->glxDrawable, context->glxContext, 0 );
 	xcb_glx_make_current_reply_t * glx_make_current_reply = xcb_glx_make_current_reply( context->connection, glx_make_current_cookie, NULL );
@@ -1363,7 +1371,7 @@ static void GpuContext_UnsetCurrent( GpuContext_t * context )
 #elif defined( OS_MAC )
 	CGLSetCurrentContext( NULL );
 #elif defined( OS_LINUX_XLIB )
-	glXMakeCurrent( context->xDisplay, None, NULL );
+	glXMakeCurrent( context->display, None, NULL );
 #elif defined( OS_LINUX_XCB )
 	xcb_glx_make_current( context->connection, 0, 0, 0 );
 #elif defined( OS_ANDROID )
@@ -2042,8 +2050,8 @@ static GLint glGetInteger( GLenum pname )
 
 int main( int argc, char * argv[] )
 {
-	argc = argc;
-	argv = argv;
+	UNUSED_PARM( argc );
+	UNUSED_PARM( argv );
 
 	Console_Resize( 4096, 120 );
 
@@ -2069,6 +2077,37 @@ int main( int argc, char * argv[] )
 		{
 			GL( const GLubyte * string = glGetStringi( GL_EXTENSIONS, i ) );
 			Print( "%-"COLUMN_WIDTH"s%c %s\n", ( i == 0 ? "Extensions" : "" ), ( i == 0 ? ':' : ' ' ), string );
+		}
+	}
+
+	// WGL, GLX, EGL extension strings
+	{
+#if defined( OS_WINDOWS )
+		PFNWGLGETEXTENSIONSSTRINGARBPROC wglGetExtensionsStringARB = (PFNWGLGETEXTENSIONSSTRINGARBPROC) GetExtension( "wglGetExtensionsStringARB" );
+		const char * string = ( wglGetExtensionsStringARB != NULL ) ? wglGetExtensionsStringARB( context.hDC ) : "";
+		#define WSI_TYPE "WGL"
+#elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB )
+		const char * string = glXQueryExtensionsString( context.display, context.screen );
+		#define WSI_TYPE "GLX"
+#elif defined( OS_ANDROID )
+		const char * string = eglQueryString( context.display, EGL_EXTENSIONS );
+		#define WSI_TYPE "EGL"
+#endif
+		for ( int i = 0; string[0] != '\0'; i++ )
+		{
+			while ( string[0] == ' ' ) { string++; }
+			int index = 0;
+			while ( string[index] > ' ' ) { index++; }
+			if ( index <= 0 )
+			{
+				break;
+			}
+			char buffer[128];
+			const int length = ( index < sizeof( buffer ) ) ? index : sizeof( buffer ) - 1;
+			strncpy( buffer, string, length );
+			buffer[length] = '\0';
+			Print( "%-"COLUMN_WIDTH"s%c %s\n", ( i == 0 ? WSI_TYPE " Extensions" : "" ), ( i == 0 ? ':' : ' ' ), buffer );
+			string += index;
 		}
 	}
 

@@ -1224,8 +1224,8 @@ static void PrintDeviceFeatures( const VkPhysicalDeviceFeatures * deviceFeatures
 
 int main( int argc, char * argv[] )
 {
-	argc = argc;
-	argv = argv;
+	UNUSED_PARM( argc );
+	UNUSED_PARM( argv );
 
 	Console_Resize( 4096, 120 );
 
