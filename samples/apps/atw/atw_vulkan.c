@@ -377,7 +377,7 @@ Platform headers / declarations
 			#define VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_KHR	VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK
 			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			VK_MVK_MACOS_SURFACE_EXTENSION_NAME
 			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateMacOSSurfaceMVK
-            #define vkCreateSurfaceKHR								vkCreateMacOSSurfaceMVK
+			#define vkCreateSurfaceKHR								vkCreateMacOSSurfaceMVK
 		#else
 			// Only here to make the code compile.
 			typedef VkFlags VkMacOSSurfaceCreateFlagsKHR;
@@ -2258,22 +2258,6 @@ VkBool32 DebugReportCallback( VkDebugReportFlagsEXT msgFlags, VkDebugReportObjec
 	// This performance warning is valid but this is how the the secondary command buffer is used.
 	// [DS] "vkBeginCommandBuffer(): Secondary Command Buffers (00000039460DB2F8) may perform better if a valid framebuffer parameter is specified."
 	if ( MatchStrings( pMsg, "vkBeginCommandBuffer(): Secondary Command Buffers (00000039460DB2F8) may perform better if a valid framebuffer parameter is specified." ) )
-	{
-		return VK_FALSE;
-	}
-	// Using GLSL results in the following error (which is fine but GLSL is supported by some drivers):
-	// [SC] "Shader is not SPIR-V"
-	if ( MatchStrings( pMsg, "Shader is not SPIR-V" ) )
-	{
-		return VK_FALSE;
-	}
-
-	// Validation layer fixes are pending for these:
-
-	// The draw state validation layer incorrectly reports layout errors when submitting a command buffer.
-	// https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/46
-	// [DS] "Cannot submit cmd buffer using image (0x6) [sub-resource: aspectMask 0x1 array layer 0, mip level 0], with layout VK_IMAGE_LAYOUT_UNDEFINED when first use is VK_IMAGE_LAYOUT_PRESENT_SRC_KHR.
-	if ( MatchStrings( pMsg, "Cannot submit cmd buffer using image (0x6) [sub-resource: aspectMask 0x1 array layer 0, mip level 0], with layout" ) )
 	{
 		return VK_FALSE;
 	}
@@ -7466,7 +7450,7 @@ static bool GpuTexture_CreateFromSwapChain( GpuContext_t * context, GpuTexture_t
 	texture->filter = GPU_TEXTURE_FILTER_LINEAR;
 	texture->maxAnisotropy = 1.0f;
 	texture->format = window->swapchain.internalFormat;
-	texture->imageLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	texture->imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	texture->image = window->swapchain.images[index];
 	texture->memory = VK_NULL_HANDLE;
 	texture->view = window->swapchain.views[index];
@@ -16090,16 +16074,17 @@ static char** argv_deferred;
 
 -(void) startApplication: (id) argObj {
 	autoReleasePool = [[NSAutoreleasePool alloc] init];
-	StartApplication(argc_deferred, argv_deferred);
+	StartApplication( argc_deferred, argv_deferred );
 }
 
 @end
 
-int main(int argc, char * argv[]) {
+int main( int argc, char * argv[] )
+{
 	argc_deferred = argc;
 	argv_deferred = argv;
 
-	return UIApplicationMain(argc, argv, nil, @"MyAppDelegate");
+	return UIApplicationMain( argc, argv, nil, @"MyAppDelegate" );
 }
 
 #elif defined( OS_MAC )
