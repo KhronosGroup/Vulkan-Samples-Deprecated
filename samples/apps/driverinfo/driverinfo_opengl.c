@@ -2086,12 +2086,18 @@ int main( int argc, char * argv[] )
 		PFNWGLGETEXTENSIONSSTRINGARBPROC wglGetExtensionsStringARB = (PFNWGLGETEXTENSIONSSTRINGARBPROC) GetExtension( "wglGetExtensionsStringARB" );
 		const char * string = ( wglGetExtensionsStringARB != NULL ) ? wglGetExtensionsStringARB( context.hDC ) : "";
 		#define WSI_TYPE "WGL"
+#elif defined( OS_MAC )
+		const char * string = "";
+		#define WSI_TYPE "NSOpenGL"
 #elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB )
 		const char * string = glXQueryExtensionsString( context.display, context.screen );
 		#define WSI_TYPE "GLX"
 #elif defined( OS_ANDROID )
 		const char * string = eglQueryString( context.display, EGL_EXTENSIONS );
 		#define WSI_TYPE "EGL"
+#else
+		const char * string = "";
+		#define WSI_TYPE "unknown"
 #endif
 		for ( int i = 0; string[0] != '\0'; i++ )
 		{
