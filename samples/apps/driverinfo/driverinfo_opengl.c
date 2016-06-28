@@ -2087,8 +2087,7 @@ int main( int argc, char * argv[] )
 		const char * string = ( wglGetExtensionsStringARB != NULL ) ? wglGetExtensionsStringARB( context.hDC ) : "";
 		#define WSI_TYPE "WGL"
 #elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB )
-		PFNGLXQUERYEXTENSIONSSTRINGPROC glXQueryExtensionsString = (PFNGLXQUERYEXTENSIONSSTRINGPROC) GetExtension( "glXQueryExtensionsString" );
-		const char * string = ( glXQueryExtensionsString != NULL ) ? glXQueryExtensionsString( context.display, context.screen ) : "";
+		const char * string = glXQueryExtensionsString( context.display, context.screen );
 		#define WSI_TYPE "GLX"
 #elif defined( OS_ANDROID )
 		const char * string = eglQueryString( context.display, EGL_EXTENSIONS );
