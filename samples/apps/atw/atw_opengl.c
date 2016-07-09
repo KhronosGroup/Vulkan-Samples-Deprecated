@@ -217,7 +217,8 @@ and version 3.1 of the OpenGL ES Specification.
 Supported platforms are:
 
 	- Microsoft Windows 7 or later
-	- Apple Mac OS X 10.9 or later
+	- Apple macOS 10.11 or later
+	- Apple iOS 9.0 or later
 	- Ubuntu Linux 14.04 or later
 	- Android 5.0 or later
 
@@ -513,6 +514,9 @@ OpenGL compute support
 	static void glDispatchCompute( GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z ) { assert( false ); }
 
 	static void glMemoryBarrier( GLbitfield barriers ) { assert( false ); }
+
+	static void glTexStorage2DMultisample( GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLboolean fixedsamplelocations ) { assert( false ); }
+	static void glTexStorage3DMultisample( GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLboolean fixedsamplelocations ) { assert( false ); }
 
 #elif defined( OS_ANDROID ) && ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR < 31 )
 
@@ -2269,6 +2273,7 @@ typedef struct
 {
 	bool timer_query;						// GL_ARB_timer_query, GL_EXT_disjoint_timer_query
 	bool buffer_storage;					// GL_ARB_buffer_storage
+	bool multi_sampled_storage;				// GL_ARB_texture_storage_multisample
 	bool multi_view;						// GL_OVR_multiview, GL_OVR_multiview2
 	bool multi_sampled_resolve;				// GL_EXT_multisampled_render_to_texture
 	bool multi_view_multi_sampled_resolve;	// GL_OVR_multiview_multisampled_render_to_texture )
@@ -2301,7 +2306,7 @@ void ( *GetExtension( const char * functionName ) )()
 GLint glGetInteger( GLenum pname )
 {
 	GLint i;
-	glGetIntegerv( pname, &i );
+	GL( glGetIntegerv( pname, &i ) );
 	return i;
 }
 
@@ -2572,6 +2577,7 @@ static void GlInitExtensions()
 
 	glExtensions.timer_query						= GlCheckExtension( "GL_EXT_timer_query" );
 	glExtensions.buffer_storage						= GlCheckExtension( "GL_EXT_buffer_storage" ) || ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR >= 44 );
+	glExtensions.multi_sampled_storage				= GlCheckExtension( "GL_ARB_texture_storage_multisample" ) || ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR >= 43 );
 	glExtensions.multi_view							= GlCheckExtension( "GL_OVR_multiview2" );
 	glExtensions.multi_sampled_resolve				= GlCheckExtension( "GL_EXT_multisampled_render_to_texture" );
 	glExtensions.multi_view_multi_sampled_resolve	= GlCheckExtension( "GL_OVR_multiview_multisampled_render_to_texture" );
@@ -2809,7 +2815,7 @@ A context can only be used by a single thread.
 For optimal performance a context should only be created at load time, not at runtime.
 
 GpuContext_t
-GpuMultiSamples_t
+GpuSampleCount_t
 
 static bool GpuContext_CreateShared( GpuContext_t * context, const GpuContext_t * other, const int queueIndex );
 static void GpuContext_Destroy( GpuContext_t * context );
@@ -2850,7 +2856,7 @@ typedef enum
 	GPU_SAMPLE_COUNT_16		= 16,
 	GPU_SAMPLE_COUNT_32		= 32,
 	GPU_SAMPLE_COUNT_64		= 64,
-} GpuMultiSamples_t;
+} GpuSampleCount_t;
 
 typedef struct
 {
@@ -6099,11 +6105,11 @@ GpuTextureDefault_t
 GpuTexture_t
 
 static bool GpuTexture_Create2D( GpuContext_t * context, GpuTexture_t * texture,
-								const GpuTextureFormat_t format, const GpuMultiSamples_t multiSamples,
+								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
 								const int width, const int height, const int numberOfMipmapLevels,
 								const void * data, const size_t dataSize );
 static bool GpuTexture_Create2DArray( GpuContext_t * context, GpuTexture_t * texture,
-								const GpuTextureFormat_t format, const GpuMultiSamples_t multiSamples,
+								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
 								const int width, const int height, const int numberOfArrayElements, const int numberOfMipmapLevels,
 								const void * data, const size_t dataSize );
 static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureDefault_t defaultType,
@@ -6282,6 +6288,7 @@ typedef enum
 typedef enum
 {
 	GPU_TEXTURE_USAGE_UNDEFINED,
+	GPU_TEXTURE_USAGE_GENERAL,
 	GPU_TEXTURE_USAGE_TRANSFER_SRC,
 	GPU_TEXTURE_USAGE_TRANSFER_DST,
 	GPU_TEXTURE_USAGE_SAMPLED,
@@ -6318,7 +6325,7 @@ typedef struct
 	int						depth;
 	int						layerCount;
 	int						mipCount;
-	GpuMultiSamples_t		multiSamples;
+	GpuSampleCount_t		sampleCount;
 	GpuTextureUsage_t		usage;
 	GpuTextureWrapMode_t	wrapMode;
 	GpuTextureFilter_t		filter;
@@ -6352,7 +6359,7 @@ static int IntegerLog2( int i )
 // The 'data' is expected to be stored packed on a per mip level basis.
 // If 'data' != NULL and 'numberOfMipmapLevels' == -1, then the full mip chain will be generated from the finest data level.
 static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * texture, const char * fileName,
-										const GLenum glInternalFormat, const GpuMultiSamples_t multiSamples,
+										const GLenum glInternalFormat, const GpuSampleCount_t sampleCount,
 										const int width, const int height, const int depth,
 										const int numberOfArrayElements, const int numberOfFaces, const int numberOfMipmapLevels,
 										const void * data, const size_t dataSize, const bool mipSizeStored )
@@ -6408,9 +6415,9 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	GL( glBindTexture( glTarget, texture->texture ) );
 	if ( depth <= 1 && numberOfArrayElements <= 1 )
 	{
-		if ( multiSamples > GPU_SAMPLE_COUNT_1 )
+		if ( sampleCount > GPU_SAMPLE_COUNT_1 )
 		{
-			GL( glTexStorage2DMultisample( glTarget, multiSamples, glInternalFormat, width, height, GL_TRUE ) );
+			GL( glTexStorage2DMultisample( glTarget, sampleCount, glInternalFormat, width, height, GL_TRUE ) );
 		}
 		else
 		{
@@ -6419,9 +6426,9 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	}
 	else
 	{
-		if ( multiSamples > GPU_SAMPLE_COUNT_1 )
+		if ( sampleCount > GPU_SAMPLE_COUNT_1 )
 		{
-			GL( glTexStorage3DMultisample( glTarget, multiSamples, glInternalFormat, width, height, depth * numberOfArrayElements, GL_TRUE ) );
+			GL( glTexStorage3DMultisample( glTarget, sampleCount, glInternalFormat, width, height, depth * numberOfArrayElements, GL_TRUE ) );
 		}
 		else
 		{
@@ -6436,14 +6443,14 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	texture->depth = depth;
 	texture->layerCount = numberOfArrayElements;
 	texture->mipCount = numStorageLevels;
-	texture->multiSamples = multiSamples;
+	texture->sampleCount = sampleCount;
 	texture->wrapMode = GPU_TEXTURE_WRAP_MODE_REPEAT;
 	texture->filter = ( numStorageLevels > 1 ) ? GPU_TEXTURE_FILTER_BILINEAR : GPU_TEXTURE_FILTER_LINEAR;
 	texture->maxAnisotropy = 1.0f;
 
 	if ( data != NULL )
 	{
-		assert( multiSamples == GPU_SAMPLE_COUNT_1 );
+		assert( sampleCount == GPU_SAMPLE_COUNT_1 );
 
 		const int numDataLevels = ( numberOfMipmapLevels >= 1 ) ? numberOfMipmapLevels : 1;
 		const unsigned char * levelData = (const unsigned char *)data;
@@ -6727,26 +6734,26 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 }
 
 static bool GpuTexture_Create2D( GpuContext_t * context, GpuTexture_t * texture,
-								const GpuTextureFormat_t format, const GpuMultiSamples_t multiSamples,
+								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
 								const int width, const int height, const int numberOfMipmapLevels,
 								const void * data, const size_t dataSize )
 {
 	const int depth = 1;
 	const int numberOfArrayElements = 1;
 	const int numberOfFaces = 1;
-	return GpuTexture_CreateInternal( context, texture, "data", (GLenum)format, multiSamples, width, height, depth,
+	return GpuTexture_CreateInternal( context, texture, "data", (GLenum)format, sampleCount, width, height, depth,
 										numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
 										data, dataSize, false );
 }
 
 static bool GpuTexture_Create2DArray( GpuContext_t * context, GpuTexture_t * texture,
-								const GpuTextureFormat_t format, const GpuMultiSamples_t multiSamples,
+								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
 								const int width, const int height, const int numberOfArrayElements, const int numberOfMipmapLevels,
 								const void * data, const size_t dataSize )
 {
 	const int depth = 1;
 	const int numberOfFaces = 1;
-	return GpuTexture_CreateInternal( context, texture, "data", (GLenum)format, multiSamples, width, height, depth,
+	return GpuTexture_CreateInternal( context, texture, "data", (GLenum)format, sampleCount, width, height, depth,
 										numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
 										data, dataSize, false );
 }
@@ -7013,7 +7020,7 @@ static bool GpuTexture_CreateFromSwapChain( GpuContext_t * context, GpuTexture_t
 	texture->depth = 1;
 	texture->layerCount = 1;
 	texture->mipCount = 1;
-	texture->multiSamples = GPU_SAMPLE_COUNT_1;
+	texture->sampleCount = GPU_SAMPLE_COUNT_1;
 	texture->usage = GPU_TEXTURE_USAGE_UNDEFINED;
 	texture->wrapMode = GPU_TEXTURE_WRAP_MODE_REPEAT;
 	texture->filter = GPU_TEXTURE_FILTER_LINEAR;
@@ -7583,7 +7590,7 @@ GpuRenderPass_t
 
 static bool GpuRenderPass_Create( GpuContext_t * context, GpuRenderPass_t * renderPass,
 									const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-									const GpuMultiSamples_t multiSamples, const GpuRenderPassType_t type, const uint32_t flags );
+									const GpuSampleCount_t sampleCount, const GpuRenderPassType_t type, const uint32_t flags );
 static void GpuRenderPass_Destroy( GpuContext_t * context, GpuRenderPass_t * renderPass );
 
 ================================================================================================================================
@@ -7607,12 +7614,12 @@ typedef struct
 	int							flags;
 	GpuSurfaceColorFormat_t		colorFormat;
 	GpuSurfaceDepthFormat_t		depthFormat;
-	GpuMultiSamples_t			multiSamples;
+	GpuSampleCount_t			sampleCount;
 } GpuRenderPass_t;
 
 static bool GpuRenderPass_Create( GpuContext_t * context, GpuRenderPass_t * renderPass,
 									const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-									const GpuMultiSamples_t multiSamples, const GpuRenderPassType_t type, const int flags )
+									const GpuSampleCount_t sampleCount, const GpuRenderPassType_t type, const int flags )
 {
 	UNUSED_PARM( context );
 
@@ -7622,7 +7629,7 @@ static bool GpuRenderPass_Create( GpuContext_t * context, GpuRenderPass_t * rend
 	renderPass->flags = flags;
 	renderPass->colorFormat = colorFormat;
 	renderPass->depthFormat = depthFormat;
-	renderPass->multiSamples = multiSamples;
+	renderPass->sampleCount = sampleCount;
 	return true;
 }
 
@@ -7666,7 +7673,7 @@ typedef struct
 	GLuint *			resolveBuffers;
 	GLuint *			renderBuffers;
 	bool				multiView;
-	int					multiSamples;
+	int					sampleCount;
 	int					numFramebuffersPerTexture;
 	int					numBuffers;
 	int					currentBuffer;
@@ -7681,7 +7688,7 @@ typedef enum
 
 static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass )
 {
-	assert( renderPass->multiSamples == GPU_SAMPLE_COUNT_1 );
+	assert( renderPass->sampleCount == GPU_SAMPLE_COUNT_1 );
 
 	UNUSED_PARM( renderPass );
 
@@ -7695,7 +7702,7 @@ static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebu
 	framebuffer->renderBuffers = (GLuint *) malloc( NUM_BUFFERS * sizeof( GLuint ) );
 	framebuffer->resolveBuffers = framebuffer->renderBuffers;
 	framebuffer->multiView = false;
-	framebuffer->multiSamples = GPU_SAMPLE_COUNT_1;
+	framebuffer->sampleCount = GPU_SAMPLE_COUNT_1;
 	framebuffer->numFramebuffersPerTexture = 1;
 	framebuffer->numBuffers = NUM_BUFFERS;
 	framebuffer->currentBuffer = 0;
@@ -7729,13 +7736,13 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 	framebuffer->renderBuffers = (GLuint *) malloc( numBuffers * sizeof( GLuint ) );
 	framebuffer->resolveBuffers = framebuffer->renderBuffers;
 	framebuffer->multiView = false;
-	framebuffer->multiSamples = GPU_SAMPLE_COUNT_1;
+	framebuffer->sampleCount = GPU_SAMPLE_COUNT_1;
 	framebuffer->numFramebuffersPerTexture = 1;
 	framebuffer->numBuffers = numBuffers;
 	framebuffer->currentBuffer = 0;
 
-	const GpuMsaaMode_t mode =	( ( renderPass->multiSamples > GPU_SAMPLE_COUNT_1 && glExtensions.multi_sampled_resolve ) ? MSAA_RESOLVE :
-								( ( renderPass->multiSamples > GPU_SAMPLE_COUNT_1 ) ? MSAA_BLIT :
+	const GpuMsaaMode_t mode =	( ( renderPass->sampleCount > GPU_SAMPLE_COUNT_1 && glExtensions.multi_sampled_resolve ) ? MSAA_RESOLVE :
+								( ( renderPass->sampleCount > GPU_SAMPLE_COUNT_1 ) ? MSAA_BLIT :
 								MSAA_OFF ) );
 
 	// Create the color textures.
@@ -7755,11 +7762,11 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 		GL( glBindRenderbuffer( GL_RENDERBUFFER, framebuffer->depthBuffer ) );
 		if ( mode == MSAA_RESOLVE )
 		{
-			GL( glRenderbufferStorageMultisampleEXT( GL_RENDERBUFFER, renderPass->multiSamples, depthFormat, width, height ) );
+			GL( glRenderbufferStorageMultisampleEXT( GL_RENDERBUFFER, renderPass->sampleCount, depthFormat, width, height ) );
 		}
 		else if ( mode == MSAA_BLIT )
 		{
-			GL( glRenderbufferStorageMultisample( GL_RENDERBUFFER, renderPass->multiSamples, depthFormat, width, height ) );
+			GL( glRenderbufferStorageMultisample( GL_RENDERBUFFER, renderPass->sampleCount, depthFormat, width, height ) );
 		}
 		else
 		{
@@ -7776,11 +7783,11 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 		GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, framebuffer->renderBuffers[bufferIndex] ) );
 		if ( mode == MSAA_RESOLVE )
 		{
-			GL( glFramebufferTexture2DMultisampleEXT( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebuffer->colorTextures[bufferIndex].texture, 0, renderPass->multiSamples ) );
+			GL( glFramebufferTexture2DMultisampleEXT( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebuffer->colorTextures[bufferIndex].texture, 0, renderPass->sampleCount ) );
 		}
 		else if ( mode == MSAA_BLIT )
 		{
-			GL( glRenderbufferStorageMultisample( GL_RENDERBUFFER, renderPass->multiSamples, colorFormat, width, height ) );
+			GL( glRenderbufferStorageMultisample( GL_RENDERBUFFER, renderPass->sampleCount, colorFormat, width, height ) );
 		}
 		else
 		{
@@ -7790,7 +7797,7 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 		{
 			GL( glFramebufferRenderbuffer( GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, framebuffer->depthBuffer ) );
 		}
-		GL( glGetIntegerv( GL_SAMPLES, &framebuffer->multiSamples ) );
+		GL( glGetIntegerv( GL_SAMPLES, &framebuffer->sampleCount ) );
 		GL( GLenum status = glCheckFramebufferStatus( GL_DRAW_FRAMEBUFFER ) );
 		GL( glClearColor( 0.0f, 0.0f, 0.0f, 1.0f ) );
 		GL( glClear( GL_COLOR_BUFFER_BIT ) );
@@ -7835,16 +7842,16 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 	framebuffer->colorTextures = (GpuTexture_t *) malloc( numBuffers * sizeof( GpuTexture_t ) );
 	framebuffer->depthBuffer = 0;
 	framebuffer->multiView = multiview;
-	framebuffer->multiSamples = GPU_SAMPLE_COUNT_1;
+	framebuffer->sampleCount = GPU_SAMPLE_COUNT_1;
 	framebuffer->numFramebuffersPerTexture = ( multiview ? 1 : numLayers );
 	framebuffer->renderBuffers = (GLuint *) malloc( numBuffers * framebuffer->numFramebuffersPerTexture * sizeof( GLuint ) );
 	framebuffer->resolveBuffers = framebuffer->renderBuffers;
 	framebuffer->numBuffers = numBuffers;
 	framebuffer->currentBuffer = 0;
 
-	const GpuMsaaMode_t mode =	( ( renderPass->multiSamples > GPU_SAMPLE_COUNT_1 && !multiview && glExtensions.multi_sampled_resolve ) ? MSAA_RESOLVE :
-								( ( renderPass->multiSamples > GPU_SAMPLE_COUNT_1 && multiview && glExtensions.multi_view_multi_sampled_resolve ) ? MSAA_RESOLVE :
-								( ( renderPass->multiSamples > GPU_SAMPLE_COUNT_1 && glTexStorage3DMultisample != NULL ) ? MSAA_BLIT :
+	const GpuMsaaMode_t mode =	( ( renderPass->sampleCount > GPU_SAMPLE_COUNT_1 && !multiview && glExtensions.multi_sampled_resolve ) ? MSAA_RESOLVE :
+								( ( renderPass->sampleCount > GPU_SAMPLE_COUNT_1 && multiview && glExtensions.multi_view_multi_sampled_resolve ) ? MSAA_RESOLVE :
+								( ( renderPass->sampleCount > GPU_SAMPLE_COUNT_1 && glExtensions.multi_sampled_storage ) ? MSAA_BLIT :
 								MSAA_OFF ) ) );
 
 	// Create the color textures.
@@ -7860,7 +7867,7 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 	{
 		GL( glGenTextures( 1, &framebuffer->renderTexture ) );
 		GL( glBindTexture( GL_TEXTURE_2D_MULTISAMPLE_ARRAY, framebuffer->renderTexture ) );
-		GL( glTexStorage3DMultisample( GL_TEXTURE_2D_MULTISAMPLE_ARRAY, renderPass->multiSamples, colorFormat, width, height, numLayers, GL_TRUE ) );
+		GL( glTexStorage3DMultisample( GL_TEXTURE_2D_MULTISAMPLE_ARRAY, renderPass->sampleCount, colorFormat, width, height, numLayers, GL_TRUE ) );
 		GL( glBindTexture( GL_TEXTURE_2D_MULTISAMPLE_ARRAY, 0 ) );
 	}
 
@@ -7874,7 +7881,7 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 		GL( glBindTexture( target, framebuffer->depthBuffer ) );
 		if ( mode == MSAA_BLIT )
 		{
-			GL( glTexStorage3DMultisample( target, renderPass->multiSamples, depthFormat, width, height, numLayers, GL_TRUE ) );
+			GL( glTexStorage3DMultisample( target, renderPass->sampleCount, depthFormat, width, height, numLayers, GL_TRUE ) );
 		}
 		else
 		{
@@ -7896,11 +7903,11 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 				if ( mode == MSAA_RESOLVE )
 				{
 					GL( glFramebufferTextureMultisampleMultiviewOVR( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-							framebuffer->colorTextures[bufferIndex].texture, 0 /* level */, renderPass->multiSamples /* samples */, 0 /* baseViewIndex */, numLayers /* numViews */ ) );
+							framebuffer->colorTextures[bufferIndex].texture, 0 /* level */, renderPass->sampleCount /* samples */, 0 /* baseViewIndex */, numLayers /* numViews */ ) );
 					if ( renderPass->depthFormat != GPU_SURFACE_DEPTH_FORMAT_NONE )
 					{
 						GL( glFramebufferTextureMultisampleMultiviewOVR( GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-								framebuffer->depthBuffer, 0 /* level */, renderPass->multiSamples /* samples */, 0 /* baseViewIndex */, numLayers /* numViews */ ) );
+								framebuffer->depthBuffer, 0 /* level */, renderPass->sampleCount /* samples */, 0 /* baseViewIndex */, numLayers /* numViews */ ) );
 					}
 				}
 				else if ( mode == MSAA_BLIT )
@@ -7930,11 +7937,11 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 				{
 					// Note: using glFramebufferTextureMultisampleMultiviewOVR with a single view because there is no glFramebufferTextureLayerMultisampleEXT
 					GL( glFramebufferTextureMultisampleMultiviewOVR( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-							framebuffer->colorTextures[bufferIndex].texture, 0 /* level */, renderPass->multiSamples /* samples */, layerIndex /* baseViewIndex */, 1 /* numViews */ ) );
+							framebuffer->colorTextures[bufferIndex].texture, 0 /* level */, renderPass->sampleCount /* samples */, layerIndex /* baseViewIndex */, 1 /* numViews */ ) );
 					if ( renderPass->depthFormat != GPU_SURFACE_DEPTH_FORMAT_NONE )
 					{
 						GL( glFramebufferTextureMultisampleMultiviewOVR( GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-								framebuffer->depthBuffer, 0 /* level */, renderPass->multiSamples /* samples */, layerIndex /* baseViewIndex */, 1 /* numViews */ ) );
+								framebuffer->depthBuffer, 0 /* level */, renderPass->sampleCount /* samples */, layerIndex /* baseViewIndex */, 1 /* numViews */ ) );
 					}
 				}
 				else if ( mode == MSAA_BLIT )
@@ -7958,7 +7965,7 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 					}
 				}
 			}
-			GL( glGetIntegerv( GL_SAMPLES, &framebuffer->multiSamples ) );
+			GL( glGetIntegerv( GL_SAMPLES, &framebuffer->sampleCount ) );
 			GL( GLenum status = glCheckFramebufferStatus( GL_DRAW_FRAMEBUFFER ) );
 			GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 ) );
 			if ( status != GL_FRAMEBUFFER_COMPLETE )
@@ -8610,8 +8617,8 @@ static void GpuGraphicsPipelineParms_Init( GpuGraphicsPipelineParms_t * parms )
 }
 
 static void InitVertexAttributes( const bool instance, const int numAttribs,
-									const int storedAttribsFlags, const int usedAttribsFlags,
-									GLuint * attribLocationCount )
+								const int storedAttribsFlags, const int usedAttribsFlags,
+								GLuint * attribLocationCount )
 {
 	size_t offset = 0;
 	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
@@ -11800,7 +11807,6 @@ TimeWarp_t
 
 static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window );
 static void TimeWarp_Destroy( TimeWarp_t * timeWarp, GpuWindow_t * window );
-static void TimeWarp_Reset( TimeWarp_t * timeWarp );
 
 static void TimeWarp_SetBarGraphState( TimeWarp_t * timeWarp, const BarGraphState_t state );
 static void TimeWarp_CycleBarGraphState( TimeWarp_t * timeWarp );
@@ -11876,39 +11882,37 @@ typedef struct
 	TimeWarpBarGraphs_t			bargraphs;
 } TimeWarp_t;
 
-static void TimeWarp_Reset( TimeWarp_t * timeWarp )
+static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 {
-	Matrix4x4f_CreateIdentity( &timeWarp->viewMatrix );
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
-	{
-		timeWarp->eyeTexture[eye] = &timeWarp->defaultTexture;
-		timeWarp->eyeArrayLayer[eye] = eye;
-	}
+	GpuTexture_CreateDefault( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_DEFAULT_CIRCLES, 1024, 1024, 1, 2, 1, false, true );
+	GpuTexture_SetWrapMode( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 
 	Mutex_Create( &timeWarp->newEyeTexturesMutex );
 	Signal_Create( &timeWarp->newEyeTexturesConsumed, true );
 	Signal_Raise( &timeWarp->newEyeTexturesConsumed );
 
 	timeWarp->newEyeTextures.index = 0;
+	Matrix4x4f_CreateProjectionFov( &timeWarp->newEyeTextures.projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 	Matrix4x4f_CreateIdentity( &timeWarp->newEyeTextures.viewMatrix );
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
 		timeWarp->newEyeTextures.texture[eye] = &timeWarp->defaultTexture;
 		timeWarp->newEyeTextures.completionFence[eye] = NULL;
+		timeWarp->newEyeTextures.arrayLayer[eye] = 0;
 	}
 	timeWarp->newEyeTextures.cpuTime = 0.0f;
 	timeWarp->newEyeTextures.gpuTime = 0.0f;
 
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		timeWarp->eyeTexture[eye] = &timeWarp->defaultTexture;
+		timeWarp->eyeArrayLayer[eye] = eye;
+	}
+	timeWarp->viewMatrix = timeWarp->newEyeTextures.viewMatrix;
+	timeWarp->projectionMatrix = timeWarp->projectionMatrix;
+
 	timeWarp->eyeTexturesPresentIndex = 1;
 	timeWarp->eyeTexturesConsumedIndex = 0;
-}
-
-static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
-{
-	GpuTexture_CreateDefault( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_DEFAULT_CIRCLES, 1024, 1024, 1, 2, 1, false, true );
-	GpuTexture_SetWrapMode( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
-
-	TimeWarp_Reset( timeWarp );
 
 	timeWarp->refreshRate = window->windowRefreshRate;
 	for ( int i = 0; i < AVARGE_FRAME_RATE_FRAMES; i++ )
@@ -11946,14 +11950,9 @@ static void TimeWarp_Destroy( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	GpuFramebuffer_Destroy( &window->context, &timeWarp->framebuffer );
 	GpuRenderPass_Destroy( &window->context, &timeWarp->renderPass );
 
-	Mutex_Destroy( &timeWarp->newEyeTexturesMutex );
 	Signal_Destroy( &timeWarp->newEyeTexturesConsumed );
+	Mutex_Destroy( &timeWarp->newEyeTexturesMutex );
 
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
-	{
-		timeWarp->eyeTexture[eye] = NULL;
-		timeWarp->eyeArrayLayer[eye] = 0;
-	}
 	GpuTexture_Destroy( &window->context, &timeWarp->defaultTexture );
 }
 
@@ -12246,9 +12245,10 @@ typedef struct
 	int		triangleLevel;
 	int		fragmentLevel;
 	int		samplesLevel;
+	int		maxSamplesLevels;
 } SceneSettings_t;
 
-static void SceneSettings_Init( SceneSettings_t * settings )
+static void SceneSettings_Init( GpuContext_t * context, SceneSettings_t * settings )
 {
 	settings->simulationPaused = false;
 	settings->useMultiView = false;
@@ -12256,6 +12256,11 @@ static void SceneSettings_Init( SceneSettings_t * settings )
 	settings->triangleLevel = 0;
 	settings->fragmentLevel = 0;
 	settings->samplesLevel = 0;
+
+	const int maxSamplesLevels = IntegerLog2( glGetInteger( GL_MAX_SAMPLES ) + 1 );
+	settings->maxSamplesLevels = ( maxSamplesLevels < MAX_SCENE_SAMPLES_LEVELS ) ? maxSamplesLevels : MAX_SCENE_SAMPLES_LEVELS;
+
+	UNUSED_PARM( context );
 }
 
 static void CycleLevel( int * x, const int max ) { (*x) = ( (*x) + 1 ) % max; }
@@ -12272,12 +12277,12 @@ static bool SceneSettings_GetMultiView( SceneSettings_t * settings ) { return se
 static void SceneSettings_CycleDrawCallLevel( SceneSettings_t * settings ) { CycleLevel( &settings->drawCallLevel, MAX_SCENE_DRAWCALL_LEVELS ); }
 static void SceneSettings_CycleTriangleLevel( SceneSettings_t * settings ) { CycleLevel( &settings->triangleLevel, MAX_SCENE_TRIANGLE_LEVELS ); }
 static void SceneSettings_CycleFragmentLevel( SceneSettings_t * settings ) { CycleLevel( &settings->fragmentLevel, MAX_SCENE_FRAGMENT_LEVELS ); }
-static void SceneSettings_CycleSamplesLevel( SceneSettings_t * settings ) { CycleLevel( &settings->samplesLevel, MAX_SCENE_SAMPLES_LEVELS ); }
+static void SceneSettings_CycleSamplesLevel( SceneSettings_t * settings ) { CycleLevel( &settings->samplesLevel, settings->maxSamplesLevels ); }
 
 static void SceneSettings_SetDrawCallLevel( SceneSettings_t * settings, const int level ) { settings->drawCallLevel = level; }
 static void SceneSettings_SetTriangleLevel( SceneSettings_t * settings, const int level ) { settings->triangleLevel = level; }
 static void SceneSettings_SetFragmentLevel( SceneSettings_t * settings, const int level ) { settings->fragmentLevel = level; }
-static void SceneSettings_SetSamplesLevel( SceneSettings_t * settings, const int level ) { settings->samplesLevel = level; }
+static void SceneSettings_SetSamplesLevel( SceneSettings_t * settings, const int level ) { settings->samplesLevel = ( level < settings->maxSamplesLevels ) ? level : settings->maxSamplesLevels; }
 
 static int SceneSettings_GetDrawCallLevel( const SceneSettings_t * settings ) { return settings->drawCallLevel; }
 static int SceneSettings_GetTriangleLevel( const SceneSettings_t * settings ) { return settings->triangleLevel; }
@@ -12710,6 +12715,8 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 
 static void Scene_Destroy( GpuContext_t * context, Scene_t * scene )
 {
+	GpuContext_WaitIdle( context );
+
 	for ( int i = 0; i < MAX_SCENE_TRIANGLE_LEVELS; i++ )
 	{
 		for ( int j = 0; j < MAX_SCENE_FRAGMENT_LEVELS; j++ )
@@ -13019,19 +13026,19 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 	static const int EYE_WIDTH			= 1024;
 	static const int EYE_HEIGHT			= 1024;
 
-	const GpuMultiSamples_t sampleTable[] =
+	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
+
+	GpuContext_t context;
+	GpuContext_CreateShared( &context, threadData->shareContext, QUEUE_INDEX_SCENE );
+	GpuContext_SetCurrent( &context );
+
+	const GpuSampleCount_t sampleTable[] =
 	{
 		GPU_SAMPLE_COUNT_1,
 		GPU_SAMPLE_COUNT_2,
 		GPU_SAMPLE_COUNT_4,
 		GPU_SAMPLE_COUNT_8
 	};
-
-	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
-
-	GpuContext_t context;
-	GpuContext_CreateShared( &context, threadData->shareContext, QUEUE_INDEX_SCENE );
-	GpuContext_SetCurrent( &context );
 
 	GpuRenderPass_t renderPass;
 	GpuRenderPass_Create( &context, &renderPass, GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24,
@@ -13181,12 +13188,13 @@ void SceneThread_Create( Thread_t * sceneThread, SceneThreadData_t * sceneThread
 void SceneThread_Destroy( Thread_t * sceneThread, SceneThreadData_t * sceneThreadData )
 {
 	sceneThreadData->terminate = true;
+	// The following assumes the time warp thread is blocked when this function is called.
 	Signal_Raise( &sceneThreadData->timeWarp->newEyeTexturesConsumed );
 	Signal_Destroy( &sceneThreadData->initialized );
 	Thread_Destroy( sceneThread );
 }
 
-bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
+bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 {
 	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
 	Thread_SetRealTimePriority( 1 );
@@ -13223,7 +13231,7 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 	TimeWarp_SetSamplesLevel( &timeWarp, startupSettings->samplesLevel );
 
 	SceneSettings_t sceneSettings;
-	SceneSettings_Init( &sceneSettings );
+	SceneSettings_Init( &window.context, &sceneSettings );
 	SceneSettings_SetSimulationPaused( &sceneSettings, startupSettings->simulationPaused );
 	SceneSettings_SetMultiView( &sceneSettings, startupSettings->useMultiView );
 	SceneSettings_SetDrawCallLevel( &sceneSettings, startupSettings->drawCallLevel );
@@ -13264,11 +13272,14 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
-			break;	// change render mode
+			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
+			break;
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
+			// Must recreate the scene and time warp to create a new window.
+			GpuContext_WaitIdle( &window.context );
 			SceneThread_Destroy( &sceneThread, &sceneThreadData );
 			TimeWarp_Destroy( &timeWarp, &window );
 			GpuWindow_Destroy( &window );
@@ -13278,9 +13289,14 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 							fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
 							fullscreen );
 			TimeWarp_Create( &timeWarp, &window );
+			TimeWarp_SetBarGraphState( &timeWarp, startupSettings->hideGraphs ? BAR_GRAPH_HIDDEN : BAR_GRAPH_VISIBLE );
+			TimeWarp_SetImplementation( &timeWarp, startupSettings->timeWarpImplementation );
+			TimeWarp_SetChromaticAberrationCorrection( &timeWarp, startupSettings->correctChromaticAberration );
+			TimeWarp_SetMultiView( &timeWarp, startupSettings->useMultiView );
 			TimeWarp_SetDrawCallLevel( &timeWarp, SceneSettings_GetDrawCallLevel( &sceneSettings ) );
 			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
+			TimeWarp_SetSamplesLevel( &timeWarp, SceneSettings_GetSamplesLevel( &sceneSettings ) );
 			SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
@@ -13327,10 +13343,19 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_S ) )
 		{
 			SceneSettings_CycleSamplesLevel( &sceneSettings );
-			TimeWarp_SetSamplesLevel( &timeWarp, SceneSettings_GetSamplesLevel( &sceneSettings ) );
-			// Must recreate the scene to allocate different framebuffers.
+			// Must recreate the scene and time warp to allocate different framebuffers.
+			GpuContext_WaitIdle( &window.context );
 			SceneThread_Destroy( &sceneThread, &sceneThreadData );
-			TimeWarp_Reset( &timeWarp );
+			TimeWarp_Destroy( &timeWarp, &window );
+			TimeWarp_Create( &timeWarp, &window );
+			TimeWarp_SetBarGraphState( &timeWarp, startupSettings->hideGraphs ? BAR_GRAPH_HIDDEN : BAR_GRAPH_VISIBLE );
+			TimeWarp_SetImplementation( &timeWarp, startupSettings->timeWarpImplementation );
+			TimeWarp_SetChromaticAberrationCorrection( &timeWarp, startupSettings->correctChromaticAberration );
+			TimeWarp_SetMultiView( &timeWarp, startupSettings->useMultiView );
+			TimeWarp_SetDrawCallLevel( &timeWarp, SceneSettings_GetDrawCallLevel( &sceneSettings ) );
+			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
+			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
+			TimeWarp_SetSamplesLevel( &timeWarp, SceneSettings_GetSamplesLevel( &sceneSettings ) );
 			SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_I ) )
@@ -13346,10 +13371,19 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 			if ( glExtensions.multi_view )
 			{
 				SceneSettings_ToggleMultiView( &sceneSettings );
-				TimeWarp_SetMultiView( &timeWarp, SceneSettings_GetMultiView( &sceneSettings ) );
 				// Must recreate the scene to compile different vertex programs for multi-view.
+				GpuContext_WaitIdle( &window.context );
 				SceneThread_Destroy( &sceneThread, &sceneThreadData );
-				TimeWarp_Reset( &timeWarp );
+				TimeWarp_Destroy( &timeWarp, &window );
+				TimeWarp_Create( &timeWarp, &window );
+				TimeWarp_SetBarGraphState( &timeWarp, startupSettings->hideGraphs ? BAR_GRAPH_HIDDEN : BAR_GRAPH_VISIBLE );
+				TimeWarp_SetImplementation( &timeWarp, startupSettings->timeWarpImplementation );
+				TimeWarp_SetChromaticAberrationCorrection( &timeWarp, startupSettings->correctChromaticAberration );
+				TimeWarp_SetMultiView( &timeWarp, startupSettings->useMultiView );
+				TimeWarp_SetDrawCallLevel( &timeWarp, SceneSettings_GetDrawCallLevel( &sceneSettings ) );
+				TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
+				TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
+				TimeWarp_SetSamplesLevel( &timeWarp, SceneSettings_GetSamplesLevel( &sceneSettings ) );
 				SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
 			}
 		}
@@ -13384,7 +13418,7 @@ Time warp rendering test.
 ================================================================================================================================
 */
 
-bool RenderTimeWarp( const StartupSettings_t * startupSettings )
+bool RenderTimeWarp( StartupSettings_t * startupSettings )
 {
 	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
 
@@ -13443,7 +13477,8 @@ bool RenderTimeWarp( const StartupSettings_t * startupSettings )
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
-			break;	// change render mode
+			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
+			break;
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
@@ -13514,7 +13549,7 @@ Scene rendering test.
 ================================================================================================================================
 */
 
-bool RenderScene( const StartupSettings_t * startupSettings )
+bool RenderScene( StartupSettings_t * startupSettings )
 {
 	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
 
@@ -13538,9 +13573,17 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 	int swapInterval = ( startupSettings->noVSyncMicroseconds <= 0 );
 	GpuWindow_SwapInterval( &window, swapInterval );
 
+	const GpuSampleCount_t sampleTable[] =
+	{
+		GPU_SAMPLE_COUNT_1,
+		GPU_SAMPLE_COUNT_2,
+		GPU_SAMPLE_COUNT_4,
+		GPU_SAMPLE_COUNT_8
+	};
+
 	GpuRenderPass_t renderPass;
 	GpuRenderPass_Create( &window.context, &renderPass, window.colorFormat, window.depthFormat,
-							GPU_SAMPLE_COUNT_1, GPU_RENDERPASS_TYPE_INLINE,
+							sampleTable[startupSettings->samplesLevel], GPU_RENDERPASS_TYPE_INLINE,
 							GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
 							GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
 
@@ -13553,8 +13596,14 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 	GpuTimer_t timer;
 	GpuTimer_Create( &window.context, &timer );
 
+	BarGraph_t frameCpuTimeBarGraph;
+	BarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
+
+	BarGraph_t frameGpuTimeBarGraph;
+	BarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
+
 	SceneSettings_t sceneSettings;
-	SceneSettings_Init( &sceneSettings );
+	SceneSettings_Init( &window.context, &sceneSettings );
 	SceneSettings_SetSimulationPaused( &sceneSettings, startupSettings->simulationPaused );
 	SceneSettings_SetDrawCallLevel( &sceneSettings, startupSettings->drawCallLevel );
 	SceneSettings_SetTriangleLevel( &sceneSettings, startupSettings->triangleLevel );
@@ -13562,12 +13611,6 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 
 	Scene_t scene;
 	Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
-
-	BarGraph_t frameCpuTimeBarGraph;
-	BarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
-
-	BarGraph_t frameGpuTimeBarGraph;
-	BarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
 
@@ -13598,12 +13641,15 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
-			break;	// change render mode
+			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
+			break;
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
 			Scene_Destroy( &window.context, &scene );
+			BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
+			BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
 			GpuTimer_Destroy( &window.context, &timer );
 			GpuCommandBuffer_Destroy( &window.context, &commandBuffer );
 			GpuFramebuffer_Destroy( &window.context, &framebuffer );
@@ -13621,6 +13667,8 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 			GpuFramebuffer_CreateFromSwapchain( &window, &framebuffer, &renderPass );
 			GpuCommandBuffer_Create( &window.context, &commandBuffer, GPU_COMMAND_BUFFER_TYPE_PRIMARY, GpuFramebuffer_GetBufferCount( &framebuffer ) );
 			GpuTimer_Create( &window.context, &timer );
+			BarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
+			BarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
 			Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
@@ -13655,6 +13703,28 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_E ) )
 		{
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
+		}
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_S ) )
+		{
+			SceneSettings_CycleSamplesLevel( &sceneSettings );
+			// Must recreate the scene to allocate different framebuffers.
+			Scene_Destroy( &window.context, &scene );
+			BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
+			BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
+			GpuTimer_Destroy( &window.context, &timer );
+			GpuCommandBuffer_Destroy( &window.context, &commandBuffer );
+			GpuFramebuffer_Destroy( &window.context, &framebuffer );
+			GpuRenderPass_Destroy( &window.context, &renderPass );
+			GpuRenderPass_Create( &window.context, &renderPass, window.colorFormat, window.depthFormat,
+									GPU_SAMPLE_COUNT_1, GPU_RENDERPASS_TYPE_INLINE,
+									GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
+									GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
+			GpuFramebuffer_CreateFromSwapchain( &window, &framebuffer, &renderPass );
+			GpuCommandBuffer_Create( &window.context, &commandBuffer, GPU_COMMAND_BUFFER_TYPE_PRIMARY, GpuFramebuffer_GetBufferCount( &framebuffer ) );
+			GpuTimer_Create( &window.context, &timer );
+			BarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
+			BarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
+			Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
 		{
@@ -13719,10 +13789,9 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 		}
 	}
 
-	GpuContext_WaitIdle( &window.context );
+	Scene_Destroy( &window.context, &scene );
 	BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
 	BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
-	Scene_Destroy( &window.context, &scene );
 	GpuTimer_Destroy( &window.context, &timer );
 	GpuCommandBuffer_Destroy( &window.context, &commandBuffer );
 	GpuFramebuffer_Destroy( &window.context, &framebuffer );
@@ -13794,9 +13863,10 @@ static int StartApplication( int argc, char * argv[] )
 
 	//startupSettings.headRotationDisabled = true;
 	//startupSettings.simulationPaused = true;
+	//startupSettings.samplesLevel = 0;
 	//startupSettings.useMultiView = true;
 	//startupSettings.correctChromaticAberration = true;
-	//startupSettings.renderMode = RENDER_MODE_TIME_WARP;
+	//startupSettings.renderMode = RENDER_MODE_SCENE;
 	//startupSettings.timeWarpImplementation = TIMEWARP_IMPLEMENTATION_COMPUTE;
 
 	Print( "    fullscreen = %d\n",					startupSettings.fullscreen );
@@ -13827,10 +13897,6 @@ static int StartApplication( int argc, char * argv[] )
 		else if ( startupSettings.renderMode == RENDER_MODE_SCENE )
 		{
 			exit = RenderScene( &startupSettings );
-		}
-		if ( !exit )
-		{
-			startupSettings.renderMode = (RenderMode_t) ( ( startupSettings.renderMode + 1 ) % RENDER_MODE_MAX );
 		}
 	}
 
