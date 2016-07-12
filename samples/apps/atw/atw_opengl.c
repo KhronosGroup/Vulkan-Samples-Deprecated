@@ -490,7 +490,7 @@ Common headers
 
 /*
 ================================
-OpenGL compute support
+Compute support
 ================================
 */
 
@@ -567,9 +567,13 @@ typedef void (* PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC) (GLenum target, GLenum 
 
 /*
 ================================
-Multi-sampled resolve
+Multi-sampling support
 ================================
 */
+
+#if !defined( GL_EXT_framebuffer_multisample )
+typedef void (* PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC) (GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height);
+#endif
 
 #if !defined( GL_EXT_multisampled_render_to_texture )
 typedef void (* PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC) (GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level, GLsizei samples);
