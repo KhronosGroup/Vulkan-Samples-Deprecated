@@ -7,12 +7,14 @@ Date		:	12/21/2014
 Language	:	C99
 Format		:	Real tabs with the tab size equal to 4 spaces.
 Copyright	:	Copyright (c) 2016 Oculus VR, LLC. All Rights reserved.
+			:	Portions copyright (c) 2016 The Brenwill Workshop Ltd. All Rights reserved.
 
 
 LICENSE
 =======
 
 Copyright (c) 2016 Oculus VR, LLC.
+Portions of macOS, iOS, functionality copyright (c) 2016 The Brenwill Workshop Ltd.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -97,8 +99,8 @@ SCENE WORKLOAD
 ==============
 
 The graphics work load of the scene that is rendered for each eye can be changed by
-adjusting the number of draw calls, the number of triangles per draw call, and the
-fragment program complexity. For each of these there are four levels:
+adjusting the number of draw calls, the number of triangles per draw call, the fragment
+program complexity and the number of samples. For each of these there are four levels:
 
 Number of draw calls:
 	0: 8
@@ -118,7 +120,13 @@ Fragment program complexity:
 	2: normal-mapped with 1000 lights
 	3: normal-mapped with 2000 lights
 
-In the lower right corner of the screen there are three indicators that show
+Multi-sampling:
+	0: 1x
+	1: 2x
+	2: 4x
+	3: 8x
+
+In the lower right corner of the screen there are four indicators that show
 the current level for each. The levels are colored: 0 = green, 1 = blue,
 2 = yellow and 3 = red.
 
@@ -154,6 +162,7 @@ The following command-line options can be used to change various settings.
 	-q <0-3>	set per eye draw calls level
 	-w <0-3>	set per eye triangles per draw call level
 	-e <0-3>	set per eye fragment program complexity level
+	-s <0-3>	set multi-sampling level
 	-m <0-1>    enable/disable multi-view
 	-c <0-1>	enable/disable correction for chromatic aberration
 	-r <name>	set the render mode: atw, tw, scene
@@ -175,6 +184,7 @@ The following keys can be used at run-time to change various settings.
 	[Q]		= cycle per eye draw calls level
 	[W]		= cycle per eye triangles per draw call level
 	[E]		= cycle per eye fragment program complexity level
+	[S]		= cycle multi-sampling level
 	[M]		= toggle multi-view
 	[C]		= toggle correction for chromatic aberration
 	[R]		= set the render mode: atw, tw, scene
@@ -207,7 +217,8 @@ and version 3.1 of the OpenGL ES Specification.
 Supported platforms are:
 
 	- Microsoft Windows 7 or later
-	- Apple Mac OS X 10.9 or later
+	- Apple macOS 10.11 or later
+	- Apple iOS 9.0 or later
 	- Ubuntu Linux 14.04 or later
 	- Android 5.0 or later
 
@@ -299,7 +310,13 @@ VERSION HISTORY
 #elif defined( __ANDROID__ )
 	#define OS_ANDROID
 #elif defined( __APPLE__ )
-	#define OS_MAC
+	#define OS_APPLE
+	#include <Availability.h>
+	#if __IPHONE_OS_VERSION_MAX_ALLOWED
+		#define OS_IOS
+	#elif __MAC_OS_X_VERSION_MAX_ALLOWED
+		#define OS_MAC
+	#endif
 #elif defined( __linux__ )
 	#define OS_LINUX
 	#define OS_LINUX_XLIB		// Xlib + Xlib GLX 1.3
@@ -345,7 +362,7 @@ Platform headers / declarations
 
 	#define __thread	__declspec( thread )
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 
 	// Apple is still at OpenGL 4.1
 	#define OPENGL_VERSION_MAJOR	4
@@ -477,7 +494,7 @@ OpenGL compute support
 ================================
 */
 
-#if defined( OS_MAC ) && OPENGL_VERSION_MAJOR == 4 && OPENGL_VERSION_MINOR == 1
+#if defined( OS_MAC ) && ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR < 43 )
 
 	#define OPENGL_COMPUTE_ENABLED	0
 
@@ -487,6 +504,7 @@ OpenGL compute support
 	#define GL_SHADER_STORAGE_BLOCK				0x92E6
 
 	#define GL_TEXTURE_FETCH_BARRIER_BIT		0x00000008
+	#define GL_TEXTURE_UPDATE_BARRIER_BIT		0x00000100
 	#define GL_SHADER_IMAGE_ACCESS_BARRIER_BIT	0x00000020
 	#define GL_FRAMEBUFFER_BARRIER_BIT			0x00000400
 	#define GL_ALL_BARRIER_BITS					0xFFFFFFFF
@@ -498,7 +516,10 @@ OpenGL compute support
 
 	static void glMemoryBarrier( GLbitfield barriers ) { assert( false ); }
 
-#elif defined( OS_ANDROID ) && OPENGL_VERSION_MAJOR == 3 && OPENGL_VERSION_MINOR == 0
+	static void glTexStorage2DMultisample( GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLboolean fixedsamplelocations ) { assert( false ); }
+	static void glTexStorage3DMultisample( GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLboolean fixedsamplelocations ) { assert( false ); }
+
+#elif defined( OS_ANDROID ) && ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR < 31 )
 
 	#define OPENGL_COMPUTE_ENABLED	0
 
@@ -542,6 +563,21 @@ Multi-view support
 #define GL_MAX_VIEWS_OVR										0x9631
 
 typedef void (* PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint baseViewIndex, GLsizei numViews);
+#endif
+
+/*
+================================
+Multi-sampled resolve
+================================
+*/
+
+#if !defined( GL_EXT_multisampled_render_to_texture )
+typedef void (* PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC) (GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height);
+typedef void (* PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC) (GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level, GLsizei samples);
+#endif
+
+#if !defined( GL_OVR_multiview_multisampled_render_to_texture )
+typedef void (* PFNGLFRAMEBUFFERTEXTUREMULTISAMPLEMULTIVIEWOVRPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level, GLsizei samples, GLint baseViewIndex, GLsizei numViews);
 #endif
 
 /*
@@ -592,7 +628,7 @@ static void * AllocAlignedMemory( size_t size, size_t alignment )
 	alignment = ( alignment < sizeof( void * ) ) ? sizeof( void * ) : alignment;
 #if defined( OS_WINDOWS )
 	return _aligned_malloc( size, alignment );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	void * ptr = NULL;
 	return ( posix_memalign( &ptr, alignment, size ) == 0 ) ? ptr : NULL;
 #else
@@ -619,7 +655,7 @@ static void Print( const char * format, ... )
 	va_end( args );
 
 	OutputDebugString( buffer );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	char buffer[4096];
 	va_list args;
 	va_start( args, format );
@@ -656,6 +692,26 @@ static void Error( const char * format, ... )
 	OutputDebugString( buffer );
 
 	MessageBox( NULL, buffer, "ERROR", MB_OK | MB_ICONINFORMATION );
+#elif defined( OS_IOS )
+	char buffer[4096];
+	va_list args;
+	va_start( args, format );
+	int length = vsnprintf( buffer, 4096, format, args );
+	va_end( args );
+
+	NSLog( @"%s\n", buffer );
+
+	if ( [NSThread isMainThread] )
+	{
+		NSString * string = [[NSString alloc] initWithBytes:buffer length:length encoding:NSASCIIStringEncoding];
+		UIAlertController* alert = [UIAlertController alertControllerWithTitle: @"Error"
+																	   message: string
+																preferredStyle: UIAlertControllerStyleAlert];
+		[alert addAction: [UIAlertAction actionWithTitle: @"OK"
+												   style: UIAlertActionStyleDefault
+												 handler: ^(UIAlertAction * action) {}]];
+		[UIApplication.sharedApplication.keyWindow.rootViewController presentViewController: alert animated: YES completion: nil];
+	}
 #elif defined( OS_MAC )
 	char buffer[4096];
 	va_list args;
@@ -714,27 +770,10 @@ static const char * GetOSVersion()
 	}
 
 	return "Microsoft Windows";
+#elif defined( OS_IOS )
+	return [NSString stringWithFormat: @"Apple iOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
 #elif defined( OS_MAC )
-	static char version[1024];
-	size_t len;
-	int mib[2] = { CTL_KERN, KERN_OSRELEASE };
-    
-	if ( sysctl( mib, 2, version, &len, NULL, 0 ) == 0 )
-	{
-		const char * dot = strstr( version, "." );
-		if ( dot != NULL )
-		{
-			const int kernelMajor = (int)strtol( version, (char **)NULL, 10 );
-			const int kernelMinor = (int)strtol( dot + 1, (char **)NULL, 10 );
-			const int osxMajor = 10;
-			const int osxMinor = kernelMajor - 4;
-			const int osxSub = kernelMinor + 1;
-			snprintf( version, sizeof( version ), "Apple Mac OS X %d.%d.%d", osxMajor, osxMinor, osxSub );
-			return version;
-		}
-	}
-
-	return "Apple Mac OS X";
+	return [NSString stringWithFormat: @"Apple macOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
 #elif defined( OS_LINUX )
 	static char buffer[1024];
 
@@ -813,7 +852,7 @@ static const char * GetCPUVersion()
 			return processor;
 		}
 	}
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	static char processor[1024];
 	size_t processor_length = sizeof( processor );
 	sysctlbyname( "machdep.cpu.brand_string", &processor, &processor_length, NULL, 0 );
@@ -1270,7 +1309,7 @@ static void Thread_SetName( const char * name )
 	{
 		info.dwFlags = 0;
 	}
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	pthread_setname_np( name );
 #elif defined( OS_LINUX )
 	pthread_setname_np( pthread_self(), name );
@@ -1298,8 +1337,8 @@ static void Thread_SetAffinity( int mask )
 	{
 		Print( "Thread %p affinity set to 0x%02X\n", thread, mask );
 	}
-#elif defined( OS_MAC )
-	// OS X does not export interfaces that identify processors or control thread placement.
+#elif defined( OS_APPLE )
+	// iOS and macOS do not export interfaces that identify processors or control thread placement.
 	UNUSED_PARM( mask );
 #elif defined( OS_LINUX )
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
@@ -1431,7 +1470,7 @@ static void Thread_SetRealTimePriority( int priority )
 	{
 		Print( "Thread %p priority set to critical.\n", thread );
 	}
-#elif defined( OS_MAC ) || defined( OS_LINUX )
+#elif defined( OS_APPLE ) || defined( OS_LINUX )
 	struct sched_param sp;
 	memset( &sp, 0, sizeof( struct sched_param ) );
 	sp.sched_priority = priority;
@@ -2132,367 +2171,6 @@ static ScreenRect_t ClipRect_ToScreenRect( const ClipRect_t * clipRect, const in
 /*
 ================================================================================================================================
 
-OpenGL extensions.
-
-================================================================================================================================
-*/
-
-typedef struct
-{
-	bool timer_query;			// GL_ARB_timer_query, GL_EXT_disjoint_timer_query
-	bool buffer_storage;		// GL_ARB_buffer_storage
-	bool multi_view;			// GL_OVR_multiview, GL_OVR_multiview2
-} OpenGLExtensions_t;
-
-OpenGLExtensions_t glExtensions;
-
-#if defined( OS_WINDOWS ) || defined( OS_LINUX )
-
-PFNGLGENFRAMEBUFFERSPROC					glGenFramebuffers;
-PFNGLDELETEFRAMEBUFFERSPROC					glDeleteFramebuffers;
-PFNGLBINDFRAMEBUFFERPROC					glBindFramebuffer;
-PFNGLBLITFRAMEBUFFERPROC					glBlitFramebuffer;
-PFNGLGENRENDERBUFFERSPROC					glGenRenderbuffers;
-PFNGLDELETERENDERBUFFERSPROC				glDeleteRenderbuffers;
-PFNGLBINDRENDERBUFFERPROC					glBindRenderbuffer;
-PFNGLISRENDERBUFFERPROC						glIsRenderbuffer;
-PFNGLRENDERBUFFERSTORAGEPROC				glRenderbufferStorage;
-PFNGLFRAMEBUFFERRENDERBUFFERPROC			glFramebufferRenderbuffer;
-PFNGLFRAMEBUFFERTEXTURE2DPROC				glFramebufferTexture2D;
-PFNGLFRAMEBUFFERTEXTURELAYERPROC			glFramebufferTextureLayer;
-PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC		glFramebufferTextureMultiviewOVR;
-PFNGLCHECKFRAMEBUFFERSTATUSPROC				glCheckFramebufferStatus;
-
-PFNGLGENBUFFERSPROC							glGenBuffers;
-PFNGLDELETEBUFFERSPROC						glDeleteBuffers;
-PFNGLBINDBUFFERPROC							glBindBuffer;
-PFNGLBINDBUFFERBASEPROC						glBindBufferBase;
-PFNGLBUFFERDATAPROC							glBufferData;
-PFNGLBUFFERSTORAGEPROC						glBufferStorage;
-PFNGLMAPBUFFERPROC							glMapBuffer;
-PFNGLMAPBUFFERRANGEPROC						glMapBufferRange;
-PFNGLUNMAPBUFFERPROC						glUnmapBuffer;
-
-PFNGLGENVERTEXARRAYSPROC					glGenVertexArrays;
-PFNGLDELETEVERTEXARRAYSPROC					glDeleteVertexArrays;
-PFNGLBINDVERTEXARRAYPROC					glBindVertexArray;
-PFNGLVERTEXATTRIBPOINTERPROC				glVertexAttribPointer;
-PFNGLVERTEXATTRIBDIVISORPROC				glVertexAttribDivisor;
-PFNGLDISABLEVERTEXATTRIBARRAYPROC			glDisableVertexAttribArray;
-PFNGLENABLEVERTEXATTRIBARRAYPROC			glEnableVertexAttribArray;
-
-#if defined( OS_WINDOWS )
-PFNGLACTIVETEXTUREPROC						glActiveTexture;
-PFNGLTEXIMAGE3DPROC							glTexImage3D;
-PFNGLCOMPRESSEDTEXIMAGE2DPROC				glCompressedTexImage2D;
-PFNGLCOMPRESSEDTEXIMAGE3DPROC				glCompressedTexImage3D;
-PFNGLTEXSUBIMAGE3DPROC						glTexSubImage3D;
-PFNGLCOMPRESSEDTEXSUBIMAGE2DPROC			glCompressedTexSubImage2D;
-PFNGLCOMPRESSEDTEXSUBIMAGE3DPROC			glCompressedTexSubImage3D;
-#endif
-PFNGLTEXSTORAGE2DPROC						glTexStorage2D;
-PFNGLTEXSTORAGE3DPROC						glTexStorage3D;
-PFNGLGENERATEMIPMAPPROC						glGenerateMipmap;
-PFNGLBINDIMAGETEXTUREPROC					glBindImageTexture;
-
-PFNGLCREATEPROGRAMPROC						glCreateProgram;
-PFNGLDELETEPROGRAMPROC						glDeleteProgram;
-PFNGLCREATESHADERPROC						glCreateShader;
-PFNGLDELETESHADERPROC						glDeleteShader;
-PFNGLSHADERSOURCEPROC						glShaderSource;
-PFNGLCOMPILESHADERPROC						glCompileShader;
-PFNGLGETSHADERIVPROC						glGetShaderiv;
-PFNGLGETSHADERINFOLOGPROC					glGetShaderInfoLog;
-PFNGLUSEPROGRAMPROC							glUseProgram;
-PFNGLATTACHSHADERPROC						glAttachShader;
-PFNGLLINKPROGRAMPROC						glLinkProgram;
-PFNGLGETPROGRAMIVPROC						glGetProgramiv;
-PFNGLGETPROGRAMINFOLOGPROC					glGetProgramInfoLog;
-PFNGLBINDATTRIBLOCATIONPROC					glBindAttribLocation;
-PFNGLGETUNIFORMLOCATIONPROC					glGetUniformLocation;
-PFNGLGETUNIFORMBLOCKINDEXPROC				glGetUniformBlockIndex;
-PFNGLGETPROGRAMRESOURCEINDEXPROC			glGetProgramResourceIndex;
-PFNGLUNIFORMBLOCKBINDINGPROC				glUniformBlockBinding;
-PFNGLSHADERSTORAGEBLOCKBINDINGPROC			glShaderStorageBlockBinding;
-PFNGLPROGRAMUNIFORM1IPROC					glProgramUniform1i;
-PFNGLUNIFORM1IPROC							glUniform1i;
-PFNGLUNIFORM1IVPROC							glUniform1iv;
-PFNGLUNIFORM2IVPROC							glUniform2iv;
-PFNGLUNIFORM3IVPROC							glUniform3iv;
-PFNGLUNIFORM4IVPROC							glUniform4iv;
-PFNGLUNIFORM1FPROC							glUniform1f;
-PFNGLUNIFORM1FVPROC							glUniform1fv;
-PFNGLUNIFORM2FVPROC							glUniform2fv;
-PFNGLUNIFORM3FVPROC							glUniform3fv;
-PFNGLUNIFORM4FVPROC							glUniform4fv;
-PFNGLUNIFORMMATRIX3X4FVPROC					glUniformMatrix3x4fv;
-PFNGLUNIFORMMATRIX4FVPROC					glUniformMatrix4fv;
-
-PFNGLDRAWELEMENTSINSTANCEDPROC				glDrawElementsInstanced;
-PFNGLDISPATCHCOMPUTEPROC					glDispatchCompute;
-PFNGLMEMORYBARRIERPROC						glMemoryBarrier;
-
-PFNGLGENQUERIESPROC							glGenQueries;
-PFNGLDELETEQUERIESPROC						glDeleteQueries;
-PFNGLISQUERYPROC							glIsQuery;
-PFNGLBEGINQUERYPROC							glBeginQuery;
-PFNGLENDQUERYPROC							glEndQuery;
-PFNGLQUERYCOUNTERPROC						glQueryCounter;
-PFNGLGETQUERYIVPROC							glGetQueryiv;
-PFNGLGETQUERYOBJECTIVPROC					glGetQueryObjectiv;
-PFNGLGETQUERYOBJECTUIVPROC					glGetQueryObjectuiv;
-PFNGLGETQUERYOBJECTI64VPROC					glGetQueryObjecti64v;
-PFNGLGETQUERYOBJECTUI64VPROC				glGetQueryObjectui64v;
-
-PFNGLFENCESYNCPROC							glFenceSync;
-PFNGLCLIENTWAITSYNCPROC						glClientWaitSync;
-PFNGLDELETESYNCPROC							glDeleteSync;
-PFNGLISSYNCPROC								glIsSync;
-
-PFNGLBLENDFUNCSEPARATEPROC					glBlendFuncSeparate;
-PFNGLBLENDEQUATIONSEPARATEPROC				glBlendEquationSeparate;
-
-#if defined( OS_WINDOWS )
-PFNWGLCREATECONTEXTATTRIBSARBPROC			wglCreateContextAttribsARB;
-PFNWGLSWAPINTERVALEXTPROC					wglSwapIntervalEXT;
-PFNWGLDELAYBEFORESWAPNVPROC					wglDelayBeforeSwapNV;
-#elif defined( OS_LINUX )
-PFNGLXCREATECONTEXTATTRIBSARBPROC			glXCreateContextAttribsARB;
-PFNGLXSWAPINTERVALEXTPROC					glXSwapIntervalEXT;
-PFNGLXDELAYBEFORESWAPNVPROC					glXDelayBeforeSwapNV;
-#endif
-
-#if defined( OS_WINDOWS )
-PROC GetExtension( const char * functionName )
-{
-	return wglGetProcAddress( functionName );
-}
-#elif defined( OS_LINUX )
-void ( *GetExtension( const char * functionName ) )()
-{
-	return glXGetProcAddress( (const GLubyte *)functionName );
-}
-#endif
-
-static void GlInitExtensions()
-{
-	glGenFramebuffers					= (PFNGLGENFRAMEBUFFERSPROC)				GetExtension( "glGenFramebuffers" );
-	glDeleteFramebuffers				= (PFNGLDELETEFRAMEBUFFERSPROC)				GetExtension( "glDeleteFramebuffers" );
-	glBindFramebuffer					= (PFNGLBINDFRAMEBUFFERPROC)				GetExtension( "glBindFramebuffer" );
-	glBlitFramebuffer					= (PFNGLBLITFRAMEBUFFERPROC)				GetExtension( "glBlitFramebuffer" );
-	glGenRenderbuffers					= (PFNGLGENRENDERBUFFERSPROC)				GetExtension( "glGenRenderbuffers" );
-	glDeleteRenderbuffers				= (PFNGLDELETERENDERBUFFERSPROC)			GetExtension( "glDeleteRenderbuffers" );
-	glBindRenderbuffer					= (PFNGLBINDRENDERBUFFERPROC)				GetExtension( "glBindRenderbuffer" );
-	glIsRenderbuffer					= (PFNGLISRENDERBUFFERPROC)					GetExtension( "glIsRenderbuffer" );
-	glRenderbufferStorage				= (PFNGLRENDERBUFFERSTORAGEPROC)			GetExtension( "glRenderbufferStorage" );
-	glFramebufferRenderbuffer			= (PFNGLFRAMEBUFFERRENDERBUFFERPROC)		GetExtension( "glFramebufferRenderbuffer" );
-	glFramebufferTexture2D				= (PFNGLFRAMEBUFFERTEXTURE2DPROC)			GetExtension( "glFramebufferTexture2D" );
-	glFramebufferTextureLayer			= (PFNGLFRAMEBUFFERTEXTURELAYERPROC)		GetExtension( "glFramebufferTextureLayer" );
-	glFramebufferTextureMultiviewOVR	= (PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC)	GetExtension( "glFramebufferTextureMultiviewOVR" );
-	glCheckFramebufferStatus			= (PFNGLCHECKFRAMEBUFFERSTATUSPROC)			GetExtension( "glCheckFramebufferStatus" );
-
-	glGenBuffers						= (PFNGLGENBUFFERSPROC)						GetExtension( "glGenBuffers" );
-	glDeleteBuffers						= (PFNGLDELETEBUFFERSPROC)					GetExtension( "glDeleteBuffers" );
-	glBindBuffer						= (PFNGLBINDBUFFERPROC)						GetExtension( "glBindBuffer" );
-	glBindBufferBase					= (PFNGLBINDBUFFERBASEPROC)					GetExtension( "glBindBufferBase" );
-	glBufferData						= (PFNGLBUFFERDATAPROC)						GetExtension( "glBufferData" );
-	glBufferStorage						= (PFNGLBUFFERSTORAGEPROC)					GetExtension( "glBufferStorage" );
-	glMapBuffer							= (PFNGLMAPBUFFERPROC)						GetExtension( "glMapBuffer" );
-	glMapBufferRange					= (PFNGLMAPBUFFERRANGEPROC)					GetExtension( "glMapBufferRange" );
-	glUnmapBuffer						= (PFNGLUNMAPBUFFERPROC)					GetExtension( "glUnmapBuffer" );
-
-	glGenVertexArrays					= (PFNGLGENVERTEXARRAYSPROC)				GetExtension( "glGenVertexArrays" );
-	glDeleteVertexArrays				= (PFNGLDELETEVERTEXARRAYSPROC)				GetExtension( "glDeleteVertexArrays" );
-	glBindVertexArray					= (PFNGLBINDVERTEXARRAYPROC)				GetExtension( "glBindVertexArray" );
-	glVertexAttribPointer				= (PFNGLVERTEXATTRIBPOINTERPROC)			GetExtension( "glVertexAttribPointer" );
-	glVertexAttribDivisor				= (PFNGLVERTEXATTRIBDIVISORPROC)			GetExtension( "glVertexAttribDivisor" );
-	glDisableVertexAttribArray			= (PFNGLDISABLEVERTEXATTRIBARRAYPROC)		GetExtension( "glDisableVertexAttribArray" );
-	glEnableVertexAttribArray			= (PFNGLENABLEVERTEXATTRIBARRAYPROC)		GetExtension( "glEnableVertexAttribArray" );
-
-#if defined( OS_WINDOWS )
-	glActiveTexture						= (PFNGLACTIVETEXTUREPROC)					GetExtension( "glActiveTexture" );
-	glTexImage3D						= (PFNGLTEXIMAGE3DPROC)						GetExtension( "glTexImage3D" );
-	glCompressedTexImage2D				= (PFNGLCOMPRESSEDTEXIMAGE2DPROC)			GetExtension( "glCompressedTexImage2D ");
-	glCompressedTexImage3D				= (PFNGLCOMPRESSEDTEXIMAGE3DPROC)			GetExtension( "glCompressedTexImage3D ");
-	glTexSubImage3D						= (PFNGLTEXSUBIMAGE3DPROC)					GetExtension( "glTexSubImage3D" );
-	glCompressedTexSubImage2D			= (PFNGLCOMPRESSEDTEXSUBIMAGE2DPROC)		GetExtension( "glCompressedTexSubImage2D" );
-	glCompressedTexSubImage3D			= (PFNGLCOMPRESSEDTEXSUBIMAGE3DPROC)		GetExtension( "glCompressedTexSubImage3D" );
-#endif
-	glTexStorage2D						= (PFNGLTEXSTORAGE2DPROC)					GetExtension( "glTexStorage2D" );
-	glTexStorage3D						= (PFNGLTEXSTORAGE3DPROC)					GetExtension( "glTexStorage3D" );
-	glGenerateMipmap					= (PFNGLGENERATEMIPMAPPROC)					GetExtension( "glGenerateMipmap" );
-	glBindImageTexture					= (PFNGLBINDIMAGETEXTUREPROC)				GetExtension( "glBindImageTexture" );
-
-	glCreateProgram						= (PFNGLCREATEPROGRAMPROC)					GetExtension( "glCreateProgram" );
-	glDeleteProgram						= (PFNGLDELETEPROGRAMPROC)					GetExtension( "glDeleteProgram" );
-	glCreateShader						= (PFNGLCREATESHADERPROC)					GetExtension( "glCreateShader" );
-	glDeleteShader						= (PFNGLDELETESHADERPROC)					GetExtension( "glDeleteShader" );
-	glShaderSource						= (PFNGLSHADERSOURCEPROC)					GetExtension( "glShaderSource" );
-	glCompileShader						= (PFNGLCOMPILESHADERPROC)					GetExtension( "glCompileShader" );
-	glGetShaderiv						= (PFNGLGETSHADERIVPROC)					GetExtension( "glGetShaderiv" );
-	glGetShaderInfoLog					= (PFNGLGETSHADERINFOLOGPROC)				GetExtension( "glGetShaderInfoLog" );
-	glUseProgram						= (PFNGLUSEPROGRAMPROC)						GetExtension( "glUseProgram" );
-	glAttachShader						= (PFNGLATTACHSHADERPROC)					GetExtension( "glAttachShader" );
-	glLinkProgram						= (PFNGLLINKPROGRAMPROC)					GetExtension( "glLinkProgram" );
-	glGetProgramiv						= (PFNGLGETPROGRAMIVPROC)					GetExtension( "glGetProgramiv" );
-	glGetProgramInfoLog					= (PFNGLGETPROGRAMINFOLOGPROC)				GetExtension( "glGetProgramInfoLog" );
-	glBindAttribLocation				= (PFNGLBINDATTRIBLOCATIONPROC)				GetExtension( "glBindAttribLocation" );
-	glGetUniformLocation				= (PFNGLGETUNIFORMLOCATIONPROC)				GetExtension( "glGetUniformLocation" );
-	glGetUniformBlockIndex				= (PFNGLGETUNIFORMBLOCKINDEXPROC)			GetExtension( "glGetUniformBlockIndex" );
-	glProgramUniform1i					= (PFNGLPROGRAMUNIFORM1IPROC)				GetExtension( "glProgramUniform1i" );
-	glUniform1i							= (PFNGLUNIFORM1IPROC)						GetExtension( "glUniform1i" );
-	glUniform1iv						= (PFNGLUNIFORM1IVPROC)						GetExtension( "glUniform1iv" );
-	glUniform2iv						= (PFNGLUNIFORM2IVPROC)						GetExtension( "glUniform2iv" );
-	glUniform3iv						= (PFNGLUNIFORM3IVPROC)						GetExtension( "glUniform3iv" );
-	glUniform4iv						= (PFNGLUNIFORM4IVPROC)						GetExtension( "glUniform4iv" );
-	glUniform1f							= (PFNGLUNIFORM1FPROC)						GetExtension( "glUniform1f" );
-	glUniform1fv						= (PFNGLUNIFORM1FVPROC)						GetExtension( "glUniform1fv" );
-	glUniform2fv						= (PFNGLUNIFORM2FVPROC)						GetExtension( "glUniform2fv" );
-	glUniform3fv						= (PFNGLUNIFORM3FVPROC)						GetExtension( "glUniform3fv" );
-	glUniform4fv						= (PFNGLUNIFORM4FVPROC)						GetExtension( "glUniform4fv" );
-	glUniformMatrix3x4fv				= (PFNGLUNIFORMMATRIX3X4FVPROC)				GetExtension( "glUniformMatrix3x4fv" );
-	glUniformMatrix4fv					= (PFNGLUNIFORMMATRIX4FVPROC)				GetExtension( "glUniformMatrix4fv" );
-	glGetProgramResourceIndex			= (PFNGLGETPROGRAMRESOURCEINDEXPROC)		GetExtension( "glGetProgramResourceIndex" );
-	glUniformBlockBinding				= (PFNGLUNIFORMBLOCKBINDINGPROC)			GetExtension( "glUniformBlockBinding" );
-	glShaderStorageBlockBinding			= (PFNGLSHADERSTORAGEBLOCKBINDINGPROC)		GetExtension( "glShaderStorageBlockBinding" );
-
-	glDrawElementsInstanced				= (PFNGLDRAWELEMENTSINSTANCEDPROC)			GetExtension( "glDrawElementsInstanced" );
-	glDispatchCompute					= (PFNGLDISPATCHCOMPUTEPROC)				GetExtension( "glDispatchCompute" );
-	glMemoryBarrier						= (PFNGLMEMORYBARRIERPROC)					GetExtension( "glMemoryBarrier" );
-
-	glGenQueries						= (PFNGLGENQUERIESPROC)						GetExtension( "glGenQueries" );
-	glDeleteQueries						= (PFNGLDELETEQUERIESPROC)					GetExtension( "glDeleteQueries" );
-	glIsQuery							= (PFNGLISQUERYPROC)						GetExtension( "glIsQuery" );
-	glBeginQuery						= (PFNGLBEGINQUERYPROC)						GetExtension( "glBeginQuery" );
-	glEndQuery							= (PFNGLENDQUERYPROC)						GetExtension( "glEndQuery" );
-	glQueryCounter						= (PFNGLQUERYCOUNTERPROC)					GetExtension( "glQueryCounter" );
-	glGetQueryiv						= (PFNGLGETQUERYIVPROC)						GetExtension( "glGetQueryiv" );
-	glGetQueryObjectiv					= (PFNGLGETQUERYOBJECTIVPROC)				GetExtension( "glGetQueryObjectiv" );
-	glGetQueryObjectuiv					= (PFNGLGETQUERYOBJECTUIVPROC)				GetExtension( "glGetQueryObjectuiv" );
-	glGetQueryObjecti64v				= (PFNGLGETQUERYOBJECTI64VPROC)				GetExtension( "glGetQueryObjecti64v" );
-	glGetQueryObjectui64v				= (PFNGLGETQUERYOBJECTUI64VPROC)			GetExtension( "glGetQueryObjectui64v" );
-
-	glFenceSync							= (PFNGLFENCESYNCPROC)						GetExtension( "glFenceSync" );
-	glClientWaitSync					= (PFNGLCLIENTWAITSYNCPROC)					GetExtension( "glClientWaitSync" );
-	glDeleteSync						= (PFNGLDELETESYNCPROC)						GetExtension( "glDeleteSync" );
-	glIsSync							= (PFNGLISSYNCPROC)							GetExtension( "glIsSync" );
-
-	glBlendFuncSeparate					= (PFNGLBLENDFUNCSEPARATEPROC)				GetExtension( "glBlendFuncSeparate" );
-	glBlendEquationSeparate				= (PFNGLBLENDEQUATIONSEPARATEPROC)			GetExtension( "glBlendEquationSeparate" );
-
-#if defined( OS_WINDOWS )
-	wglCreateContextAttribsARB			= (PFNWGLCREATECONTEXTATTRIBSARBPROC)		GetExtension( "wglCreateContextAttribsARB" );
-	wglSwapIntervalEXT					= (PFNWGLSWAPINTERVALEXTPROC)				GetExtension( "wglSwapIntervalEXT" );
-	wglDelayBeforeSwapNV				= (PFNWGLDELAYBEFORESWAPNVPROC)				GetExtension( "wglDelayBeforeSwapNV" );
-#elif defined( OS_LINUX )
-	glXCreateContextAttribsARB			= (PFNGLXCREATECONTEXTATTRIBSARBPROC)		GetExtension( "glXCreateContextAttribsARB" );
-	glXSwapIntervalEXT					= (PFNGLXSWAPINTERVALEXTPROC)				GetExtension( "glXSwapIntervalEXT" );
-	glXDelayBeforeSwapNV				= (PFNGLXDELAYBEFORESWAPNVPROC)				GetExtension( "glXDelayBeforeSwapNV" );
-#endif
-
-	glExtensions.timer_query			= ( glQueryCounter != NULL && glGetQueryObjectui64v != NULL );
-	glExtensions.buffer_storage			= ( glBufferStorage != NULL );
-	glExtensions.multi_view				= ( glFramebufferTextureMultiviewOVR != NULL );
-}
-
-#elif defined( OS_MAC )
-
-PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC		glFramebufferTextureMultiviewOVR;
-
-#elif defined( OS_ANDROID )
-
-// GL_EXT_disjoint_timer_query without _EXT
-#if !defined( GL_TIMESTAMP )
-#define GL_QUERY_COUNTER_BITS				GL_QUERY_COUNTER_BITS_EXT
-#define GL_TIME_ELAPSED						GL_TIME_ELAPSED_EXT
-#define GL_TIMESTAMP						GL_TIMESTAMP_EXT
-#define GL_GPU_DISJOINT						GL_GPU_DISJOINT_EXT
-#endif
-
-// GL_EXT_buffer_storage without _EXT
-#if !defined( GL_BUFFER_STORAGE_FLAGS )
-#define GL_MAP_READ_BIT						0x0001		// GL_MAP_READ_BIT_EXT
-#define GL_MAP_WRITE_BIT					0x0002		// GL_MAP_WRITE_BIT_EXT
-#define GL_MAP_PERSISTENT_BIT				0x0040		// GL_MAP_PERSISTENT_BIT_EXT
-#define GL_MAP_COHERENT_BIT					0x0080		// GL_MAP_COHERENT_BIT_EXT
-#define GL_DYNAMIC_STORAGE_BIT				0x0100		// GL_DYNAMIC_STORAGE_BIT_EXT
-#define GL_CLIENT_STORAGE_BIT				0x0200		// GL_CLIENT_STORAGE_BIT_EXT
-#define GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT	0x00004000	// GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT_EXT
-#define GL_BUFFER_IMMUTABLE_STORAGE			0x821F		// GL_BUFFER_IMMUTABLE_STORAGE_EXT
-#define GL_BUFFER_STORAGE_FLAGS				0x8220		// GL_BUFFER_STORAGE_FLAGS_EXT
-#endif
-
-typedef void (GL_APIENTRY * PFNGLBUFFERSTORAGEEXTPROC) (GLenum target, GLsizeiptr size, const void *data, GLbitfield flags);
-
-// EGL_KHR_fence_sync, GL_OES_EGL_sync, VG_KHR_EGL_sync
-PFNEGLCREATESYNCKHRPROC						eglCreateSyncKHR;
-PFNEGLDESTROYSYNCKHRPROC					eglDestroySyncKHR;
-PFNEGLCLIENTWAITSYNCKHRPROC					eglClientWaitSyncKHR;
-PFNEGLGETSYNCATTRIBKHRPROC					eglGetSyncAttribKHR;
-
-// GL_EXT_disjoint_timer_query
-PFNGLQUERYCOUNTEREXTPROC					glQueryCounter;
-PFNGLGETQUERYOBJECTI64VEXTPROC				glGetQueryObjecti64v;
-PFNGLGETQUERYOBJECTUI64VEXTPROC				glGetQueryObjectui64v;
-
-// GL_EXT_buffer_storage
-PFNGLBUFFERSTORAGEEXTPROC					glBufferStorage;
-
-// GL_OVR_multiview
-PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC		glFramebufferTextureMultiviewOVR;
-
-#if !defined( EGL_OPENGL_ES3_BIT )
-#define EGL_OPENGL_ES3_BIT					0x0040
-#endif
-
-// GL_EXT_texture_cube_map_array
-#if !defined( GL_TEXTURE_CUBE_MAP_ARRAY )
-#define GL_TEXTURE_CUBE_MAP_ARRAY			0x9009
-#endif
-
-// GL_EXT_texture_filter_anisotropic
-#if !defined( GL_TEXTURE_MAX_ANISOTROPY_EXT )
-#define GL_TEXTURE_MAX_ANISOTROPY_EXT		0x84FE
-#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT	0x84FF
-#endif
-
-// No clamp to border in OpenGL ES.
-#if !defined( GL_CLAMP_TO_BORDER )
-#define GL_CLAMP_TO_BORDER					GL_CLAMP_TO_EDGE
-#endif
-
-static void GlInitExtensions()
-{
-	eglCreateSyncKHR					= (PFNEGLCREATESYNCKHRPROC)			eglGetProcAddress( "eglCreateSyncKHR" );
-	eglDestroySyncKHR					= (PFNEGLDESTROYSYNCKHRPROC)		eglGetProcAddress( "eglDestroySyncKHR" );
-	eglClientWaitSyncKHR				= (PFNEGLCLIENTWAITSYNCKHRPROC)		eglGetProcAddress( "eglClientWaitSyncKHR" );
-	eglGetSyncAttribKHR					= (PFNEGLGETSYNCATTRIBKHRPROC)		eglGetProcAddress( "eglGetSyncAttribKHR" );
-
-	glQueryCounter						= (PFNGLQUERYCOUNTEREXTPROC)		eglGetProcAddress( "glQueryCounterEXT" );
-	glGetQueryObjecti64v				= (PFNGLGETQUERYOBJECTI64VEXTPROC)	eglGetProcAddress( "glGetQueryObjecti64vEXT" );
-	glGetQueryObjectui64v				= (PFNGLGETQUERYOBJECTUI64VEXTPROC)	eglGetProcAddress( "glGetQueryObjectui64vEXT" );
-
-	glBufferStorage						= (PFNGLBUFFERSTORAGEEXTPROC)		eglGetProcAddress( "glBufferStorageEXT" );
-
-	glFramebufferTextureMultiviewOVR	= (PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC) eglGetProcAddress( "glFramebufferTextureMultiviewOVR" );
-
-	glExtensions.timer_query			= ( glQueryCounter != NULL && glGetQueryObjectui64v != NULL );
-	glExtensions.buffer_storage			= ( glBufferStorage != NULL );
-	glExtensions.multi_view				= ( glFramebufferTextureMultiviewOVR != NULL );
-}
-
-#endif
-
-#if !defined( GL_SR8_EXT )
-	#define GL_SR8_EXT		0x8FBD
-#endif
-#if !defined( GL_SRG8_EXT )
-	#define GL_SRG8_EXT		0x8FBE
-#endif
-
-/*
-================================================================================================================================
-
 OpenGL error checking.
 
 ================================================================================================================================
@@ -2583,6 +2261,451 @@ static void GlCheckErrors( const char * function )
 		Error( "GL error: %s: %s", function, GlErrorString( error ) );
 	}
 }
+
+/*
+================================================================================================================================
+
+OpenGL extensions.
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+	bool timer_query;						// GL_ARB_timer_query, GL_EXT_disjoint_timer_query
+	bool buffer_storage;					// GL_ARB_buffer_storage
+	bool multi_sampled_storage;				// GL_ARB_texture_storage_multisample
+	bool multi_view;						// GL_OVR_multiview, GL_OVR_multiview2
+	bool multi_sampled_resolve;				// GL_EXT_multisampled_render_to_texture
+	bool multi_view_multi_sampled_resolve;	// GL_OVR_multiview_multisampled_render_to_texture )
+} OpenGLExtensions_t;
+
+OpenGLExtensions_t glExtensions;
+
+#if defined( OS_WINDOWS )
+PROC GetExtension( const char * functionName )
+{
+	return wglGetProcAddress( functionName );
+}
+#elif defined( OS_APPLE )
+void ( *GetExtension( const char * functionName ) )()
+{
+	return NULL;
+}
+#elif defined( OS_LINUX )
+void ( *GetExtension( const char * functionName ) )()
+{
+	return glXGetProcAddress( (const GLubyte *)functionName );
+}
+#elif defined( OS_ANDROID )
+void ( *GetExtension( const char * functionName ) )()
+{
+	return eglGetProcAddress( functionName );
+}
+#endif
+
+GLint glGetInteger( GLenum pname )
+{
+	GLint i;
+	GL( glGetIntegerv( pname, &i ) );
+	return i;
+}
+
+static bool GlCheckExtension( const char * extension )
+{
+#if defined( OS_WINDOWS ) || defined( OS_LINUX )
+	PFNGLGETSTRINGIPROC glGetStringi = (PFNGLGETSTRINGIPROC) GetExtension( "glGetStringi" );
+#endif
+	GL( const GLint numExtensions = glGetInteger( GL_NUM_EXTENSIONS ) );
+	for ( int i = 0; i < numExtensions; i++ )
+	{
+		GL( const GLubyte * string = glGetStringi( GL_EXTENSIONS, i ) );
+		if ( strcmp( (const char *)string, extension ) == 0 )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+#if defined( OS_WINDOWS ) || defined( OS_LINUX )
+
+PFNGLGENFRAMEBUFFERSPROC							glGenFramebuffers;
+PFNGLDELETEFRAMEBUFFERSPROC							glDeleteFramebuffers;
+PFNGLBINDFRAMEBUFFERPROC							glBindFramebuffer;
+PFNGLBLITFRAMEBUFFERPROC							glBlitFramebuffer;
+PFNGLGENRENDERBUFFERSPROC							glGenRenderbuffers;
+PFNGLDELETERENDERBUFFERSPROC						glDeleteRenderbuffers;
+PFNGLBINDRENDERBUFFERPROC							glBindRenderbuffer;
+PFNGLISRENDERBUFFERPROC								glIsRenderbuffer;
+PFNGLRENDERBUFFERSTORAGEPROC						glRenderbufferStorage;
+PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC				glRenderbufferStorageMultisample;
+PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC			glRenderbufferStorageMultisampleEXT;
+PFNGLFRAMEBUFFERRENDERBUFFERPROC					glFramebufferRenderbuffer;
+PFNGLFRAMEBUFFERTEXTURE2DPROC						glFramebufferTexture2D;
+PFNGLFRAMEBUFFERTEXTURELAYERPROC					glFramebufferTextureLayer;
+PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC			glFramebufferTexture2DMultisampleEXT;
+PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC				glFramebufferTextureMultiviewOVR;
+PFNGLFRAMEBUFFERTEXTUREMULTISAMPLEMULTIVIEWOVRPROC	glFramebufferTextureMultisampleMultiviewOVR;
+PFNGLCHECKFRAMEBUFFERSTATUSPROC						glCheckFramebufferStatus;
+
+PFNGLGENBUFFERSPROC									glGenBuffers;
+PFNGLDELETEBUFFERSPROC								glDeleteBuffers;
+PFNGLBINDBUFFERPROC									glBindBuffer;
+PFNGLBINDBUFFERBASEPROC								glBindBufferBase;
+PFNGLBUFFERDATAPROC									glBufferData;
+PFNGLBUFFERSTORAGEPROC								glBufferStorage;
+PFNGLMAPBUFFERPROC									glMapBuffer;
+PFNGLMAPBUFFERRANGEPROC								glMapBufferRange;
+PFNGLUNMAPBUFFERPROC								glUnmapBuffer;
+
+PFNGLGENVERTEXARRAYSPROC							glGenVertexArrays;
+PFNGLDELETEVERTEXARRAYSPROC							glDeleteVertexArrays;
+PFNGLBINDVERTEXARRAYPROC							glBindVertexArray;
+PFNGLVERTEXATTRIBPOINTERPROC						glVertexAttribPointer;
+PFNGLVERTEXATTRIBDIVISORPROC						glVertexAttribDivisor;
+PFNGLDISABLEVERTEXATTRIBARRAYPROC					glDisableVertexAttribArray;
+PFNGLENABLEVERTEXATTRIBARRAYPROC					glEnableVertexAttribArray;
+
+#if defined( OS_WINDOWS )
+PFNGLACTIVETEXTUREPROC								glActiveTexture;
+PFNGLTEXIMAGE3DPROC									glTexImage3D;
+PFNGLCOMPRESSEDTEXIMAGE2DPROC						glCompressedTexImage2D;
+PFNGLCOMPRESSEDTEXIMAGE3DPROC						glCompressedTexImage3D;
+PFNGLTEXSUBIMAGE3DPROC								glTexSubImage3D;
+PFNGLCOMPRESSEDTEXSUBIMAGE2DPROC					glCompressedTexSubImage2D;
+PFNGLCOMPRESSEDTEXSUBIMAGE3DPROC					glCompressedTexSubImage3D;
+#endif
+PFNGLTEXSTORAGE2DPROC								glTexStorage2D;
+PFNGLTEXSTORAGE3DPROC								glTexStorage3D;
+PFNGLTEXIMAGE2DMULTISAMPLEPROC						glTexImage2DMultisample;
+PFNGLTEXIMAGE3DMULTISAMPLEPROC						glTexImage3DMultisample;
+PFNGLTEXSTORAGE2DMULTISAMPLEPROC					glTexStorage2DMultisample;
+PFNGLTEXSTORAGE3DMULTISAMPLEPROC					glTexStorage3DMultisample;
+PFNGLGENERATEMIPMAPPROC								glGenerateMipmap;
+PFNGLBINDIMAGETEXTUREPROC							glBindImageTexture;
+
+PFNGLCREATEPROGRAMPROC								glCreateProgram;
+PFNGLDELETEPROGRAMPROC								glDeleteProgram;
+PFNGLCREATESHADERPROC								glCreateShader;
+PFNGLDELETESHADERPROC								glDeleteShader;
+PFNGLSHADERSOURCEPROC								glShaderSource;
+PFNGLCOMPILESHADERPROC								glCompileShader;
+PFNGLGETSHADERIVPROC								glGetShaderiv;
+PFNGLGETSHADERINFOLOGPROC							glGetShaderInfoLog;
+PFNGLUSEPROGRAMPROC									glUseProgram;
+PFNGLATTACHSHADERPROC								glAttachShader;
+PFNGLLINKPROGRAMPROC								glLinkProgram;
+PFNGLGETPROGRAMIVPROC								glGetProgramiv;
+PFNGLGETPROGRAMINFOLOGPROC							glGetProgramInfoLog;
+PFNGLBINDATTRIBLOCATIONPROC							glBindAttribLocation;
+PFNGLGETUNIFORMLOCATIONPROC							glGetUniformLocation;
+PFNGLGETUNIFORMBLOCKINDEXPROC						glGetUniformBlockIndex;
+PFNGLGETPROGRAMRESOURCEINDEXPROC					glGetProgramResourceIndex;
+PFNGLUNIFORMBLOCKBINDINGPROC						glUniformBlockBinding;
+PFNGLSHADERSTORAGEBLOCKBINDINGPROC					glShaderStorageBlockBinding;
+PFNGLPROGRAMUNIFORM1IPROC							glProgramUniform1i;
+PFNGLUNIFORM1IPROC									glUniform1i;
+PFNGLUNIFORM1IVPROC									glUniform1iv;
+PFNGLUNIFORM2IVPROC									glUniform2iv;
+PFNGLUNIFORM3IVPROC									glUniform3iv;
+PFNGLUNIFORM4IVPROC									glUniform4iv;
+PFNGLUNIFORM1FPROC									glUniform1f;
+PFNGLUNIFORM1FVPROC									glUniform1fv;
+PFNGLUNIFORM2FVPROC									glUniform2fv;
+PFNGLUNIFORM3FVPROC									glUniform3fv;
+PFNGLUNIFORM4FVPROC									glUniform4fv;
+PFNGLUNIFORMMATRIX3X4FVPROC							glUniformMatrix3x4fv;
+PFNGLUNIFORMMATRIX4FVPROC							glUniformMatrix4fv;
+
+PFNGLDRAWELEMENTSINSTANCEDPROC						glDrawElementsInstanced;
+PFNGLDISPATCHCOMPUTEPROC							glDispatchCompute;
+PFNGLMEMORYBARRIERPROC								glMemoryBarrier;
+
+PFNGLGENQUERIESPROC									glGenQueries;
+PFNGLDELETEQUERIESPROC								glDeleteQueries;
+PFNGLISQUERYPROC									glIsQuery;
+PFNGLBEGINQUERYPROC									glBeginQuery;
+PFNGLENDQUERYPROC									glEndQuery;
+PFNGLQUERYCOUNTERPROC								glQueryCounter;
+PFNGLGETQUERYIVPROC									glGetQueryiv;
+PFNGLGETQUERYOBJECTIVPROC							glGetQueryObjectiv;
+PFNGLGETQUERYOBJECTUIVPROC							glGetQueryObjectuiv;
+PFNGLGETQUERYOBJECTI64VPROC							glGetQueryObjecti64v;
+PFNGLGETQUERYOBJECTUI64VPROC						glGetQueryObjectui64v;
+
+PFNGLFENCESYNCPROC									glFenceSync;
+PFNGLCLIENTWAITSYNCPROC								glClientWaitSync;
+PFNGLDELETESYNCPROC									glDeleteSync;
+PFNGLISSYNCPROC										glIsSync;
+
+PFNGLBLENDFUNCSEPARATEPROC							glBlendFuncSeparate;
+PFNGLBLENDEQUATIONSEPARATEPROC						glBlendEquationSeparate;
+
+#if defined( OS_WINDOWS )
+PFNWGLCHOOSEPIXELFORMATARBPROC						wglChoosePixelFormatARB;
+PFNWGLCREATECONTEXTATTRIBSARBPROC					wglCreateContextAttribsARB;
+PFNWGLSWAPINTERVALEXTPROC							wglSwapIntervalEXT;
+PFNWGLDELAYBEFORESWAPNVPROC							wglDelayBeforeSwapNV;
+#elif defined( OS_LINUX )
+PFNGLXCREATECONTEXTATTRIBSARBPROC					glXCreateContextAttribsARB;
+PFNGLXSWAPINTERVALEXTPROC							glXSwapIntervalEXT;
+PFNGLXDELAYBEFORESWAPNVPROC							glXDelayBeforeSwapNV;
+#endif
+
+static void GlInitExtensions()
+{
+	glGenFramebuffers							= (PFNGLGENFRAMEBUFFERSPROC)							GetExtension( "glGenFramebuffers" );
+	glDeleteFramebuffers						= (PFNGLDELETEFRAMEBUFFERSPROC)							GetExtension( "glDeleteFramebuffers" );
+	glBindFramebuffer							= (PFNGLBINDFRAMEBUFFERPROC)							GetExtension( "glBindFramebuffer" );
+	glBlitFramebuffer							= (PFNGLBLITFRAMEBUFFERPROC)							GetExtension( "glBlitFramebuffer" );
+	glGenRenderbuffers							= (PFNGLGENRENDERBUFFERSPROC)							GetExtension( "glGenRenderbuffers" );
+	glDeleteRenderbuffers						= (PFNGLDELETERENDERBUFFERSPROC)						GetExtension( "glDeleteRenderbuffers" );
+	glBindRenderbuffer							= (PFNGLBINDRENDERBUFFERPROC)							GetExtension( "glBindRenderbuffer" );
+	glIsRenderbuffer							= (PFNGLISRENDERBUFFERPROC)								GetExtension( "glIsRenderbuffer" );
+	glRenderbufferStorage						= (PFNGLRENDERBUFFERSTORAGEPROC)						GetExtension( "glRenderbufferStorage" );
+	glRenderbufferStorageMultisample			= (PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC)				GetExtension( "glRenderbufferStorageMultisample" );
+	glRenderbufferStorageMultisampleEXT			= (PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC)			GetExtension( "glRenderbufferStorageMultisampleEXT" );
+	glFramebufferRenderbuffer					= (PFNGLFRAMEBUFFERRENDERBUFFERPROC)					GetExtension( "glFramebufferRenderbuffer" );
+	glFramebufferTexture2D						= (PFNGLFRAMEBUFFERTEXTURE2DPROC)						GetExtension( "glFramebufferTexture2D" );
+	glFramebufferTextureLayer					= (PFNGLFRAMEBUFFERTEXTURELAYERPROC)					GetExtension( "glFramebufferTextureLayer" );
+	glFramebufferTexture2DMultisampleEXT		= (PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC)			GetExtension( "glFramebufferTexture2DMultisampleEXT" );
+	glFramebufferTextureMultiviewOVR			= (PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC)				GetExtension( "glFramebufferTextureMultiviewOVR" );
+	glFramebufferTextureMultisampleMultiviewOVR = (PFNGLFRAMEBUFFERTEXTUREMULTISAMPLEMULTIVIEWOVRPROC)	GetExtension( "glFramebufferTextureMultisampleMultiviewOVR" );
+	glCheckFramebufferStatus					= (PFNGLCHECKFRAMEBUFFERSTATUSPROC)						GetExtension( "glCheckFramebufferStatus" );
+
+	glGenBuffers								= (PFNGLGENBUFFERSPROC)					GetExtension( "glGenBuffers" );
+	glDeleteBuffers								= (PFNGLDELETEBUFFERSPROC)				GetExtension( "glDeleteBuffers" );
+	glBindBuffer								= (PFNGLBINDBUFFERPROC)					GetExtension( "glBindBuffer" );
+	glBindBufferBase							= (PFNGLBINDBUFFERBASEPROC)				GetExtension( "glBindBufferBase" );
+	glBufferData								= (PFNGLBUFFERDATAPROC)					GetExtension( "glBufferData" );
+	glBufferStorage								= (PFNGLBUFFERSTORAGEPROC)				GetExtension( "glBufferStorage" );
+	glMapBuffer									= (PFNGLMAPBUFFERPROC)					GetExtension( "glMapBuffer" );
+	glMapBufferRange							= (PFNGLMAPBUFFERRANGEPROC)				GetExtension( "glMapBufferRange" );
+	glUnmapBuffer								= (PFNGLUNMAPBUFFERPROC)				GetExtension( "glUnmapBuffer" );
+
+	glGenVertexArrays							= (PFNGLGENVERTEXARRAYSPROC)			GetExtension( "glGenVertexArrays" );
+	glDeleteVertexArrays						= (PFNGLDELETEVERTEXARRAYSPROC)			GetExtension( "glDeleteVertexArrays" );
+	glBindVertexArray							= (PFNGLBINDVERTEXARRAYPROC)			GetExtension( "glBindVertexArray" );
+	glVertexAttribPointer						= (PFNGLVERTEXATTRIBPOINTERPROC)		GetExtension( "glVertexAttribPointer" );
+	glVertexAttribDivisor						= (PFNGLVERTEXATTRIBDIVISORPROC)		GetExtension( "glVertexAttribDivisor" );
+	glDisableVertexAttribArray					= (PFNGLDISABLEVERTEXATTRIBARRAYPROC)	GetExtension( "glDisableVertexAttribArray" );
+	glEnableVertexAttribArray					= (PFNGLENABLEVERTEXATTRIBARRAYPROC)	GetExtension( "glEnableVertexAttribArray" );
+
+#if defined( OS_WINDOWS )
+	glActiveTexture								= (PFNGLACTIVETEXTUREPROC)				GetExtension( "glActiveTexture" );
+	glTexImage3D								= (PFNGLTEXIMAGE3DPROC)					GetExtension( "glTexImage3D" );
+	glCompressedTexImage2D						= (PFNGLCOMPRESSEDTEXIMAGE2DPROC)		GetExtension( "glCompressedTexImage2D ");
+	glCompressedTexImage3D						= (PFNGLCOMPRESSEDTEXIMAGE3DPROC)		GetExtension( "glCompressedTexImage3D ");
+	glTexSubImage3D								= (PFNGLTEXSUBIMAGE3DPROC)				GetExtension( "glTexSubImage3D" );
+	glCompressedTexSubImage2D					= (PFNGLCOMPRESSEDTEXSUBIMAGE2DPROC)	GetExtension( "glCompressedTexSubImage2D" );
+	glCompressedTexSubImage3D					= (PFNGLCOMPRESSEDTEXSUBIMAGE3DPROC)	GetExtension( "glCompressedTexSubImage3D" );
+#endif
+	glTexStorage2D								= (PFNGLTEXSTORAGE2DPROC)				GetExtension( "glTexStorage2D" );
+	glTexStorage3D								= (PFNGLTEXSTORAGE3DPROC)				GetExtension( "glTexStorage3D" );
+	glTexImage2DMultisample						= (PFNGLTEXIMAGE2DMULTISAMPLEPROC)		GetExtension( "glTexImage2DMultisample" );
+	glTexImage3DMultisample						= (PFNGLTEXIMAGE3DMULTISAMPLEPROC)		GetExtension( "glTexImage3DMultisample" );
+	glTexStorage2DMultisample					= (PFNGLTEXSTORAGE2DMULTISAMPLEPROC)	GetExtension( "glTexStorage2DMultisample" );
+	glTexStorage3DMultisample					= (PFNGLTEXSTORAGE3DMULTISAMPLEPROC)	GetExtension( "glTexStorage3DMultisample" );
+	glGenerateMipmap							= (PFNGLGENERATEMIPMAPPROC)				GetExtension( "glGenerateMipmap" );
+	glBindImageTexture							= (PFNGLBINDIMAGETEXTUREPROC)			GetExtension( "glBindImageTexture" );
+
+	glCreateProgram								= (PFNGLCREATEPROGRAMPROC)				GetExtension( "glCreateProgram" );
+	glDeleteProgram								= (PFNGLDELETEPROGRAMPROC)				GetExtension( "glDeleteProgram" );
+	glCreateShader								= (PFNGLCREATESHADERPROC)				GetExtension( "glCreateShader" );
+	glDeleteShader								= (PFNGLDELETESHADERPROC)				GetExtension( "glDeleteShader" );
+	glShaderSource								= (PFNGLSHADERSOURCEPROC)				GetExtension( "glShaderSource" );
+	glCompileShader								= (PFNGLCOMPILESHADERPROC)				GetExtension( "glCompileShader" );
+	glGetShaderiv								= (PFNGLGETSHADERIVPROC)				GetExtension( "glGetShaderiv" );
+	glGetShaderInfoLog							= (PFNGLGETSHADERINFOLOGPROC)			GetExtension( "glGetShaderInfoLog" );
+	glUseProgram								= (PFNGLUSEPROGRAMPROC)					GetExtension( "glUseProgram" );
+	glAttachShader								= (PFNGLATTACHSHADERPROC)				GetExtension( "glAttachShader" );
+	glLinkProgram								= (PFNGLLINKPROGRAMPROC)				GetExtension( "glLinkProgram" );
+	glGetProgramiv								= (PFNGLGETPROGRAMIVPROC)				GetExtension( "glGetProgramiv" );
+	glGetProgramInfoLog							= (PFNGLGETPROGRAMINFOLOGPROC)			GetExtension( "glGetProgramInfoLog" );
+	glBindAttribLocation						= (PFNGLBINDATTRIBLOCATIONPROC)			GetExtension( "glBindAttribLocation" );
+	glGetUniformLocation						= (PFNGLGETUNIFORMLOCATIONPROC)			GetExtension( "glGetUniformLocation" );
+	glGetUniformBlockIndex						= (PFNGLGETUNIFORMBLOCKINDEXPROC)		GetExtension( "glGetUniformBlockIndex" );
+	glProgramUniform1i							= (PFNGLPROGRAMUNIFORM1IPROC)			GetExtension( "glProgramUniform1i" );
+	glUniform1i									= (PFNGLUNIFORM1IPROC)					GetExtension( "glUniform1i" );
+	glUniform1iv								= (PFNGLUNIFORM1IVPROC)					GetExtension( "glUniform1iv" );
+	glUniform2iv								= (PFNGLUNIFORM2IVPROC)					GetExtension( "glUniform2iv" );
+	glUniform3iv								= (PFNGLUNIFORM3IVPROC)					GetExtension( "glUniform3iv" );
+	glUniform4iv								= (PFNGLUNIFORM4IVPROC)					GetExtension( "glUniform4iv" );
+	glUniform1f									= (PFNGLUNIFORM1FPROC)					GetExtension( "glUniform1f" );
+	glUniform1fv								= (PFNGLUNIFORM1FVPROC)					GetExtension( "glUniform1fv" );
+	glUniform2fv								= (PFNGLUNIFORM2FVPROC)					GetExtension( "glUniform2fv" );
+	glUniform3fv								= (PFNGLUNIFORM3FVPROC)					GetExtension( "glUniform3fv" );
+	glUniform4fv								= (PFNGLUNIFORM4FVPROC)					GetExtension( "glUniform4fv" );
+	glUniformMatrix3x4fv						= (PFNGLUNIFORMMATRIX3X4FVPROC)			GetExtension( "glUniformMatrix3x4fv" );
+	glUniformMatrix4fv							= (PFNGLUNIFORMMATRIX4FVPROC)			GetExtension( "glUniformMatrix4fv" );
+	glGetProgramResourceIndex					= (PFNGLGETPROGRAMRESOURCEINDEXPROC)	GetExtension( "glGetProgramResourceIndex" );
+	glUniformBlockBinding						= (PFNGLUNIFORMBLOCKBINDINGPROC)		GetExtension( "glUniformBlockBinding" );
+	glShaderStorageBlockBinding					= (PFNGLSHADERSTORAGEBLOCKBINDINGPROC)	GetExtension( "glShaderStorageBlockBinding" );
+
+	glDrawElementsInstanced						= (PFNGLDRAWELEMENTSINSTANCEDPROC)		GetExtension( "glDrawElementsInstanced" );
+	glDispatchCompute							= (PFNGLDISPATCHCOMPUTEPROC)			GetExtension( "glDispatchCompute" );
+	glMemoryBarrier								= (PFNGLMEMORYBARRIERPROC)				GetExtension( "glMemoryBarrier" );
+
+	glGenQueries								= (PFNGLGENQUERIESPROC)					GetExtension( "glGenQueries" );
+	glDeleteQueries								= (PFNGLDELETEQUERIESPROC)				GetExtension( "glDeleteQueries" );
+	glIsQuery									= (PFNGLISQUERYPROC)					GetExtension( "glIsQuery" );
+	glBeginQuery								= (PFNGLBEGINQUERYPROC)					GetExtension( "glBeginQuery" );
+	glEndQuery									= (PFNGLENDQUERYPROC)					GetExtension( "glEndQuery" );
+	glQueryCounter								= (PFNGLQUERYCOUNTERPROC)				GetExtension( "glQueryCounter" );
+	glGetQueryiv								= (PFNGLGETQUERYIVPROC)					GetExtension( "glGetQueryiv" );
+	glGetQueryObjectiv							= (PFNGLGETQUERYOBJECTIVPROC)			GetExtension( "glGetQueryObjectiv" );
+	glGetQueryObjectuiv							= (PFNGLGETQUERYOBJECTUIVPROC)			GetExtension( "glGetQueryObjectuiv" );
+	glGetQueryObjecti64v						= (PFNGLGETQUERYOBJECTI64VPROC)			GetExtension( "glGetQueryObjecti64v" );
+	glGetQueryObjectui64v						= (PFNGLGETQUERYOBJECTUI64VPROC)		GetExtension( "glGetQueryObjectui64v" );
+
+	glFenceSync									= (PFNGLFENCESYNCPROC)					GetExtension( "glFenceSync" );
+	glClientWaitSync							= (PFNGLCLIENTWAITSYNCPROC)				GetExtension( "glClientWaitSync" );
+	glDeleteSync								= (PFNGLDELETESYNCPROC)					GetExtension( "glDeleteSync" );
+	glIsSync									= (PFNGLISSYNCPROC)						GetExtension( "glIsSync" );
+
+	glBlendFuncSeparate							= (PFNGLBLENDFUNCSEPARATEPROC)			GetExtension( "glBlendFuncSeparate" );
+	glBlendEquationSeparate						= (PFNGLBLENDEQUATIONSEPARATEPROC)		GetExtension( "glBlendEquationSeparate" );
+
+#if defined( OS_WINDOWS )
+	wglChoosePixelFormatARB						= (PFNWGLCHOOSEPIXELFORMATARBPROC)		GetExtension( "wglChoosePixelFormatARB" );
+	wglCreateContextAttribsARB					= (PFNWGLCREATECONTEXTATTRIBSARBPROC)	GetExtension( "wglCreateContextAttribsARB" );
+	wglSwapIntervalEXT							= (PFNWGLSWAPINTERVALEXTPROC)			GetExtension( "wglSwapIntervalEXT" );
+	wglDelayBeforeSwapNV						= (PFNWGLDELAYBEFORESWAPNVPROC)			GetExtension( "wglDelayBeforeSwapNV" );
+#elif defined( OS_LINUX )
+	glXCreateContextAttribsARB					= (PFNGLXCREATECONTEXTATTRIBSARBPROC)	GetExtension( "glXCreateContextAttribsARB" );
+	glXSwapIntervalEXT							= (PFNGLXSWAPINTERVALEXTPROC)			GetExtension( "glXSwapIntervalEXT" );
+	glXDelayBeforeSwapNV						= (PFNGLXDELAYBEFORESWAPNVPROC)			GetExtension( "glXDelayBeforeSwapNV" );
+#endif
+
+	glExtensions.timer_query						= GlCheckExtension( "GL_EXT_timer_query" );
+	glExtensions.buffer_storage						= GlCheckExtension( "GL_EXT_buffer_storage" ) || ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR >= 44 );
+	glExtensions.multi_sampled_storage				= GlCheckExtension( "GL_ARB_texture_storage_multisample" ) || ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR >= 43 );
+	glExtensions.multi_view							= GlCheckExtension( "GL_OVR_multiview2" );
+	glExtensions.multi_sampled_resolve				= GlCheckExtension( "GL_EXT_multisampled_render_to_texture" );
+	glExtensions.multi_view_multi_sampled_resolve	= GlCheckExtension( "GL_OVR_multiview_multisampled_render_to_texture" );
+}
+
+#elif defined( OS_MAC )
+
+PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC				glFramebufferTextureMultiviewOVR;
+PFNGLFRAMEBUFFERTEXTUREMULTISAMPLEMULTIVIEWOVRPROC	glFramebufferTextureMultisampleMultiviewOVR;
+PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC			glFramebufferTexture2DMultisampleEXT;
+PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC			glRenderbufferStorageMultisampleEXT;
+
+#elif defined( OS_ANDROID )
+
+// GL_EXT_disjoint_timer_query without _EXT
+#if !defined( GL_TIMESTAMP )
+#define GL_QUERY_COUNTER_BITS				GL_QUERY_COUNTER_BITS_EXT
+#define GL_TIME_ELAPSED						GL_TIME_ELAPSED_EXT
+#define GL_TIMESTAMP						GL_TIMESTAMP_EXT
+#define GL_GPU_DISJOINT						GL_GPU_DISJOINT_EXT
+#endif
+
+// GL_EXT_buffer_storage without _EXT
+#if !defined( GL_BUFFER_STORAGE_FLAGS )
+#define GL_MAP_READ_BIT						0x0001		// GL_MAP_READ_BIT_EXT
+#define GL_MAP_WRITE_BIT					0x0002		// GL_MAP_WRITE_BIT_EXT
+#define GL_MAP_PERSISTENT_BIT				0x0040		// GL_MAP_PERSISTENT_BIT_EXT
+#define GL_MAP_COHERENT_BIT					0x0080		// GL_MAP_COHERENT_BIT_EXT
+#define GL_DYNAMIC_STORAGE_BIT				0x0100		// GL_DYNAMIC_STORAGE_BIT_EXT
+#define GL_CLIENT_STORAGE_BIT				0x0200		// GL_CLIENT_STORAGE_BIT_EXT
+#define GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT	0x00004000	// GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT_EXT
+#define GL_BUFFER_IMMUTABLE_STORAGE			0x821F		// GL_BUFFER_IMMUTABLE_STORAGE_EXT
+#define GL_BUFFER_STORAGE_FLAGS				0x8220		// GL_BUFFER_STORAGE_FLAGS_EXT
+#endif
+
+typedef void (GL_APIENTRY * PFNGLBUFFERSTORAGEEXTPROC) (GLenum target, GLsizeiptr size, const void *data, GLbitfield flags);
+typedef void (GL_APIENTRY * PFNGLTEXSTORAGE3DMULTISAMPLEPROC) (GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLboolean fixedsamplelocations);
+
+// EGL_KHR_fence_sync, GL_OES_EGL_sync, VG_KHR_EGL_sync
+PFNEGLCREATESYNCKHRPROC								eglCreateSyncKHR;
+PFNEGLDESTROYSYNCKHRPROC							eglDestroySyncKHR;
+PFNEGLCLIENTWAITSYNCKHRPROC							eglClientWaitSyncKHR;
+PFNEGLGETSYNCATTRIBKHRPROC							eglGetSyncAttribKHR;
+
+// GL_EXT_disjoint_timer_query
+PFNGLQUERYCOUNTEREXTPROC							glQueryCounter;
+PFNGLGETQUERYOBJECTI64VEXTPROC						glGetQueryObjecti64v;
+PFNGLGETQUERYOBJECTUI64VEXTPROC						glGetQueryObjectui64v;
+
+// GL_EXT_buffer_storage
+PFNGLBUFFERSTORAGEEXTPROC							glBufferStorage;
+
+// GL_OVR_multiview
+PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC				glFramebufferTextureMultiviewOVR;
+
+// GL_EXT_multisampled_render_to_texture
+PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC			glRenderbufferStorageMultisampleEXT;
+PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC			glFramebufferTexture2DMultisampleEXT;
+
+// GL_OVR_multiview_multisampled_render_to_texture
+PFNGLFRAMEBUFFERTEXTUREMULTISAMPLEMULTIVIEWOVRPROC	glFramebufferTextureMultisampleMultiviewOVR;
+
+PFNGLTEXSTORAGE3DMULTISAMPLEPROC					glTexStorage3DMultisample;
+
+#if !defined( EGL_OPENGL_ES3_BIT )
+#define EGL_OPENGL_ES3_BIT					0x0040
+#endif
+
+// GL_EXT_texture_cube_map_array
+#if !defined( GL_TEXTURE_CUBE_MAP_ARRAY )
+#define GL_TEXTURE_CUBE_MAP_ARRAY			0x9009
+#endif
+
+// GL_EXT_texture_filter_anisotropic
+#if !defined( GL_TEXTURE_MAX_ANISOTROPY_EXT )
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT		0x84FE
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT	0x84FF
+#endif
+
+// No clamp to border in OpenGL ES.
+#if !defined( GL_CLAMP_TO_BORDER )
+#define GL_CLAMP_TO_BORDER					GL_CLAMP_TO_EDGE
+#endif
+
+// No multi-sampled texture arrays in OpenGL ES.
+#if !defined( GL_TEXTURE_2D_MULTISAMPLE_ARRAY )
+#define GL_TEXTURE_2D_MULTISAMPLE_ARRAY		0x9102
+#endif
+
+static void GlInitExtensions()
+{
+	eglCreateSyncKHR								= (PFNEGLCREATESYNCKHRPROC)			GetExtension( "eglCreateSyncKHR" );
+	eglDestroySyncKHR								= (PFNEGLDESTROYSYNCKHRPROC)		GetExtension( "eglDestroySyncKHR" );
+	eglClientWaitSyncKHR							= (PFNEGLCLIENTWAITSYNCKHRPROC)		GetExtension( "eglClientWaitSyncKHR" );
+	eglGetSyncAttribKHR								= (PFNEGLGETSYNCATTRIBKHRPROC)		GetExtension( "eglGetSyncAttribKHR" );
+
+	glQueryCounter									= (PFNGLQUERYCOUNTEREXTPROC)		GetExtension( "glQueryCounterEXT" );
+	glGetQueryObjecti64v							= (PFNGLGETQUERYOBJECTI64VEXTPROC)	GetExtension( "glGetQueryObjecti64vEXT" );
+	glGetQueryObjectui64v							= (PFNGLGETQUERYOBJECTUI64VEXTPROC)	GetExtension( "glGetQueryObjectui64vEXT" );
+
+	glBufferStorage									= (PFNGLBUFFERSTORAGEEXTPROC)		GetExtension( "glBufferStorageEXT" );
+
+	glRenderbufferStorageMultisampleEXT				= (PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC)			GetExtension( "glRenderbufferStorageMultisampleEXT" );
+	glFramebufferTexture2DMultisampleEXT			= (PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC)			GetExtension( "glFramebufferTexture2DMultisampleEXT" );
+	glFramebufferTextureMultiviewOVR				= (PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC)				GetExtension( "glFramebufferTextureMultiviewOVR" );
+	glFramebufferTextureMultisampleMultiviewOVR		= (PFNGLFRAMEBUFFERTEXTUREMULTISAMPLEMULTIVIEWOVRPROC)	GetExtension( "glFramebufferTextureMultisampleMultiviewOVR" );
+
+	glTexStorage3DMultisample						= (PFNGLTEXSTORAGE3DMULTISAMPLEPROC)					GetExtension( "glTexStorage3DMultisample" );
+	
+	glExtensions.timer_query						= GlCheckExtension( "GL_EXT_disjoint_timer_query" );
+	glExtensions.buffer_storage						= GlCheckExtension( "GL_EXT_buffer_storage" );
+	glExtensions.multi_view							= GlCheckExtension( "GL_OVR_multiview2" );
+	glExtensions.multi_sampled_resolve				= GlCheckExtension( "GL_EXT_multisampled_render_to_texture" );
+	glExtensions.multi_view_multi_sampled_resolve	= GlCheckExtension( "GL_OVR_multiview_multisampled_render_to_texture" );
+}
+
+#endif
+
+#if !defined( GL_SR8_EXT )
+#define GL_SR8_EXT							0x8FBD
+#endif
+
+#if !defined( GL_SRG8_EXT )
+#define GL_SRG8_EXT							0x8FBE
+#endif
 
 /*
 ================================================================================================================================
@@ -2695,6 +2818,9 @@ A context can only be used by a single thread.
 For optimal performance a context should only be created at load time, not at runtime.
 
 GpuContext_t
+GpuSurfaceColorFormat_t
+GpuSurfaceDepthFormat_t
+GpuSampleCount_t
 
 static bool GpuContext_CreateShared( GpuContext_t * context, const GpuContext_t * other, const int queueIndex );
 static void GpuContext_Destroy( GpuContext_t * context );
@@ -2704,7 +2830,10 @@ static void GpuContext_UnsetCurrent( GpuContext_t * context );
 static bool GpuContext_CheckCurrent( GpuContext_t * context );
 
 static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice_t * device, const int queueIndex,
-										const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat, ... );
+										const GpuSurfaceColorFormat_t colorFormat,
+										const GpuSurfaceDepthFormat_t depthFormat,
+										const GpuSampleCount_t sampleCount,
+										... );
 
 ================================================================================================================================
 */
@@ -2725,6 +2854,17 @@ typedef enum
 	GPU_SURFACE_DEPTH_FORMAT_D24,
 	GPU_SURFACE_DEPTH_FORMAT_MAX
 } GpuSurfaceDepthFormat_t;
+
+typedef enum
+{
+	GPU_SAMPLE_COUNT_1		= 1,
+	GPU_SAMPLE_COUNT_2		= 2,
+	GPU_SAMPLE_COUNT_4		= 4,
+	GPU_SAMPLE_COUNT_8		= 8,
+	GPU_SAMPLE_COUNT_16		= 16,
+	GPU_SAMPLE_COUNT_32		= 32,
+	GPU_SAMPLE_COUNT_64		= 64,
+} GpuSampleCount_t;
 
 typedef struct
 {
@@ -2817,7 +2957,7 @@ GLenum GpuContext_InternalSurfaceDepthFormat( const GpuSurfaceDepthFormat_t dept
 
 static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice_t * device, const int queueIndex,
 										const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-										HDC hDC )
+										const GpuSampleCount_t sampleCount, HINSTANCE hInstance, HDC hDC )
 {
 	UNUSED_PARM( device );
 	UNUSED_PARM( queueIndex );
@@ -2852,23 +2992,36 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 		0						// dwDamageMask
 	};
 
-	int pixelFormat = ChoosePixelFormat( hDC, &pfd );
+	HWND localWnd = NULL;
+	HDC localDC = hDC;
+
+	if ( sampleCount > GPU_SAMPLE_COUNT_1 )
+	{
+		// A valid context is needed to get OpenGL extensions including wglChoosePixelFormatARB and wglCreateContextAttribsARB.
+		// A device context with a valid pixel format is needed to create an OpenGL context.
+		// However, once a pixel format is set on a device context it cannot be unset.
+		// Therefore a pixel format is set on the device context of a temporary window to create a context to get extensions.
+		localWnd = CreateWindow( APPLICATION_NAME, "temp", 0, 0, 0, 0, 0, NULL, NULL, hInstance, NULL );
+		localDC = GetDC( localWnd );
+	}
+
+	int pixelFormat = ChoosePixelFormat( localDC, &pfd );
 	if ( pixelFormat == 0 )
 	{
-		Error( "Failed to find a suitable PixelFormat." );
+		Error( "Failed to find a suitable pixel format." );
 		return false;
 	}
 
-	if ( !SetPixelFormat( hDC, pixelFormat, &pfd ) )
+	if ( !SetPixelFormat( localDC, pixelFormat, &pfd ) )
 	{
-		Error( "Failed to set the PixelFormat." );
+		Error( "Failed to set the pixel format." );
 		return false;
 	}
 
 	// Now that the pixel format is set, create a temporary context to get the extensions.
 	{
-		HGLRC hGLRC = wglCreateContext( hDC );
-		wglMakeCurrent( hDC, hGLRC );
+		HGLRC hGLRC = wglCreateContext( localDC );
+		wglMakeCurrent( localDC, hGLRC );
 
 		GlInitExtensions();
 
@@ -2876,7 +3029,49 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 		wglDeleteContext( hGLRC );
 	}
 
-	int attribs[] =
+	if ( sampleCount > GPU_SAMPLE_COUNT_1 )
+	{
+		// Release the device context and destroy the window that were created to get extensions.
+		ReleaseDC( localWnd, localDC );
+		DestroyWindow( localWnd );
+
+		int pixelFormatAttribs[] =
+		{
+			WGL_DRAW_TO_WINDOW_ARB,				GL_TRUE,
+			WGL_SUPPORT_OPENGL_ARB,				GL_TRUE,
+			WGL_DOUBLE_BUFFER_ARB,				GL_TRUE,
+			WGL_PIXEL_TYPE_ARB,					WGL_TYPE_RGBA_ARB,
+			WGL_COLOR_BITS_ARB,					bits.colorBits,
+			WGL_DEPTH_BITS_ARB,					bits.depthBits,
+			WGL_SAMPLE_BUFFERS_ARB,				( sampleCount > GPU_SAMPLE_COUNT_1 ),
+			WGL_SAMPLES_ARB,					sampleCount,
+			0
+		};
+
+		unsigned int numPixelFormats = 0;
+
+		if ( !wglChoosePixelFormatARB( hDC, pixelFormatAttribs, NULL, 1, &pixelFormat, &numPixelFormats ) || numPixelFormats == 0 )
+		{
+			Error( "Failed to find MSAA pixel format." );
+			return false;
+		}
+
+		memset( &pfd, 0, sizeof( pfd ) );
+
+		if ( !DescribePixelFormat( hDC, pixelFormat, sizeof( PIXELFORMATDESCRIPTOR ), &pfd ) )
+		{
+			Error( "Failed to describe the pixel format." );
+			return false;
+		}
+
+		if ( !SetPixelFormat( hDC, pixelFormat, &pfd ) )
+		{
+			Error( "Failed to set the pixel format." );
+			return false;
+		}
+	}
+
+	int contextAttribs[] =
 	{
 		WGL_CONTEXT_MAJOR_VERSION_ARB,	OPENGL_VERSION_MAJOR,
 		WGL_CONTEXT_MINOR_VERSION_ARB,	OPENGL_VERSION_MINOR,
@@ -2886,7 +3081,7 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 	};
 
 	context->hDC = hDC;
-	context->hGLRC = wglCreateContextAttribsARB( hDC, NULL, attribs );
+	context->hGLRC = wglCreateContextAttribsARB( hDC, NULL, contextAttribs );
 	if ( !context->hGLRC )
 	{
 		Error( "Failed to create GL context." );
@@ -2900,7 +3095,7 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 
 static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice_t * device, const int queueIndex,
 										const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-										CGDirectDisplayID display )
+										const GpuSampleCount_t sampleCount, CGDirectDisplayID display )
 {
 	UNUSED_PARM( device );
 	UNUSED_PARM( queueIndex );
@@ -2916,6 +3111,8 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 		NSOpenGLPFADoubleBuffer,
 		NSOpenGLPFAColorSize,		bits.colorBits,
 		NSOpenGLPFADepthSize,		bits.depthBits,
+		NSOpenGLPFASampleBuffers,	( sampleCount > GPU_SAMPLE_COUNT_1 ),
+		NSOpenGLPFASamples,			sampleCount,
 		0
 	};
 
@@ -2946,7 +3143,7 @@ static int glxGetFBConfigAttrib2( Display * dpy, GLXFBConfig config, int attribu
 
 static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice_t * device, const int queueIndex,
 										const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-										Display * xDisplay, int xScreen )
+										const GpuSampleCount_t sampleCount, Display * xDisplay, int xScreen )
 {
 	UNUSED_PARM( device );
 	UNUSED_PARM( queueIndex );
@@ -2992,6 +3189,11 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 		if ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_BLUE_SIZE )  != bits.blueBits ) { continue; }
 		if ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_ALPHA_SIZE ) != bits.alphaBits ) { continue; }
 		if ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_DEPTH_SIZE ) != bits.depthBits ) { continue; }
+		if ( sampleCount > GPU_SAMPLE_COUNT_1 )
+		{
+			if ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_SAMPLE_BUFFERS ) != 1 ) { continue; }
+			if ( glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_SAMPLES ) != sampleCount ) { continue; }
+		}
 
 		context->visualid = glxGetFBConfigAttrib2( xDisplay, fbConfigs[i], GLX_VISUAL_ID );
 		context->glxFBConfig = fbConfigs[i];
@@ -3055,7 +3257,7 @@ static uint32_t xcb_glx_get_property( const uint32_t * properties, const uint32_
 
 static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice_t * device, const int queueIndex,
 										const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-										xcb_connection_t * connection, int screen_number )
+										const GpuSampleCount_t sampleCount, xcb_connection_t * connection, int screen_number )
 {
 	UNUSED_PARM( device );
 	UNUSED_PARM( queueIndex );
@@ -3100,6 +3302,11 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 		if ( xcb_glx_get_property( fb_config, fb_configs_num_properties, GLX_BLUE_SIZE )  != bits.blueBits ) { continue; }
 		if ( xcb_glx_get_property( fb_config, fb_configs_num_properties, GLX_ALPHA_SIZE ) != bits.alphaBits ) { continue; }
 		if ( xcb_glx_get_property( fb_config, fb_configs_num_properties, GLX_DEPTH_SIZE ) != bits.depthBits ) { continue; }
+		if ( sampleCount > GPU_SAMPLE_COUNT_1 )
+		{
+			if ( xcb_glx_get_property( fb_config, fb_configs_num_properties, GLX_SAMPLE_BUFFERS ) != 1 ) { continue; }
+			if ( xcb_glx_get_property( fb_config, fb_configs_num_properties, GLX_SAMPLES ) != sampleCount ) { continue; }
+		}
 
 		context->fbconfigid = xcb_glx_get_property( fb_config, fb_configs_num_properties, GLX_FBCONFIG_ID );
 		context->visualid = xcb_glx_get_property( fb_config, fb_configs_num_properties, GLX_VISUAL_ID );
@@ -3158,10 +3365,8 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 
 static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice_t * device, const int queueIndex,
 										const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-										EGLDisplay display )
+										const GpuSampleCount_t sampleCount, EGLDisplay display )
 {
-	GlInitExtensions();
-
 	context->display = display;
 
 	// Do NOT use eglChooseConfig, because the Android EGL code pushes in multisample
@@ -3182,7 +3387,8 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 		EGL_ALPHA_SIZE,		bits.alphaBits,
 		EGL_DEPTH_SIZE,		bits.depthBits,
 		//EGL_STENCIL_SIZE,	0,
-		EGL_SAMPLES,		0,
+		EGL_SAMPLE_BUFFERS,	( sampleCount > GPU_SAMPLE_COUNT_1 ),
+		EGL_SAMPLES,		sampleCount,
 		EGL_NONE
 	};
 
@@ -3221,6 +3427,7 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 	}
 	if ( context->config == 0 )
 	{
+		Error( "Failed to find EGLConfig" );
 		return false;
 	}
 
@@ -3524,10 +3731,10 @@ MouseButton_t
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
 								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const int width, const int height, const bool fullscreen );
+								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen );
 static void GpuWindow_Destroy( GpuWindow_t * window );
 static void GpuWindow_Exit( GpuWindow_t * window );
-static bool GpuWindow_ProcessEvents( GpuWindow_t * window );
+static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window );
 static void GpuWindow_SwapInterval( GpuWindow_t * window, const int swapInterval );
 static void GpuWindow_SwapBuffers( GpuWindow_t * window );
 static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window );
@@ -3551,6 +3758,7 @@ typedef struct
 	GpuContext_t			context;
 	GpuSurfaceColorFormat_t	colorFormat;
 	GpuSurfaceDepthFormat_t	depthFormat;
+	GpuSampleCount_t		sampleCount;
 	int						windowWidth;
 	int						windowHeight;
 	int						windowSwapInterval;
@@ -3569,6 +3777,9 @@ typedef struct
 	HDC						hDC;
 	HWND					hWnd;
 	bool					windowActiveState;
+#elif defined( OS_IOS )
+	UIWindow *				uiWindow;
+	UIView *				uiView;
 #elif defined( OS_MAC )
 	CGDirectDisplayID		display;
 	CGDisplayModeRef		desktopDisplayMode;
@@ -3749,12 +3960,13 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
 								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const int width, const int height, const bool fullscreen )
+								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
 {
 	memset( window, 0, sizeof( GpuWindow_t ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
 	window->windowWidth = width;
 	window->windowHeight = height;
 	window->windowSwapInterval = 1;
@@ -3881,7 +4093,7 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	}
 
 	GpuDevice_Create( &window->device, instance, queueInfo );
-	GpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, window->hDC );
+	GpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, sampleCount, window->hInstance, window->hDC );
 	GpuContext_SetCurrent( &window->context );
 
 	ShowWindow( window->hWnd, SW_SHOW );
@@ -3923,6 +4135,146 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 		window->windowActive = window->windowActiveState;
 		return ( window->windowActiveState ) ? GPU_WINDOW_EVENT_ACTIVATED : GPU_WINDOW_EVENT_DEACTIVATED;
 	}
+	return GPU_WINDOW_EVENT_NONE;
+}
+
+#elif defined( OS_IOS )
+
+typedef enum
+{
+	KEY_ESCAPE			= 0x35,
+	KEY_A				= 0x00,
+	KEY_B				= 0x0B,
+	KEY_C				= 0x08,
+	KEY_D				= 0x02,
+	KEY_E				= 0x0E,
+	KEY_F				= 0x03,
+	KEY_G				= 0x05,
+	KEY_H				= 0x04,
+	KEY_I				= 0x22,
+	KEY_J				= 0x26,
+	KEY_K				= 0x28,
+	KEY_L				= 0x25,
+	KEY_M				= 0x2E,
+	KEY_N				= 0x2D,
+	KEY_O				= 0x1F,
+	KEY_P				= 0x23,
+	KEY_Q				= 0x0C,
+	KEY_R				= 0x0F,
+	KEY_S				= 0x01,
+	KEY_T				= 0x11,
+	KEY_U				= 0x20,
+	KEY_V				= 0x09,
+	KEY_W				= 0x0D,
+	KEY_X				= 0x07,
+	KEY_Y				= 0x10,
+	KEY_Z				= 0x06,
+} KeyboardKey_t;
+
+typedef enum
+{
+	MOUSE_LEFT			= 0,
+	MOUSE_RIGHT			= 1
+} MouseButton_t;
+
+static NSAutoreleasePool * autoReleasePool;
+static UIView* myUIView;
+static UIWindow* myUIWindow;
+
+@interface MyUIView : UIView
+@end
+
+@implementation MyUIView
+
+-(instancetype) initWithFrame:(CGRect)frameRect {
+	self = [super initWithFrame: frameRect];
+	if ( self ) {
+		self.contentScaleFactor = UIScreen.mainScreen.nativeScale;
+	}
+	return self;
+}
+
++(Class) layerClass { return [CAMetalLayer class]; }
+
+@end
+
+@interface MyUIViewController : UIViewController
+@end
+
+@implementation MyUIViewController
+
+-(UIInterfaceOrientationMask) supportedInterfaceOrientations { return UIInterfaceOrientationMaskLandscape; }
+
+-(BOOL) shouldAutorotate { return TRUE; }
+
+@end
+
+static void GpuWindow_Destroy( GpuWindow_t * window )
+{
+	GpuWindow_DestroySurface( window );
+	GpuContext_Destroy( &window->context );
+	GpuDevice_Destroy( &window->device );
+
+	if ( window->uiWindow )
+	{
+		[window->uiWindow release];
+		window->uiWindow = nil;
+	}
+	if ( window->uiView )
+	{
+		[window->uiView release];
+		window->uiView = nil;
+	}
+}
+
+static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
+								const GpuQueueInfo_t * queueInfo, const int queueIndex,
+								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
+								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
+{
+	memset( window, 0, sizeof( GpuWindow_t ) );
+
+	window->colorFormat = colorFormat;
+	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
+	window->windowWidth = width;
+	window->windowHeight = height;
+	window->windowSwapInterval = 1;
+	window->windowRefreshRate = 60.0f;
+	window->windowFullscreen = fullscreen;
+	window->windowActive = false;
+	window->windowExit = false;
+	window->lastSwapTime = GetTimeMicroseconds();
+	window->uiView = myUIView;
+	window->uiWindow = myUIWindow;
+
+	GpuDevice_Create( &window->device, instance, queueInfo );
+	GpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, sampleCount, window->display );
+
+	return true;
+}
+
+static void GpuWindow_Exit( GpuWindow_t * window )
+{
+	window->windowExit = true;
+}
+
+static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
+{
+	[autoReleasePool release];
+	autoReleasePool = [[NSAutoreleasePool alloc] init];
+
+	if ( window->windowExit )
+	{
+		return GPU_WINDOW_EVENT_EXIT;
+	}
+
+	if ( window->windowActive == false )
+	{
+		window->windowActive = true;
+		return GPU_WINDOW_EVENT_ACTIVATED;
+	}
+	
 	return GPU_WINDOW_EVENT_NONE;
 }
 
@@ -4017,12 +4369,13 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
 								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const int width, const int height, const bool fullscreen )
+								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
 {
 	memset( window, 0, sizeof( GpuWindow_t ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
 	window->windowWidth = width;
 	window->windowHeight = height;
 	window->windowSwapInterval = 1;
@@ -4144,7 +4497,7 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	}
 
 	GpuDevice_Create( &window->device, instance, queueInfo );
-	GpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, window->display );
+	GpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, sampleCount, window->display );
 
 	[window->context.nsContext setView:window->nsView];
 
@@ -4640,12 +4993,13 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
 								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const int width, const int height, const bool fullscreen )
+								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
 {
 	memset( window, 0, sizeof( GpuWindow_t ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
 	window->windowWidth = width;
 	window->windowHeight = height;
 	window->windowSwapInterval = 1;
@@ -4681,7 +5035,7 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	}
 
 	GpuDevice_Create( &window->device, instance, queueInfo );
-	GpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, window->xDisplay, window->xScreen );
+	GpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, sampleCount, window->xDisplay, window->xScreen );
 
 	window->xVisual = glXGetVisualFromFBConfig( window->xDisplay, window->context.glxFBConfig );
 	if ( window->xVisual == NULL )
@@ -4964,6 +5318,7 @@ static bool ChangeVideoMode_XcbRandR_1_4( xcb_connection_t * connection, xcb_scr
 	xcb_randr_crtc_t * crtcs = xcb_randr_get_screen_resources_crtcs( screen_resources_reply );
 	const int crtcs_length = xcb_randr_get_screen_resources_crtcs_length( screen_resources_reply );
 	assert( crtcs_length > 0 );
+	UNUSED_PARM( crtcs_length );
 
 	const int PRIMARY_CRTC_INDEX = 0;
 	const int PRIMARY_OUTPUT_INDEX = 0;
@@ -5091,12 +5446,13 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
 								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const int width, const int height, const bool fullscreen )
+								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
 {
 	memset( window, 0, sizeof( GpuWindow_t ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
 	window->windowWidth = width;
 	window->windowHeight = height;
 	window->windowSwapInterval = 1;
@@ -5141,9 +5497,9 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	GpuDevice_Create( &window->device, instance, queueInfo );
 #if defined( OS_LINUX_XCB_GLX )
 	window->xDisplay = XOpenDisplay( displayName );
-	GpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, window->xDisplay, screen_number );
+	GpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, sampleCount, window->xDisplay, screen_number );
 #else
-	GpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, window->connection, screen_number );
+	GpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, sampleCount, window->connection, screen_number );
 #endif
 
 	// Create the color map.
@@ -5543,12 +5899,13 @@ struct android_app * global_app;
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
 								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const int width, const int height, const bool fullscreen )
+								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
 {
 	memset( window, 0, sizeof( GpuWindow_t ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
 	window->windowWidth = width;
 	window->windowHeight = height;
 	window->windowSwapInterval = 1;
@@ -5582,8 +5939,10 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	EGL( eglInitialize( window->display, &window->majorVersion, &window->minorVersion ) );
 
 	GpuDevice_Create( &window->device, instance, queueInfo );
-	GpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, window->display );
+	GpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, sampleCount, window->display );
 	GpuContext_SetCurrent( &window->context );
+
+	GlInitExtensions();
 
 	return true;
 }
@@ -5830,12 +6189,12 @@ GpuTextureDefault_t
 GpuTexture_t
 
 static bool GpuTexture_Create2D( GpuContext_t * context, GpuTexture_t * texture,
-								const GpuTextureFormat_t format, const int width, const int height,
-								const int numberOfMipmapLevels,
+								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
+								const int width, const int height, const int numberOfMipmapLevels,
 								const void * data, const size_t dataSize );
 static bool GpuTexture_Create2DArray( GpuContext_t * context, GpuTexture_t * texture,
-								const GpuTextureFormat_t format, const int width, const int height,
-								const int numberOfArrayElements, const int numberOfMipmapLevels,
+								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
+								const int width, const int height, const int numberOfArrayElements, const int numberOfMipmapLevels,
 								const void * data, const size_t dataSize );
 static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureDefault_t defaultType,
 								const int width, const int height, const int depth,
@@ -6013,6 +6372,9 @@ typedef enum
 typedef enum
 {
 	GPU_TEXTURE_USAGE_UNDEFINED,
+	GPU_TEXTURE_USAGE_GENERAL,
+	GPU_TEXTURE_USAGE_TRANSFER_SRC,
+	GPU_TEXTURE_USAGE_TRANSFER_DST,
 	GPU_TEXTURE_USAGE_SAMPLED,
 	GPU_TEXTURE_USAGE_STORAGE,
 	GPU_TEXTURE_USAGE_COLOR_ATTACHMENT,
@@ -6047,6 +6409,7 @@ typedef struct
 	int						depth;
 	int						layerCount;
 	int						mipCount;
+	GpuSampleCount_t		sampleCount;
 	GpuTextureUsage_t		usage;
 	GpuTextureWrapMode_t	wrapMode;
 	GpuTextureFilter_t		filter;
@@ -6080,7 +6443,8 @@ static int IntegerLog2( int i )
 // The 'data' is expected to be stored packed on a per mip level basis.
 // If 'data' != NULL and 'numberOfMipmapLevels' == -1, then the full mip chain will be generated from the finest data level.
 static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * texture, const char * fileName,
-										const GLenum glInternalFormat, const int width, const int height, const int depth,
+										const GLenum glInternalFormat, const GpuSampleCount_t sampleCount,
+										const int width, const int height, const int depth,
 										const int numberOfArrayElements, const int numberOfFaces, const int numberOfMipmapLevels,
 										const void * data, const size_t dataSize, const bool mipSizeStored )
 {
@@ -6135,11 +6499,25 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	GL( glBindTexture( glTarget, texture->texture ) );
 	if ( depth <= 1 && numberOfArrayElements <= 1 )
 	{
-		glTexStorage2D( glTarget, numStorageLevels, glInternalFormat, width, height );
+		if ( sampleCount > GPU_SAMPLE_COUNT_1 )
+		{
+			GL( glTexStorage2DMultisample( glTarget, sampleCount, glInternalFormat, width, height, GL_TRUE ) );
+		}
+		else
+		{
+			GL( glTexStorage2D( glTarget, numStorageLevels, glInternalFormat, width, height ) );
+		}
 	}
 	else
 	{
-		glTexStorage3D( glTarget, numStorageLevels, glInternalFormat, width, height, depth * numberOfArrayElements );
+		if ( sampleCount > GPU_SAMPLE_COUNT_1 )
+		{
+			GL( glTexStorage3DMultisample( glTarget, sampleCount, glInternalFormat, width, height, depth * numberOfArrayElements, GL_TRUE ) );
+		}
+		else
+		{
+			GL( glTexStorage3D( glTarget, numStorageLevels, glInternalFormat, width, height, depth * numberOfArrayElements ) );
+		}
 	}
 
 	texture->target = glTarget;
@@ -6149,12 +6527,15 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	texture->depth = depth;
 	texture->layerCount = numberOfArrayElements;
 	texture->mipCount = numStorageLevels;
+	texture->sampleCount = sampleCount;
 	texture->wrapMode = GPU_TEXTURE_WRAP_MODE_REPEAT;
 	texture->filter = ( numStorageLevels > 1 ) ? GPU_TEXTURE_FILTER_BILINEAR : GPU_TEXTURE_FILTER_LINEAR;
 	texture->maxAnisotropy = 1.0f;
 
 	if ( data != NULL )
 	{
+		assert( sampleCount == GPU_SAMPLE_COUNT_1 );
+
 		const int numDataLevels = ( numberOfMipmapLevels >= 1 ) ? numberOfMipmapLevels : 1;
 		const unsigned char * levelData = (const unsigned char *)data;
 		const unsigned char * endOfBuffer = levelData + dataSize;
@@ -6324,12 +6705,12 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR:		{ mipSize = ((w+11)/12) * ((h+9)/10) * d * 16; compressed = true; break; }
 				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR:		{ mipSize = ((w+11)/12) * ((h+11)/12) * d * 16; compressed = true; break; }
 #endif
-			}
-			if ( mipSize == 0 )
-			{
-				Error( "%s: Unsupported image format %d", fileName, glInternalFormat );
-				GL( glBindTexture( glTarget, 0 ) );
-				return false;
+				default:
+				{
+					Error( "%s: Unsupported image format %d", fileName, glInternalFormat );
+					GL( glBindTexture( glTarget, 0 ) );
+					return false;
+				}
 			}
 
 			if ( numberOfArrayElements > 1 )
@@ -6437,26 +6818,26 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 }
 
 static bool GpuTexture_Create2D( GpuContext_t * context, GpuTexture_t * texture,
-								const GpuTextureFormat_t format, const int width, const int height,
-								const int numberOfMipmapLevels,
+								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
+								const int width, const int height, const int numberOfMipmapLevels,
 								const void * data, const size_t dataSize )
 {
 	const int depth = 1;
 	const int numberOfArrayElements = 1;
 	const int numberOfFaces = 1;
-	return GpuTexture_CreateInternal( context, texture, "data", (GLenum)format, width, height, depth,
+	return GpuTexture_CreateInternal( context, texture, "data", (GLenum)format, sampleCount, width, height, depth,
 										numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
 										data, dataSize, false );
 }
 
 static bool GpuTexture_Create2DArray( GpuContext_t * context, GpuTexture_t * texture,
-								const GpuTextureFormat_t format, const int width, const int height,
-								const int numberOfArrayElements, const int numberOfMipmapLevels,
+								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
+								const int width, const int height, const int numberOfArrayElements, const int numberOfMipmapLevels,
 								const void * data, const size_t dataSize )
 {
 	const int depth = 1;
 	const int numberOfFaces = 1;
-	return GpuTexture_CreateInternal( context, texture, "data", (GLenum)format, width, height, depth,
+	return GpuTexture_CreateInternal( context, texture, "data", (GLenum)format, sampleCount, width, height, depth,
 										numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
 										data, dataSize, false );
 }
@@ -6597,7 +6978,8 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 	}
 
 	const int numberOfMipmapLevels = ( mipmaps ) ? -1 : 1;
-	bool success = GpuTexture_CreateInternal( context, texture, "data", GL_RGBA8, width, height, depth,
+	bool success = GpuTexture_CreateInternal( context, texture, "data", GL_RGBA8, GPU_SAMPLE_COUNT_1,
+												width, height, depth,
 												numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
 												data, dataSize, false );
 
@@ -6654,12 +7036,6 @@ static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * tex
 		Error( "%s: KTX file has wrong endianess", fileName );
 		return false;
 	}
-	// only support compressed or unsigned byte
-	if ( header->glType != 0 && header->glType != GL_UNSIGNED_BYTE )
-	{
-		Error( "%s: KTX file has unsupported glType %d", fileName, header->glType );
-		return false;
-	}
 	// skip the key value data
 	const size_t startTex = sizeof( GlHeaderKTX_t ) + header->bytesOfKeyValueData;
 	if ( ( startTex < sizeof( GlHeaderKTX_t ) ) || ( startTex >= bufferSize ) )
@@ -6674,7 +7050,7 @@ static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * tex
 
 	return GpuTexture_CreateInternal( context, texture, fileName,
 									header->glInternalFormat, header->pixelWidth, header->pixelHeight, header->pixelDepth,
-									numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
+									GPU_SAMPLE_COUNT_1, numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
 									buffer + startTex, bufferSize - startTex, true );
 }
 
@@ -6722,6 +7098,7 @@ static bool GpuTexture_CreateFromSwapChain( GpuContext_t * context, GpuTexture_t
 	texture->depth = 1;
 	texture->layerCount = 1;
 	texture->mipCount = 1;
+	texture->sampleCount = GPU_SAMPLE_COUNT_1;
 	texture->usage = GPU_TEXTURE_USAGE_UNDEFINED;
 	texture->wrapMode = GPU_TEXTURE_WRAP_MODE_REPEAT;
 	texture->filter = GPU_TEXTURE_FILTER_LINEAR;
@@ -7060,22 +7437,22 @@ static void GpuGeometry_Create( GpuContext_t * context, GpuGeometry_t * geometry
 // The quad is centered about the origin and without offset/scale spans the [-1, 1] X-Y range.
 static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale )
 {
-	Vector3f_t quadPositions[4] =
+	const Vector3f_t quadPositions[4] =
 	{
 		{ -1.0f, -1.0f, 0.0f }, { +1.0f, -1.0f, 0.0f }, { +1.0f, +1.0f, 0.0f }, { -1.0f, +1.0f, 0.0f }
 	};
 
-	Vector3f_t quadNormals[4] =
+	const Vector3f_t quadNormals[4] =
 	{
 		{ 0.0f, 0.0f, +1.0f }, { 0.0f, 0.0f, +1.0f }, { 0.0f, 0.0f, +1.0f }, { 0.0f, 0.0f, +1.0f }
 	};
 
-	Vector2f_t quadUvs[4] =
+	const Vector2f_t quadUvs[4] =
 	{
 		{ 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f },	{ 0.0f, 0.0f }
 	};
 
-	GpuTriangleIndex_t quadIndices[6] =
+	const GpuTriangleIndex_t quadIndices[6] =
 	{
 		 0,  1,  2,  2,  3,  0
 	};
@@ -7110,7 +7487,7 @@ static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geom
 // The cube is centered about the origin and without offset/scale spans the [-1, 1] X-Y-Z range.
 static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale )
 {
-	Vector3f_t cubePositions[24] =
+	const Vector3f_t cubePositions[24] =
 	{
 		{ +1.0f, -1.0f, -1.0f }, { +1.0f, +1.0f, -1.0f }, { +1.0f, +1.0f, +1.0f }, { +1.0f, -1.0f, +1.0f },
 		{ -1.0f, -1.0f, -1.0f }, { -1.0f, -1.0f, +1.0f }, { -1.0f, +1.0f, +1.0f }, { -1.0f, +1.0f, -1.0f },
@@ -7122,7 +7499,7 @@ static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geom
 		{ -1.0f, -1.0f, -1.0f }, { -1.0f, +1.0f, -1.0f }, { +1.0f, +1.0f, -1.0f }, { +1.0f, -1.0f, -1.0f }
 	};
 
-	Vector3f_t cubeNormals[24] =
+	const Vector3f_t cubeNormals[24] =
 	{
 		{ +1.0f, 0.0f, 0.0f }, { +1.0f, 0.0f, 0.0f }, { +1.0f, 0.0f, 0.0f }, { +1.0f, 0.0f, 0.0f },
 		{ -1.0f, 0.0f, 0.0f }, { -1.0f, 0.0f, 0.0f }, { -1.0f, 0.0f, 0.0f }, { -1.0f, 0.0f, 0.0f },
@@ -7134,7 +7511,7 @@ static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geom
 		{ 0.0f, 0.0f, -1.0f }, { 0.0f, 0.0f, -1.0f }, { 0.0f, 0.0f, -1.0f }, { 0.0f, 0.0f, -1.0f }
 	};
 
-	Vector2f_t cubeUvs[24] =
+	const Vector2f_t cubeUvs[24] =
 	{
 		{ 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },
 		{ 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },	{ 0.0f, 1.0f },
@@ -7146,7 +7523,7 @@ static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geom
 		{ 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },	{ 0.0f, 1.0f },
 	};
 
-	GpuTriangleIndex_t cubeIndices[36] =
+	const GpuTriangleIndex_t cubeIndices[36] =
 	{
 		 0,  1,  2,  2,  3,  0,
 		 4,  5,  6,  6,  7,  4,
@@ -7291,7 +7668,7 @@ GpuRenderPass_t
 
 static bool GpuRenderPass_Create( GpuContext_t * context, GpuRenderPass_t * renderPass,
 									const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-									const GpuRenderPassType_t type, const uint32_t flags );
+									const GpuSampleCount_t sampleCount, const GpuRenderPassType_t type, const uint32_t flags );
 static void GpuRenderPass_Destroy( GpuContext_t * context, GpuRenderPass_t * renderPass );
 
 ================================================================================================================================
@@ -7311,15 +7688,16 @@ typedef enum
 
 typedef struct
 {
-	GpuRenderPassType_t		type;
-	int						flags;
-	GpuSurfaceColorFormat_t	colorFormat;
-	GpuSurfaceDepthFormat_t	depthFormat;
+	GpuRenderPassType_t			type;
+	int							flags;
+	GpuSurfaceColorFormat_t		colorFormat;
+	GpuSurfaceDepthFormat_t		depthFormat;
+	GpuSampleCount_t			sampleCount;
 } GpuRenderPass_t;
 
 static bool GpuRenderPass_Create( GpuContext_t * context, GpuRenderPass_t * renderPass,
 									const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-									const GpuRenderPassType_t type, const int flags )
+									const GpuSampleCount_t sampleCount, const GpuRenderPassType_t type, const int flags )
 {
 	UNUSED_PARM( context );
 
@@ -7329,6 +7707,7 @@ static bool GpuRenderPass_Create( GpuContext_t * context, GpuRenderPass_t * rend
 	renderPass->flags = flags;
 	renderPass->colorFormat = colorFormat;
 	renderPass->depthFormat = depthFormat;
+	renderPass->sampleCount = sampleCount;
 	return true;
 }
 
@@ -7367,16 +7746,28 @@ static GpuTexture_t * GpuFramebuffer_GetColorTexture( const GpuFramebuffer_t * f
 typedef struct
 {
 	GpuTexture_t *		colorTextures;
+	GLuint				renderTexture;
 	GLuint				depthBuffer;
-	GLuint *			framebuffers;
+	GLuint *			renderBuffers;
+	GLuint *			resolveBuffers;
 	bool				multiView;
+	int					sampleCount;
 	int					numFramebuffersPerTexture;
 	int					numBuffers;
 	int					currentBuffer;
 } GpuFramebuffer_t;
 
+typedef enum
+{
+	MSAA_OFF,
+	MSAA_RESOLVE,
+	MSAA_BLIT
+} GpuMsaaMode_t;
+
 static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass )
 {
+	assert( window->sampleCount == renderPass->sampleCount );
+
 	UNUSED_PARM( renderPass );
 
 	memset( framebuffer, 0, sizeof( GpuFramebuffer_t ) );
@@ -7384,13 +7775,17 @@ static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebu
 	static const int NUM_BUFFERS = 1;
 
 	framebuffer->colorTextures = (GpuTexture_t *) malloc( NUM_BUFFERS * sizeof( GpuTexture_t ) );
+	framebuffer->renderTexture = 0;
 	framebuffer->depthBuffer = 0;
-	framebuffer->framebuffers = (GLuint *) malloc( NUM_BUFFERS * sizeof( GLuint ) );
+	framebuffer->renderBuffers = (GLuint *) malloc( NUM_BUFFERS * sizeof( GLuint ) );
+	framebuffer->resolveBuffers = framebuffer->renderBuffers;
 	framebuffer->multiView = false;
+	framebuffer->sampleCount = GPU_SAMPLE_COUNT_1;
 	framebuffer->numFramebuffersPerTexture = 1;
 	framebuffer->numBuffers = NUM_BUFFERS;
 	framebuffer->currentBuffer = 0;
 
+	// Create the color textures.
 	for ( int bufferIndex = 0; bufferIndex < NUM_BUFFERS; bufferIndex++ )
 	{
 		assert( renderPass->colorFormat == window->colorFormat );
@@ -7401,7 +7796,7 @@ static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebu
 		assert( window->windowWidth == framebuffer->colorTextures[bufferIndex].width );
 		assert( window->windowHeight == framebuffer->colorTextures[bufferIndex].height );
 
-		framebuffer->framebuffers[bufferIndex] = 0;
+		framebuffer->renderBuffers[bufferIndex] = 0;
 	}
 
 	return true;
@@ -7415,39 +7810,73 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 	memset( framebuffer, 0, sizeof( GpuFramebuffer_t ) );
 
 	framebuffer->colorTextures = (GpuTexture_t *) malloc( numBuffers * sizeof( GpuTexture_t ) );
+	framebuffer->renderTexture = 0;
 	framebuffer->depthBuffer = 0;
-	framebuffer->framebuffers = (GLuint *) malloc( numBuffers * sizeof( GLuint ) );
+	framebuffer->renderBuffers = (GLuint *) malloc( numBuffers * sizeof( GLuint ) );
+	framebuffer->resolveBuffers = framebuffer->renderBuffers;
 	framebuffer->multiView = false;
+	framebuffer->sampleCount = GPU_SAMPLE_COUNT_1;
 	framebuffer->numFramebuffersPerTexture = 1;
 	framebuffer->numBuffers = numBuffers;
 	framebuffer->currentBuffer = 0;
 
+	const GpuMsaaMode_t mode =	( ( renderPass->sampleCount > GPU_SAMPLE_COUNT_1 && glExtensions.multi_sampled_resolve ) ? MSAA_RESOLVE :
+								( ( renderPass->sampleCount > GPU_SAMPLE_COUNT_1 ) ? MSAA_BLIT :
+									MSAA_OFF ) );
+
+	// Create the color textures.
+	const GLenum colorFormat = GpuContext_InternalSurfaceColorFormat( renderPass->colorFormat );
+	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
+	{
+		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)colorFormat, GPU_SAMPLE_COUNT_1, width, height, 1, NULL, 0 );
+		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
+	}
+
+	// Create the depth buffer.
 	if ( renderPass->depthFormat != GPU_SURFACE_DEPTH_FORMAT_NONE )
 	{
 		const GLenum depthFormat = GpuContext_InternalSurfaceDepthFormat( renderPass->depthFormat );
 
-		// Create the depth buffer.
 		GL( glGenRenderbuffers( 1, &framebuffer->depthBuffer ) );
 		GL( glBindRenderbuffer( GL_RENDERBUFFER, framebuffer->depthBuffer ) );
-		GL( glRenderbufferStorage( GL_RENDERBUFFER, depthFormat, width, height ) );
+		if ( mode == MSAA_RESOLVE )
+		{
+			GL( glRenderbufferStorageMultisampleEXT( GL_RENDERBUFFER, renderPass->sampleCount, depthFormat, width, height ) );
+		}
+		else if ( mode == MSAA_BLIT )
+		{
+			GL( glRenderbufferStorageMultisample( GL_RENDERBUFFER, renderPass->sampleCount, depthFormat, width, height ) );
+		}
+		else
+		{
+			GL( glRenderbufferStorage( GL_RENDERBUFFER, depthFormat, width, height ) );
+		}
 		GL( glBindRenderbuffer( GL_RENDERBUFFER, 0 ) );
 	}
 
-	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
+	// Create the render buffers.
+	const int numRenderBuffers = ( mode == MSAA_BLIT ) ? 1 : numBuffers;
+	for ( int bufferIndex = 0; bufferIndex < numRenderBuffers; bufferIndex++ )
 	{
-		const GLenum colorFormat = GpuContext_InternalSurfaceColorFormat( renderPass->colorFormat );
-
-		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)colorFormat, width, height, 1, NULL, 0 );
-		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
-
-		// Create the frame buffer.
-		GL( glGenFramebuffers( 1, &framebuffer->framebuffers[bufferIndex] ) );
-		GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, framebuffer->framebuffers[bufferIndex] ) );
-		GL( glFramebufferTexture2D( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebuffer->colorTextures[bufferIndex].texture, 0 ) );
+		GL( glGenFramebuffers( 1, &framebuffer->renderBuffers[bufferIndex] ) );
+		GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, framebuffer->renderBuffers[bufferIndex] ) );
+		if ( mode == MSAA_RESOLVE )
+		{
+			GL( glFramebufferTexture2DMultisampleEXT( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebuffer->colorTextures[bufferIndex].texture, 0, renderPass->sampleCount ) );
+		}
+		else if ( mode == MSAA_BLIT )
+		{
+			GL( glRenderbufferStorageMultisample( GL_RENDERBUFFER, renderPass->sampleCount, colorFormat, width, height ) );
+		}
+		else
+		{
+			GL( glFramebufferTexture2D( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebuffer->colorTextures[bufferIndex].texture, 0 ) );
+		}
 		if ( renderPass->depthFormat != GPU_SURFACE_DEPTH_FORMAT_NONE )
 		{
 			GL( glFramebufferRenderbuffer( GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, framebuffer->depthBuffer ) );
 		}
+		GL( glGetIntegerv( GL_SAMPLES, &framebuffer->sampleCount ) );
 		GL( GLenum status = glCheckFramebufferStatus( GL_DRAW_FRAMEBUFFER ) );
 		GL( glClearColor( 0.0f, 0.0f, 0.0f, 1.0f ) );
 		GL( glClear( GL_COLOR_BUFFER_BIT ) );
@@ -7458,6 +7887,27 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 			return false;
 		}
 	}
+
+	// Create the resolve buffers.
+	if ( mode == MSAA_BLIT )
+	{
+		framebuffer->resolveBuffers = (GLuint *) malloc( numBuffers * sizeof( GLuint ) );
+		for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
+		{
+			framebuffer->renderBuffers[bufferIndex] = framebuffer->renderBuffers[0];
+
+			GL( glGenFramebuffers( 1, &framebuffer->resolveBuffers[bufferIndex] ) );
+			GL( glFramebufferTexture2D( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebuffer->colorTextures[bufferIndex].texture, 0 ) );
+			GL( GLenum status = glCheckFramebufferStatus( GL_DRAW_FRAMEBUFFER ) );
+			GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 ) );
+			if ( status != GL_FRAMEBUFFER_COMPLETE )
+			{
+				Error( "Incomplete frame buffer object: %s", GlFramebufferStatusString( status ) );
+				return false;
+			}
+		}
+	}
+
 	return true;
 }
 
@@ -7471,48 +7921,160 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 	framebuffer->colorTextures = (GpuTexture_t *) malloc( numBuffers * sizeof( GpuTexture_t ) );
 	framebuffer->depthBuffer = 0;
 	framebuffer->multiView = multiview;
+	framebuffer->sampleCount = GPU_SAMPLE_COUNT_1;
 	framebuffer->numFramebuffersPerTexture = ( multiview ? 1 : numLayers );
-	framebuffer->framebuffers = (GLuint *) malloc( numBuffers * framebuffer->numFramebuffersPerTexture * sizeof( GLuint ) );
+	framebuffer->renderBuffers = (GLuint *) malloc( numBuffers * framebuffer->numFramebuffersPerTexture * sizeof( GLuint ) );
+	framebuffer->resolveBuffers = framebuffer->renderBuffers;
 	framebuffer->numBuffers = numBuffers;
 	framebuffer->currentBuffer = 0;
 
+	const GpuMsaaMode_t mode =	( ( renderPass->sampleCount > GPU_SAMPLE_COUNT_1 && !multiview && glExtensions.multi_sampled_resolve ) ? MSAA_RESOLVE :
+								( ( renderPass->sampleCount > GPU_SAMPLE_COUNT_1 && multiview && glExtensions.multi_view_multi_sampled_resolve ) ? MSAA_RESOLVE :
+								( ( renderPass->sampleCount > GPU_SAMPLE_COUNT_1 && glExtensions.multi_sampled_storage ) ? MSAA_BLIT :
+									MSAA_OFF ) ) );
+
+	// Create the color textures.
+	const GLenum colorFormat = GpuContext_InternalSurfaceColorFormat( renderPass->colorFormat );
+	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
+	{
+		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)colorFormat, GPU_SAMPLE_COUNT_1, width, height, numLayers, 1, NULL, 0 );
+		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
+	}
+
+	// Create the render texture.
+	if ( mode == MSAA_BLIT )
+	{
+		GL( glGenTextures( 1, &framebuffer->renderTexture ) );
+		GL( glBindTexture( GL_TEXTURE_2D_MULTISAMPLE_ARRAY, framebuffer->renderTexture ) );
+		GL( glTexStorage3DMultisample( GL_TEXTURE_2D_MULTISAMPLE_ARRAY, renderPass->sampleCount, colorFormat, width, height, numLayers, GL_TRUE ) );
+		GL( glBindTexture( GL_TEXTURE_2D_MULTISAMPLE_ARRAY, 0 ) );
+	}
+
+	// Create the depth buffer.
 	if ( renderPass->depthFormat != GPU_SURFACE_DEPTH_FORMAT_NONE )
 	{
 		const GLenum depthFormat = GpuContext_InternalSurfaceDepthFormat( renderPass->depthFormat );
+		const GLenum target = ( mode == MSAA_BLIT ) ? GL_TEXTURE_2D_MULTISAMPLE_ARRAY : GL_TEXTURE_2D_ARRAY;
 
 		GL( glGenTextures( 1, &framebuffer->depthBuffer ) );
-		GL( glBindTexture( GL_TEXTURE_2D_ARRAY, framebuffer->depthBuffer ) );
-		GL( glTexStorage3D( GL_TEXTURE_2D_ARRAY, 1, depthFormat, width, height, numLayers ) );
-		GL( glBindTexture( GL_TEXTURE_2D_ARRAY, 0 ) );
+		GL( glBindTexture( target, framebuffer->depthBuffer ) );
+		if ( mode == MSAA_BLIT )
+		{
+			GL( glTexStorage3DMultisample( target, renderPass->sampleCount, depthFormat, width, height, numLayers, GL_TRUE ) );
+		}
+		else
+		{
+			GL( glTexStorage3D( target, 1, depthFormat, width, height, numLayers ) );
+		}
+		GL( glBindTexture( target, 0 ) );
 	}
 
-	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
+	// Create the render buffers.
+	const int numRenderBuffers = ( mode == MSAA_BLIT ) ? 1 : numBuffers;
+	for ( int bufferIndex = 0; bufferIndex < numRenderBuffers; bufferIndex++ )
 	{
-		const GLenum colorFormat = GpuContext_InternalSurfaceColorFormat( renderPass->colorFormat );
-
-		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)colorFormat, width, height, numLayers, 1, NULL, 0 );
-		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
-
 		for ( int layerIndex = 0; layerIndex < framebuffer->numFramebuffersPerTexture; layerIndex++ )
 		{
-			GL( glGenFramebuffers( 1, &framebuffer->framebuffers[bufferIndex * framebuffer->numFramebuffersPerTexture + layerIndex] ) );
-			GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, framebuffer->framebuffers[bufferIndex * framebuffer->numFramebuffersPerTexture + layerIndex] ) );
+			GL( glGenFramebuffers( 1, &framebuffer->renderBuffers[bufferIndex * framebuffer->numFramebuffersPerTexture + layerIndex] ) );
+			GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, framebuffer->renderBuffers[bufferIndex * framebuffer->numFramebuffersPerTexture + layerIndex] ) );
 			if ( multiview )
 			{
-				GL( glFramebufferTextureMultiviewOVR( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, framebuffer->colorTextures[bufferIndex].texture, 0 /* level */, 0 /* baseViewIndex */, numLayers /* numViews */ ) );
-				GL( glFramebufferTextureMultiviewOVR( GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, framebuffer->depthBuffer, 0 /* level */, 0 /* baseViewIndex */, numLayers /* numViews */ ) );
+				if ( mode == MSAA_RESOLVE )
+				{
+					GL( glFramebufferTextureMultisampleMultiviewOVR( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+							framebuffer->colorTextures[bufferIndex].texture, 0 /* level */, renderPass->sampleCount /* samples */, 0 /* baseViewIndex */, numLayers /* numViews */ ) );
+					if ( renderPass->depthFormat != GPU_SURFACE_DEPTH_FORMAT_NONE )
+					{
+						GL( glFramebufferTextureMultisampleMultiviewOVR( GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+								framebuffer->depthBuffer, 0 /* level */, renderPass->sampleCount /* samples */, 0 /* baseViewIndex */, numLayers /* numViews */ ) );
+					}
+				}
+				else if ( mode == MSAA_BLIT )
+				{
+					GL( glFramebufferTextureMultiviewOVR( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+							framebuffer->renderTexture, 0 /* level */, 0 /* baseViewIndex */, numLayers /* numViews */ ) );
+					if ( renderPass->depthFormat != GPU_SURFACE_DEPTH_FORMAT_NONE )
+					{
+						GL( glFramebufferTextureMultiviewOVR( GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+								framebuffer->depthBuffer, 0 /* level */, 0 /* baseViewIndex */, numLayers /* numViews */ ) );
+					}
+				}
+				else
+				{
+					GL( glFramebufferTextureMultiviewOVR( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+							framebuffer->colorTextures[bufferIndex].texture, 0 /* level */, 0 /* baseViewIndex */, numLayers /* numViews */ ) );
+					if ( renderPass->depthFormat != GPU_SURFACE_DEPTH_FORMAT_NONE )
+					{
+						GL( glFramebufferTextureMultiviewOVR( GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+								framebuffer->depthBuffer, 0 /* level */, 0 /* baseViewIndex */, numLayers /* numViews */ ) );
+					}
+				}
 			}
 			else
 			{
-				GL( glFramebufferTextureLayer( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, framebuffer->colorTextures[bufferIndex].texture, 0 /* level */, layerIndex /* layerIndex */ ) );
-				GL( glFramebufferTextureLayer( GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, framebuffer->depthBuffer, 0 /* level */, layerIndex /* layerIndex */ ) );
+				if ( mode == MSAA_RESOLVE )
+				{
+					// Note: using glFramebufferTextureMultisampleMultiviewOVR with a single view because there is no glFramebufferTextureLayerMultisampleEXT
+					GL( glFramebufferTextureMultisampleMultiviewOVR( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+							framebuffer->colorTextures[bufferIndex].texture, 0 /* level */, renderPass->sampleCount /* samples */, layerIndex /* baseViewIndex */, 1 /* numViews */ ) );
+					if ( renderPass->depthFormat != GPU_SURFACE_DEPTH_FORMAT_NONE )
+					{
+						GL( glFramebufferTextureMultisampleMultiviewOVR( GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+								framebuffer->depthBuffer, 0 /* level */, renderPass->sampleCount /* samples */, layerIndex /* baseViewIndex */, 1 /* numViews */ ) );
+					}
+				}
+				else if ( mode == MSAA_BLIT )
+				{
+					GL( glFramebufferTextureLayer( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+							framebuffer->renderTexture, 0 /* level */, layerIndex /* layerIndex */ ) );
+					if ( renderPass->depthFormat != GPU_SURFACE_DEPTH_FORMAT_NONE )
+					{
+						GL( glFramebufferTextureLayer( GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+								framebuffer->depthBuffer, 0 /* level */, layerIndex /* layerIndex */ ) );
+					}
+				}
+				else
+				{
+					GL( glFramebufferTextureLayer( GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+							framebuffer->colorTextures[bufferIndex].texture, 0 /* level */, layerIndex /* layerIndex */ ) );
+					if ( renderPass->depthFormat != GPU_SURFACE_DEPTH_FORMAT_NONE )
+					{
+						GL( glFramebufferTextureLayer( GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+								framebuffer->depthBuffer, 0 /* level */, layerIndex /* layerIndex */ ) );
+					}
+				}
 			}
+			GL( glGetIntegerv( GL_SAMPLES, &framebuffer->sampleCount ) );
 			GL( GLenum status = glCheckFramebufferStatus( GL_DRAW_FRAMEBUFFER ) );
 			GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 ) );
 			if ( status != GL_FRAMEBUFFER_COMPLETE )
 			{
 				Error( "Incomplete frame buffer object: %s", GlFramebufferStatusString( status ) );
 				return false;
+			}
+		}
+	}
+
+	// Create the resolve buffers.
+	if ( mode == MSAA_BLIT )
+	{
+		framebuffer->resolveBuffers = (GLuint *) malloc( numBuffers * framebuffer->numFramebuffersPerTexture * sizeof( GLuint ) );
+		for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
+		{
+			for ( int layerIndex = 0; layerIndex < framebuffer->numFramebuffersPerTexture; layerIndex++ )
+			{
+				framebuffer->renderBuffers[bufferIndex * framebuffer->numFramebuffersPerTexture + layerIndex] = framebuffer->renderBuffers[layerIndex];
+
+				GL( glGenFramebuffers( 1, &framebuffer->resolveBuffers[bufferIndex * framebuffer->numFramebuffersPerTexture + layerIndex] ) );
+				GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, framebuffer->resolveBuffers[bufferIndex * framebuffer->numFramebuffersPerTexture + layerIndex] ) );
+				GL( glFramebufferTextureLayer( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, framebuffer->colorTextures[bufferIndex].texture, 0 /* level */, layerIndex /* layerIndex */ ) );
+				GL( GLenum status = glCheckFramebufferStatus( GL_DRAW_FRAMEBUFFER ) );
+				GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 ) );
+				if ( status != GL_FRAMEBUFFER_COMPLETE )
+				{
+					Error( "Incomplete frame buffer object: %s", GlFramebufferStatusString( status ) );
+					return false;
+				}
 			}
 		}
 	}
@@ -7523,24 +8085,61 @@ static void GpuFramebuffer_Destroy( GpuContext_t * context, GpuFramebuffer_t * f
 {
 	for ( int bufferIndex = 0; bufferIndex < framebuffer->numBuffers; bufferIndex++ )
 	{
-		for ( int layerIndex = 0; layerIndex < framebuffer->numFramebuffersPerTexture; layerIndex++ )
+		if ( framebuffer->resolveBuffers != framebuffer->renderBuffers )
 		{
-			if ( framebuffer->framebuffers[bufferIndex * framebuffer->numFramebuffersPerTexture + layerIndex] != 0 )
+			for ( int layerIndex = 0; layerIndex < framebuffer->numFramebuffersPerTexture; layerIndex++ )
 			{
-				GL( glDeleteFramebuffers( 1, &framebuffer->framebuffers[bufferIndex * framebuffer->numFramebuffersPerTexture + layerIndex] ) );
+				if ( framebuffer->resolveBuffers[bufferIndex * framebuffer->numFramebuffersPerTexture + layerIndex] != 0 )
+				{
+					GL( glDeleteFramebuffers( 1, &framebuffer->resolveBuffers[bufferIndex * framebuffer->numFramebuffersPerTexture + layerIndex] ) );
+				}
 			}
 		}
+		if ( bufferIndex == 0 || framebuffer->renderBuffers[bufferIndex * framebuffer->numFramebuffersPerTexture + 0] != framebuffer->renderBuffers[0] )
+		{
+			for ( int layerIndex = 0; layerIndex < framebuffer->numFramebuffersPerTexture; layerIndex++ )
+			{
+				if ( framebuffer->renderBuffers[bufferIndex * framebuffer->numFramebuffersPerTexture + layerIndex] != 0 )
+				{
+					GL( glDeleteFramebuffers( 1, &framebuffer->renderBuffers[bufferIndex * framebuffer->numFramebuffersPerTexture + layerIndex] ) );
+				}
+			}
+		}
+	}
+	if ( framebuffer->depthBuffer != 0 )
+	{
+		if ( framebuffer->colorTextures[0].layerCount > 1 )
+		{
+			GL( glDeleteTextures( 1, &framebuffer->depthBuffer ) );
+		}
+		else
+		{
+			GL( glDeleteRenderbuffers( 1, &framebuffer->depthBuffer ) );
+		}
+	}
+	if ( framebuffer->renderTexture != 0 )
+	{
+		if ( framebuffer->colorTextures[0].layerCount > 1 )
+		{
+			GL( glDeleteTextures( 1, &framebuffer->renderTexture ) );
+		}
+		else
+		{
+			GL( glDeleteRenderbuffers( 1, &framebuffer->renderTexture ) );
+		}
+	}
+	for ( int bufferIndex = 0; bufferIndex < framebuffer->numBuffers; bufferIndex++ )
+	{
 		if ( framebuffer->colorTextures[bufferIndex].texture != 0 )
 		{
 			GpuTexture_Destroy( context, &framebuffer->colorTextures[bufferIndex] );
 		}
 	}
-	if ( framebuffer->depthBuffer != 0 )
+	if ( framebuffer->resolveBuffers != framebuffer->renderBuffers )
 	{
-		GL( glDeleteRenderbuffers( 1, &framebuffer->depthBuffer ) );
+		free( framebuffer->resolveBuffers );
 	}
-
-	free( framebuffer->framebuffers );
+	free( framebuffer->renderBuffers );
 	free( framebuffer->colorTextures );
 
 	memset( framebuffer, 0, sizeof( GpuFramebuffer_t ) );
@@ -7675,13 +8274,6 @@ static int GpuProgramParm_GetPushConstantSize( const GpuProgramParmType_t type )
 		(unsigned int)sizeof( float[4][4] )
 	};
 	return parmSize[type];
-}
-
-GLint glGetInteger( GLenum pname )
-{
-	GLint i;
-	glGetIntegerv( pname, &i );
-	return i;
 }
 
 static void GpuProgramParmLayout_Create( GpuContext_t * context, GpuProgramParmLayout_t * layout,
@@ -8104,8 +8696,8 @@ static void GpuGraphicsPipelineParms_Init( GpuGraphicsPipelineParms_t * parms )
 }
 
 static void InitVertexAttributes( const bool instance, const int numAttribs,
-									const int storedAttribsFlags, const int usedAttribsFlags,
-									GLuint * attribLocationCount )
+								const int storedAttribsFlags, const int usedAttribsFlags,
+								GLuint * attribLocationCount )
 {
 	size_t offset = 0;
 	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
@@ -9021,10 +9613,12 @@ static void GpuCommandBuffer_ChangeTextureUsage( GpuCommandBuffer_t * commandBuf
 		return;
 	}
 
-	const GLbitfield barriers =	( ( usage == GPU_TEXTURE_USAGE_SAMPLED ) ?			GL_TEXTURE_FETCH_BARRIER_BIT :
+	const GLbitfield barriers =	( ( usage == GPU_TEXTURE_USAGE_TRANSFER_SRC ) ?		GL_TEXTURE_UPDATE_BARRIER_BIT :
+								( ( usage == GPU_TEXTURE_USAGE_TRANSFER_DST ) ?		GL_TEXTURE_UPDATE_BARRIER_BIT :
+								( ( usage == GPU_TEXTURE_USAGE_SAMPLED ) ?			GL_TEXTURE_FETCH_BARRIER_BIT :
 								( ( usage == GPU_TEXTURE_USAGE_STORAGE ) ?			GL_SHADER_IMAGE_ACCESS_BARRIER_BIT :
 								( ( usage == GPU_TEXTURE_USAGE_COLOR_ATTACHMENT ) ?	GL_FRAMEBUFFER_BARRIER_BIT :
-								( ( usage == GPU_TEXTURE_USAGE_PRESENTATION ) ?		GL_ALL_BARRIER_BITS : GL_ALL_BARRIER_BITS ) ) ) );
+								( ( usage == GPU_TEXTURE_USAGE_PRESENTATION ) ?		GL_ALL_BARRIER_BITS : GL_ALL_BARRIER_BITS ) ) ) ) ) );
 
 	GL( glMemoryBarrier( barriers ) );
 
@@ -9035,6 +9629,7 @@ static void GpuCommandBuffer_BeginFramebuffer( GpuCommandBuffer_t * commandBuffe
 {
 	assert( commandBuffer->type == GPU_COMMAND_BUFFER_TYPE_PRIMARY );
 	assert( commandBuffer->currentFramebuffer == NULL );
+	assert( commandBuffer->currentRenderPass == NULL );
 	assert( arrayLayer >= 0 && arrayLayer < framebuffer->numFramebuffersPerTexture );
 
 	// Only advance when rendering to the first layer.
@@ -9043,7 +9638,7 @@ static void GpuCommandBuffer_BeginFramebuffer( GpuCommandBuffer_t * commandBuffe
 		framebuffer->currentBuffer = ( framebuffer->currentBuffer + 1 ) % framebuffer->numBuffers;
 	}
 
-	GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, framebuffer->framebuffers[framebuffer->currentBuffer * framebuffer->numFramebuffersPerTexture + arrayLayer] ) );
+	GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, framebuffer->renderBuffers[framebuffer->currentBuffer * framebuffer->numFramebuffersPerTexture + arrayLayer] ) );
 
 	if ( framebuffer->colorTextures != NULL )
 	{
@@ -9056,6 +9651,7 @@ static void GpuCommandBuffer_EndFramebuffer( GpuCommandBuffer_t * commandBuffer,
 {
 	assert( commandBuffer->type == GPU_COMMAND_BUFFER_TYPE_PRIMARY );
 	assert( commandBuffer->currentFramebuffer == framebuffer );
+	assert( commandBuffer->currentRenderPass == NULL );
 	assert( arrayLayer >= 0 && arrayLayer < framebuffer->numFramebuffersPerTexture );
 
 	UNUSED_PARM( framebuffer );
@@ -9063,7 +9659,7 @@ static void GpuCommandBuffer_EndFramebuffer( GpuCommandBuffer_t * commandBuffer,
 
 #if GL_CLAMP_TO_BORDER == GL_CLAMP_TO_EDGE
 	// If rendering to a texture.
-	if ( framebuffer->framebuffers[framebuffer->currentBuffer * framebuffer->numFramebuffersPerTexture + arrayLayer] != 0 )
+	if ( framebuffer->renderBuffers[framebuffer->currentBuffer * framebuffer->numFramebuffersPerTexture + arrayLayer] != 0 )
 	{
 		// Explicitly clear the border texels to black if the texture has clamp-to-border set because OpenGL-ES does not support GL_CLAMP_TO_BORDER.
 		const GpuTexture_t * texture = &framebuffer->colorTextures[framebuffer->currentBuffer];
@@ -9091,11 +9687,22 @@ static void GpuCommandBuffer_EndFramebuffer( GpuCommandBuffer_t * commandBuffer,
 	// If this framebuffer has a depth buffer.
 	if ( framebuffer->depthBuffer != 0 )
 	{
-		// Discard the depth buffer, so the tiler won't need to write it back out to memory.
+		// Discard the depth buffer, so a tiler won't need to write it back out to memory.
 		const GLenum depthAttachment[1] = { GL_DEPTH_ATTACHMENT };
 		GL( glInvalidateFramebuffer( GL_DRAW_FRAMEBUFFER, 1, depthAttachment ) );
 	}
 #endif
+
+	if ( framebuffer->resolveBuffers != framebuffer->renderBuffers )
+	{
+		const ScreenRect_t rect = GpuFramebuffer_GetRect( framebuffer );
+		glBindFramebuffer( GL_READ_FRAMEBUFFER, framebuffer->renderBuffers[framebuffer->currentBuffer * framebuffer->numFramebuffersPerTexture + arrayLayer] );
+		glBindFramebuffer( GL_DRAW_FRAMEBUFFER, framebuffer->resolveBuffers[framebuffer->currentBuffer * framebuffer->numFramebuffersPerTexture + arrayLayer] );
+		glBlitFramebuffer(	rect.x, rect.y, rect.width, rect.height,
+							rect.x, rect.y, rect.width, rect.height,
+							GL_COLOR_BUFFER_BIT, GL_NEAREST );
+		glBindFramebuffer( GL_READ_FRAMEBUFFER, 0 );
+	}
 
 	GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 ) );
 
@@ -9525,8 +10132,8 @@ static void GpuCommandBuffer_Blit( GpuCommandBuffer_t * commandBuffer, GpuFrameb
 	assert( srcTexture->width == dstTexture->width && srcTexture->height == dstTexture->height );
 	UNUSED_PARM( dstTexture );
 
-	GL( glBindFramebuffer( GL_READ_FRAMEBUFFER, srcFramebuffer->framebuffers[srcFramebuffer->currentBuffer] ) );
-	GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, dstFramebuffer->framebuffers[dstFramebuffer->currentBuffer] ) );
+	GL( glBindFramebuffer( GL_READ_FRAMEBUFFER, srcFramebuffer->renderBuffers[srcFramebuffer->currentBuffer] ) );
+	GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, dstFramebuffer->renderBuffers[dstFramebuffer->currentBuffer] ) );
 	GL( glBlitFramebuffer( 0, 0, srcTexture->width, srcTexture->height,
 							0, 0, srcTexture->width, srcTexture->height, GL_COLOR_BUFFER_BIT, GL_NEAREST ) );
 	GL( glBindFramebuffer( GL_READ_FRAMEBUFFER, 0 ) );
@@ -9991,9 +10598,10 @@ static const ScreenRect_t multiViewBarGraphRect						= { 3 * BARGRAPH_VIRTUAL_PI
 static const ScreenRect_t correctChromaticAberrationBarGraphRect	= { 3 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 4 + 1 * 40, BARGRAPH_INSET, 32, 32 };
 static const ScreenRect_t timeWarpImplementationBarGraphRect		= { 3 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 4 + 2 * 40, BARGRAPH_INSET, 32, 32 };
 
-static const ScreenRect_t sceneDrawCallLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 3 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
-static const ScreenRect_t sceneTriangleLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 2 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
-static const ScreenRect_t sceneFragmentLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 1 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ScreenRect_t sceneDrawCallLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 4 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ScreenRect_t sceneTriangleLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 3 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ScreenRect_t sceneFragmentLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 2 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ScreenRect_t sceneSamplesLevelBarGraphRect				= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 1 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
 
 typedef enum
 {
@@ -10018,6 +10626,7 @@ typedef struct
 	BarGraph_t		sceneDrawCallLevelBarGraph;
 	BarGraph_t		sceneTriangleLevelBarGraph;
 	BarGraph_t		sceneFragmentLevelBarGraph;
+	BarGraph_t		sceneSamplesLevelBarGraph;
 
 	GpuTimer_t		barGraphTimer;
 } TimeWarpBarGraphs_t;
@@ -10064,10 +10673,12 @@ static void TimeWarpBarGraphs_Create( GpuContext_t * context, TimeWarpBarGraphs_
 	BarGraph_CreateVirtualRect( context, &bargraphs->sceneDrawCallLevelBarGraph, renderPass, &sceneDrawCallLevelBarGraphRect, 1, 4, &colorDarkGrey );
 	BarGraph_CreateVirtualRect( context, &bargraphs->sceneTriangleLevelBarGraph, renderPass, &sceneTriangleLevelBarGraphRect, 1, 4, &colorDarkGrey );
 	BarGraph_CreateVirtualRect( context, &bargraphs->sceneFragmentLevelBarGraph, renderPass, &sceneFragmentLevelBarGraphRect, 1, 4, &colorDarkGrey );
+	BarGraph_CreateVirtualRect( context, &bargraphs->sceneSamplesLevelBarGraph, renderPass, &sceneSamplesLevelBarGraphRect, 1, 4, &colorDarkGrey );
 
 	BarGraph_AddBar( &bargraphs->sceneDrawCallLevelBarGraph, 0, 0.25f, &colorBlue, false );
 	BarGraph_AddBar( &bargraphs->sceneTriangleLevelBarGraph, 0, 0.25f, &colorBlue, false );
 	BarGraph_AddBar( &bargraphs->sceneFragmentLevelBarGraph, 0, 0.25f, &colorBlue, false );
+	BarGraph_AddBar( &bargraphs->sceneSamplesLevelBarGraph, 0, 0.25f, &colorBlue, false );
 
 	GpuTimer_Create( context, &bargraphs->barGraphTimer );
 }
@@ -10086,6 +10697,7 @@ static void TimeWarpBarGraphs_Destroy( GpuContext_t * context, TimeWarpBarGraphs
 	BarGraph_Destroy( context, &bargraphs->sceneDrawCallLevelBarGraph );
 	BarGraph_Destroy( context, &bargraphs->sceneTriangleLevelBarGraph );
 	BarGraph_Destroy( context, &bargraphs->sceneFragmentLevelBarGraph );
+	BarGraph_Destroy( context, &bargraphs->sceneSamplesLevelBarGraph );
 
 	GpuTimer_Destroy( context, &bargraphs->barGraphTimer );
 }
@@ -10106,6 +10718,7 @@ static void TimeWarpBarGraphs_UpdateGraphics( GpuCommandBuffer_t * commandBuffer
 		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
 		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
 		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph );
 	}
 }
 
@@ -10127,6 +10740,7 @@ static void TimeWarpBarGraphs_RenderGraphics( GpuCommandBuffer_t * commandBuffer
 		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
 		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
 		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph );
 
 		GpuCommandBuffer_EndTimer( commandBuffer, &bargraphs->barGraphTimer );
 	}
@@ -10148,6 +10762,7 @@ static void TimeWarpBarGraphs_UpdateCompute( GpuCommandBuffer_t * commandBuffer,
 		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
 		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
 		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph );
 	}
 }
 
@@ -10169,6 +10784,7 @@ static void TimeWarpBarGraphs_RenderCompute( GpuCommandBuffer_t * commandBuffer,
 		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph, framebuffer );
 		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph, framebuffer );
 		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph, framebuffer );
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph, framebuffer );
 
 		GpuCommandBuffer_EndTimer( commandBuffer, &bargraphs->barGraphTimer );
 	}
@@ -11008,11 +11624,11 @@ static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * 
 			}
 			const size_t rgbaSize = numMeshCoords * 4 * sizeof( float );
 			GpuTexture_Create2D( context, &compute->distortionImage[eye][channel],
-								GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT, EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1,
-								rgbaFloat, rgbaSize );
+								GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT, GPU_SAMPLE_COUNT_1,
+								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, rgbaFloat, rgbaSize );
 			GpuTexture_Create2D( context, &compute->timeWarpImage[eye][channel],
-								GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT, EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1,
-								NULL, 0 );
+								GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT, GPU_SAMPLE_COUNT_1,
+								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, NULL, 0 );
 		}
 	}
 	free( rgbaFloat );
@@ -11270,7 +11886,6 @@ TimeWarp_t
 
 static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window );
 static void TimeWarp_Destroy( TimeWarp_t * timeWarp, GpuWindow_t * window );
-static void TimeWarp_Reset( TimeWarp_t * timeWarp );
 
 static void TimeWarp_SetBarGraphState( TimeWarp_t * timeWarp, const BarGraphState_t state );
 static void TimeWarp_CycleBarGraphState( TimeWarp_t * timeWarp );
@@ -11282,9 +11897,10 @@ static void TimeWarp_SetMultiView( TimeWarp_t * timeWarp, const bool enabled );
 static void TimeWarp_SetDrawCallLevel( TimeWarp_t * timeWarp, const int level );
 static void TimeWarp_SetTriangleLevel( TimeWarp_t * timeWarp, const int level );
 static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level );
+static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level );
 
 static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp,
-											const Matrix4x4_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
+											const Matrix4x4f_t * viewMatrix, const Matrix4x4_t * projectionMatrix,
 											GpuTexture_t * eyeTexture[2], GpuFence_t * eyeCompletionFence[2],
 											int eyeArrayLayer[2], float eyeTexturesCpuTime, float eyeTexturesGpuTime );
 static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window );
@@ -11304,8 +11920,8 @@ typedef enum
 typedef struct
 {
 	int							index;
-	Matrix4x4f_t				projectionMatrix;
 	Matrix4x4f_t				viewMatrix;
+	Matrix4x4f_t				projectionMatrix;
 	GpuTexture_t *				texture[NUM_EYES];
 	GpuFence_t *				completionFence[NUM_EYES];
 	int							arrayLayer[NUM_EYES];
@@ -11316,10 +11932,10 @@ typedef struct
 typedef struct
 {
 	GpuTexture_t				defaultTexture;
+	Matrix4x4f_t				viewMatrix;
+	Matrix4x4f_t				projectionMatrix;
 	GpuTexture_t *				eyeTexture[NUM_EYES];
 	int							eyeArrayLayer[NUM_EYES];
-	Matrix4x4f_t				projectionMatrix;
-	Matrix4x4f_t				viewMatrix;
 
 	Mutex_t						newEyeTexturesMutex;
 	Signal_t					newEyeTexturesConsumed;
@@ -11345,14 +11961,10 @@ typedef struct
 	TimeWarpBarGraphs_t			bargraphs;
 } TimeWarp_t;
 
-static void TimeWarp_Reset( TimeWarp_t * timeWarp )
+static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 {
-	Matrix4x4f_CreateIdentity( &timeWarp->viewMatrix );
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
-	{
-		timeWarp->eyeTexture[eye] = &timeWarp->defaultTexture;
-		timeWarp->eyeArrayLayer[eye] = eye;
-	}
+	GpuTexture_CreateDefault( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_DEFAULT_CIRCLES, 1024, 1024, 1, 2, 1, false, true );
+	GpuTexture_SetWrapMode( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 
 	Mutex_Create( &timeWarp->newEyeTexturesMutex );
 	Signal_Create( &timeWarp->newEyeTexturesConsumed, true );
@@ -11360,24 +11972,26 @@ static void TimeWarp_Reset( TimeWarp_t * timeWarp )
 
 	timeWarp->newEyeTextures.index = 0;
 	Matrix4x4f_CreateIdentity( &timeWarp->newEyeTextures.viewMatrix );
+	Matrix4x4f_CreateProjectionFov( &timeWarp->newEyeTextures.projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
 		timeWarp->newEyeTextures.texture[eye] = &timeWarp->defaultTexture;
 		timeWarp->newEyeTextures.completionFence[eye] = NULL;
+		timeWarp->newEyeTextures.arrayLayer[eye] = eye;
 	}
 	timeWarp->newEyeTextures.cpuTime = 0.0f;
 	timeWarp->newEyeTextures.gpuTime = 0.0f;
 
+	timeWarp->viewMatrix = timeWarp->newEyeTextures.viewMatrix;
+	timeWarp->projectionMatrix = timeWarp->newEyeTextures.projectionMatrix;
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		timeWarp->eyeTexture[eye] = timeWarp->newEyeTextures.texture[eye];
+		timeWarp->eyeArrayLayer[eye] = timeWarp->newEyeTextures.arrayLayer[eye];
+	}
+
 	timeWarp->eyeTexturesPresentIndex = 1;
 	timeWarp->eyeTexturesConsumedIndex = 0;
-}
-
-static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
-{
-	GpuTexture_CreateDefault( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_DEFAULT_CIRCLES, 1024, 1024, 1, 2, 1, false, true );
-	GpuTexture_SetWrapMode( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
-
-	TimeWarp_Reset( timeWarp );
 
 	timeWarp->refreshRate = window->windowRefreshRate;
 	for ( int i = 0; i < AVARGE_FRAME_RATE_FRAMES; i++ )
@@ -11388,7 +12002,7 @@ static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	timeWarp->timeWarpFrames = 0;
 
 	GpuRenderPass_Create( &window->context, &timeWarp->renderPass, window->colorFormat, window->depthFormat,
-							GPU_RENDERPASS_TYPE_INLINE,
+							GPU_SAMPLE_COUNT_1, GPU_RENDERPASS_TYPE_INLINE,
 							GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER );
 	GpuFramebuffer_CreateFromSwapchain( window, &timeWarp->framebuffer, &timeWarp->renderPass );
 	GpuCommandBuffer_Create( &window->context, &timeWarp->commandBuffer, GPU_COMMAND_BUFFER_TYPE_PRIMARY, GpuFramebuffer_GetBufferCount( &timeWarp->framebuffer ) );
@@ -11415,14 +12029,9 @@ static void TimeWarp_Destroy( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	GpuFramebuffer_Destroy( &window->context, &timeWarp->framebuffer );
 	GpuRenderPass_Destroy( &window->context, &timeWarp->renderPass );
 
-	Mutex_Destroy( &timeWarp->newEyeTexturesMutex );
 	Signal_Destroy( &timeWarp->newEyeTexturesConsumed );
+	Mutex_Destroy( &timeWarp->newEyeTexturesMutex );
 
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
-	{
-		timeWarp->eyeTexture[eye] = NULL;
-		timeWarp->eyeArrayLayer[eye] = 0;
-	}
 	GpuTexture_Destroy( &window->context, &timeWarp->defaultTexture );
 }
 
@@ -11500,15 +12109,24 @@ static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level )
 	}
 }
 
+static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level )
+{
+	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
+	for ( int i = 0; i < 4; i++ )
+	{
+		BarGraph_AddBar( &timeWarp->bargraphs.sceneSamplesLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
+	}
+}
+
 static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp,
-											const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
+											const Matrix4x4f_t * viewMatrix, const Matrix4x4f_t * projectionMatrix,
 											GpuTexture_t * eyeTexture[2], GpuFence_t * eyeCompletionFence[2],
 											int eyeArrayLayer[2], float eyeTexturesCpuTime, float eyeTexturesGpuTime )
 {
 	EyeTextures_t newEyeTextures;
 	newEyeTextures.index = timeWarp->eyeTexturesPresentIndex++;
-	newEyeTextures.projectionMatrix = *projectionMatrix;
 	newEyeTextures.viewMatrix = *viewMatrix;
+	newEyeTextures.projectionMatrix = *projectionMatrix;
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
 		newEyeTextures.texture[eye] = eyeTexture[eye];
@@ -11680,12 +12298,15 @@ static bool SceneSettings_GetMultiView( SceneSettings_t * settings );
 static void SceneSettings_CycleDrawCallLevel( SceneSettings_t * settings );
 static void SceneSettings_CycleTriangleLevel( SceneSettings_t * settings );
 static void SceneSettings_CycleFragmentLevel( SceneSettings_t * settings );
+static void SceneSettings_CycleSamplesLevel( SceneSettings_t * settings );
 static void SceneSettings_SetDrawCallLevel( SceneSettings_t * settings, const int level );
 static void SceneSettings_SetTriangleLevel( SceneSettings_t * settings, const int level );
 static void SceneSettings_SetFragmentLevel( SceneSettings_t * settings, const int level );
+static void SceneSettings_SetSamplesLevel( SceneSettings_t * settings, const int level );
 static int SceneSettings_GetDrawCallLevel( const SceneSettings_t * settings );
 static int SceneSettings_GetTriangleLevel( const SceneSettings_t * settings );
 static int SceneSettings_GetFragmentLevel( const SceneSettings_t * settings );
+static int SceneSettings_GetSamplesLevel( const SceneSettings_t * settings );
 
 ================================================================================================================================
 */
@@ -11693,6 +12314,7 @@ static int SceneSettings_GetFragmentLevel( const SceneSettings_t * settings );
 #define MAX_SCENE_DRAWCALL_LEVELS	4
 #define MAX_SCENE_TRIANGLE_LEVELS	4
 #define MAX_SCENE_FRAGMENT_LEVELS	4
+#define MAX_SCENE_SAMPLES_LEVELS	4
 
 typedef struct
 {
@@ -11701,15 +12323,23 @@ typedef struct
 	int		drawCallLevel;
 	int		triangleLevel;
 	int		fragmentLevel;
+	int		samplesLevel;
+	int		maxSamplesLevels;
 } SceneSettings_t;
 
-static void SceneSettings_Init( SceneSettings_t * settings )
+static void SceneSettings_Init( GpuContext_t * context, SceneSettings_t * settings )
 {
 	settings->simulationPaused = false;
 	settings->useMultiView = false;
 	settings->drawCallLevel = 0;
 	settings->triangleLevel = 0;
 	settings->fragmentLevel = 0;
+	settings->samplesLevel = 0;
+
+	const int maxSamplesLevels = IntegerLog2( glGetInteger( GL_MAX_SAMPLES ) + 1 );
+	settings->maxSamplesLevels = ( maxSamplesLevels < MAX_SCENE_SAMPLES_LEVELS ) ? maxSamplesLevels : MAX_SCENE_SAMPLES_LEVELS;
+
+	UNUSED_PARM( context );
 }
 
 static void CycleLevel( int * x, const int max ) { (*x) = ( (*x) + 1 ) % max; }
@@ -11726,14 +12356,17 @@ static bool SceneSettings_GetMultiView( SceneSettings_t * settings ) { return se
 static void SceneSettings_CycleDrawCallLevel( SceneSettings_t * settings ) { CycleLevel( &settings->drawCallLevel, MAX_SCENE_DRAWCALL_LEVELS ); }
 static void SceneSettings_CycleTriangleLevel( SceneSettings_t * settings ) { CycleLevel( &settings->triangleLevel, MAX_SCENE_TRIANGLE_LEVELS ); }
 static void SceneSettings_CycleFragmentLevel( SceneSettings_t * settings ) { CycleLevel( &settings->fragmentLevel, MAX_SCENE_FRAGMENT_LEVELS ); }
+static void SceneSettings_CycleSamplesLevel( SceneSettings_t * settings ) { CycleLevel( &settings->samplesLevel, settings->maxSamplesLevels ); }
 
 static void SceneSettings_SetDrawCallLevel( SceneSettings_t * settings, const int level ) { settings->drawCallLevel = level; }
 static void SceneSettings_SetTriangleLevel( SceneSettings_t * settings, const int level ) { settings->triangleLevel = level; }
 static void SceneSettings_SetFragmentLevel( SceneSettings_t * settings, const int level ) { settings->fragmentLevel = level; }
+static void SceneSettings_SetSamplesLevel( SceneSettings_t * settings, const int level ) { settings->samplesLevel = ( level < settings->maxSamplesLevels ) ? level : settings->maxSamplesLevels; }
 
 static int SceneSettings_GetDrawCallLevel( const SceneSettings_t * settings ) { return settings->drawCallLevel; }
 static int SceneSettings_GetTriangleLevel( const SceneSettings_t * settings ) { return settings->triangleLevel; }
 static int SceneSettings_GetFragmentLevel( const SceneSettings_t * settings ) { return settings->fragmentLevel; }
+static int SceneSettings_GetSamplesLevel( const SceneSettings_t * settings ) { return settings->samplesLevel; }
 
 typedef struct
 {
@@ -12161,6 +12794,8 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 
 static void Scene_Destroy( GpuContext_t * context, Scene_t * scene )
 {
+	GpuContext_WaitIdle( context );
+
 	for ( int i = 0; i < MAX_SCENE_TRIANGLE_LEVELS; i++ )
 	{
 		for ( int j = 0; j < MAX_SCENE_FRAGMENT_LEVELS; j++ )
@@ -12397,6 +13032,7 @@ typedef struct
 	int							drawCallLevel;
 	int							triangleLevel;
 	int							fragmentLevel;
+	int							samplesLevel;
 	bool						useMultiView;
 	bool						correctChromaticAberration;
 	bool						hideGraphs;
@@ -12466,8 +13102,8 @@ typedef struct
 
 void SceneThread_Render( SceneThreadData_t * threadData )
 {
-	static const int EYE_WIDTH = 1024;
-	static const int EYE_HEIGHT = 1024;
+	static const int EYE_WIDTH			= 1024;
+	static const int EYE_HEIGHT			= 1024;
 
 	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
 
@@ -12475,14 +13111,24 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 	GpuContext_CreateShared( &context, threadData->shareContext, QUEUE_INDEX_SCENE );
 	GpuContext_SetCurrent( &context );
 
+	const GpuSampleCount_t sampleCountTable[] =
+	{
+		GPU_SAMPLE_COUNT_1,
+		GPU_SAMPLE_COUNT_2,
+		GPU_SAMPLE_COUNT_4,
+		GPU_SAMPLE_COUNT_8
+	};
+	const GpuSampleCount_t sampleCount = sampleCountTable[threadData->sceneSettings->samplesLevel];
+
 	GpuRenderPass_t renderPass;
 	GpuRenderPass_Create( &context, &renderPass, GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24,
-							GPU_RENDERPASS_TYPE_INLINE,
+							sampleCount, GPU_RENDERPASS_TYPE_INLINE,
 							GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
 							GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
 
 	GpuFramebuffer_t framebuffer;
-	GpuFramebuffer_CreateFromTextureArrays( &context, &framebuffer, &renderPass, EYE_WIDTH, EYE_HEIGHT, NUM_EYES, NUM_EYE_BUFFERS, threadData->sceneSettings->useMultiView );
+	GpuFramebuffer_CreateFromTextureArrays( &context, &framebuffer, &renderPass,
+				EYE_WIDTH, EYE_HEIGHT, NUM_EYES, NUM_EYE_BUFFERS, threadData->sceneSettings->useMultiView );
 
 	const int numPasses = threadData->sceneSettings->useMultiView ? 1 : NUM_EYES;
 
@@ -12578,7 +13224,7 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 		Matrix4x4f_t projectionMatrix;
 		Matrix4x4f_CreateProjectionFov( &projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 
-		TimeWarp_PresentNewEyeTextures( threadData->timeWarp, &projectionMatrix, &hmdViewMatrix,
+		TimeWarp_PresentNewEyeTextures( threadData->timeWarp, &hmdViewMatrix, &projectionMatrix,
 										eyeTexture, eyeCompletionFence, eyeArrayLayer,
 										eyeTexturesCpuTime, eyeTexturesGpuTime );
 	}
@@ -12622,12 +13268,13 @@ void SceneThread_Create( Thread_t * sceneThread, SceneThreadData_t * sceneThread
 void SceneThread_Destroy( Thread_t * sceneThread, SceneThreadData_t * sceneThreadData )
 {
 	sceneThreadData->terminate = true;
+	// The following assumes the time warp thread is blocked when this function is called.
 	Signal_Raise( &sceneThreadData->timeWarp->newEyeTexturesConsumed );
 	Signal_Destroy( &sceneThreadData->initialized );
 	Thread_Destroy( sceneThread );
 }
 
-bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
+bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 {
 	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
 	Thread_SetRealTimePriority( 1 );
@@ -12644,7 +13291,7 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 
 	GpuWindow_t window;
 	GpuWindow_Create( &window, &instance, &queueInfo, QUEUE_INDEX_TIMEWARP,
-						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE,
+						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
 						startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
 						startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
 						startupSettings->fullscreen );
@@ -12661,14 +13308,16 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 	TimeWarp_SetDrawCallLevel( &timeWarp, startupSettings->drawCallLevel );
 	TimeWarp_SetTriangleLevel( &timeWarp, startupSettings->triangleLevel );
 	TimeWarp_SetFragmentLevel( &timeWarp, startupSettings->fragmentLevel );
+	TimeWarp_SetSamplesLevel( &timeWarp, startupSettings->samplesLevel );
 
 	SceneSettings_t sceneSettings;
-	SceneSettings_Init( &sceneSettings );
+	SceneSettings_Init( &window.context, &sceneSettings );
 	SceneSettings_SetSimulationPaused( &sceneSettings, startupSettings->simulationPaused );
 	SceneSettings_SetMultiView( &sceneSettings, startupSettings->useMultiView );
 	SceneSettings_SetDrawCallLevel( &sceneSettings, startupSettings->drawCallLevel );
 	SceneSettings_SetTriangleLevel( &sceneSettings, startupSettings->triangleLevel );
 	SceneSettings_SetFragmentLevel( &sceneSettings, startupSettings->fragmentLevel );
+	SceneSettings_SetSamplesLevel( &sceneSettings, startupSettings->samplesLevel );
 
 	Thread_t sceneThread;
 	SceneThreadData_t sceneThreadData;
@@ -12703,23 +13352,31 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
-			break;	// change render mode
+			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
+			break;
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
+			// Must recreate the scene and time warp to create a new window.
+			GpuContext_WaitIdle( &window.context );
 			SceneThread_Destroy( &sceneThread, &sceneThreadData );
 			TimeWarp_Destroy( &timeWarp, &window );
 			GpuWindow_Destroy( &window );
 			GpuWindow_Create( &window, &instance, &queueInfo, QUEUE_INDEX_TIMEWARP,
-							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE,
+							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
 							fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
 							fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
 							fullscreen );
 			TimeWarp_Create( &timeWarp, &window );
+			TimeWarp_SetBarGraphState( &timeWarp, startupSettings->hideGraphs ? BAR_GRAPH_HIDDEN : BAR_GRAPH_VISIBLE );
+			TimeWarp_SetImplementation( &timeWarp, startupSettings->timeWarpImplementation );
+			TimeWarp_SetChromaticAberrationCorrection( &timeWarp, startupSettings->correctChromaticAberration );
+			TimeWarp_SetMultiView( &timeWarp, startupSettings->useMultiView );
 			TimeWarp_SetDrawCallLevel( &timeWarp, SceneSettings_GetDrawCallLevel( &sceneSettings ) );
 			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
+			TimeWarp_SetSamplesLevel( &timeWarp, SceneSettings_GetSamplesLevel( &sceneSettings ) );
 			SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
@@ -12763,6 +13420,24 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
 		}
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_S ) )
+		{
+			SceneSettings_CycleSamplesLevel( &sceneSettings );
+			// Must recreate the scene and time warp to allocate different framebuffers.
+			GpuContext_WaitIdle( &window.context );
+			SceneThread_Destroy( &sceneThread, &sceneThreadData );
+			TimeWarp_Destroy( &timeWarp, &window );
+			TimeWarp_Create( &timeWarp, &window );
+			TimeWarp_SetBarGraphState( &timeWarp, startupSettings->hideGraphs ? BAR_GRAPH_HIDDEN : BAR_GRAPH_VISIBLE );
+			TimeWarp_SetImplementation( &timeWarp, startupSettings->timeWarpImplementation );
+			TimeWarp_SetChromaticAberrationCorrection( &timeWarp, startupSettings->correctChromaticAberration );
+			TimeWarp_SetMultiView( &timeWarp, startupSettings->useMultiView );
+			TimeWarp_SetDrawCallLevel( &timeWarp, SceneSettings_GetDrawCallLevel( &sceneSettings ) );
+			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
+			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
+			TimeWarp_SetSamplesLevel( &timeWarp, SceneSettings_GetSamplesLevel( &sceneSettings ) );
+			SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
+		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_I ) )
 		{
 			TimeWarp_CycleImplementation( &timeWarp );
@@ -12776,10 +13451,19 @@ bool RenderAsyncTimeWarp( const StartupSettings_t * startupSettings )
 			if ( glExtensions.multi_view )
 			{
 				SceneSettings_ToggleMultiView( &sceneSettings );
-				TimeWarp_SetMultiView( &timeWarp, SceneSettings_GetMultiView( &sceneSettings ) );
 				// Must recreate the scene to compile different vertex programs for multi-view.
+				GpuContext_WaitIdle( &window.context );
 				SceneThread_Destroy( &sceneThread, &sceneThreadData );
-				TimeWarp_Reset( &timeWarp );
+				TimeWarp_Destroy( &timeWarp, &window );
+				TimeWarp_Create( &timeWarp, &window );
+				TimeWarp_SetBarGraphState( &timeWarp, startupSettings->hideGraphs ? BAR_GRAPH_HIDDEN : BAR_GRAPH_VISIBLE );
+				TimeWarp_SetImplementation( &timeWarp, startupSettings->timeWarpImplementation );
+				TimeWarp_SetChromaticAberrationCorrection( &timeWarp, startupSettings->correctChromaticAberration );
+				TimeWarp_SetMultiView( &timeWarp, startupSettings->useMultiView );
+				TimeWarp_SetDrawCallLevel( &timeWarp, SceneSettings_GetDrawCallLevel( &sceneSettings ) );
+				TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
+				TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
+				TimeWarp_SetSamplesLevel( &timeWarp, SceneSettings_GetSamplesLevel( &sceneSettings ) );
 				SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
 			}
 		}
@@ -12814,7 +13498,7 @@ Time warp rendering test.
 ================================================================================================================================
 */
 
-bool RenderTimeWarp( const StartupSettings_t * startupSettings )
+bool RenderTimeWarp( StartupSettings_t * startupSettings )
 {
 	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
 
@@ -12830,7 +13514,7 @@ bool RenderTimeWarp( const StartupSettings_t * startupSettings )
 
 	GpuWindow_t window;
 	GpuWindow_Create( &window, &instance, &queueInfo, 0,
-						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE,
+						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
 						startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
 						startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
 						startupSettings->fullscreen );
@@ -12873,7 +13557,8 @@ bool RenderTimeWarp( const StartupSettings_t * startupSettings )
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
-			break;	// change render mode
+			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
+			break;
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
@@ -12881,7 +13566,7 @@ bool RenderTimeWarp( const StartupSettings_t * startupSettings )
 			TimeWarp_Destroy( &timeWarp, &window );
 			GpuWindow_Destroy( &window );
 			GpuWindow_Create( &window, &instance, &queueInfo, 0,
-							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE,
+							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
 							fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
 							fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
 							fullscreen );
@@ -12944,12 +13629,21 @@ Scene rendering test.
 ================================================================================================================================
 */
 
-bool RenderScene( const StartupSettings_t * startupSettings )
+bool RenderScene( StartupSettings_t * startupSettings )
 {
 	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
 
 	DriverInstance_t instance;
 	DriverInstance_Create( &instance );
+
+	const GpuSampleCount_t sampleCountTable[] =
+	{
+		GPU_SAMPLE_COUNT_1,
+		GPU_SAMPLE_COUNT_2,
+		GPU_SAMPLE_COUNT_4,
+		GPU_SAMPLE_COUNT_8
+	};
+	const GpuSampleCount_t sampleCount = sampleCountTable[startupSettings->samplesLevel];
 
 	const GpuQueueInfo_t queueInfo =
 	{
@@ -12960,7 +13654,7 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 
 	GpuWindow_t window;
 	GpuWindow_Create( &window, &instance, &queueInfo, 0,
-						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24,
+						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24, sampleCount,
 						startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
 						startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
 						startupSettings->fullscreen );
@@ -12970,7 +13664,7 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 
 	GpuRenderPass_t renderPass;
 	GpuRenderPass_Create( &window.context, &renderPass, window.colorFormat, window.depthFormat,
-							GPU_RENDERPASS_TYPE_INLINE,
+							sampleCount, GPU_RENDERPASS_TYPE_INLINE,
 							GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
 							GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
 
@@ -12983,21 +13677,22 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 	GpuTimer_t timer;
 	GpuTimer_Create( &window.context, &timer );
 
-	SceneSettings_t sceneSettings;
-	SceneSettings_Init( &sceneSettings );
-	SceneSettings_SetSimulationPaused( &sceneSettings, startupSettings->simulationPaused );
-	SceneSettings_SetDrawCallLevel( &sceneSettings, startupSettings->drawCallLevel );
-	SceneSettings_SetTriangleLevel( &sceneSettings, startupSettings->triangleLevel );
-	SceneSettings_SetFragmentLevel( &sceneSettings, startupSettings->fragmentLevel );
-
-	Scene_t scene;
-	Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
-
 	BarGraph_t frameCpuTimeBarGraph;
 	BarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
 
 	BarGraph_t frameGpuTimeBarGraph;
 	BarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
+
+	SceneSettings_t sceneSettings;
+	SceneSettings_Init( &window.context, &sceneSettings );
+	SceneSettings_SetSimulationPaused( &sceneSettings, startupSettings->simulationPaused );
+	SceneSettings_SetDrawCallLevel( &sceneSettings, startupSettings->drawCallLevel );
+	SceneSettings_SetTriangleLevel( &sceneSettings, startupSettings->triangleLevel );
+	SceneSettings_SetFragmentLevel( &sceneSettings, startupSettings->fragmentLevel );
+	SceneSettings_SetSamplesLevel( &sceneSettings, startupSettings->samplesLevel );
+
+	Scene_t scene;
+	Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
 
@@ -13007,6 +13702,7 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 
 	Thread_SetName( "atw:scene" );
 
+	bool recreate = false;
 	bool exit = false;
 	while ( !exit )
 	{
@@ -13028,30 +13724,13 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
 		{
-			break;	// change render mode
+			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
+			break;
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
-			const bool fullscreen = !window.windowFullscreen;
-			Scene_Destroy( &window.context, &scene );
-			GpuTimer_Destroy( &window.context, &timer );
-			GpuCommandBuffer_Destroy( &window.context, &commandBuffer );
-			GpuFramebuffer_Destroy( &window.context, &framebuffer );
-			GpuRenderPass_Destroy( &window.context, &renderPass );
-			GpuWindow_Destroy( &window );
-			GpuWindow_Create( &window, &instance, &queueInfo, 0,
-							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24,
-							fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
-							fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
-							fullscreen );
-			GpuRenderPass_Create( &window.context, &renderPass, window.colorFormat, window.depthFormat,
-									GPU_RENDERPASS_TYPE_INLINE,
-									GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
-									GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
-			GpuFramebuffer_CreateFromSwapchain( &window, &framebuffer, &renderPass );
-			GpuCommandBuffer_Create( &window.context, &commandBuffer, GPU_COMMAND_BUFFER_TYPE_PRIMARY, GpuFramebuffer_GetBufferCount( &framebuffer ) );
-			GpuTimer_Create( &window.context, &timer );
-			Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
+			startupSettings->fullscreen = !startupSettings->fullscreen;
+			recreate = true;
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
@@ -13086,9 +13765,43 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 		{
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
 		}
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_S ) )
+		{
+			SceneSettings_CycleSamplesLevel( &sceneSettings );
+			recreate = true;
+		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
 		{
 			DumpGLSL();
+		}
+
+		if ( recreate )
+		{
+			const GpuSampleCount_t sampleCount = sampleCountTable[SceneSettings_GetSamplesLevel( &sceneSettings )];
+			Scene_Destroy( &window.context, &scene );
+			BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
+			BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
+			GpuTimer_Destroy( &window.context, &timer );
+			GpuCommandBuffer_Destroy( &window.context, &commandBuffer );
+			GpuFramebuffer_Destroy( &window.context, &framebuffer );
+			GpuRenderPass_Destroy( &window.context, &renderPass );
+			GpuWindow_Destroy( &window );
+			GpuWindow_Create( &window, &instance, &queueInfo, 0,
+							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24, sampleCount,
+							startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
+							startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
+							startupSettings->fullscreen );
+			GpuRenderPass_Create( &window.context, &renderPass, window.colorFormat, window.depthFormat,
+									sampleCount, GPU_RENDERPASS_TYPE_INLINE,
+									GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
+									GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
+			GpuFramebuffer_CreateFromSwapchain( &window, &framebuffer, &renderPass );
+			GpuCommandBuffer_Create( &window.context, &commandBuffer, GPU_COMMAND_BUFFER_TYPE_PRIMARY, GpuFramebuffer_GetBufferCount( &framebuffer ) );
+			GpuTimer_Create( &window.context, &timer );
+			BarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
+			BarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
+			Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
+			recreate = false;
 		}
 
 		if ( window.windowActive )
@@ -13149,10 +13862,9 @@ bool RenderScene( const StartupSettings_t * startupSettings )
 		}
 	}
 
-	GpuContext_WaitIdle( &window.context );
+	Scene_Destroy( &window.context, &scene );
 	BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
 	BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
-	Scene_Destroy( &window.context, &scene );
 	GpuTimer_Destroy( &window.context, &timer );
 	GpuCommandBuffer_Destroy( &window.context, &commandBuffer );
 	GpuFramebuffer_Destroy( &window.context, &framebuffer );
@@ -13189,6 +13901,7 @@ static int StartApplication( int argc, char * argv[] )
 		else if ( strcmp( arg, "q" ) == 0 && i + 1 < argc )	{ startupSettings.drawCallLevel = StartupSettings_StringToLevel( argv[++i], MAX_SCENE_DRAWCALL_LEVELS ); }
 		else if ( strcmp( arg, "w" ) == 0 && i + 1 < argc )	{ startupSettings.triangleLevel = StartupSettings_StringToLevel( argv[++i], MAX_SCENE_TRIANGLE_LEVELS ); }
 		else if ( strcmp( arg, "e" ) == 0 && i + 1 < argc )	{ startupSettings.fragmentLevel = StartupSettings_StringToLevel( argv[++i], MAX_SCENE_FRAGMENT_LEVELS ); }
+		else if ( strcmp( arg, "s" ) == 0 && i + 1 < argc )	{ startupSettings.samplesLevel = StartupSettings_StringToLevel( argv[++i], MAX_SCENE_SAMPLES_LEVELS ); }
 		else if ( strcmp( arg, "m" ) == 0 && i + 0 < argc )	{ startupSettings.useMultiView = ( atoi( argv[++i] ) != 0 ); }
 		else if ( strcmp( arg, "c" ) == 0 && i + 1 < argc )	{ startupSettings.correctChromaticAberration = ( atoi( argv[++i] ) != 0 ); }
 		else if ( strcmp( arg, "r" ) == 0 && i + 1 < argc )	{ startupSettings.renderMode = StartupSettings_StringToRenderMode( argv[++i] ); }
@@ -13208,6 +13921,7 @@ static int StartApplication( int argc, char * argv[] )
 				   "   -q <0-3>   set per eye draw calls level\n"
 				   "   -w <0-3>   set per eye triangles per draw call level\n"
 				   "   -e <0-3>   set per eye fragment program complexity level\n"
+				   "   -s <0-3>   set multi-sampling level\n"
 				   "   -m <0-1>   enable/disable multi-view\n"
 				   "   -c <0-1>   enable/disable correction for chromatic aberration\n"
 				   "   -r <name>  set the render mode: atw, tw, scene\n"
@@ -13222,9 +13936,10 @@ static int StartApplication( int argc, char * argv[] )
 
 	//startupSettings.headRotationDisabled = true;
 	//startupSettings.simulationPaused = true;
+	//startupSettings.samplesLevel = 0;
 	//startupSettings.useMultiView = true;
 	//startupSettings.correctChromaticAberration = true;
-	//startupSettings.renderMode = RENDER_MODE_TIME_WARP;
+	//startupSettings.renderMode = RENDER_MODE_SCENE;
 	//startupSettings.timeWarpImplementation = TIMEWARP_IMPLEMENTATION_COMPUTE;
 
 	Print( "    fullscreen = %d\n",					startupSettings.fullscreen );
@@ -13234,6 +13949,7 @@ static int StartApplication( int argc, char * argv[] )
 	Print( "    drawCallLevel = %d\n",				startupSettings.drawCallLevel );
 	Print( "    triangleLevel = %d\n",				startupSettings.triangleLevel );
 	Print( "    fragmentLevel = %d\n",				startupSettings.fragmentLevel );
+	Print( "    samplesLevel = %d\n",				startupSettings.samplesLevel );
 	Print( "    useMultiView = %d\n",				startupSettings.useMultiView );
 	Print( "    correctChromaticAberration = %d\n",	startupSettings.correctChromaticAberration );
 	Print( "    renderMode = %d\n",					startupSettings.renderMode );
@@ -13254,10 +13970,6 @@ static int StartApplication( int argc, char * argv[] )
 		else if ( startupSettings.renderMode == RENDER_MODE_SCENE )
 		{
 			exit = RenderScene( &startupSettings );
-		}
-		if ( !exit )
-		{
-			startupSettings.renderMode = (RenderMode_t) ( ( startupSettings.renderMode + 1 ) % RENDER_MODE_MAX );
 		}
 	}
 
@@ -13293,6 +14005,49 @@ int APIENTRY WinMain( HINSTANCE hCurrentInst, HINSTANCE hPreviousInst, LPSTR lps
 	}
 
 	return StartApplication( argc, argv );
+}
+
+#elif defined( OS_IOS )
+
+static int argc_deferred;
+static char** argv_deferred;
+
+@interface MyAppDelegate : NSObject <UIApplicationDelegate> {}
+@end
+
+@implementation MyAppDelegate
+
+-(BOOL) application: (UIApplication*) application didFinishLaunchingWithOptions: (NSDictionary*) launchOptions {
+
+	CGRect screenRect = UIScreen.mainScreen.bounds;
+	myUIView = [[MyUIView alloc] initWithFrame: screenRect];
+	UIViewController* myUIVC = [[[MyUIViewController alloc] init] autorelease];
+	myUIVC.view = myUIView;
+
+	myUIWindow = [[UIWindow alloc] initWithFrame: screenRect];
+	[myUIWindow addSubview: myUIView];
+	myUIWindow.rootViewController = myUIVC;
+	[myUIWindow makeKeyAndVisible];
+
+	// Delay to allow startup runloop to complete.
+	[self performSelector: @selector(startApplication:) withObject: nil afterDelay: 0.25f];
+
+	return YES;
+}
+
+-(void) startApplication: (id) argObj {
+	autoReleasePool = [[NSAutoreleasePool alloc] init];
+	StartApplication( argc_deferred, argv_deferred );
+}
+
+@end
+
+int main( int argc, char * argv[] )
+{
+	argc_deferred = argc;
+	argv_deferred = argv;
+
+	return UIApplicationMain( argc, argv, nil, @"MyAppDelegate" );
 }
 
 #elif defined( OS_MAC )
@@ -13440,7 +14195,7 @@ void SetBundleCWD( const char * bundledExecutablePath )
 int main( int argc, char * argv[] )
 {
 	/*
-		When an application executable is not launched from a bundle, Mac OS X
+		When an application executable is not launched from a bundle, macOS
 		considers the application to be a console application with only text output
 		and console keyboard input. As a result, an application will not receive
 		keyboard events unless the application is launched from a bundle.

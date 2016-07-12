@@ -79,9 +79,9 @@ VERSION HISTORY
 #pragma warning( disable : 4061 )	// enumerator 'EvqLast' in switch of enum 'glslang::TStorageQualifier' is not explicitly handled by a case label
 #pragma warning( disable : 4365 )	// 'argument' : conversion from '__int64' to 'size_t', signed/unsigned mismatch
 #pragma warning( disable : 4510 )	// 'glslang::TShader::Includer::IncludeResult' : default constructor could not be generated
-#pragma warning( disable : 4625 )	// 'glslang::TIntermTyped' : copy constructor could not be generated because a base class copy constructor is inaccessible or deleted
 #pragma warning( disable : 4512 )	// 'glslang::TShader::Includer::IncludeResult' : assignment operator could not be generated
 #pragma warning( disable : 4610 )	// struct 'glslang::TShader::Includer::IncludeResult' can never be instantiated - user defined constructor required
+#pragma warning( disable : 4625 )	// 'glslang::TIntermTyped' : copy constructor could not be generated because a base class copy constructor is inaccessible or deleted
 #pragma warning( disable : 4626 )	// 'glslang::TIntermTyped' : assignment operator could not be generated because a base class assignment operator is inaccessible or deleted
 #pragma warning( disable : 4640 )	// 'unexpectedIncludeResult' : construction of local static object is not thread-safe
 #endif
