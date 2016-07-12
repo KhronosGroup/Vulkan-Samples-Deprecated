@@ -2598,6 +2598,17 @@ PFNGLFRAMEBUFFERTEXTUREMULTISAMPLEMULTIVIEWOVRPROC	glFramebufferTextureMultisamp
 PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC			glFramebufferTexture2DMultisampleEXT;
 PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC			glRenderbufferStorageMultisampleEXT;
 
+static void GlInitExtensions()
+{
+	glExtensions.timer_query						= GlCheckExtension( "GL_EXT_timer_query" );
+	glExtensions.texture_clamp_to_border			= true; // always available
+	glExtensions.buffer_storage						= GlCheckExtension( "GL_EXT_buffer_storage" ) || ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR >= 44 );
+	glExtensions.multi_sampled_storage				= GlCheckExtension( "GL_ARB_texture_storage_multisample" ) || ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR >= 43 );
+	glExtensions.multi_view							= GlCheckExtension( "GL_OVR_multiview2" );
+	glExtensions.multi_sampled_resolve				= GlCheckExtension( "GL_EXT_multisampled_render_to_texture" );
+	glExtensions.multi_view_multi_sampled_resolve	= GlCheckExtension( "GL_OVR_multiview_multisampled_render_to_texture" );
+}
+
 #elif defined( OS_ANDROID )
 
 // GL_EXT_disjoint_timer_query without _EXT
@@ -3136,6 +3147,8 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 	}
 
 	context->cglContext = [context->nsContext CGLContextObj];
+
+	GlInitExtensions();
 
 	return true;
 }
