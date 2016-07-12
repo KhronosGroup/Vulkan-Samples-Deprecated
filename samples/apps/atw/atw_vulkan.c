@@ -3215,6 +3215,8 @@ A context can only be used by a single thread.
 For optimal performance a context should only be created at load time, not at runtime.
 
 GpuContext_t
+GpuSurfaceColorFormat_t
+GpuSurfaceDepthFormat_t
 GpuSampleCount_t
 
 static bool GpuContext_CreateShared( GpuContext_t * context, const GpuContext_t * other, const int queueIndex );
@@ -3225,6 +3227,23 @@ static bool GpuContext_Create( GpuContext_t * context, GpuDevice_t * device, con
 
 ================================================================================================================================
 */
+
+typedef enum
+{
+	GPU_SURFACE_COLOR_FORMAT_R5G6B5,
+	GPU_SURFACE_COLOR_FORMAT_B5G6R5,
+	GPU_SURFACE_COLOR_FORMAT_R8G8B8A8,
+	GPU_SURFACE_COLOR_FORMAT_B8G8R8A8,
+	GPU_SURFACE_COLOR_FORMAT_MAX
+} GpuSurfaceColorFormat_t;
+
+typedef enum
+{
+	GPU_SURFACE_DEPTH_FORMAT_NONE,
+	GPU_SURFACE_DEPTH_FORMAT_D16,
+	GPU_SURFACE_DEPTH_FORMAT_D24,
+	GPU_SURFACE_DEPTH_FORMAT_MAX
+} GpuSurfaceDepthFormat_t;
 
 typedef enum
 {
@@ -3385,15 +3404,6 @@ static Microseconds_t GpuSwapchain_SwapBuffers( GpuContext_t * context, GpuSwapc
 
 ================================================================================================================================
 */
-
-typedef enum
-{
-	GPU_SURFACE_COLOR_FORMAT_R5G6B5,
-	GPU_SURFACE_COLOR_FORMAT_B5G6R5,
-	GPU_SURFACE_COLOR_FORMAT_R8G8B8A8,
-	GPU_SURFACE_COLOR_FORMAT_B8G8R8A8,
-	GPU_SURFACE_COLOR_FORMAT_MAX
-} GpuSurfaceColorFormat_t;
 
 typedef struct
 {
@@ -3792,14 +3802,6 @@ static void GpuDepthBuffer_Destroy( GpuContext_t * context, GpuDepthBuffer_t * d
 ================================================================================================================================
 */
 
-typedef enum
-{
-	GPU_SURFACE_DEPTH_FORMAT_NONE,
-	GPU_SURFACE_DEPTH_FORMAT_D16,
-	GPU_SURFACE_DEPTH_FORMAT_D24,
-	GPU_SURFACE_DEPTH_FORMAT_MAX
-} GpuSurfaceDepthFormat_t;
-
 typedef struct
 {
 	GpuSurfaceDepthFormat_t	format;
@@ -3848,7 +3850,7 @@ static void GpuDepthBuffer_Create( GpuContext_t * context, GpuDepthBuffer_t * de
 	imageCreateInfo.extent.depth = 1;
 	imageCreateInfo.mipLevels = 1;
 	imageCreateInfo.arrayLayers = numLayers;
-	imageCreateInfo.samples = sampleCount;
+	imageCreateInfo.samples = (VkSampleCountFlagBits)sampleCount;
 	imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 	imageCreateInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 	imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -3963,10 +3965,10 @@ MouseButton_t
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
 								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const int width, const int height, const bool fullscreen );
+								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen );
 static void GpuWindow_Destroy( GpuWindow_t * window );
 static void GpuWindow_Exit( GpuWindow_t * window );
-static bool GpuWindow_ProcessEvents( GpuWindow_t * window );
+static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window );
 static void GpuWindow_SwapInterval( GpuWindow_t * window, const int swapInterval );
 static void GpuWindow_SwapBuffers( GpuWindow_t * window );
 static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window );
@@ -3990,6 +3992,7 @@ typedef struct
 	GpuContext_t			context;
 	GpuSurfaceColorFormat_t	colorFormat;
 	GpuSurfaceDepthFormat_t	depthFormat;
+	GpuSampleCount_t		sampleCount;
 	int						windowWidth;
 	int						windowHeight;
 	int						windowSwapInterval;
@@ -4049,7 +4052,7 @@ typedef struct
 static void GpuWindow_CreateFromSurface( GpuWindow_t * window, const VkSurfaceKHR surface )
 {
 	GpuSwapchain_Create( &window->context, &window->swapchain, surface, window->colorFormat, window->windowWidth, window->windowHeight, window->windowSwapInterval );
-	GpuDepthBuffer_Create( &window->context, &window->depthBuffer, window->depthFormat, GPU_SAMPLE_COUNT_1, window->windowWidth, window->windowHeight, 1 );
+	GpuDepthBuffer_Create( &window->context, &window->depthBuffer, window->depthFormat, window->sampleCount, window->windowWidth, window->windowHeight, 1 );
 
 #if defined( OS_APPLE )
 	window->windowWidth = window->swapchain.width;			// iOS/macOS patch for Retina displays
@@ -4205,12 +4208,13 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
 								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const int width, const int height, const bool fullscreen )
+								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
 {
 	memset( window, 0, sizeof( GpuWindow_t ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
 	window->windowWidth = width;
 	window->windowHeight = height;
 	window->windowSwapInterval = 1;
@@ -4476,12 +4480,13 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
 								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const int width, const int height, const bool fullscreen )
+								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
 {
 	memset( window, 0, sizeof( GpuWindow_t ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
 	window->windowWidth = width;
 	window->windowHeight = height;
 	window->windowSwapInterval = 1;
@@ -4649,12 +4654,13 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
 								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const int width, const int height, const bool fullscreen )
+								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
 {
 	memset( window, 0, sizeof( GpuWindow_t ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
 	window->windowWidth = width;
 	window->windowHeight = height;
 	window->windowSwapInterval = 1;
@@ -5259,12 +5265,13 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
 								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const int width, const int height, const bool fullscreen )
+								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
 {
 	memset( window, 0, sizeof( GpuWindow_t ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
 	window->windowWidth = width;
 	window->windowHeight = height;
 	window->windowSwapInterval = 1;
@@ -5701,12 +5708,13 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
 								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const int width, const int height, const bool fullscreen )
+								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
 {
 	memset( window, 0, sizeof( GpuWindow_t ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
 	window->windowWidth = width;
 	window->windowHeight = height;
 	window->windowSwapInterval = 1;
@@ -6076,7 +6084,6 @@ static int32_t app_handle_input( struct android_app * app, AInputEvent * event )
 				window->mouseInput[MOUSE_LEFT] = true;
 				window->mouseInputX[MOUSE_LEFT] = (int)x;
 				window->mouseInputY[MOUSE_LEFT] = (int)y;
-				window->keyInput[AKEYCODE_S] = true;
 				return 1;
 			}
 			return 0;
@@ -6137,12 +6144,13 @@ struct android_app * global_app;
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
 								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const int width, const int height, const bool fullscreen )
+								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
 {
 	memset( window, 0, sizeof( GpuWindow_t ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
 	window->windowWidth = width;
 	window->windowHeight = height;
 	window->windowSwapInterval = 1;
@@ -6568,18 +6576,18 @@ typedef enum
 	//
 	// 32 bits per component
 	//
-	GPU_TEXTURE_FORMAT_R32_UINT				= VK_FORMAT_R32_UINT,
-	GPU_TEXTURE_FORMAT_R32G32_UINT			= VK_FORMAT_R32G32_UINT,				// 1-component, 32-bit unsigned integer
-	GPU_TEXTURE_FORMAT_R32G32B32A32_UINT	= VK_FORMAT_R32G32B32A32_UINT,			// 2-component, 32-bit unsigned integer
-																					// 4-component, 32-bit unsigned integer
-	GPU_TEXTURE_FORMAT_R32_SINT				= VK_FORMAT_R32_SINT,
-	GPU_TEXTURE_FORMAT_R32G32_SINT			= VK_FORMAT_R32G32_SINT,				// 1-component, 32-bit signed integer
-	GPU_TEXTURE_FORMAT_R32G32B32A32_SINT	= VK_FORMAT_R32G32B32A32_SINT,			// 2-component, 32-bit signed integer
-																					// 4-component, 32-bit signed integer
-	GPU_TEXTURE_FORMAT_R32_SFLOAT			= VK_FORMAT_R32_SFLOAT,
-	GPU_TEXTURE_FORMAT_R32G32_SFLOAT		= VK_FORMAT_R32G32_SFLOAT,				// 1-component, 32-bit floating-point
-	GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT	= VK_FORMAT_R32G32B32A32_SFLOAT,		// 2-component, 32-bit floating-point
-																					// 4-component, 32-bit floating-point
+	GPU_TEXTURE_FORMAT_R32_UINT				= VK_FORMAT_R32_UINT,					// 1-component, 32-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R32G32_UINT			= VK_FORMAT_R32G32_UINT,				// 2-component, 32-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R32G32B32A32_UINT	= VK_FORMAT_R32G32B32A32_UINT,			// 4-component, 32-bit unsigned integer
+
+	GPU_TEXTURE_FORMAT_R32_SINT				= VK_FORMAT_R32_SINT,					// 1-component, 32-bit signed integer
+	GPU_TEXTURE_FORMAT_R32G32_SINT			= VK_FORMAT_R32G32_SINT,				// 2-component, 32-bit signed integer
+	GPU_TEXTURE_FORMAT_R32G32B32A32_SINT	= VK_FORMAT_R32G32B32A32_SINT,			// 4-component, 32-bit signed integer
+
+	GPU_TEXTURE_FORMAT_R32_SFLOAT			= VK_FORMAT_R32_SFLOAT,					// 1-component, 32-bit floating-point
+	GPU_TEXTURE_FORMAT_R32G32_SFLOAT		= VK_FORMAT_R32G32_SFLOAT,				// 2-component, 32-bit floating-point
+	GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT	= VK_FORMAT_R32G32B32A32_SFLOAT,		// 4-component, 32-bit floating-point
+
 	//
 	// S3TC/DXT/BC
 	//
@@ -6917,7 +6925,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	imageCreateInfo.extent.depth = depth;
 	imageCreateInfo.mipLevels = numStorageLevels;
 	imageCreateInfo.arrayLayers = arrayLayerCount;
-	imageCreateInfo.samples = sampleCount;
+	imageCreateInfo.samples = (VkSampleCountFlagBits)sampleCount;
 	imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 	imageCreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
 							VK_IMAGE_USAGE_TRANSFER_DST_BIT |
@@ -7224,13 +7232,19 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 						case VK_FORMAT_ASTC_12x10_SRGB_BLOCK:		{ mipSize = ((mipHeight+9)/10) * ((mipWidth+11)/12) * 16; compressed = true; break; }
 						case VK_FORMAT_ASTC_12x12_SRGB_BLOCK:		{ mipSize = ((mipHeight+11)/12) * ((mipWidth+11)/12) * 16; compressed = true; break; }
 
-						default: Error( "%s: Unsupported texture format %d", fileName, format );
+						default:
+						{
+							Error( "%s: Unsupported texture format %d", fileName, format );
+							return false;
+						}
 					}
 
-					dataOffset = mipSize;
+					dataOffset += mipSize;
 				}
 			}
 		}
+
+		assert( dataOffset == dataSize );
 
 		VC( context->device->vkCmdCopyBufferToImage( context->setupCommandBuffer, stagingBuffer, texture->image,
 					VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, numDataLevels * arrayLayerCount * depth, bufferImageCopy ) );
@@ -8095,7 +8109,7 @@ static void GpuRenderPass_Destroy( GpuContext_t * context, GpuRenderPass_t * ren
 ================================================================================================================================
 */
 
-#define EXPLICIT_RESOLVE		1
+#define EXPLICIT_RESOLVE		0
 
 typedef enum
 {
@@ -8144,7 +8158,7 @@ static bool GpuRenderPass_Create( GpuContext_t * context, GpuRenderPass_t * rend
 	{
 		attachments[attachmentCount].flags = 0;
 		attachments[attachmentCount].format = renderPass->internalColorFormat;
-		attachments[attachmentCount].samples = sampleCount;
+		attachments[attachmentCount].samples = (VkSampleCountFlagBits)sampleCount;
 		attachments[attachmentCount].loadOp = ( ( flags & GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER ) != 0 ) ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachments[attachmentCount].storeOp = ( EXPLICIT_RESOLVE != 0 ) ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		attachments[attachmentCount].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -8158,7 +8172,7 @@ static bool GpuRenderPass_Create( GpuContext_t * context, GpuRenderPass_t * rend
 	{
 		attachments[attachmentCount].flags = 0;
 		attachments[attachmentCount].format = renderPass->internalColorFormat;
-		attachments[attachmentCount].samples = GPU_SAMPLE_COUNT_1;
+		attachments[attachmentCount].samples = VK_SAMPLE_COUNT_1_BIT;
 		attachments[attachmentCount].loadOp = ( ( flags & GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER ) != 0 && sampleCount <= GPU_SAMPLE_COUNT_1 ) ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachments[attachmentCount].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachments[attachmentCount].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -8172,7 +8186,7 @@ static bool GpuRenderPass_Create( GpuContext_t * context, GpuRenderPass_t * rend
 	{
 		attachments[attachmentCount].flags = 0;
 		attachments[attachmentCount].format = renderPass->internalDepthFormat;
-		attachments[attachmentCount].samples = sampleCount;
+		attachments[attachmentCount].samples = (VkSampleCountFlagBits)sampleCount;
 		attachments[attachmentCount].loadOp = ( ( flags & GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER ) != 0 ) ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachments[attachmentCount].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		attachments[attachmentCount].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -8276,6 +8290,7 @@ static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebu
 {
 	assert( window->windowWidth >= 1 && window->windowWidth <= (int)window->context.device->physicalDeviceProperties.limits.maxFramebufferWidth );
 	assert( window->windowHeight >= 1 && window->windowHeight <= (int)window->context.device->physicalDeviceProperties.limits.maxFramebufferHeight );
+	assert( window->sampleCount == renderPass->sampleCount );
 
 	memset( framebuffer, 0, sizeof( GpuFramebuffer_t ) );
 
@@ -8310,11 +8325,6 @@ static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebu
 		GpuContext_CreateSetupCmdBuffer( &window->context );
 		GpuTexture_ChangeUsage( &window->context, window->context.setupCommandBuffer, &framebuffer->renderTexture, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
 		GpuContext_FlushSetupCmdBuffer( &window->context );
-
-		if ( renderPass->internalDepthFormat != VK_FORMAT_UNDEFINED )
-		{
-			GpuDepthBuffer_Create( &window->context, &framebuffer->depthBuffer, renderPass->depthFormat, renderPass->sampleCount, window->windowWidth, window->windowHeight, 1 );
-		}
 	}
 
 	for ( uint32_t imageIndex = 0; imageIndex < window->swapchain.imageCount; imageIndex++ )
@@ -8340,7 +8350,7 @@ static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebu
 		}
 		if ( renderPass->internalDepthFormat != VK_FORMAT_UNDEFINED )
 		{
-			attachments[attachmentCount++] = ( framebuffer->depthBuffer.image != VK_NULL_HANDLE ) ? framebuffer->depthBuffer.views[0] : window->depthBuffer.views[0];
+			attachments[attachmentCount++] = window->depthBuffer.views[0];
 		}
 
 		VkFramebufferCreateInfo framebufferCreateInfo;
@@ -10554,6 +10564,8 @@ static void GpuCommandBuffer_EndFramebuffer( GpuCommandBuffer_t * commandBuffer,
 	assert( commandBuffer->currentFramebuffer == framebuffer );
 	assert( commandBuffer->currentRenderPass == NULL );
 	assert( arrayLayer >= 0 && arrayLayer < framebuffer->numLayers );
+
+	UNUSED_PARM( arrayLayer );
 
 #if EXPLICIT_RESOLVE != 0
 	if ( framebuffer->renderTexture.image != VK_NULL_HANDLE )
@@ -13517,7 +13529,7 @@ static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level );
 static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level );
 
 static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp,
-											const Matrix4x4_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
+											const Matrix4x4f_t * viewMatrix, const Matrix4x4_t * projectionMatrix,
 											GpuTexture_t * eyeTexture[2], GpuFence_t * eyeCompletionFence[2],
 											int eyeArrayLayer[2], float eyeTexturesCpuTime, float eyeTexturesGpuTime );
 static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window );
@@ -13537,8 +13549,8 @@ typedef enum
 typedef struct
 {
 	int							index;
-	Matrix4x4f_t				projectionMatrix;
 	Matrix4x4f_t				viewMatrix;
+	Matrix4x4f_t				projectionMatrix;
 	GpuTexture_t *				texture[NUM_EYES];
 	GpuFence_t *				completionFence[NUM_EYES];
 	int							arrayLayer[NUM_EYES];
@@ -13549,10 +13561,10 @@ typedef struct
 typedef struct
 {
 	GpuTexture_t				defaultTexture;
+	Matrix4x4f_t				viewMatrix;
+	Matrix4x4f_t				projectionMatrix;
 	GpuTexture_t *				eyeTexture[NUM_EYES];
 	int							eyeArrayLayer[NUM_EYES];
-	Matrix4x4f_t				projectionMatrix;
-	Matrix4x4f_t				viewMatrix;
 
 	Mutex_t						newEyeTexturesMutex;
 	Signal_t					newEyeTexturesConsumed;
@@ -13588,8 +13600,8 @@ static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	Signal_Raise( &timeWarp->newEyeTexturesConsumed );
 
 	timeWarp->newEyeTextures.index = 0;
-	Matrix4x4f_CreateProjectionFov( &timeWarp->newEyeTextures.projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 	Matrix4x4f_CreateIdentity( &timeWarp->newEyeTextures.viewMatrix );
+	Matrix4x4f_CreateProjectionFov( &timeWarp->newEyeTextures.projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
 		timeWarp->newEyeTextures.texture[eye] = &timeWarp->defaultTexture;
@@ -13599,13 +13611,13 @@ static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	timeWarp->newEyeTextures.cpuTime = 0.0f;
 	timeWarp->newEyeTextures.gpuTime = 0.0f;
 
+	timeWarp->viewMatrix = timeWarp->newEyeTextures.viewMatrix;
+	timeWarp->projectionMatrix = timeWarp->newEyeTextures.projectionMatrix;
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
 		timeWarp->eyeTexture[eye] = &timeWarp->defaultTexture;
 		timeWarp->eyeArrayLayer[eye] = eye;
 	}
-	timeWarp->viewMatrix = timeWarp->newEyeTextures.viewMatrix;
-	timeWarp->projectionMatrix = timeWarp->projectionMatrix;
 
 	timeWarp->eyeTexturesPresentIndex = 1;
 	timeWarp->eyeTexturesConsumedIndex = 0;
@@ -13730,7 +13742,7 @@ static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level )
 }
 
 static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp,
-											const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
+											const Matrix4x4f_t * viewMatrix, const Matrix4x4f_t * projectionMatrix,
 											GpuTexture_t * eyeTexture[2], GpuFence_t * eyeCompletionFence[2],
 											int eyeArrayLayer[2], float eyeTexturesCpuTime, float eyeTexturesGpuTime )
 {
@@ -15490,23 +15502,24 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 	GpuContext_t context;
 	GpuContext_CreateShared( &context, threadData->shareContext, QUEUE_INDEX_SCENE );
 
-	const GpuSampleCount_t sampleTable[] =
+	const GpuSampleCount_t sampleCountTable[] =
 	{
 		GPU_SAMPLE_COUNT_1,
 		GPU_SAMPLE_COUNT_2,
 		GPU_SAMPLE_COUNT_4,
 		GPU_SAMPLE_COUNT_8
 	};
+	const GpuSampleCount_t sampleCount = sampleCountTable[threadData->sceneSettings->samplesLevel];
 
 	GpuRenderPass_t renderPassSingleView;
 	GpuRenderPass_Create( &context, &renderPassSingleView, GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24,
-							sampleTable[threadData->sceneSettings->samplesLevel], GPU_RENDERPASS_TYPE_INLINE,
+							sampleCount, GPU_RENDERPASS_TYPE_INLINE,
 							GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
 							GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
 
 	GpuRenderPass_t renderPassMultiView;
 	GpuRenderPass_Create( &context, &renderPassMultiView, GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24,
-							sampleTable[threadData->sceneSettings->samplesLevel], GPU_RENDERPASS_TYPE_SECONDARY_COMMAND_BUFFERS,
+							sampleCount, GPU_RENDERPASS_TYPE_SECONDARY_COMMAND_BUFFERS,
 							GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
 							GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
 
@@ -15623,7 +15636,7 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 		Matrix4x4f_t projectionMatrix;
 		Matrix4x4f_CreateProjectionFov( &projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 
-		TimeWarp_PresentNewEyeTextures( threadData->timeWarp, &projectionMatrix, &hmdViewMatrix,
+		TimeWarp_PresentNewEyeTextures( threadData->timeWarp, &hmdViewMatrix, &projectionMatrix,
 										eyeTexture, eyeCompletionFence, eyeArrayLayer,
 										eyeTexturesCpuTime, eyeTexturesGpuTime );
 	}
@@ -15688,7 +15701,7 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 
 	GpuWindow_t window;
 	GpuWindow_Create( &window, &instance, &queueInfo, QUEUE_INDEX_TIMEWARP,
-						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE,
+						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
 						startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
 						startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
 						startupSettings->fullscreen );
@@ -15761,7 +15774,7 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 			TimeWarp_Destroy( &timeWarp, &window );
 			GpuWindow_Destroy( &window );
 			GpuWindow_Create( &window, &instance, &queueInfo, QUEUE_INDEX_TIMEWARP,
-							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE,
+							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
 							fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
 							fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
 							fullscreen );
@@ -15895,7 +15908,7 @@ bool RenderTimeWarp( StartupSettings_t * startupSettings )
 
 	GpuWindow_t window;
 	GpuWindow_Create( &window, &instance, &queueInfo, 0,
-						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE,
+						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
 						startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
 						startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
 						startupSettings->fullscreen );
@@ -15947,7 +15960,7 @@ bool RenderTimeWarp( StartupSettings_t * startupSettings )
 			TimeWarp_Destroy( &timeWarp, &window );
 			GpuWindow_Destroy( &window );
 			GpuWindow_Create( &window, &instance, &queueInfo, 0,
-							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE,
+							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
 							fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
 							fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
 							fullscreen );
@@ -16017,6 +16030,15 @@ bool RenderScene( StartupSettings_t * startupSettings )
 	DriverInstance_t instance;
 	DriverInstance_Create( &instance );
 
+	const GpuSampleCount_t sampleCountTable[] =
+	{
+		GPU_SAMPLE_COUNT_1,
+		GPU_SAMPLE_COUNT_2,
+		GPU_SAMPLE_COUNT_4,
+		GPU_SAMPLE_COUNT_8
+	};
+	const GpuSampleCount_t sampleCount = sampleCountTable[startupSettings->samplesLevel];
+
 	const GpuQueueInfo_t queueInfo =
 	{
 		1,
@@ -16026,7 +16048,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 
 	GpuWindow_t window;
 	GpuWindow_Create( &window, &instance, &queueInfo, 0,
-						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24,
+						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24, sampleCount,
 						startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
 						startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
 						startupSettings->fullscreen );
@@ -16034,17 +16056,9 @@ bool RenderScene( StartupSettings_t * startupSettings )
 	int swapInterval = ( startupSettings->noVSyncMicroseconds <= 0 );
 	GpuWindow_SwapInterval( &window, swapInterval );
 
-	const GpuSampleCount_t sampleTable[] =
-	{
-		GPU_SAMPLE_COUNT_1,
-		GPU_SAMPLE_COUNT_2,
-		GPU_SAMPLE_COUNT_4,
-		GPU_SAMPLE_COUNT_8
-	};
-
 	GpuRenderPass_t renderPass;
 	GpuRenderPass_Create( &window.context, &renderPass, window.colorFormat, window.depthFormat,
-							sampleTable[startupSettings->samplesLevel], GPU_RENDERPASS_TYPE_INLINE,
+							sampleCount, GPU_RENDERPASS_TYPE_INLINE,
 							GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
 							GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
 
@@ -16069,6 +16083,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 	SceneSettings_SetDrawCallLevel( &sceneSettings, startupSettings->drawCallLevel );
 	SceneSettings_SetTriangleLevel( &sceneSettings, startupSettings->triangleLevel );
 	SceneSettings_SetFragmentLevel( &sceneSettings, startupSettings->fragmentLevel );
+	SceneSettings_SetSamplesLevel( &sceneSettings, startupSettings->samplesLevel );
 
 	Scene_t scene;
 	Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
@@ -16081,6 +16096,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 
 	Thread_SetName( "atw:scene" );
 
+	bool recreate = false;
 	bool exit = false;
 	while ( !exit )
 	{
@@ -16107,30 +16123,8 @@ bool RenderScene( StartupSettings_t * startupSettings )
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
 		{
-			const bool fullscreen = !window.windowFullscreen;
-			Scene_Destroy( &window.context, &scene );
-			BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
-			BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
-			GpuTimer_Destroy( &window.context, &timer );
-			GpuCommandBuffer_Destroy( &window.context, &commandBuffer );
-			GpuFramebuffer_Destroy( &window.context, &framebuffer );
-			GpuRenderPass_Destroy( &window.context, &renderPass );
-			GpuWindow_Destroy( &window );
-			GpuWindow_Create( &window, &instance, &queueInfo, 0,
-							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24,
-							fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
-							fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
-							fullscreen );
-			GpuRenderPass_Create( &window.context, &renderPass, window.colorFormat, window.depthFormat,
-									GPU_SAMPLE_COUNT_1, GPU_RENDERPASS_TYPE_INLINE,
-									GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
-									GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
-			GpuFramebuffer_CreateFromSwapchain( &window, &framebuffer, &renderPass );
-			GpuCommandBuffer_Create( &window.context, &commandBuffer, GPU_COMMAND_BUFFER_TYPE_PRIMARY, GpuFramebuffer_GetBufferCount( &framebuffer ) );
-			GpuTimer_Create( &window.context, &timer );
-			BarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
-			BarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
-			Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
+			startupSettings->fullscreen = !startupSettings->fullscreen;
+			recreate = true;
 		}
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
@@ -16168,7 +16162,16 @@ bool RenderScene( StartupSettings_t * startupSettings )
 		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_S ) )
 		{
 			SceneSettings_CycleSamplesLevel( &sceneSettings );
-			// Must recreate the scene to allocate different framebuffers.
+			recreate = true;
+		}
+		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
+		{
+			DumpGLSL();
+		}
+
+		if ( recreate )
+		{
+			const GpuSampleCount_t sampleCount = sampleCountTable[SceneSettings_GetSamplesLevel( &sceneSettings )];
 			Scene_Destroy( &window.context, &scene );
 			BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
 			BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
@@ -16176,8 +16179,14 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			GpuCommandBuffer_Destroy( &window.context, &commandBuffer );
 			GpuFramebuffer_Destroy( &window.context, &framebuffer );
 			GpuRenderPass_Destroy( &window.context, &renderPass );
+			GpuWindow_Destroy( &window );
+			GpuWindow_Create( &window, &instance, &queueInfo, 0,
+							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24, sampleCount,
+							startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
+							startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
+							startupSettings->fullscreen );
 			GpuRenderPass_Create( &window.context, &renderPass, window.colorFormat, window.depthFormat,
-									GPU_SAMPLE_COUNT_1, GPU_RENDERPASS_TYPE_INLINE,
+									sampleCount, GPU_RENDERPASS_TYPE_INLINE,
 									GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
 									GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
 			GpuFramebuffer_CreateFromSwapchain( &window, &framebuffer, &renderPass );
@@ -16186,10 +16195,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			BarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
 			BarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
 			Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
-		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
-		{
-			DumpGLSL();
+			recreate = false;
 		}
 
 		if ( window.windowActive )
