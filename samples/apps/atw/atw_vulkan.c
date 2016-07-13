@@ -291,9 +291,9 @@ VERSION HISTORY
 	#define OS_APPLE
 	#include <Availability.h>
 	#if __IPHONE_OS_VERSION_MAX_ALLOWED
-		#define OS_IOS
+		#define OS_APPLE_IOS
 	#elif __MAC_OS_X_VERSION_MAX_ALLOWED
-		#define OS_MAC
+		#define OS_APPLE_MACOS
 	#endif
 #elif defined( __linux__ )
 	#define OS_LINUX
@@ -349,7 +349,7 @@ Platform headers / declarations
 
 	#include "vulkan/vulkan.h"
 
-	#if defined( OS_IOS )
+	#if defined( OS_APPLE_IOS )
 		#include <UIKit/UIKit.h>
 		#if defined( VK_USE_PLATFORM_IOS_MVK )
 			#include <QuartzCore/CAMetalLayer.h>
@@ -378,7 +378,7 @@ Platform headers / declarations
 		#endif
 	#endif
 
-	#if defined( OS_MAC )
+	#if defined( OS_APPLE_MACOS )
 		#include <AppKit/AppKit.h>
 		#if defined( VK_USE_PLATFORM_MACOS_MVK )
 			#include <QuartzCore/CAMetalLayer.h>
@@ -637,7 +637,7 @@ static void Error( const char * format, ... )
 	OutputDebugString( buffer );
 
 	MessageBox( NULL, buffer, "ERROR", MB_OK | MB_ICONINFORMATION );
-#elif defined( OS_IOS )
+#elif defined( OS_APPLE_IOS )
 	char buffer[4096];
 	va_list args;
 	va_start( args, format );
@@ -657,7 +657,7 @@ static void Error( const char * format, ... )
 												 handler: ^(UIAlertAction * action) {}]];
 		[UIApplication.sharedApplication.keyWindow.rootViewController presentViewController: alert animated: YES completion: nil];
 	}
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 	char buffer[4096];
 	va_list args;
 	va_start( args, format );
@@ -715,9 +715,9 @@ static const char * GetOSVersion()
 	}
 
 	return "Microsoft Windows";
-#elif defined( OS_IOS )
+#elif defined( OS_APPLE_IOS )
 	return [NSString stringWithFormat: @"Apple iOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 	return [NSString stringWithFormat: @"Apple macOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
 #elif defined( OS_LINUX )
 	static char buffer[1024];
@@ -4016,10 +4016,10 @@ typedef struct
 	HINSTANCE				hInstance;
 	HWND					hWnd;
 	bool					windowActiveState;
-#elif defined( OS_IOS )
+#elif defined( OS_APPLE_IOS )
 	UIWindow *				uiWindow;
 	UIView *				uiView;
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 	CGDirectDisplayID		display;
 	CGDisplayModeRef		desktopDisplayMode;
 	NSWindow *				nsWindow;
@@ -4388,7 +4388,7 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 	return GPU_WINDOW_EVENT_NONE;
 }
 
-#elif defined( OS_IOS )
+#elif defined( OS_APPLE_IOS )
 
 typedef enum
 {
@@ -4538,7 +4538,7 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 	return GPU_WINDOW_EVENT_NONE;
 }
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 
 typedef enum
 {
@@ -16401,7 +16401,7 @@ int APIENTRY WinMain( HINSTANCE hCurrentInst, HINSTANCE hPreviousInst, LPSTR lps
 	return StartApplication( argc, argv );
 }
 
-#elif defined( OS_IOS )
+#elif defined( OS_APPLE_IOS )
 
 static int argc_deferred;
 static char** argv_deferred;
@@ -16444,7 +16444,7 @@ int main( int argc, char * argv[] )
 	return UIApplicationMain( argc, argv, nil, @"MyAppDelegate" );
 }
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 
 static const char * FormatString( const char * format, ... )
 {

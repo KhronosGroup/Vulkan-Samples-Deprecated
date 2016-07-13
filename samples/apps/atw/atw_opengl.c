@@ -313,9 +313,9 @@ VERSION HISTORY
 	#define OS_APPLE
 	#include <Availability.h>
 	#if __IPHONE_OS_VERSION_MAX_ALLOWED
-		#define OS_IOS
+		#define OS_APPLE_IOS
 	#elif __MAC_OS_X_VERSION_MAX_ALLOWED
-		#define OS_MAC
+		#define OS_APPLE_MACOS
 	#endif
 #elif defined( __linux__ )
 	#define OS_LINUX
@@ -494,7 +494,7 @@ Compute support
 ================================
 */
 
-#if defined( OS_MAC ) && ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR < 43 )
+#if defined( OS_APPLE_MACOS ) && ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR < 43 )
 
 	#define OPENGL_COMPUTE_ENABLED	0
 
@@ -695,7 +695,7 @@ static void Error( const char * format, ... )
 	OutputDebugString( buffer );
 
 	MessageBox( NULL, buffer, "ERROR", MB_OK | MB_ICONINFORMATION );
-#elif defined( OS_IOS )
+#elif defined( OS_APPLE_IOS )
 	char buffer[4096];
 	va_list args;
 	va_start( args, format );
@@ -715,7 +715,7 @@ static void Error( const char * format, ... )
 												 handler: ^(UIAlertAction * action) {}]];
 		[UIApplication.sharedApplication.keyWindow.rootViewController presentViewController: alert animated: YES completion: nil];
 	}
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 	char buffer[4096];
 	va_list args;
 	va_start( args, format );
@@ -773,9 +773,9 @@ static const char * GetOSVersion()
 	}
 
 	return "Microsoft Windows";
-#elif defined( OS_IOS )
+#elif defined( OS_APPLE_IOS )
 	return [NSString stringWithFormat: @"Apple iOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 	return [NSString stringWithFormat: @"Apple macOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
 #elif defined( OS_LINUX )
 	static char buffer[1024];
@@ -2226,7 +2226,7 @@ static const char * GlErrorString( GLenum error )
 		case GL_INVALID_OPERATION:				return "GL_INVALID_OPERATION";
 		case GL_INVALID_FRAMEBUFFER_OPERATION:	return "GL_INVALID_FRAMEBUFFER_OPERATION";
 		case GL_OUT_OF_MEMORY:					return "GL_OUT_OF_MEMORY";
-#if !defined( OS_MAC ) && !defined( OS_ANDROID )
+#if !defined( OS_APPLE_MACOS ) && !defined( OS_ANDROID )
 		case GL_STACK_UNDERFLOW:				return "GL_STACK_UNDERFLOW";
 		case GL_STACK_OVERFLOW:					return "GL_STACK_OVERFLOW";
 #endif
@@ -2276,11 +2276,12 @@ OpenGL extensions.
 typedef struct
 {
 	bool timer_query;						// GL_ARB_timer_query, GL_EXT_disjoint_timer_query
+	bool texture_clamp_to_border;			// GL_EXT_texture_border_clamp
 	bool buffer_storage;					// GL_ARB_buffer_storage
 	bool multi_sampled_storage;				// GL_ARB_texture_storage_multisample
 	bool multi_view;						// GL_OVR_multiview, GL_OVR_multiview2
 	bool multi_sampled_resolve;				// GL_EXT_multisampled_render_to_texture
-	bool multi_view_multi_sampled_resolve;	// GL_OVR_multiview_multisampled_render_to_texture )
+	bool multi_view_multi_sampled_resolve;	// GL_OVR_multiview_multisampled_render_to_texture
 } OpenGLExtensions_t;
 
 OpenGLExtensions_t glExtensions;
@@ -2582,6 +2583,7 @@ static void GlInitExtensions()
 #endif
 
 	glExtensions.timer_query						= GlCheckExtension( "GL_EXT_timer_query" );
+	glExtensions.texture_clamp_to_border			= true; // always available
 	glExtensions.buffer_storage						= GlCheckExtension( "GL_EXT_buffer_storage" ) || ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR >= 44 );
 	glExtensions.multi_sampled_storage				= GlCheckExtension( "GL_ARB_texture_storage_multisample" ) || ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR >= 43 );
 	glExtensions.multi_view							= GlCheckExtension( "GL_OVR_multiview2" );
@@ -2589,12 +2591,23 @@ static void GlInitExtensions()
 	glExtensions.multi_view_multi_sampled_resolve	= GlCheckExtension( "GL_OVR_multiview_multisampled_render_to_texture" );
 }
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 
 PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC				glFramebufferTextureMultiviewOVR;
 PFNGLFRAMEBUFFERTEXTUREMULTISAMPLEMULTIVIEWOVRPROC	glFramebufferTextureMultisampleMultiviewOVR;
 PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC			glFramebufferTexture2DMultisampleEXT;
 PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC			glRenderbufferStorageMultisampleEXT;
+
+static void GlInitExtensions()
+{
+	glExtensions.timer_query						= GlCheckExtension( "GL_EXT_timer_query" );
+	glExtensions.texture_clamp_to_border			= true; // always available
+	glExtensions.buffer_storage						= GlCheckExtension( "GL_EXT_buffer_storage" ) || ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR >= 44 );
+	glExtensions.multi_sampled_storage				= GlCheckExtension( "GL_ARB_texture_storage_multisample" ) || ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR >= 43 );
+	glExtensions.multi_view							= GlCheckExtension( "GL_OVR_multiview2" );
+	glExtensions.multi_sampled_resolve				= GlCheckExtension( "GL_EXT_multisampled_render_to_texture" );
+	glExtensions.multi_view_multi_sampled_resolve	= GlCheckExtension( "GL_OVR_multiview_multisampled_render_to_texture" );
+}
 
 #elif defined( OS_ANDROID )
 
@@ -2663,9 +2676,10 @@ PFNGLTEXSTORAGE3DMULTISAMPLEPROC					glTexStorage3DMultisample;
 #define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT	0x84FF
 #endif
 
-// No clamp to border in OpenGL ES.
-#if !defined( GL_CLAMP_TO_BORDER )
-#define GL_CLAMP_TO_BORDER					GL_CLAMP_TO_EDGE
+// GL_EXT_texture_border_clamp
+#if !defined( GL_CLAMP_TO_BORDER_EXT )
+#define GL_CLAMP_TO_BORDER_EXT				0x812D
+#define GL_CLAMP_TO_BORDER					GL_CLAMP_TO_BORDER_EXT
 #endif
 
 // No multi-sampled texture arrays in OpenGL ES.
@@ -2694,6 +2708,7 @@ static void GlInitExtensions()
 	glTexStorage3DMultisample						= (PFNGLTEXSTORAGE3DMULTISAMPLEPROC)					GetExtension( "glTexStorage3DMultisample" );
 	
 	glExtensions.timer_query						= GlCheckExtension( "GL_EXT_disjoint_timer_query" );
+	glExtensions.texture_clamp_to_border			= GlCheckExtension( "GL_EXT_texture_border_clamp" );
 	glExtensions.buffer_storage						= GlCheckExtension( "GL_EXT_buffer_storage" );
 	glExtensions.multi_view							= GlCheckExtension( "GL_OVR_multiview2" );
 	glExtensions.multi_sampled_resolve				= GlCheckExtension( "GL_EXT_multisampled_render_to_texture" );
@@ -2874,7 +2889,7 @@ typedef struct
 #if defined( OS_WINDOWS )
 	HDC						hDC;
 	HGLRC					hGLRC;
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 	NSOpenGLContext *		nsContext;
 	CGLContextObj			cglContext;
 #elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB_GLX )
@@ -3000,10 +3015,11 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 
 	if ( sampleCount > GPU_SAMPLE_COUNT_1 )
 	{
-		// A valid context is needed to get OpenGL extensions including wglChoosePixelFormatARB and wglCreateContextAttribsARB.
-		// A device context with a valid pixel format is needed to create an OpenGL context.
-		// However, once a pixel format is set on a device context it cannot be unset.
-		// Therefore a pixel format is set on the device context of a temporary window to create a context to get extensions.
+		// A valid OpenGL context is needed to get OpenGL extensions including wglChoosePixelFormatARB
+		// and wglCreateContextAttribsARB. A device context with a valid pixel format is needed to create
+		// an OpenGL context. However, once a pixel format is set on a device context it is final.
+		// Therefore a pixel format is set on the device context of a temporary window to create a context
+		// to get the extensions for multi-sampling.
 		localWnd = CreateWindow( APPLICATION_NAME, "temp", 0, 0, 0, 0, 0, NULL, NULL, hInstance, NULL );
 		localDC = GetDC( localWnd );
 	}
@@ -3046,7 +3062,7 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 			WGL_PIXEL_TYPE_ARB,					WGL_TYPE_RGBA_ARB,
 			WGL_COLOR_BITS_ARB,					bits.colorBits,
 			WGL_DEPTH_BITS_ARB,					bits.depthBits,
-			WGL_SAMPLE_BUFFERS_ARB,				( sampleCount > GPU_SAMPLE_COUNT_1 ),
+			WGL_SAMPLE_BUFFERS_ARB,				1,
 			WGL_SAMPLES_ARB,					sampleCount,
 			0
 		};
@@ -3094,7 +3110,7 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 	return true;
 }
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 
 static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice_t * device, const int queueIndex,
 										const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
@@ -3131,6 +3147,8 @@ static bool GpuContext_CreateForSurface( GpuContext_t * context, const GpuDevice
 	}
 
 	context->cglContext = [context->nsContext CGLContextObj];
+
+	GlInitExtensions();
 
 	return true;
 }
@@ -3488,7 +3506,7 @@ static bool GpuContext_CreateShared( GpuContext_t * context, const GpuContext_t 
 	{
 		return false;
 	}
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 	context->nsContext = NULL;
 	CGLPixelFormatObj pf = CGLGetPixelFormat( other->cglContext );
 	if ( CGLCreateContext( pf, other->cglContext, &context->cglContext ) != kCGLNoError )
@@ -3607,7 +3625,7 @@ static void GpuContext_Destroy( GpuContext_t * context )
 		context->hGLRC = NULL;
 	}
 	context->hDC = NULL;
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 	CGLSetCurrentContext( NULL );
 	if ( context->nsContext != NULL )
 	{
@@ -3672,7 +3690,7 @@ static void GpuContext_SetCurrent( GpuContext_t * context )
 {
 #if defined( OS_WINDOWS )
 	wglMakeCurrent( context->hDC, context->hGLRC );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 	CGLSetCurrentContext( context->cglContext );
 #elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB_GLX )
 	glXMakeCurrent( context->xDisplay, context->glxDrawable, context->glxContext );
@@ -3690,7 +3708,7 @@ static void GpuContext_UnsetCurrent( GpuContext_t * context )
 {
 #if defined( OS_WINDOWS )
 	wglMakeCurrent( context->hDC, NULL );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 	CGLSetCurrentContext( NULL );
 #elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB_GLX )
 	glXMakeCurrent( context->xDisplay, None, NULL );
@@ -3705,7 +3723,7 @@ static bool GpuContext_CheckCurrent( GpuContext_t * context )
 {
 #if defined( OS_WINDOWS )
 	return ( wglGetCurrentContext() == context->hGLRC );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 	return ( CGLGetCurrentContext() == context->cglContext );
 #elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB_GLX )
 	return ( glXGetCurrentContext() == context->glxContext );
@@ -3780,10 +3798,10 @@ typedef struct
 	HDC						hDC;
 	HWND					hWnd;
 	bool					windowActiveState;
-#elif defined( OS_IOS )
+#elif defined( OS_APPLE_IOS )
 	UIWindow *				uiWindow;
 	UIView *				uiView;
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 	CGDirectDisplayID		display;
 	CGDisplayModeRef		desktopDisplayMode;
 	NSWindow *				nsWindow;
@@ -4141,7 +4159,7 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 	return GPU_WINDOW_EVENT_NONE;
 }
 
-#elif defined( OS_IOS )
+#elif defined( OS_APPLE_IOS )
 
 typedef enum
 {
@@ -4281,7 +4299,7 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 	return GPU_WINDOW_EVENT_NONE;
 }
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 
 typedef enum
 {
@@ -6038,7 +6056,7 @@ static void GpuWindow_SwapInterval( GpuWindow_t * window, const int swapInterval
 	{
 #if defined( OS_WINDOWS )
 		wglSwapIntervalEXT( swapInterval );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 		CGLSetParameter( window->context.cglContext, kCGLCPSwapInterval, &swapInterval );
 #elif defined( OS_LINUX_XLIB )
 		glXSwapIntervalEXT( window->context.xDisplay, window->xWindow, swapInterval );
@@ -6057,7 +6075,7 @@ static void GpuWindow_SwapBuffers( GpuWindow_t * window )
 {
 #if defined( OS_WINDOWS )
 	SwapBuffers( window->context.hDC );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 	CGLFlushDrawable( window->context.cglContext );
 #elif defined( OS_LINUX_XLIB )
 	glXSwapBuffers( window->context.xDisplay, window->xWindow );
@@ -7167,7 +7185,7 @@ static void GpuTexture_SetWrapMode( GpuContext_t * context, GpuTexture_t * textu
 	texture->wrapMode = wrapMode;
 
 	const GLint wrap =  ( ( wrapMode == GPU_TEXTURE_WRAP_MODE_CLAMP_TO_EDGE ) ? GL_CLAMP_TO_EDGE :
-						( ( wrapMode == GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER ) ? GL_CLAMP_TO_BORDER :
+						( ( wrapMode == GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER ) ? ( glExtensions.texture_clamp_to_border ? GL_CLAMP_TO_BORDER : GL_CLAMP_TO_EDGE ) :
 						( GL_REPEAT ) ) );
 
 	GL( glBindTexture( texture->target, texture->texture ) );
@@ -9660,31 +9678,33 @@ static void GpuCommandBuffer_EndFramebuffer( GpuCommandBuffer_t * commandBuffer,
 	UNUSED_PARM( framebuffer );
 	UNUSED_PARM( arrayLayer );
 
-#if GL_CLAMP_TO_BORDER == GL_CLAMP_TO_EDGE
-	// If rendering to a texture.
-	if ( framebuffer->renderBuffers[framebuffer->currentBuffer * framebuffer->numFramebuffersPerTexture + arrayLayer] != 0 )
+	// If clamp to border is not available.
+	if ( !glExtensions.texture_clamp_to_border )
 	{
-		// Explicitly clear the border texels to black if the texture has clamp-to-border set because OpenGL-ES does not support GL_CLAMP_TO_BORDER.
-		const GpuTexture_t * texture = &framebuffer->colorTextures[framebuffer->currentBuffer];
-		if ( texture->wrapMode == GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER )
+		// If rendering to a texture.
+		if ( framebuffer->renderBuffers[framebuffer->currentBuffer * framebuffer->numFramebuffersPerTexture + arrayLayer] != 0 )
 		{
-			// Clear to fully opaque black.
-			GL( glClearColor( 0.0f, 0.0f, 0.0f, 1.0f ) );
-			// bottom
-			GL( glScissor( 0, 0, texture->width, 1 ) );
-			GL( glClear( GL_COLOR_BUFFER_BIT ) );
-			// top
-			GL( glScissor( 0, texture->height - 1, texture->width, 1 ) );
-			GL( glClear( GL_COLOR_BUFFER_BIT ) );
-			// left
-			GL( glScissor( 0, 0, 1, texture->height ) );
-			GL( glClear( GL_COLOR_BUFFER_BIT ) );
-			// right
-			GL( glScissor( texture->width - 1, 0, 1, texture->height ) );
-			GL( glClear( GL_COLOR_BUFFER_BIT ) );
+			// Explicitly clear the border texels to black if the texture has clamp-to-border set.
+			const GpuTexture_t * texture = &framebuffer->colorTextures[framebuffer->currentBuffer];
+			if ( texture->wrapMode == GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER )
+			{
+				// Clear to fully opaque black.
+				GL( glClearColor( 0.0f, 0.0f, 0.0f, 1.0f ) );
+				// bottom
+				GL( glScissor( 0, 0, texture->width, 1 ) );
+				GL( glClear( GL_COLOR_BUFFER_BIT ) );
+				// top
+				GL( glScissor( 0, texture->height - 1, texture->width, 1 ) );
+				GL( glClear( GL_COLOR_BUFFER_BIT ) );
+				// left
+				GL( glScissor( 0, 0, 1, texture->height ) );
+				GL( glClear( GL_COLOR_BUFFER_BIT ) );
+				// right
+				GL( glScissor( texture->width - 1, 0, 1, texture->height ) );
+				GL( glClear( GL_COLOR_BUFFER_BIT ) );
+			}
 		}
 	}
-#endif
 
 #if defined( OS_ANDROID )
 	// If this framebuffer has a depth buffer.
@@ -14010,7 +14030,7 @@ int APIENTRY WinMain( HINSTANCE hCurrentInst, HINSTANCE hPreviousInst, LPSTR lps
 	return StartApplication( argc, argv );
 }
 
-#elif defined( OS_IOS )
+#elif defined( OS_APPLE_IOS )
 
 static int argc_deferred;
 static char** argv_deferred;
@@ -14053,7 +14073,7 @@ int main( int argc, char * argv[] )
 	return UIApplicationMain( argc, argv, nil, @"MyAppDelegate" );
 }
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_MACOS )
 
 static const char * FormatString( const char * format, ... )
 {
