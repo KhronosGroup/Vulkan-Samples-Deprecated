@@ -2276,12 +2276,14 @@ OpenGL extensions.
 typedef struct
 {
 	bool timer_query;						// GL_ARB_timer_query, GL_EXT_disjoint_timer_query
-	bool texture_clamp_to_border;			// GL_EXT_texture_border_clamp
+	bool texture_clamp_to_border;			// GL_EXT_texture_border_clamp, GL_OES_texture_border_clamp
 	bool buffer_storage;					// GL_ARB_buffer_storage
 	bool multi_sampled_storage;				// GL_ARB_texture_storage_multisample
 	bool multi_view;						// GL_OVR_multiview, GL_OVR_multiview2
 	bool multi_sampled_resolve;				// GL_EXT_multisampled_render_to_texture
 	bool multi_view_multi_sampled_resolve;	// GL_OVR_multiview_multisampled_render_to_texture
+
+	int texture_clamp_to_border_id;
 } OpenGLExtensions_t;
 
 OpenGLExtensions_t glExtensions;
@@ -2589,6 +2591,8 @@ static void GlInitExtensions()
 	glExtensions.multi_view							= GlCheckExtension( "GL_OVR_multiview2" );
 	glExtensions.multi_sampled_resolve				= GlCheckExtension( "GL_EXT_multisampled_render_to_texture" );
 	glExtensions.multi_view_multi_sampled_resolve	= GlCheckExtension( "GL_OVR_multiview_multisampled_render_to_texture" );
+
+	glExtensions.texture_clamp_to_border_id			= GL_CLAMP_TO_BORDER;
 }
 
 #elif defined( OS_APPLE_MACOS )
@@ -2607,6 +2611,8 @@ static void GlInitExtensions()
 	glExtensions.multi_view							= GlCheckExtension( "GL_OVR_multiview2" );
 	glExtensions.multi_sampled_resolve				= GlCheckExtension( "GL_EXT_multisampled_render_to_texture" );
 	glExtensions.multi_view_multi_sampled_resolve	= GlCheckExtension( "GL_OVR_multiview_multisampled_render_to_texture" );
+
+	glExtensions.texture_clamp_to_border_id			= GL_CLAMP_TO_BORDER;
 }
 
 #elif defined( OS_ANDROID )
@@ -2679,7 +2685,11 @@ PFNGLTEXSTORAGE3DMULTISAMPLEPROC					glTexStorage3DMultisample;
 // GL_EXT_texture_border_clamp
 #if !defined( GL_CLAMP_TO_BORDER_EXT )
 #define GL_CLAMP_TO_BORDER_EXT				0x812D
-#define GL_CLAMP_TO_BORDER					GL_CLAMP_TO_BORDER_EXT
+#endif
+
+// GL_OES_texture_border_clamp
+#if !defined( GL_CLAMP_TO_BORDER_OES )
+#define GL_CLAMP_TO_BORDER_OES				0x812D
 #endif
 
 // No multi-sampled texture arrays in OpenGL ES.
@@ -2708,11 +2718,15 @@ static void GlInitExtensions()
 	glTexStorage3DMultisample						= (PFNGLTEXSTORAGE3DMULTISAMPLEPROC)					GetExtension( "glTexStorage3DMultisample" );
 	
 	glExtensions.timer_query						= GlCheckExtension( "GL_EXT_disjoint_timer_query" );
-	glExtensions.texture_clamp_to_border			= GlCheckExtension( "GL_EXT_texture_border_clamp" );
+	glExtensions.texture_clamp_to_border			= GlCheckExtension( "GL_EXT_texture_border_clamp" ) || GlCheckExtension( "GL_OES_texture_border_clamp" );
 	glExtensions.buffer_storage						= GlCheckExtension( "GL_EXT_buffer_storage" );
 	glExtensions.multi_view							= GlCheckExtension( "GL_OVR_multiview2" );
 	glExtensions.multi_sampled_resolve				= GlCheckExtension( "GL_EXT_multisampled_render_to_texture" );
 	glExtensions.multi_view_multi_sampled_resolve	= GlCheckExtension( "GL_OVR_multiview_multisampled_render_to_texture" );
+
+	glExtensions.texture_clamp_to_border_id			=	( GlCheckExtension( "GL_OES_texture_border_clamp" ) ? GL_CLAMP_TO_BORDER_OES :
+														( GlCheckExtension( "GL_EXT_texture_border_clamp" ) ? GL_CLAMP_TO_BORDER_EXT :
+														( GL_CLAMP_TO_EDGE ) ) );
 }
 
 #endif
@@ -7185,7 +7199,7 @@ static void GpuTexture_SetWrapMode( GpuContext_t * context, GpuTexture_t * textu
 	texture->wrapMode = wrapMode;
 
 	const GLint wrap =  ( ( wrapMode == GPU_TEXTURE_WRAP_MODE_CLAMP_TO_EDGE ) ? GL_CLAMP_TO_EDGE :
-						( ( wrapMode == GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER ) ? ( glExtensions.texture_clamp_to_border ? GL_CLAMP_TO_BORDER : GL_CLAMP_TO_EDGE ) :
+						( ( wrapMode == GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER ) ? glExtensions.texture_clamp_to_border_id :
 						( GL_REPEAT ) ) );
 
 	GL( glBindTexture( texture->target, texture->texture ) );
