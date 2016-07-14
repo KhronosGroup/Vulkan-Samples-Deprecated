@@ -1,3 +1,3 @@
 *.bat linguist-vendored=true
 *.sh linguist-vendored=true
-*.c linguist-language=C
+*.c linguist-vendored=false
