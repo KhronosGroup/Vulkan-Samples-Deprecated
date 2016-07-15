@@ -1,0 +1,8 @@
+*.bat linguist-vendored=true
+*.sh linguist-vendored=true
+*.txt linguist-vendored=true
+*.mk linguist-vendored=true
+*.properties linguist-vendored=true
+*.xml linguist-vendored=true
+*.gradle linguist-vendored=true
+*.md linguist-vendored=true

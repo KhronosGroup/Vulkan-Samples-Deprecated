@@ -29,46 +29,7 @@ def vkSdkPath = System.getenv('VK_SDK_PATH')
 
 rootProject.buildDir = file(new File(buildDir))
 
-task build_glslang(type: Exec) {
-	def ndkBuildDir = "../../../../build/android/ndk/layers/glsl_shader"
-	def glslangMakeDir = "${baseDir}/external/libs/glslang/ndk"
-	if ( OperatingSystem.current().isWindows() ) {
-		commandLine ndkDir + '/ndk-build.cmd', '-C', glslangMakeDir, 'NDK_LIBS_OUT=' + ndkBuildDir + '/libs', 'NDK_OUT=' + ndkBuildDir + '/obj'
-	} else {
-		commandLine ndkDir + '/ndk-build', '-C', glslangMakeDir, 'NDK_LIBS_OUT=' + ndkBuildDir + '/libs', 'NDK_OUT=' + ndkBuildDir + '/obj'
-	}
-}
-
 model {
-	repositories {
-		libs(PrebuiltLibraries) {
-			SPIRV {
-				binaries.withType(StaticLibraryBinary) {
-					staticLibraryFile = file( "${baseDir}/build/android/ndk/layers/glsl_shader/obj/local/${targetPlatform.getName()}/libSPIRV.a" )
-				}
-			}
-			OSDependent {
-				binaries.withType(StaticLibraryBinary) {
-					staticLibraryFile = file( "${baseDir}/build/android/ndk/layers/glsl_shader/obj/local/${targetPlatform.getName()}/libOSDependent.a" )
-				}
-			}
-			OGLCompiler {
-				binaries.withType(StaticLibraryBinary) {
-					staticLibraryFile = file( "${baseDir}/build/android/ndk/layers/glsl_shader/obj/local/${targetPlatform.getName()}/libOGLCompiler.a" )
-				}
-			}
-			HLSL {
-				binaries.withType(StaticLibraryBinary) {
-					staticLibraryFile = file( "${baseDir}/build/android/ndk/layers/glsl_shader/obj/local/${targetPlatform.getName()}/libHLSL.a" )
-				}
-			}
-			glslang {
-				binaries.withType(StaticLibraryBinary) {
-					staticLibraryFile = file( "${baseDir}/build/android/ndk/layers/glsl_shader/obj/local/${targetPlatform.getName()}/libglslang.a" )
-				}
-			}
-		}
-	}
 
 	android {
 		compileSdkVersion = 21
@@ -96,7 +57,7 @@ model {
 			"-I${file("${vkSdkPath}/Source/layers")}".toString()
 		])
 
-		ldLibs.addAll(["android", "log", "SPIRV", "OSDependent", "OGLCompiler", "HLSL", "glslang"])
+		ldLibs.addAll(["android", "log"])
 
 		stl = "gnustl_static"
 	}
@@ -108,11 +69,7 @@ model {
 					srcDir "${baseDir}/samples/layers/glsl_shader/"
 				}
 				dependencies {
-					library "SPIRV" linkage "static"
-					library "OSDependent" linkage "static"
-					library "OGLCompiler" linkage "static"
-					library "HLSL" linkage "static"
-					library "glslang" linkage "static"
+					project ":../../../../../../external/libs/glslang/gradle" linkage "static"
 				}
 			}
 		}
@@ -142,10 +99,6 @@ model {
 									"arm64-v8a",
 									"x86",
 									"x86_64" ])
-			ndk.ldFlags.addAll([	"-L${file("${baseDir}/build/android/ndk/layers/glsl_shader/obj/local/armeabi-v7a/")}".toString(),
-									"-L${file("${baseDir}/build/android/ndk/layers/glsl_shader/obj/local/arm64-v8a/")}".toString(),
-									"-L${file("${baseDir}/build/android/ndk/layers/glsl_shader/obj/local/x86/")}".toString(),
-									"-L${file("${baseDir}/build/android/ndk/layers/glsl_shader/obj/local/x86_64/")}".toString() ])
 		}
 	}
 }
