@@ -1,3 +1,8 @@
 *.bat linguist-vendored=true
 *.sh linguist-vendored=true
-*.c linguist-vendored=false
+*.cmake linguist-vendored=true
+*.mk linguist-vendored=true
+*.properties linguist-vendored=true
+*.xml linguist-vendored=true
+*.gradle linguist-vendored=true
+*.md linguist-vendored=true
