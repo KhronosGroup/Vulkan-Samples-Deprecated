@@ -1418,22 +1418,27 @@ formats[] =
 	//
 	FORMAT_ENUM_STRING( GL_R8,												false, "1-component, 8-bit unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_RG8,												false, "2-component, 8-bit unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_RGB8,											false, "3-component, 8-bit unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_RGBA8,											false, "4-component, 8-bit unsigned normalized" ),
 
 	FORMAT_ENUM_STRING( GL_R8_SNORM,										false, "1-component, 8-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RG8_SNORM,										false, "2-component, 8-bit signed normalized" ),
+	FORMAT_ENUM_STRING( GL_RGB8_SNORM,										false, "3-component, 8-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RGBA8_SNORM,										false, "4-component, 8-bit signed normalized" ),
 
 	FORMAT_ENUM_STRING( GL_R8UI,											false, "1-component, 8-bit unsigned integer" ),
 	FORMAT_ENUM_STRING( GL_RG8UI,											false, "2-component, 8-bit unsigned integer" ),
+	FORMAT_ENUM_STRING( GL_RGB8UI,											false, "3-component, 8-bit unsigned integer" ),
 	FORMAT_ENUM_STRING( GL_RGBA8UI,											false, "4-component, 8-bit unsigned integer" ),
 
 	FORMAT_ENUM_STRING( GL_R8I,												false, "1-component, 8-bit signed integer" ),
 	FORMAT_ENUM_STRING( GL_RG8I,											false, "2-component, 8-bit signed integer" ),
+	FORMAT_ENUM_STRING( GL_RGB8I,											false, "3-component, 8-bit signed integer" ),
 	FORMAT_ENUM_STRING( GL_RGBA8I,											false, "4-component, 8-bit signed integer" ),
 
 	FORMAT_ENUM_STRING( GL_SR8_EXT,											false, "1-component, 8-bit sRGB" ),
 	FORMAT_ENUM_STRING( GL_SRG8_EXT,										false, "2-component, 8-bit sRGB" ),
+	FORMAT_ENUM_STRING( GL_SRGB8,											false, "3-component, 8-bit sRGB" ),
 	FORMAT_ENUM_STRING( GL_SRGB8_ALPHA8,									false, "4-component, 8-bit sRGB" ),
 
 	//
@@ -1442,33 +1447,40 @@ formats[] =
 #if defined( GL_R16 )
 	FORMAT_ENUM_STRING( GL_R16,												false, "1-component, 16-bit unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_RG16,											false, "2-component, 16-bit unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_RGB16,											false, "3-component, 16-bit unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_RGBA16,											false, "4-component, 16-bit unsigned normalized" ),
 #elif defined( GL_R16_EXT )
 	FORMAT_ENUM_STRING( GL_R16_EXT,											false, "1-component, 16-bit unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_RG16_EXT,										false, "2-component, 16-bit unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_RGB16_EXT,										false, "3-component, 16-bit unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_RGB16_EXT,										false, "4-component, 16-bit unsigned normalized" ),
 #endif
 
 #if defined( GL_R16_SNORM )
 	FORMAT_ENUM_STRING( GL_R16_SNORM,										false, "1-component, 16-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RG16_SNORM,										false, "2-component, 16-bit signed normalized" ),
+	FORMAT_ENUM_STRING( GL_RGB16_SNORM,										false, "3-component, 16-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RGBA16_SNORM,									false, "4-component, 16-bit signed normalized" ),
 #elif defined( GL_R16_SNORM_EXT )
 	FORMAT_ENUM_STRING( GL_R16_SNORM_EXT,									false, "1-component, 16-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RG16_SNORM_EXT,									false, "2-component, 16-bit signed normalized" ),
+	FORMAT_ENUM_STRING( GL_RGB16_SNORM_EXT,									false, "3-component, 16-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RGB16_SNORM_EXT,									false, "4-component, 16-bit signed normalized" ),
 #endif
 
 	FORMAT_ENUM_STRING( GL_R16UI,											false, "1-component, 16-bit unsigned integer" ),
 	FORMAT_ENUM_STRING( GL_RG16UI,											false, "2-component, 16-bit unsigned integer" ),
+	FORMAT_ENUM_STRING( GL_RGB16UI,											false, "3-component, 16-bit unsigned integer" ),
 	FORMAT_ENUM_STRING( GL_RGBA16UI,										false, "4-component, 16-bit unsigned integer" ),
 
 	FORMAT_ENUM_STRING( GL_R16I,											false, "1-component, 16-bit signed integer" ),
 	FORMAT_ENUM_STRING( GL_RG16I,											false, "2-component, 16-bit signed integer" ),
+	FORMAT_ENUM_STRING( GL_RGB16I,											false, "3-component, 16-bit signed integer" ),
 	FORMAT_ENUM_STRING( GL_RGBA16I,											false, "4-component, 16-bit signed integer" ),
 
 	FORMAT_ENUM_STRING( GL_R16F,											false, "1-component, 16-bit floating-point" ),
 	FORMAT_ENUM_STRING( GL_RG16F,											false, "2-component, 16-bit floating-point" ),
+	FORMAT_ENUM_STRING( GL_RGB16F,											false, "3-component, 16-bit floating-point" ),
 	FORMAT_ENUM_STRING( GL_RGBA16F,											false, "4-component, 16-bit floating-point" ),
 
 	//
@@ -1476,14 +1488,17 @@ formats[] =
 	//
 	FORMAT_ENUM_STRING( GL_R32UI,											false, "1-component, 32-bit unsigned integer" ),
 	FORMAT_ENUM_STRING( GL_RG32UI,											false, "2-component, 32-bit unsigned integer" ),
+	FORMAT_ENUM_STRING( GL_RGB32UI,											false, "3-component, 32-bit unsigned integer" ),
 	FORMAT_ENUM_STRING( GL_RGBA32UI,										false, "4-component, 32-bit unsigned integer" ),
 
 	FORMAT_ENUM_STRING( GL_R32I,											false, "1-component, 32-bit signed integer" ),
 	FORMAT_ENUM_STRING( GL_RG32I,											false, "2-component, 32-bit signed integer" ),
+	FORMAT_ENUM_STRING( GL_RGB32I,											false, "3-component, 32-bit signed integer" ),
 	FORMAT_ENUM_STRING( GL_RGBA32I,											false, "4-component, 32-bit signed integer" ),
 
 	FORMAT_ENUM_STRING( GL_R32F,											false, "1-component, 32-bit floating-point" ),
 	FORMAT_ENUM_STRING( GL_RG32F,											false, "2-component, 32-bit floating-point" ),
+	FORMAT_ENUM_STRING( GL_RGB32F,											false, "3-component, 32-bit floating-point" ),
 	FORMAT_ENUM_STRING( GL_RGBA32F,											false, "4-component, 32-bit floating-point" ),
 
 	//
@@ -1557,20 +1572,6 @@ formats[] =
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB_ALPHA,							true, "4-component, generic, sRGB" ),
 #endif
 
-#if defined( GL_COMPRESSED_RED_RGTC1 )
-	FORMAT_ENUM_STRING( GL_COMPRESSED_RED_RGTC1,							true, "1-component, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_COMPRESSED_SIGNED_RED_RGTC1,						true, "1-component, signed normalized" ),
-	FORMAT_ENUM_STRING( GL_COMPRESSED_RG_RGTC2,								true, "2-component, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_COMPRESSED_SIGNED_RG_RGTC2,						true, "2-component, signed normalized" ),
-#endif
-
-#if defined( GL_COMPRESSED_RGBA_BPTC_UNORM )
-	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_BPTC_UNORM,						true, "4-component, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM,				true, "4-component, sRGB" ),
-	FORMAT_ENUM_STRING( GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT,				true, "3-component, signed floating-point" ),
-	FORMAT_ENUM_STRING( GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT,				true, "3-component, unsigned floating-point" ),
-#endif
-
 #if defined( GL_COMPRESSED_RGB_S3TC_DXT1_EXT )
 	FORMAT_ENUM_STRING( GL_COMPRESSED_RGB_S3TC_DXT1_EXT,					true, "line through 3D space, unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,					true, "line through 3D space plus 1-bit alpha, unsigned normalized" ),
@@ -1587,10 +1588,23 @@ formats[] =
 
 #if defined( GL_COMPRESSED_LUMINANCE_LATC1_EXT )
 	FORMAT_ENUM_STRING( GL_COMPRESSED_LUMINANCE_LATC1_EXT,					true, "line through 1D space, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT,			true, "line through 2D space, unsigned normalized" ),
-
+	FORMAT_ENUM_STRING( GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT,			true, "two lines through 1D space, unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT,			true, "line through 1D space, signed normalized" ),
-	FORMAT_ENUM_STRING( GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT,		true, "line through 2D space, signed normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT,		true, "two lines through 1D space, signed normalized" ),
+#endif
+
+#if defined( GL_COMPRESSED_RED_RGTC1 )
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RED_RGTC1,							true, "line through 1D space, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RG_RGTC2,								true, "two lines through 1D space, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SIGNED_RED_RGTC1,						true, "line through 1D space, signed normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SIGNED_RG_RGTC2,						true, "two lines through 1D space, signed normalized" ),
+#endif
+
+#if defined( GL_COMPRESSED_RGBA_BPTC_UNORM )
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT,				true, "3-component, signed floating-point" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT,				true, "3-component, unsigned floating-point" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_BPTC_UNORM,						true, "4-component, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM,				true, "4-component, sRGB" ),
 #endif
 
 #if defined( GL_ATC_RGB_AMD )
@@ -1615,8 +1629,8 @@ formats[] =
 
 #if defined( GL_COMPRESSED_R11_EAC )
 	FORMAT_ENUM_STRING( GL_COMPRESSED_R11_EAC,								true, "1-component ETC, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_COMPRESSED_SIGNED_R11_EAC,						true, "1-component ETC, signed normalized" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_RG11_EAC,								true, "2-component ETC, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SIGNED_R11_EAC,						true, "1-component ETC, signed normalized" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SIGNED_RG11_EAC,						true, "2-component ETC, signed normalized" ),
 #endif
 
@@ -1663,6 +1677,7 @@ formats[] =
 	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_6x5x5_OES,					true, "4-component ASTC, 6x5x5 blocks, unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_6x6x5_OES,					true, "4-component ASTC, 6x6x5 blocks, unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_6x6x6_OES,					true, "4-component ASTC, 6x6x6 blocks, unsigned normalized" ),
+
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_3x3x3_OES,			true, "4-component ASTC, 3x3x3 blocks, sRGB" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x3x3_OES,			true, "4-component ASTC, 4x3x3 blocks, sRGB" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4x3_OES,			true, "4-component ASTC, 4x4x3 blocks, sRGB" ),

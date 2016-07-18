@@ -490,101 +490,6 @@ Common headers
 
 /*
 ================================
-Compute support
-================================
-*/
-
-#if defined( OS_APPLE_MACOS ) && ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR < 43 )
-
-	#define OPENGL_COMPUTE_ENABLED	0
-
-	#define GL_SHADER_STORAGE_BUFFER			0x90D2
-	#define GL_COMPUTE_SHADER					0x91B9
-	#define GL_UNIFORM_BLOCK					0x92E2
-	#define GL_SHADER_STORAGE_BLOCK				0x92E6
-
-	#define GL_TEXTURE_FETCH_BARRIER_BIT		0x00000008
-	#define GL_TEXTURE_UPDATE_BARRIER_BIT		0x00000100
-	#define GL_SHADER_IMAGE_ACCESS_BARRIER_BIT	0x00000020
-	#define GL_FRAMEBUFFER_BARRIER_BIT			0x00000400
-	#define GL_ALL_BARRIER_BITS					0xFFFFFFFF
-
-	static GLuint glGetProgramResourceIndex( GLuint program, GLenum programInterface, const GLchar *name ) { assert( false ); return 0; }
-	static void glShaderStorageBlockBinding( GLuint program, GLuint storageBlockIndex, GLuint storageBlockBinding ) { assert( false ); }
-	static void glBindImageTexture( GLuint unit, GLuint texture, GLint level, GLboolean layered, GLint layer, GLenum access, GLenum format ) { assert( false ); }
-	static void glDispatchCompute( GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z ) { assert( false ); }
-
-	static void glMemoryBarrier( GLbitfield barriers ) { assert( false ); }
-
-	static void glTexStorage2DMultisample( GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLboolean fixedsamplelocations ) { assert( false ); }
-	static void glTexStorage3DMultisample( GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLboolean fixedsamplelocations ) { assert( false ); }
-
-#elif defined( OS_ANDROID ) && ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR < 31 )
-
-	#define OPENGL_COMPUTE_ENABLED	0
-
-	#define GL_SHADER_STORAGE_BUFFER			0x90D2
-	#define GL_COMPUTE_SHADER					0x91B9
-	#define GL_UNIFORM_BLOCK					0x92E2
-	#define GL_SHADER_STORAGE_BLOCK				0x92E6
-
-	#define GL_READ_ONLY						0x88B8
-	#define GL_WRITE_ONLY						0x88B9
-	#define GL_READ_WRITE						0x88BA
-
-	#define GL_TEXTURE_FETCH_BARRIER_BIT		0x00000008
-	#define GL_SHADER_IMAGE_ACCESS_BARRIER_BIT	0x00000020
-	#define GL_FRAMEBUFFER_BARRIER_BIT			0x00000400
-	#define GL_ALL_BARRIER_BITS					0xFFFFFFFF
-
-	static GLuint glGetProgramResourceIndex( GLuint program, GLenum programInterface, const GLchar *name ) { assert( false ); return 0; }
-	static void glShaderStorageBlockBinding( GLuint program, GLuint storageBlockIndex, GLuint storageBlockBinding ) { assert( false ); }
-	static void glBindImageTexture( GLuint unit, GLuint texture, GLint level, GLboolean layered, GLint layer, GLenum access, GLenum format ) { assert( false ); }
-	static void glDispatchCompute( GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z ) { assert( false ); }
-
-	static void glProgramUniform1i( GLuint program, GLint location, GLint v0 ) { assert( false ); }
-	static void glMemoryBarrier( GLbitfield barriers ) { assert( false ); }
-
-#else
-
-	#define OPENGL_COMPUTE_ENABLED	1
-
-#endif
-
-/*
-================================
-Multi-view support
-================================
-*/
-
-#if !defined( GL_OVR_multiview )
-#define GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_NUM_VIEWS_OVR			0x9630
-#define GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_BASE_VIEW_INDEX_OVR	0x9632
-#define GL_MAX_VIEWS_OVR										0x9631
-
-typedef void (* PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint baseViewIndex, GLsizei numViews);
-#endif
-
-/*
-================================
-Multi-sampling support
-================================
-*/
-
-#if !defined( GL_EXT_framebuffer_multisample )
-typedef void (* PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC) (GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height);
-#endif
-
-#if !defined( GL_EXT_multisampled_render_to_texture )
-typedef void (* PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC) (GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level, GLsizei samples);
-#endif
-
-#if !defined( GL_OVR_multiview_multisampled_render_to_texture )
-typedef void (* PFNGLFRAMEBUFFERTEXTUREMULTISAMPLEMULTIVIEWOVRPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level, GLsizei samples, GLint baseViewIndex, GLsizei numViews);
-#endif
-
-/*
-================================
 Common defines
 ================================
 */
@@ -2288,6 +2193,44 @@ typedef struct
 
 OpenGLExtensions_t glExtensions;
 
+/*
+================================
+Multi-view support
+================================
+*/
+
+#if !defined( GL_OVR_multiview )
+#define GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_NUM_VIEWS_OVR			0x9630
+#define GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_BASE_VIEW_INDEX_OVR	0x9632
+#define GL_MAX_VIEWS_OVR										0x9631
+
+typedef void (* PFNGLFRAMEBUFFERTEXTUREMULTIVIEWOVRPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint baseViewIndex, GLsizei numViews);
+#endif
+
+/*
+================================
+Multi-sampling support
+================================
+*/
+
+#if !defined( GL_EXT_framebuffer_multisample )
+typedef void (* PFNGLRENDERBUFFERSTORAGEMULTISAMPLEEXTPROC) (GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height);
+#endif
+
+#if !defined( GL_EXT_multisampled_render_to_texture )
+typedef void (* PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC) (GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level, GLsizei samples);
+#endif
+
+#if !defined( GL_OVR_multiview_multisampled_render_to_texture )
+typedef void (* PFNGLFRAMEBUFFERTEXTUREMULTISAMPLEMULTIVIEWOVRPROC) (GLenum target, GLenum attachment, GLuint texture, GLint level, GLsizei samples, GLint baseViewIndex, GLsizei numViews);
+#endif
+
+/*
+================================
+Get proc address / extensions
+================================
+*/
+
 #if defined( OS_WINDOWS )
 PROC GetExtension( const char * functionName )
 {
@@ -2728,6 +2671,69 @@ static void GlInitExtensions()
 														( GlCheckExtension( "GL_EXT_texture_border_clamp" ) ? GL_CLAMP_TO_BORDER_EXT :
 														( GL_CLAMP_TO_EDGE ) ) );
 }
+
+#endif
+
+/*
+================================
+Compute support
+================================
+*/
+
+#if defined( OS_APPLE_MACOS ) && ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR < 43 )
+
+	#define OPENGL_COMPUTE_ENABLED	0
+
+	#define GL_SHADER_STORAGE_BUFFER			0x90D2
+	#define GL_COMPUTE_SHADER					0x91B9
+	#define GL_UNIFORM_BLOCK					0x92E2
+	#define GL_SHADER_STORAGE_BLOCK				0x92E6
+
+	#define GL_TEXTURE_FETCH_BARRIER_BIT		0x00000008
+	#define GL_TEXTURE_UPDATE_BARRIER_BIT		0x00000100
+	#define GL_SHADER_IMAGE_ACCESS_BARRIER_BIT	0x00000020
+	#define GL_FRAMEBUFFER_BARRIER_BIT			0x00000400
+	#define GL_ALL_BARRIER_BITS					0xFFFFFFFF
+
+	static GLuint glGetProgramResourceIndex( GLuint program, GLenum programInterface, const GLchar *name ) { assert( false ); return 0; }
+	static void glShaderStorageBlockBinding( GLuint program, GLuint storageBlockIndex, GLuint storageBlockBinding ) { assert( false ); }
+	static void glBindImageTexture( GLuint unit, GLuint texture, GLint level, GLboolean layered, GLint layer, GLenum access, GLenum format ) { assert( false ); }
+	static void glDispatchCompute( GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z ) { assert( false ); }
+
+	static void glMemoryBarrier( GLbitfield barriers ) { assert( false ); }
+
+	static void glTexStorage2DMultisample( GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLboolean fixedsamplelocations ) { assert( false ); }
+	static void glTexStorage3DMultisample( GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLboolean fixedsamplelocations ) { assert( false ); }
+
+#elif defined( OS_ANDROID ) && ( OPENGL_VERSION_MAJOR * 10 + OPENGL_VERSION_MINOR < 31 )
+
+	#define OPENGL_COMPUTE_ENABLED	0
+
+	#define GL_SHADER_STORAGE_BUFFER			0x90D2
+	#define GL_COMPUTE_SHADER					0x91B9
+	#define GL_UNIFORM_BLOCK					0x92E2
+	#define GL_SHADER_STORAGE_BLOCK				0x92E6
+
+	#define GL_READ_ONLY						0x88B8
+	#define GL_WRITE_ONLY						0x88B9
+	#define GL_READ_WRITE						0x88BA
+
+	#define GL_TEXTURE_FETCH_BARRIER_BIT		0x00000008
+	#define GL_SHADER_IMAGE_ACCESS_BARRIER_BIT	0x00000020
+	#define GL_FRAMEBUFFER_BARRIER_BIT			0x00000400
+	#define GL_ALL_BARRIER_BITS					0xFFFFFFFF
+
+	static GLuint glGetProgramResourceIndex( GLuint program, GLenum programInterface, const GLchar *name ) { assert( false ); return 0; }
+	static void glShaderStorageBlockBinding( GLuint program, GLuint storageBlockIndex, GLuint storageBlockBinding ) { assert( false ); }
+	static void glBindImageTexture( GLuint unit, GLuint texture, GLint level, GLboolean layered, GLint layer, GLenum access, GLenum format ) { assert( false ); }
+	static void glDispatchCompute( GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z ) { assert( false ); }
+
+	static void glProgramUniform1i( GLuint program, GLint location, GLint v0 ) { assert( false ); }
+	static void glMemoryBarrier( GLbitfield barriers ) { assert( false ); }
+
+#else
+
+	#define OPENGL_COMPUTE_ENABLED	1
 
 #endif
 
@@ -6235,8 +6241,8 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 								const int width, const int height, const int depth,
 								const int numberOfArrayElements, const int numberOfFaces,
 								const bool mipmaps, const bool border );
-static bool GpuTexture_CreateFromFile( GpuContext_t * context, GpuTexture_t * texture, const char * fileName );
 static bool GpuTexture_CreateFromSwapChain( GpuContext_t * context, GpuTexture_t * texture, const GpuWindow_t * window, int index );
+static bool GpuTexture_CreateFromFile( GpuContext_t * context, GpuTexture_t * texture, const char * fileName );
 static void GpuTexture_Destroy( GpuContext_t * context, GpuTexture_t * texture );
 
 static void GpuTexture_SetFilter( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureFilter_t filter );
@@ -6342,7 +6348,6 @@ typedef enum
 #if defined( GL_COMPRESSED_LUMINANCE_LATC1_EXT )
 	GPU_TEXTURE_FORMAT_BC4_R8_UNORM			= GL_COMPRESSED_LUMINANCE_LATC1_EXT,				// 1-component, line through 1D space, unsigned normalized
 	GPU_TEXTURE_FORMAT_BC5_R8G8_UNORM		= GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT,			// 2-component, two lines through 1D space, unsigned normalized
-
 	GPU_TEXTURE_FORMAT_BC4_R8_SNORM			= GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT,			// 1-component, line through 1D space, signed normalized
 	GPU_TEXTURE_FORMAT_BC5_R8G8_SNORM		= GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT,	// 2-component, two lines through 1D space, signed normalized
 #endif
@@ -6363,7 +6368,6 @@ typedef enum
 #if defined( GL_COMPRESSED_R11_EAC )
 	GPU_TEXTURE_FORMAT_EAC_R11_UNORM		= GL_COMPRESSED_R11_EAC,							// 1-component ETC, line through 1D space, unsigned normalized
 	GPU_TEXTURE_FORMAT_EAC_R11G11_UNORM		= GL_COMPRESSED_RG11_EAC,							// 2-component ETC, two lines through 1D space, unsigned normalized
-
 	GPU_TEXTURE_FORMAT_EAC_R11_SNORM		= GL_COMPRESSED_SIGNED_R11_EAC,						// 1-component ETC, line through 1D space, signed normalized
 	GPU_TEXTURE_FORMAT_EAC_R11G11_SNORM		= GL_COMPRESSED_SIGNED_RG11_EAC,					// 2-component ETC, two lines through 1D space, signed normalized
 #endif
@@ -6576,11 +6580,11 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 		const unsigned char * endOfBuffer = levelData + dataSize;
 		bool compressed = false;
 
-		for ( int i = 0; i < numDataLevels; i++ )
+		for ( int mipLevel = 0; mipLevel < numDataLevels; mipLevel++ )
 		{
-			const int w = ( width >> i ) >= 1 ? ( width >> i ) : 1;
-			const int h = ( height >> i ) >= 1 ? ( height >> i ) : 1;
-			const int d = ( depth >> i ) >= 1 ? ( depth >> i ) : 1;
+			const int mipWidth = ( width >> mipLevel ) >= 1 ? ( width >> mipLevel ) : 1;
+			const int mipHeight = ( height >> mipLevel ) >= 1 ? ( height >> mipLevel ) : 1;
+			const int mipDepth = ( depth >> mipLevel ) >= 1 ? ( depth >> mipLevel ) : 1;
 
 			size_t mipSize = 0;
 			GLenum glFormat = GL_RGBA;
@@ -6590,159 +6594,159 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 				//
 				// 8 bits per component
 				//
-				case GL_R8:				{ mipSize = w * h * d * 1 * sizeof( unsigned char ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_BYTE; break; }
-				case GL_RG8:			{ mipSize = w * h * d * 2 * sizeof( unsigned char ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_BYTE; break; }
-				case GL_RGBA8:			{ mipSize = w * h * d * 4 * sizeof( unsigned char ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_R8:				{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( unsigned char ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_RG8:			{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( unsigned char ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_RGBA8:			{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( unsigned char ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_BYTE; break; }
 
-				case GL_R8_SNORM:		{ mipSize = w * h * d * 1 * sizeof( char ); glFormat = GL_RED;  glDataType = GL_BYTE; break; }
-				case GL_RG8_SNORM:		{ mipSize = w * h * d * 2 * sizeof( char ); glFormat = GL_RG;   glDataType = GL_BYTE; break; }
-				case GL_RGBA8_SNORM:	{ mipSize = w * h * d * 4 * sizeof( char ); glFormat = GL_RGBA; glDataType = GL_BYTE; break; }
+				case GL_R8_SNORM:		{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( char ); glFormat = GL_RED;  glDataType = GL_BYTE; break; }
+				case GL_RG8_SNORM:		{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( char ); glFormat = GL_RG;   glDataType = GL_BYTE; break; }
+				case GL_RGBA8_SNORM:	{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( char ); glFormat = GL_RGBA; glDataType = GL_BYTE; break; }
 
-				case GL_R8UI:			{ mipSize = w * h * d * 1 * sizeof( unsigned char ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_BYTE; break; }
-				case GL_RG8UI:			{ mipSize = w * h * d * 2 * sizeof( unsigned char ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_BYTE; break; }
-				case GL_RGBA8UI:		{ mipSize = w * h * d * 4 * sizeof( unsigned char ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_R8UI:			{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( unsigned char ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_RG8UI:			{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( unsigned char ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_RGBA8UI:		{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( unsigned char ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_BYTE; break; }
 
-				case GL_R8I:			{ mipSize = w * h * d * 1 * sizeof( char ); glFormat = GL_RED;  glDataType = GL_BYTE; break; }
-				case GL_RG8I:			{ mipSize = w * h * d * 2 * sizeof( char ); glFormat = GL_RG;   glDataType = GL_BYTE; break; }
-				case GL_RGBA8I:			{ mipSize = w * h * d * 4 * sizeof( char ); glFormat = GL_RGBA; glDataType = GL_BYTE; break; }
+				case GL_R8I:			{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( char ); glFormat = GL_RED;  glDataType = GL_BYTE; break; }
+				case GL_RG8I:			{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( char ); glFormat = GL_RG;   glDataType = GL_BYTE; break; }
+				case GL_RGBA8I:			{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( char ); glFormat = GL_RGBA; glDataType = GL_BYTE; break; }
 
-				case GL_SR8_EXT:		{ mipSize = w * h * d * 1 * sizeof( unsigned char ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_BYTE; break; }
-				case GL_SRG8_EXT:		{ mipSize = w * h * d * 2 * sizeof( unsigned char ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_BYTE; break; }
-				case GL_SRGB8_ALPHA8:	{ mipSize = w * h * d * 4 * sizeof( unsigned char ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_SR8_EXT:		{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( unsigned char ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_SRG8_EXT:		{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( unsigned char ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_BYTE; break; }
+				case GL_SRGB8_ALPHA8:	{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( unsigned char ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_BYTE; break; }
 
 				//
 				// 16 bits per component
 				//
 #if defined( GL_R16 )
-				case GL_R16:			{ mipSize = w * h * d * 1 * sizeof( unsigned short ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_SHORT; break; }
-				case GL_RG16:			{ mipSize = w * h * d * 2 * sizeof( unsigned short ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_SHORT; break; }
-				case GL_RGBA16:			{ mipSize = w * h * d * 4 * sizeof( unsigned short ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_R16:			{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( unsigned short ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_RG16:			{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( unsigned short ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_RGBA16:			{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( unsigned short ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_SHORT; break; }
 #elif defined( GL_R16_EXT )
-				case GL_R16_EXT:		{ mipSize = w * h * d * 1 * sizeof( unsigned short ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_SHORT; break; }
-				case GL_RG16_EXT:		{ mipSize = w * h * d * 2 * sizeof( unsigned short ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_SHORT; break; }
-				case GL_RGB16_EXT:		{ mipSize = w * h * d * 4 * sizeof( unsigned short ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_R16_EXT:		{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( unsigned short ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_RG16_EXT:		{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( unsigned short ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_RGB16_EXT:		{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( unsigned short ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_SHORT; break; }
 #endif
 
 #if defined( GL_R16_SNORM )
-				case GL_R16_SNORM:		{ mipSize = w * h * d * 1 * sizeof( short ); glFormat = GL_RED;  glDataType = GL_SHORT; break; }
-				case GL_RG16_SNORM:		{ mipSize = w * h * d * 2 * sizeof( short ); glFormat = GL_RG;   glDataType = GL_SHORT; break; }
-				case GL_RGBA16_SNORM:	{ mipSize = w * h * d * 4 * sizeof( short ); glFormat = GL_RGBA; glDataType = GL_SHORT; break; }
+				case GL_R16_SNORM:		{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( short ); glFormat = GL_RED;  glDataType = GL_SHORT; break; }
+				case GL_RG16_SNORM:		{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( short ); glFormat = GL_RG;   glDataType = GL_SHORT; break; }
+				case GL_RGBA16_SNORM:	{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( short ); glFormat = GL_RGBA; glDataType = GL_SHORT; break; }
 #elif defined( GL_R16_SNORM_EXT )
-				case GL_R16_SNORM_EXT:	{ mipSize = w * h * d * 1 * sizeof( short ); glFormat = GL_RED;  glDataType = GL_SHORT; break; }
-				case GL_RG16_SNORM_EXT:	{ mipSize = w * h * d * 2 * sizeof( short ); glFormat = GL_RG;   glDataType = GL_SHORT; break; }
-				case GL_RGB16_SNORM_EXT:{ mipSize = w * h * d * 4 * sizeof( short ); glFormat = GL_RGBA; glDataType = GL_SHORT; break; }
+				case GL_R16_SNORM_EXT:	{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( short ); glFormat = GL_RED;  glDataType = GL_SHORT; break; }
+				case GL_RG16_SNORM_EXT:	{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( short ); glFormat = GL_RG;   glDataType = GL_SHORT; break; }
+				case GL_RGBA16_SNORM_EXT:{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( short ); glFormat = GL_RGBA; glDataType = GL_SHORT; break; }
 #endif
 
-				case GL_R16UI:			{ mipSize = w * h * d * 1 * sizeof( unsigned short ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_SHORT; break; }
-				case GL_RG16UI:			{ mipSize = w * h * d * 2 * sizeof( unsigned short ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_SHORT; break; }
-				case GL_RGBA16UI:		{ mipSize = w * h * d * 4 * sizeof( unsigned short ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_R16UI:			{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( unsigned short ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_RG16UI:			{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( unsigned short ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_SHORT; break; }
+				case GL_RGBA16UI:		{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( unsigned short ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_SHORT; break; }
 
-				case GL_R16I:			{ mipSize = w * h * d * 1 * sizeof( short ); glFormat = GL_RED;  glDataType = GL_SHORT; break; }
-				case GL_RG16I:			{ mipSize = w * h * d * 2 * sizeof( short ); glFormat = GL_RG;   glDataType = GL_SHORT; break; }
-				case GL_RGBA16I:		{ mipSize = w * h * d * 4 * sizeof( short ); glFormat = GL_RGBA; glDataType = GL_SHORT; break; }
+				case GL_R16I:			{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( short ); glFormat = GL_RED;  glDataType = GL_SHORT; break; }
+				case GL_RG16I:			{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( short ); glFormat = GL_RG;   glDataType = GL_SHORT; break; }
+				case GL_RGBA16I:		{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( short ); glFormat = GL_RGBA; glDataType = GL_SHORT; break; }
 
-				case GL_R16F:			{ mipSize = w * h * d * 1 * sizeof( unsigned short ); glFormat = GL_RED;  glDataType = GL_HALF_FLOAT; break; }
-				case GL_RG16F:			{ mipSize = w * h * d * 2 * sizeof( unsigned short ); glFormat = GL_RG;   glDataType = GL_HALF_FLOAT; break; }
-				case GL_RGBA16F:		{ mipSize = w * h * d * 4 * sizeof( unsigned short ); glFormat = GL_RGBA; glDataType = GL_HALF_FLOAT; break; }
+				case GL_R16F:			{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( unsigned short ); glFormat = GL_RED;  glDataType = GL_HALF_FLOAT; break; }
+				case GL_RG16F:			{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( unsigned short ); glFormat = GL_RG;   glDataType = GL_HALF_FLOAT; break; }
+				case GL_RGBA16F:		{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( unsigned short ); glFormat = GL_RGBA; glDataType = GL_HALF_FLOAT; break; }
 
 				//
 				// 32 bits per component
 				//
-				case GL_R32UI:			{ mipSize = w * h * d * 1 * sizeof( unsigned int ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_INT; break; }
-				case GL_RG32UI:			{ mipSize = w * h * d * 2 * sizeof( unsigned int ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_INT; break; }
-				case GL_RGBA32UI:		{ mipSize = w * h * d * 4 * sizeof( unsigned int ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_INT; break; }
+				case GL_R32UI:			{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( unsigned int ); glFormat = GL_RED;  glDataType = GL_UNSIGNED_INT; break; }
+				case GL_RG32UI:			{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( unsigned int ); glFormat = GL_RG;   glDataType = GL_UNSIGNED_INT; break; }
+				case GL_RGBA32UI:		{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( unsigned int ); glFormat = GL_RGBA; glDataType = GL_UNSIGNED_INT; break; }
 
-				case GL_R32I:			{ mipSize = w * h * d * 1 * sizeof( int ); glFormat = GL_RED;  glDataType = GL_INT; break; }
-				case GL_RG32I:			{ mipSize = w * h * d * 2 * sizeof( int ); glFormat = GL_RG;   glDataType = GL_INT; break; }
-				case GL_RGBA32I:		{ mipSize = w * h * d * 4 * sizeof( int ); glFormat = GL_RGBA; glDataType = GL_INT; break; }
+				case GL_R32I:			{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( int ); glFormat = GL_RED;  glDataType = GL_INT; break; }
+				case GL_RG32I:			{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( int ); glFormat = GL_RG;   glDataType = GL_INT; break; }
+				case GL_RGBA32I:		{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( int ); glFormat = GL_RGBA; glDataType = GL_INT; break; }
 
-				case GL_R32F:			{ mipSize = w * h * d * 1 * sizeof( float ); glFormat = GL_RED;  glDataType = GL_FLOAT; break; }
-				case GL_RG32F:			{ mipSize = w * h * d * 2 * sizeof( float ); glFormat = GL_RG;   glDataType = GL_FLOAT; break; }
-				case GL_RGBA32F:		{ mipSize = w * h * d * 4 * sizeof( float ); glFormat = GL_RGBA; glDataType = GL_FLOAT; break; }
+				case GL_R32F:			{ mipSize = mipWidth * mipHeight * mipDepth * 1 * sizeof( float ); glFormat = GL_RED;  glDataType = GL_FLOAT; break; }
+				case GL_RG32F:			{ mipSize = mipWidth * mipHeight * mipDepth * 2 * sizeof( float ); glFormat = GL_RG;   glDataType = GL_FLOAT; break; }
+				case GL_RGBA32F:		{ mipSize = mipWidth * mipHeight * mipDepth * 4 * sizeof( float ); glFormat = GL_RGBA; glDataType = GL_FLOAT; break; }
 
 				//
 				// S3TC/DXT/BC
 				//
 #if defined( GL_COMPRESSED_RGB_S3TC_DXT1_EXT )
-				case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:				{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:				{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:				{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:				{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:				{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 8; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:				{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 8; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:				{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:				{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 16; compressed = true; break; }
 #endif
 
 #if defined( GL_COMPRESSED_SRGB_S3TC_DXT1_EXT )
-				case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:				{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
-				case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:		{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
-				case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:		{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:		{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:				{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 8; compressed = true; break; }
+				case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:		{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 8; compressed = true; break; }
+				case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:		{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:		{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 16; compressed = true; break; }
 #endif
 
 #if defined( GL_COMPRESSED_LUMINANCE_LATC1_EXT )
-				case GL_COMPRESSED_LUMINANCE_LATC1_EXT:
-				case GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT:		{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
+				case GL_COMPRESSED_LUMINANCE_LATC1_EXT:				{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 8; compressed = true; break; }
+				case GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT:		{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 16; compressed = true; break; }
 
-				case GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT:
-				case GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT:{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
+				case GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT:		{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 8; compressed = true; break; }
+				case GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT:{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 16; compressed = true; break; }
 #endif
 
 				//
 				// ETC
 				//
 #if defined( GL_COMPRESSED_RGB8_ETC2 )
-				case GL_COMPRESSED_RGB8_ETC2:						{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
-				case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:	{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
-				case GL_COMPRESSED_RGBA8_ETC2_EAC:					{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGB8_ETC2:						{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 8; compressed = true; break; }
+				case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:	{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 8; compressed = true; break; }
+				case GL_COMPRESSED_RGBA8_ETC2_EAC:					{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 16; compressed = true; break; }
 
-				case GL_COMPRESSED_SRGB8_ETC2:						{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:	{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:			{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ETC2:						{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 8; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:	{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 8; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:			{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 16; compressed = true; break; }
 #endif
 
 #if defined( GL_COMPRESSED_R11_EAC )
-				case GL_COMPRESSED_R11_EAC:							{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
-				case GL_COMPRESSED_RG11_EAC:						{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
+				case GL_COMPRESSED_R11_EAC:							{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 8; compressed = true; break; }
+				case GL_COMPRESSED_RG11_EAC:						{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 16; compressed = true; break; }
 
-				case GL_COMPRESSED_SIGNED_R11_EAC:					{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 8; compressed = true; break; }
-				case GL_COMPRESSED_SIGNED_RG11_EAC:					{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
+				case GL_COMPRESSED_SIGNED_R11_EAC:					{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 8; compressed = true; break; }
+				case GL_COMPRESSED_SIGNED_RG11_EAC:					{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 16; compressed = true; break; }
 #endif
 
 				//
 				// ASTC
 				//
 #if defined( GL_COMPRESSED_RGBA_ASTC_4x4_KHR )
-				case GL_COMPRESSED_RGBA_ASTC_4x4_KHR:				{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_ASTC_5x4_KHR:				{ mipSize = ((w+4)/5) * ((h+3)/4) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_ASTC_5x5_KHR:				{ mipSize = ((w+4)/5) * ((h+4)/5) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_ASTC_6x5_KHR:				{ mipSize = ((w+5)/6) * ((h+4)/5) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_ASTC_6x6_KHR:				{ mipSize = ((w+5)/6) * ((h+5)/6) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_ASTC_8x5_KHR:				{ mipSize = ((w+7)/8) * ((h+4)/5) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_ASTC_8x6_KHR:				{ mipSize = ((w+7)/8) * ((h+5)/6) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_ASTC_8x8_KHR:				{ mipSize = ((w+7)/8) * ((h+7)/8) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_ASTC_10x5_KHR:				{ mipSize = ((w+9)/10) * ((h+4)/5) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_ASTC_10x6_KHR:				{ mipSize = ((w+9)/10) * ((h+5)/6) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_ASTC_10x8_KHR:				{ mipSize = ((w+9)/10) * ((h+7)/8) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_ASTC_10x10_KHR:				{ mipSize = ((w+9)/10) * ((h+9)/10) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_ASTC_12x10_KHR:				{ mipSize = ((w+11)/12) * ((h+9)/10) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_RGBA_ASTC_12x12_KHR:				{ mipSize = ((w+11)/12) * ((h+11)/12) * d * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_ASTC_4x4_KHR:				{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_ASTC_5x4_KHR:				{ mipSize = ((mipWidth+4)/5) * ((mipHeight+3)/4) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_ASTC_5x5_KHR:				{ mipSize = ((mipWidth+4)/5) * ((mipHeight+4)/5) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_ASTC_6x5_KHR:				{ mipSize = ((mipWidth+5)/6) * ((mipHeight+4)/5) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_ASTC_6x6_KHR:				{ mipSize = ((mipWidth+5)/6) * ((mipHeight+5)/6) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_ASTC_8x5_KHR:				{ mipSize = ((mipWidth+7)/8) * ((mipHeight+4)/5) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_ASTC_8x6_KHR:				{ mipSize = ((mipWidth+7)/8) * ((mipHeight+5)/6) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_ASTC_8x8_KHR:				{ mipSize = ((mipWidth+7)/8) * ((mipHeight+7)/8) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_ASTC_10x5_KHR:				{ mipSize = ((mipWidth+9)/10) * ((mipHeight+4)/5) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_ASTC_10x6_KHR:				{ mipSize = ((mipWidth+9)/10) * ((mipHeight+5)/6) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_ASTC_10x8_KHR:				{ mipSize = ((mipWidth+9)/10) * ((mipHeight+7)/8) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_ASTC_10x10_KHR:				{ mipSize = ((mipWidth+9)/10) * ((mipHeight+9)/10) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_ASTC_12x10_KHR:				{ mipSize = ((mipWidth+11)/12) * ((mipHeight+9)/10) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_RGBA_ASTC_12x12_KHR:				{ mipSize = ((mipWidth+11)/12) * ((mipHeight+11)/12) * mipDepth * 16; compressed = true; break; }
 
-				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR:		{ mipSize = ((w+3)/4) * ((h+3)/4) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4_KHR:		{ mipSize = ((w+4)/5) * ((h+3)/4) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5_KHR:		{ mipSize = ((w+4)/5) * ((h+4)/5) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5_KHR:		{ mipSize = ((w+5)/6) * ((h+4)/5) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6_KHR:		{ mipSize = ((w+5)/6) * ((h+5)/6) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x5_KHR:		{ mipSize = ((w+7)/8) * ((h+4)/5) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x6_KHR:		{ mipSize = ((w+7)/8) * ((h+5)/6) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR:		{ mipSize = ((w+7)/8) * ((h+7)/8) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x5_KHR:		{ mipSize = ((w+9)/10) * ((h+4)/5) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x6_KHR:		{ mipSize = ((w+9)/10) * ((h+5)/6) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x8_KHR:		{ mipSize = ((w+9)/10) * ((h+7)/8) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x10_KHR:		{ mipSize = ((w+9)/10) * ((h+9)/10) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR:		{ mipSize = ((w+11)/12) * ((h+9)/10) * d * 16; compressed = true; break; }
-				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR:		{ mipSize = ((w+11)/12) * ((h+11)/12) * d * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR:		{ mipSize = ((mipWidth+3)/4) * ((mipHeight+3)/4) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4_KHR:		{ mipSize = ((mipWidth+4)/5) * ((mipHeight+3)/4) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5_KHR:		{ mipSize = ((mipWidth+4)/5) * ((mipHeight+4)/5) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5_KHR:		{ mipSize = ((mipWidth+5)/6) * ((mipHeight+4)/5) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6_KHR:		{ mipSize = ((mipWidth+5)/6) * ((mipHeight+5)/6) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x5_KHR:		{ mipSize = ((mipWidth+7)/8) * ((mipHeight+4)/5) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x6_KHR:		{ mipSize = ((mipWidth+7)/8) * ((mipHeight+5)/6) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR:		{ mipSize = ((mipWidth+7)/8) * ((mipHeight+7)/8) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x5_KHR:		{ mipSize = ((mipWidth+9)/10) * ((mipHeight+4)/5) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x6_KHR:		{ mipSize = ((mipWidth+9)/10) * ((mipHeight+5)/6) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x8_KHR:		{ mipSize = ((mipWidth+9)/10) * ((mipHeight+7)/8) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x10_KHR:		{ mipSize = ((mipWidth+9)/10) * ((mipHeight+9)/10) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR:		{ mipSize = ((mipWidth+11)/12) * ((mipHeight+9)/10) * mipDepth * 16; compressed = true; break; }
+				case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR:		{ mipSize = ((mipWidth+11)/12) * ((mipHeight+11)/12) * mipDepth * 16; compressed = true; break; }
 #endif
 				default:
 				{
-					Error( "%s: Unsupported image format %d", fileName, glInternalFormat );
+					Error( "%s: Unsupported image format %mipDepth", fileName, glInternalFormat );
 					GL( glBindTexture( glTarget, 0 ) );
 					return false;
 				}
@@ -6771,7 +6775,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 				{
 					if ( mipSize <= 0 || mipSize > (size_t)( endOfBuffer - levelData ) )
 					{
-						Error( "%s: Mip %d data exceeds buffer size (%lld > %lld)", fileName, i, (uint64_t)mipSize, (uint64_t)( endOfBuffer - levelData ) );
+						Error( "%s: Mip %mipDepth data exceeds buffer size (%lld > %lld)", fileName, mipLevel, (uint64_t)mipSize, (uint64_t)( endOfBuffer - levelData ) );
 						GL( glBindTexture( glTarget, 0 ) );
 						return false;
 					}
@@ -6779,11 +6783,11 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 					const GLenum uploadTarget = ( glTarget == GL_TEXTURE_CUBE_MAP ) ? GL_TEXTURE_CUBE_MAP_POSITIVE_X : GL_TEXTURE_2D;
 					if ( compressed )
 					{
-						GL( glCompressedTexSubImage2D( uploadTarget + face, i, 0, 0, w, h, glInternalFormat, (GLsizei)mipSize, levelData ) );
+						GL( glCompressedTexSubImage2D( uploadTarget + face, mipLevel, 0, 0, mipWidth, mipHeight, glInternalFormat, (GLsizei)mipSize, levelData ) );
 					}
 					else
 					{
-						GL( glTexSubImage2D( uploadTarget + face, i, 0, 0, w, h, glFormat, glDataType, levelData ) );
+						GL( glTexSubImage2D( uploadTarget + face, mipLevel, 0, 0, mipWidth, mipHeight, glFormat, glDataType, levelData ) );
 					}
 
 					levelData += mipSize;
@@ -6804,18 +6808,18 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 			{
 				if ( mipSize <= 0 || mipSize > (size_t)( endOfBuffer - levelData ) )
 				{
-					Error( "%s: Mip %d data exceeds buffer size (%lld > %lld)", fileName, i, (uint64_t)mipSize, (uint64_t)( endOfBuffer - levelData ) );
+					Error( "%s: Mip %mipDepth data exceeds buffer size (%lld > %lld)", fileName, mipLevel, (uint64_t)mipSize, (uint64_t)( endOfBuffer - levelData ) );
 					GL( glBindTexture( glTarget, 0 ) );
 					return false;
 				}
 
 				if ( compressed )
 				{
-					GL( glCompressedTexSubImage3D( glTarget, i, 0, 0, 0, w, h, d * numberOfArrayElements, glInternalFormat, (GLsizei)mipSize, levelData ) );
+					GL( glCompressedTexSubImage3D( glTarget, mipLevel, 0, 0, 0, mipWidth, mipHeight, mipDepth * numberOfArrayElements, glInternalFormat, (GLsizei)mipSize, levelData ) );
 				}
 				else
 				{
-					GL( glTexSubImage3D( glTarget, i, 0, 0, 0, w, h, d * numberOfArrayElements, glFormat, glDataType, levelData ) );
+					GL( glTexSubImage3D( glTarget, mipLevel, 0, 0, 0, mipWidth, mipHeight, mipDepth * numberOfArrayElements, glFormat, glDataType, levelData ) );
 				}
 
 				levelData += mipSize;
