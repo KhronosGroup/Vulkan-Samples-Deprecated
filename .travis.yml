@@ -73,7 +73,6 @@ branches:
 addons:
   apt:
     packages:
-      - clang-3.6
       - ninja-build
       - lcov
 
@@ -93,10 +92,6 @@ install:
   - pip install --user cpp-coveralls
     # Make sure we can find the above Python packages
   - export PATH=$HOME/.local/bin:$PATH
-    # Make sure that clang-3.6 is selected.
-  - if [[ "$TRAVIS_OS_NAME" == "linux" && "$CC" == "clang" ]]; then
-      export CC=clang-3.6 CXX=clang++-3.6;
-    fi
 
 before_script:
   - git clone https://github.com/KhronosGroup/glslang.git ../glslang
