@@ -16,7 +16,7 @@ matrix:
   include:
     # Android build.
     - language: android
-      sudo: false
+      sudo: required
       env: VULKAN_SAMPLES_ANDROID=ON ANDROID_TARGET=android-21 ANDROID_ABI=armeabi-v7a
     # Linux GCC debug build.
     - os: linux
@@ -106,7 +106,6 @@ script:
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${VULKAN_SAMPLES_BUILD_TYPE:-Debug} -DENABLE_CODE_COVERAGE=${VULKAN_SAMPLES_CODE_COVERAGE:-OFF} ..; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then ninja; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then ctest -j`nproc` --output-on-failure; fi
-  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then mkdir build; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then ./build_android.sh; fi
 
 after_success:
