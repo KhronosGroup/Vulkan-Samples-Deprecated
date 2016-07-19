@@ -6,7 +6,7 @@ language:
 
 # Must list an OS otherwise the Android build does not work.
 os:
-  - linux
+  - osx
 
 jdk: oraclejdk8
 
@@ -16,7 +16,7 @@ matrix:
   include:
     # Android build.
     - language: android
-      sudo: required
+      sudo: false
       env: VULKAN_SAMPLES_ANDROID=ON ANDROID_TARGET=android-21 ANDROID_ABI=armeabi-v7a
     # Linux GCC debug build.
     - os: linux
@@ -83,8 +83,8 @@ before_install:
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update && sudo apt-get -y install python3 libx11-dev libxxf86vm-dev libxrandr-dev libxcb1-dev libxcb-keysyms1-dev libxcb-icccm4-dev; fi
   # Set Android NDK path.
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then export ARCH=`uname -m`; fi
-  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then wget http://dl.google.com/android/repository/android-ndk-r11c-linux-${ARCH}.zip; fi
-  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then unzip -u -q android-ndk-r11c-linux-${ARCH}.zip; fi
+  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then wget http://dl.google.com/android/repository/android-ndk-r11c-darwin-${ARCH}.zip; fi
+  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then unzip -u -q android-ndk-r11c-darwin-${ARCH}.zip; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then export ANDROID_NDK_HOME=`pwd`/android-ndk-r11c; fi
 
 install:
