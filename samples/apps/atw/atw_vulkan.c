@@ -6997,7 +6997,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 
 		GpuContext_FlushSetupCmdBuffer( context );
 	}
-	else	// Copy source data through a linear image.
+	else	// Copy source data through a staging buffer.
 	{
 		assert( sampleCount == GPU_SAMPLE_COUNT_1 );
 
@@ -7031,10 +7031,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 		const int numDataLevels = ( numberOfMipmapLevels >= 1 ) ? numberOfMipmapLevels : 1;
 		bool compressed = false;
 
-		// Using a staging buffer to initialize the tiled image is preferred over using a linear
-		// staging image, because the Vulkan specification requires vkCmdCopyBufferToImage while
-		// support for linear images is implementation dependent. Some implementations do not
-		// support any linear images.
+		// Using a staging buffer to initialize the tiled image.
 		VkBufferCreateInfo bufferCreateInfo;
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.pNext = NULL;
@@ -7266,12 +7263,14 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 					dataOffset += mipSize;
 					if ( mipSizeStored && ( depth <= 1 && numberOfArrayElements <= 1 ) )
 					{
+						assert( mipSize == storedMipSize );
 						dataOffset += 3 - ( ( mipSize + 3 ) % 4 );
 					}
 				}
 			}
 			if ( mipSizeStored && ( depth > 1 || numberOfArrayElements > 1 ) )
 			{
+				assert( totalMipSize == storedMipSize );
 				dataOffset += 3 - ( ( totalMipSize + 3 ) % 4 );
 			}
 		}
@@ -7666,11 +7665,13 @@ static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * tex
 	const int numberOfArrayElements = ( header->numberOfArrayElements >= 1 ) ? header->numberOfArrayElements : 1;
 	const int numberOfFaces = ( header->numberOfFaces >= 1 ) ? header->numberOfFaces : 1;
 	const int numberOfMipmapLevels = header->numberOfMipmapLevels;
+	const int depth = ( header->pixelDepth >= 1 ) ? header->pixelDepth : 1;
 	const VkFormat format = vkGetVulkanFormatFromOpenGLInternalFormat( header->glInternalFormat );
 
 	return GpuTexture_CreateInternal( context, texture, fileName,
-									format, header->pixelWidth, header->pixelHeight, header->pixelDepth,
-									GPU_SAMPLE_COUNT_1, numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
+									format, GPU_SAMPLE_COUNT_1,
+									header->pixelWidth, header->pixelHeight, depth,
+									numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
 									buffer + startTex, bufferSize - startTex, true );
 }
 

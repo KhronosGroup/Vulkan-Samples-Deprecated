@@ -7088,8 +7088,9 @@ static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * tex
 	const int numberOfMipmapLevels = header->numberOfMipmapLevels;
 
 	return GpuTexture_CreateInternal( context, texture, fileName,
-									header->glInternalFormat, header->pixelWidth, header->pixelHeight, header->pixelDepth,
-									GPU_SAMPLE_COUNT_1, numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
+									header->glInternalFormat, GPU_SAMPLE_COUNT_1,
+									header->pixelWidth, header->pixelHeight, header->pixelDepth,
+									numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
 									buffer + startTex, bufferSize - startTex, true );
 }
 

@@ -27,25 +27,58 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 
+DESCRIPTION
+===========
+
+This header implements several support routines to convert OpenGL formats/types
+to Vulkan formats and provides texel/block size details for the Vulkan formats.
+These routines should be particularly useful for loading formats that store
+OpenGL formats/types such as KTX and glTF.
+
+The functions in this header file convert the format, internalFormat and type
+parameters to the following OpenGL functions to a VkFormat.
+
+void glTexImage2D( GLenum target, GLint level, GLint internalFormat,
+	GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid * data );
+void glTexImage3D( GLenum target, GLint level, GLint internalFormat,
+	GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid * data );
+void glCompressedTexImage2D( GLenum target, GLint level, GLenum internalformat,
+	GLsizei width, GLsizei height, GLint border, GLsizei imageSize, const GLvoid * data );
+void glCompressedTexImage3D( GLenum target, GLint level, GLenum internalformat,
+	GLsizei width, GLsizei height, GLsizei depth, GLint border, GLsizei imageSize, const GLvoid * data );
+void glTexStorage2D( GLenum target, GLsizei levels, GLenum internalformat,
+	GLsizei width, GLsizei height );
+void glTexStorage3D( GLenum target, GLsizei levels, GLenum internalformat,
+	GLsizei width, GLsizei height, GLsizei depth );
+void glVertexAttribPointer( GLuint index, GLint size, GLenum type, GLboolean normalized,
+	GLsizei stride, const GLvoid * pointer);
+
+
 IMPLEMENTATION
 ==============
 
 This file does not include OpenGL / OpenGL ES headers because:
-  1. including OpenGL / OpenGL ES headers is a platform dependent mess
-  2. file formats like KTX and glTF may use OpenGL formats and types that
-     on the platform are not supported in OpenGL but are supported in Vulkan
+
+  1. Including OpenGL / OpenGL ES headers is a platform dependent mess.
+  2. File formats like KTX and glTF may use OpenGL formats and types that
+     are not supported by the OpenGL implementation on the platform but are
+	 supported by the Vulkan implementation.
+  3. The OpenGL format/type constants are the same between extensions and core.
+  4. The OpenGL format/type constants are the same between OpenGL and OpenGL ES.
 
 
 ENTRY POINTS
 ============
 
-inline VkFormat vkGetVulkanFormatFromOpenGLFormat( const GLenum format, const GLenum type );
-inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint numComponents );
-inline VkFormat vkGetVulkanFormatFromOpenGLInternalFormat( const GLenum internalFormat );
-inline void vkGetVulkanFormatSize( const VkFormat format, VkFormatSize * pFormatSize );
+static inline VkFormat vkGetVulkanFormatFromOpenGLFormat( const GLenum format, const GLenum type );
+static inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint numComponents, const GLboolean normalized );
+static inline VkFormat vkGetVulkanFormatFromOpenGLInternalFormat( const GLenum internalFormat );
+static inline void vkGetVulkanFormatSize( const VkFormat format, VkFormatSize * pFormatSize );
 
 ================================================================================================
 */
+
+#include <assert.h>
 
 #if defined(_WIN32)
 #define NOMINMAX
@@ -56,14 +89,15 @@ inline void vkGetVulkanFormatSize( const VkFormat format, VkFormatSize * pFormat
 #endif
 
 typedef unsigned int GLenum;
+typedef unsigned char GLboolean;
 typedef unsigned int GLuint;
 
-// format to glTexImage2D / glTexImage3D
+// format to glTexImage2D and glTexImage3D
 #if !defined( GL_RED )
-#define GL_RED											0x1903
+#define GL_RED											0x1903	// same as GL_RED_EXT
 #endif
 #if !defined( GL_RG )
-#define GL_RG											0x8227
+#define GL_RG											0x8227	// same as GL_RG_EXT  
 #endif
 #if !defined( GL_RGB )
 #define GL_RGB											0x1907
@@ -78,22 +112,22 @@ typedef unsigned int GLuint;
 #define GL_BGRA											0x80E1	// same as GL_BGRA_EXT
 #endif
 #if !defined( GL_RED_INTEGER )
-#define GL_RED_INTEGER									0x8D94
+#define GL_RED_INTEGER									0x8D94	// same as GL_RED_INTEGER_EXT
 #endif
 #if !defined( GL_RG_INTEGER )
-#define GL_RG_INTEGER									0x8228
+#define GL_RG_INTEGER									0x8228	// same as GL_RG_INTEGER_EXT
 #endif
 #if !defined( GL_RGB_INTEGER )
-#define GL_RGB_INTEGER									0x8D98
+#define GL_RGB_INTEGER									0x8D98	// same as GL_RGB_INTEGER_EXT
 #endif
 #if !defined( GL_BGR_INTEGER )
-#define GL_BGR_INTEGER									0x8D9A
+#define GL_BGR_INTEGER									0x8D9A	// same as GL_BGR_INTEGER_EXT
 #endif
 #if !defined( GL_RGBA_INTEGER )
-#define GL_RGBA_INTEGER									0x8D99
+#define GL_RGBA_INTEGER									0x8D99	// same as GL_RGBA_INTEGER_EXT
 #endif
 #if !defined( GL_BGRA_INTEGER )
-#define GL_BGRA_INTEGER									0x8D9B
+#define GL_BGRA_INTEGER									0x8D9B	// same as GL_BGRA_INTEGER_EXT
 #endif
 #if !defined( GL_STENCIL_INDEX )
 #define GL_STENCIL_INDEX								0x1901
@@ -102,10 +136,10 @@ typedef unsigned int GLuint;
 #define GL_DEPTH_COMPONENT								0x1902
 #endif
 #if !defined( GL_DEPTH_STENCIL )
-#define GL_DEPTH_STENCIL								0x84F9	// same as GL_DEPTH_STENCIL_NV and GL_DEPTH_STENCIL_EXT
+#define GL_DEPTH_STENCIL								0x84F9	// same as GL_DEPTH_STENCIL_EXT and GL_DEPTH_STENCIL_NV
 #endif
 
-// type to glTexImage2D / glTexImage3D
+// type to glTexImage2D, glTexImage3D and glVertexAttribPointer
 #if !defined( GL_BYTE )
 #define GL_BYTE											0x1400
 #endif
@@ -130,44 +164,59 @@ typedef unsigned int GLuint;
 #if !defined( GL_HALF_FLOAT )
 #define GL_HALF_FLOAT									0x140B	// same as GL_HALF_FLOAT_NV and GL_HALF_FLOAT_ARB
 #endif
+#if !defined( GL_HALF_FLOAT_OES )
+#define GL_HALF_FLOAT_OES								0x8D61	// FIXME: why is this different?
+#endif
 #if !defined( GL_UNSIGNED_BYTE_3_3_2 )
 #define GL_UNSIGNED_BYTE_3_3_2							0x8032	// same as GL_UNSIGNED_BYTE_3_3_2_EXT
 #endif
 #if !defined( GL_UNSIGNED_BYTE_2_3_3_REV )
-#define GL_UNSIGNED_BYTE_2_3_3_REV						0x8362
+#define GL_UNSIGNED_BYTE_2_3_3_REV						0x8362	// same as GL_UNSIGNED_BYTE_2_3_3_REV_EXT
 #endif
 #if !defined( GL_UNSIGNED_SHORT_5_6_5 )
-#define GL_UNSIGNED_SHORT_5_6_5							0x8363
+#define GL_UNSIGNED_SHORT_5_6_5							0x8363	// same as GL_UNSIGNED_SHORT_5_6_5_EXT
 #endif
 #if !defined( GL_UNSIGNED_SHORT_5_6_5_REV )
-#define GL_UNSIGNED_SHORT_5_6_5_REV						0x8364
+#define GL_UNSIGNED_SHORT_5_6_5_REV						0x8364	// same as GL_UNSIGNED_SHORT_5_6_5_REV_EXT
 #endif
 #if !defined( GL_UNSIGNED_SHORT_4_4_4_4 )
 #define GL_UNSIGNED_SHORT_4_4_4_4						0x8033	// same as GL_UNSIGNED_SHORT_4_4_4_4_EXT
 #endif
 #if !defined( GL_UNSIGNED_SHORT_4_4_4_4_REV )
-#define GL_UNSIGNED_SHORT_4_4_4_4_REV					0x8365
+#define GL_UNSIGNED_SHORT_4_4_4_4_REV					0x8365	// same as  GL_UNSIGNED_SHORT_4_4_4_4_REV_EXT and GL_UNSIGNED_SHORT_4_4_4_4_REV_IMG
 #endif
 #if !defined( GL_UNSIGNED_SHORT_5_5_5_1 )
 #define GL_UNSIGNED_SHORT_5_5_5_1						0x8034	// same as GL_UNSIGNED_SHORT_5_5_5_1_EXT
 #endif
 #if !defined( GL_UNSIGNED_SHORT_1_5_5_5_REV )
-#define GL_UNSIGNED_SHORT_1_5_5_5_REV					0x8366
+#define GL_UNSIGNED_SHORT_1_5_5_5_REV					0x8366	// same as GL_UNSIGNED_SHORT_1_5_5_5_REV_EXT
 #endif
 #if !defined( GL_UNSIGNED_INT_8_8_8_8 )
 #define GL_UNSIGNED_INT_8_8_8_8							0x8035	// same as GL_UNSIGNED_INT_8_8_8_8_EXT
 #endif
 #if !defined( GL_UNSIGNED_INT_8_8_8_8_REV )
-#define GL_UNSIGNED_INT_8_8_8_8_REV						0x8367
+#define GL_UNSIGNED_INT_8_8_8_8_REV						0x8367	// same as GL_UNSIGNED_INT_8_8_8_8_REV_EXT
 #endif
 #if !defined( GL_UNSIGNED_INT_10_10_10_2 )
 #define GL_UNSIGNED_INT_10_10_10_2						0x8036	// same as GL_UNSIGNED_INT_10_10_10_2_EXT
 #endif
 #if !defined( GL_UNSIGNED_INT_2_10_10_10_REV )
-#define GL_UNSIGNED_INT_2_10_10_10_REV					0x8368
+#define GL_UNSIGNED_INT_2_10_10_10_REV					0x8368	// same as GL_UNSIGNED_INT_2_10_10_10_REV_EXT
+#endif
+#if !defined( GL_UNSIGNED_INT_10F_11F_11F_REV )
+#define GL_UNSIGNED_INT_10F_11F_11F_REV					0x8C3B	// same as GL_UNSIGNED_INT_10F_11F_11F_REV_EXT
+#endif
+#if !defined( GL_UNSIGNED_INT_5_9_9_9_REV )
+#define GL_UNSIGNED_INT_5_9_9_9_REV						0x8C3E	// same as GL_UNSIGNED_INT_5_9_9_9_REV_EXT
+#endif
+#if !defined( GL_UNSIGNED_INT_24_8 )
+#define GL_UNSIGNED_INT_24_8							0x84FA	// same as GL_UNSIGNED_INT_24_8_EXT and GL_UNSIGNED_INT_24_8_NV
+#endif
+#if !defined( GL_FLOAT_32_UNSIGNED_INT_24_8_REV )
+#define GL_FLOAT_32_UNSIGNED_INT_24_8_REV				0x8DAD	// same as GL_FLOAT_32_UNSIGNED_INT_24_8_REV_NV
 #endif
 
-inline VkFormat vkGetVulkanFormatFromOpenGLFormat( const GLenum format, const GLenum type )
+static inline VkFormat vkGetVulkanFormatFromOpenGLFormat( const GLenum format, const GLenum type )
 {
 	switch ( type )
 	{
@@ -362,24 +411,60 @@ inline VkFormat vkGetVulkanFormatFromOpenGLFormat( const GLenum format, const GL
 		//
 		// Odd bits per component
 		//
-		case GL_UNSIGNED_BYTE_3_3_2:			return VK_FORMAT_UNDEFINED;
-		case GL_UNSIGNED_BYTE_2_3_3_REV:		return VK_FORMAT_UNDEFINED;
-		case GL_UNSIGNED_SHORT_5_6_5:			return VK_FORMAT_R5G6B5_UNORM_PACK16;
-		case GL_UNSIGNED_SHORT_5_6_5_REV:		return VK_FORMAT_B5G6R5_UNORM_PACK16;
-		case GL_UNSIGNED_SHORT_4_4_4_4:			return VK_FORMAT_R4G4B4A4_UNORM_PACK16;
-		case GL_UNSIGNED_SHORT_4_4_4_4_REV:		return VK_FORMAT_B4G4R4A4_UNORM_PACK16;
-		case GL_UNSIGNED_SHORT_5_5_5_1:			return VK_FORMAT_R5G5B5A1_UNORM_PACK16;
-		case GL_UNSIGNED_SHORT_1_5_5_5_REV:		return VK_FORMAT_A1R5G5B5_UNORM_PACK16;
-		case GL_UNSIGNED_INT_8_8_8_8:			return VK_FORMAT_R8G8B8A8_UNORM;
-		case GL_UNSIGNED_INT_8_8_8_8_REV:		return VK_FORMAT_A8B8G8R8_UNORM_PACK32;
-		case GL_UNSIGNED_INT_10_10_10_2:		return VK_FORMAT_A2R10G10B10_UNORM_PACK32;
-		case GL_UNSIGNED_INT_2_10_10_10_REV:	return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
-
-		default:								return VK_FORMAT_UNDEFINED;
+		case GL_UNSIGNED_BYTE_3_3_2:
+			assert( format == GL_RGB || format == GL_RGB_INTEGER );
+			return VK_FORMAT_UNDEFINED;
+		case GL_UNSIGNED_BYTE_2_3_3_REV:
+			assert( format == GL_RGB || format == GL_RGB_INTEGER );
+			return VK_FORMAT_UNDEFINED;
+		case GL_UNSIGNED_SHORT_5_6_5:
+			assert( format == GL_RGB || format == GL_RGB_INTEGER );
+			return VK_FORMAT_R5G6B5_UNORM_PACK16;
+		case GL_UNSIGNED_SHORT_5_6_5_REV:
+			assert( format == GL_RGB || format == GL_RGB_INTEGER );
+			return VK_FORMAT_B5G6R5_UNORM_PACK16;
+		case GL_UNSIGNED_SHORT_4_4_4_4:
+			assert( format == GL_RGB || format == GL_BGRA || format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER );
+			return VK_FORMAT_R4G4B4A4_UNORM_PACK16;
+		case GL_UNSIGNED_SHORT_4_4_4_4_REV:
+			assert( format == GL_RGB || format == GL_BGRA || format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER );
+			return VK_FORMAT_B4G4R4A4_UNORM_PACK16;
+		case GL_UNSIGNED_SHORT_5_5_5_1:
+			assert( format == GL_RGB || format == GL_BGRA || format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER );
+			return VK_FORMAT_R5G5B5A1_UNORM_PACK16;
+		case GL_UNSIGNED_SHORT_1_5_5_5_REV:
+			assert( format == GL_RGB || format == GL_BGRA || format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER );
+			return VK_FORMAT_A1R5G5B5_UNORM_PACK16;
+		case GL_UNSIGNED_INT_8_8_8_8:
+			assert( format == GL_RGB || format == GL_BGRA || format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER );
+			return ( format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER ) ? VK_FORMAT_R8G8B8A8_UINT : VK_FORMAT_R8G8B8A8_UNORM;
+		case GL_UNSIGNED_INT_8_8_8_8_REV:
+			assert( format == GL_RGB || format == GL_BGRA || format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER );
+			return ( format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER ) ? VK_FORMAT_A8B8G8R8_UINT_PACK32 : VK_FORMAT_A8B8G8R8_UNORM_PACK32;
+		case GL_UNSIGNED_INT_10_10_10_2:
+			assert( format == GL_RGB || format == GL_BGRA || format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER );
+			return ( format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER ) ? VK_FORMAT_A2R10G10B10_UINT_PACK32 : VK_FORMAT_A2R10G10B10_UNORM_PACK32;
+		case GL_UNSIGNED_INT_2_10_10_10_REV:
+			assert( format == GL_RGB || format == GL_BGRA || format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER );
+			return ( format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER ) ? VK_FORMAT_A2B10G10R10_UINT_PACK32 : VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+		case GL_UNSIGNED_INT_10F_11F_11F_REV:
+			assert( format == GL_RGB );
+			return VK_FORMAT_B10G11R11_UFLOAT_PACK32;
+		case GL_UNSIGNED_INT_5_9_9_9_REV:
+			assert( format == GL_RGB );
+			return VK_FORMAT_E5B9G9R9_UFLOAT_PACK32;
+		case GL_UNSIGNED_INT_24_8:
+			assert( format == GL_DEPTH_STENCIL );
+			return VK_FORMAT_D24_UNORM_S8_UINT;
+		case GL_FLOAT_32_UNSIGNED_INT_24_8_REV:
+			assert( format == GL_DEPTH_STENCIL );
+			return VK_FORMAT_D32_SFLOAT_S8_UINT;
 	}
+
+	return VK_FORMAT_UNDEFINED;
 }
 
-inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint numComponents )
+static inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint numComponents, const GLboolean normalized )
 {
 	switch ( type )
 	{
@@ -390,10 +475,10 @@ inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint
 		{
 			switch ( numComponents )
 			{
-				case 1:							return VK_FORMAT_R8_UNORM;
-				case 2:							return VK_FORMAT_R8G8_UNORM;
-				case 3:							return VK_FORMAT_R8G8B8_UNORM;
-				case 4:							return VK_FORMAT_R8G8B8A8_UNORM;
+				case 1:							return normalized ? VK_FORMAT_R8_UNORM : VK_FORMAT_R8_UINT;
+				case 2:							return normalized ? VK_FORMAT_R8G8_UNORM : VK_FORMAT_R8G8_UINT;
+				case 3:							return normalized ? VK_FORMAT_R8G8B8_UNORM : VK_FORMAT_R8G8B8_UINT;
+				case 4:							return normalized ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_R8G8B8A8_UINT;
 			}
 			break;
 		}
@@ -401,10 +486,10 @@ inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint
 		{
 			switch ( numComponents )
 			{
-				case 1:							return VK_FORMAT_R8_SNORM;
-				case 2:							return VK_FORMAT_R8G8_SNORM;
-				case 3:							return VK_FORMAT_R8G8B8_SNORM;
-				case 4:							return VK_FORMAT_R8G8B8A8_SNORM;
+				case 1:							return normalized ? VK_FORMAT_R8_SNORM : VK_FORMAT_R8_SINT;
+				case 2:							return normalized ? VK_FORMAT_R8G8_SNORM : VK_FORMAT_R8G8_SINT;
+				case 3:							return normalized ? VK_FORMAT_R8G8B8_SNORM : VK_FORMAT_R8G8B8_SINT;
+				case 4:							return normalized ? VK_FORMAT_R8G8B8A8_SNORM : VK_FORMAT_R8G8B8A8_SINT;
 			}
 			break;
 		}
@@ -416,10 +501,10 @@ inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint
 		{
 			switch ( numComponents )
 			{
-				case 1:							return VK_FORMAT_R16_UNORM;
-				case 2:							return VK_FORMAT_R16G16_UNORM;
-				case 3:							return VK_FORMAT_R16G16B16_UNORM;
-				case 4:							return VK_FORMAT_R16G16B16A16_UNORM;
+				case 1:							return normalized ? VK_FORMAT_R16_UNORM : VK_FORMAT_R16_UINT;
+				case 2:							return normalized ? VK_FORMAT_R16G16_UNORM : VK_FORMAT_R16G16_UINT;
+				case 3:							return normalized ? VK_FORMAT_R16G16B16_UNORM : VK_FORMAT_R16G16B16_UINT;
+				case 4:							return normalized ? VK_FORMAT_R16G16B16A16_UNORM : VK_FORMAT_R16G16B16A16_UINT;
 			}
 			break;
 		}
@@ -427,10 +512,10 @@ inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint
 		{
 			switch ( numComponents )
 			{
-				case 1:							return VK_FORMAT_R16_SNORM;
-				case 2:							return VK_FORMAT_R16G16_SNORM;
-				case 3:							return VK_FORMAT_R16G16B16_SNORM;
-				case 4:							return VK_FORMAT_R16G16B16A16_SNORM;
+				case 1:							return normalized ? VK_FORMAT_R16_SNORM : VK_FORMAT_R16_SINT;
+				case 2:							return normalized ? VK_FORMAT_R16G16_SNORM : VK_FORMAT_R16G16_SINT;
+				case 3:							return normalized ? VK_FORMAT_R16G16B16_SNORM : VK_FORMAT_R16G16B16_SINT;
+				case 4:							return normalized ? VK_FORMAT_R16G16B16A16_SNORM : VK_FORMAT_R16G16B16A16_SINT;
 			}
 			break;
 		}
@@ -494,13 +579,17 @@ inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint
 		case GL_UNSIGNED_SHORT_4_4_4_4_REV:		return VK_FORMAT_B4G4R4A4_UNORM_PACK16;
 		case GL_UNSIGNED_SHORT_5_5_5_1:			return VK_FORMAT_R5G5B5A1_UNORM_PACK16;
 		case GL_UNSIGNED_SHORT_1_5_5_5_REV:		return VK_FORMAT_A1R5G5B5_UNORM_PACK16;
-		case GL_UNSIGNED_INT_8_8_8_8:			return VK_FORMAT_R8G8B8A8_UNORM;
-		case GL_UNSIGNED_INT_8_8_8_8_REV:		return VK_FORMAT_A8B8G8R8_UNORM_PACK32;
-		case GL_UNSIGNED_INT_10_10_10_2:		return VK_FORMAT_A2R10G10B10_UNORM_PACK32;
-		case GL_UNSIGNED_INT_2_10_10_10_REV:	return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
-
-		default:								return VK_FORMAT_UNDEFINED;
+		case GL_UNSIGNED_INT_8_8_8_8:			return normalized ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_R8G8B8A8_UINT;
+		case GL_UNSIGNED_INT_8_8_8_8_REV:		return normalized ? VK_FORMAT_A8B8G8R8_UNORM_PACK32 : VK_FORMAT_A8B8G8R8_UINT_PACK32;
+		case GL_UNSIGNED_INT_10_10_10_2:		return normalized ? VK_FORMAT_A2R10G10B10_UNORM_PACK32 : VK_FORMAT_A2R10G10B10_UINT_PACK32;
+		case GL_UNSIGNED_INT_2_10_10_10_REV:	return normalized ? VK_FORMAT_A2B10G10R10_UNORM_PACK32 : VK_FORMAT_A2B10G10R10_UINT_PACK32;
+		case GL_UNSIGNED_INT_10F_11F_11F_REV:	return VK_FORMAT_B10G11R11_UFLOAT_PACK32;
+		case GL_UNSIGNED_INT_5_9_9_9_REV:		return VK_FORMAT_E5B9G9R9_UFLOAT_PACK32;
+		case GL_UNSIGNED_INT_24_8:				return VK_FORMAT_D24_UNORM_S8_UINT;
+		case GL_FLOAT_32_UNSIGNED_INT_24_8_REV:	return VK_FORMAT_D32_SFLOAT_S8_UINT;
 	}
+
+	return VK_FORMAT_UNDEFINED;
 }
 
 //
@@ -508,10 +597,10 @@ inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint
 //
 
 #if !defined( GL_R8 )
-#define GL_R8											0x8229
+#define GL_R8											0x8229	// same as GL_R8_EXT
 #endif
 #if !defined( GL_RG8 )
-#define GL_RG8											0x822B
+#define GL_RG8											0x822B	// same as GL_RG8_EXT
 #endif
 #if !defined( GL_RGB8 )
 #define GL_RGB8											0x8051	// same as GL_RGB8_EXT and GL_RGB8_OES
@@ -559,11 +648,11 @@ inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint
 #define GL_RGBA8I										0x8D8E	// same as GL_RGBA8I_EXT
 #endif
 
-#if !defined( GL_SR8_EXT )
-#define GL_SR8_EXT										0x8FBD
+#if !defined( GL_SR8 )
+#define GL_SR8											0x8FBD	// same as GL_SR8_EXT
 #endif
-#if !defined( GL_SRG8_EXT )
-#define GL_SRG8_EXT										0x8FBE
+#if !defined( GL_SRG8 )
+#define GL_SRG8											0x8FBE	// same as GL_SRG8_EXT
 #endif
 #if !defined( GL_SRGB8 )
 #define GL_SRGB8										0x8C41	// same as GL_SRGB8_EXT
@@ -629,10 +718,10 @@ inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint
 #endif
 
 #if !defined( GL_R16F )
-#define GL_R16F											0x822D
+#define GL_R16F											0x822D	// same as GL_R16F_EXT
 #endif
 #if !defined( GL_RG16F )
-#define GL_RG16F										0x822F
+#define GL_RG16F										0x822F	// same as GL_RG16F_EXT
 #endif
 #if !defined( GL_RGB16F )
 #define GL_RGB16F										0x881B	// same as GL_RGB16F_EXT and GL_RGB16F_ARB
@@ -672,10 +761,10 @@ inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint
 #endif
 
 #if !defined( GL_R32F )
-#define GL_R32F											0x822E
+#define GL_R32F											0x822E	// same as GL_R32F_EXT
 #endif
 #if !defined( GL_RG32F )
-#define GL_RG32F										0x8230
+#define GL_RG32F										0x8230	// same as GL_RG32F_EXT
 #endif
 #if !defined( GL_RGB32F )
 #define GL_RGB32F										0x8815	// same as GL_RGB32F_EXT and GL_RGB32F_ARB
@@ -692,43 +781,43 @@ inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint
 #define GL_R3_G3_B2										0x2A10
 #endif
 #if !defined( GL_RGB4 )
-#define GL_RGB4											0x804F
+#define GL_RGB4											0x804F	// same as GL_RGB4_EXT
 #endif
 #if !defined( GL_RGB5 )
-#define GL_RGB5											0x8050
+#define GL_RGB5											0x8050	// same as GL_RGB5_EXT
 #endif
 #if !defined( GL_RGB565 )
-#define GL_RGB565										0x8D62	// same as GL_RGB565_OES
+#define GL_RGB565										0x8D62	// same as GL_RGB565_EXT and GL_RGB565_OES
 #endif
 #if !defined( GL_RGB10 )
-#define GL_RGB10										0x8052
+#define GL_RGB10										0x8052	// same as GL_RGB10_EXT
 #endif
 #if !defined( GL_RGB12 )
-#define GL_RGB12										0x8053
+#define GL_RGB12										0x8053	// same as GL_RGB12_EXT
 #endif
 #if !defined( GL_RGBA2 )
-#define GL_RGBA2										0x8055
+#define GL_RGBA2										0x8055	// same as GL_RGBA2_EXT
 #endif
 #if !defined( GL_RGBA4 )
-#define GL_RGBA4										0x8056	// same as GL_RGBA4_OES
+#define GL_RGBA4										0x8056	// same as GL_RGBA4_EXT and GL_RGBA4_OES
 #endif
 #if !defined( GL_RGBA12 )
-#define GL_RGBA12										0x805A
+#define GL_RGBA12										0x805A	// same as GL_RGBA12_EXT
 #endif
 #if !defined( GL_RGB5_A1 )
-#define GL_RGB5_A1										0x8057	// same as GL_RGB5_A1_OES
+#define GL_RGB5_A1										0x8057	// same as GL_RGB5_A1_EXT and GL_RGB5_A1_OES
 #endif
 #if !defined( GL_RGB10_A2 )
-#define GL_RGB10_A2										0x8059
+#define GL_RGB10_A2										0x8059	// same as GL_RGB10_A2_EXT
 #endif
 #if !defined( GL_RGB10_A2UI )
 #define GL_RGB10_A2UI									0x906F
 #endif
 #if !defined( GL_R11F_G11F_B10F )
-#define GL_R11F_G11F_B10F								0x8C3A	// same as GL_R11F_G11F_B10F_APPLE and GL_R11F_G11F_B10F_EXT
+#define GL_R11F_G11F_B10F								0x8C3A	// same as GL_R11F_G11F_B10F_EXT and GL_R11F_G11F_B10F_APPLE
 #endif
 #if !defined( GL_RGB9_E5 )
-#define GL_RGB9_E5										0x8C3D	// same as GL_RGB9_E5_APPLE and GL_RGB9_E5_EXT
+#define GL_RGB9_E5										0x8C3D	// same as GL_RGB9_E5_EXT and GL_RGB9_E5_APPLE
 #endif
 
 //
@@ -775,16 +864,16 @@ inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint
 #endif
 
 #if !defined( GL_COMPRESSED_RED_RGTC1 )
-#define GL_COMPRESSED_RED_RGTC1							0x8DBB
+#define GL_COMPRESSED_RED_RGTC1							0x8DBB	// same as GL_COMPRESSED_RED_RGTC1_EXT
 #endif
 #if !defined( GL_COMPRESSED_RG_RGTC2 )
-#define GL_COMPRESSED_RG_RGTC2							0x8DBD
+#define GL_COMPRESSED_RG_RGTC2							0x8DBD	// same as GL_COMPRESSED_RG_RGTC2_EXT
 #endif
 #if !defined( GL_COMPRESSED_SIGNED_RED_RGTC1 )
-#define GL_COMPRESSED_SIGNED_RED_RGTC1					0x8DBC
+#define GL_COMPRESSED_SIGNED_RED_RGTC1					0x8DBC	// same as GL_COMPRESSED_SIGNED_RED_RGTC1_EXT
 #endif
 #if !defined( GL_COMPRESSED_SIGNED_RG_RGTC2 )
-#define GL_COMPRESSED_SIGNED_RG_RGTC2					0x8DBE
+#define GL_COMPRESSED_SIGNED_RG_RGTC2					0x8DBE	// same as GL_COMPRESSED_SIGNED_RG_RGTC2_EXT
 #endif
 
 #if !defined( GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT )
@@ -945,7 +1034,7 @@ inline VkFormat vkGetVulkanFormatFromOpenGLType( const GLenum type, const GLuint
 #define GL_PALETTE8_RGB5_A1_OES							0x8B99
 #endif
 
-inline VkFormat vkGetVulkanFormatFromOpenGLInternalFormat( const GLenum internalFormat )
+static inline VkFormat vkGetVulkanFormatFromOpenGLInternalFormat( const GLenum internalFormat )
 {
 	switch ( internalFormat )
 	{
@@ -972,8 +1061,8 @@ inline VkFormat vkGetVulkanFormatFromOpenGLInternalFormat( const GLenum internal
 		case GL_RGB8I:											return VK_FORMAT_R8G8B8_SINT;				// 3-component; 8-bit signed integer
 		case GL_RGBA8I:											return VK_FORMAT_R8G8B8A8_SINT;				// 4-component; 8-bit signed integer
 
-		case GL_SR8_EXT:										return VK_FORMAT_R8_SRGB;					// 1-component; 8-bit sRGB
-		case GL_SRG8_EXT:										return VK_FORMAT_R8G8_SRGB;					// 2-component; 8-bit sRGB
+		case GL_SR8:											return VK_FORMAT_R8_SRGB;					// 1-component; 8-bit sRGB
+		case GL_SRG8:											return VK_FORMAT_R8G8_SRGB;					// 2-component; 8-bit sRGB
 		case GL_SRGB8:											return VK_FORMAT_R8G8B8_SRGB;				// 3-component; 8-bit sRGB
 		case GL_SRGB8_ALPHA8:									return VK_FORMAT_R8G8B8A8_SRGB;				// 4-component; 8-bit sRGB
 
@@ -1193,10 +1282,8 @@ typedef struct VkFormatSize {
 	uint32_t			blockDepth;
 } VkFormatSize;
 
-inline void vkGetVulkanFormatSize( const VkFormat format, VkFormatSize * pFormatSize )
+static inline void vkGetVulkanFormatSize( const VkFormat format, VkFormatSize * pFormatSize )
 {
-	memset( pFormatSize, 0, sizeof( VkFormatSize ) );
-
 	switch ( format )
 	{
 		case VK_FORMAT_R4G4_UNORM_PACK8:
@@ -1657,6 +1744,13 @@ inline void vkGetVulkanFormatSize( const VkFormat format, VkFormatSize * pFormat
 			pFormatSize->blockSize = 16;
 			pFormatSize->blockWidth = 12;
 			pFormatSize->blockHeight = 12;
+			pFormatSize->blockDepth = 1;
+			break;
+		default:
+			pFormatSize->flags = 0;
+			pFormatSize->blockSize = 0;
+			pFormatSize->blockWidth = 1;
+			pFormatSize->blockHeight = 1;
 			pFormatSize->blockDepth = 1;
 			break;
 	}
