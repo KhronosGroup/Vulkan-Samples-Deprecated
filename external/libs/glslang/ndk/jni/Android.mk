@@ -1,3 +1,4 @@
+SAVED_LOCAL_PATH := LOCAL_PATH
 LOCAL_PATH := $(abspath $(call my-dir))
 
 # base of the Vulkan-Samples repository

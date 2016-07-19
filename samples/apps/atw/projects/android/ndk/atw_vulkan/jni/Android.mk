@@ -6,7 +6,7 @@ BASE_DIR := ../../../../../../../..
 include $(CLEAR_VARS)
 
 LOCAL_MODULE			:= atw_vulkan
-LOCAL_C_INCLUDES		:= $(BASE_DIR)/external/include \
+LOCAL_C_INCLUDES		:= $(BASE_DIR)/Vulkan-Samples/external/include \
                            $(BASE_DIR)/Vulkan-LoaderAndValidationLayers/include \
                            $(VK_SDK_PATH)/Include
 LOCAL_SRC_FILES			:= ../../../../../atw_vulkan.c

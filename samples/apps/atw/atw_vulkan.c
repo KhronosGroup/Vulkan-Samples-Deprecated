@@ -7099,6 +7099,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 				storedMipSize = *(uint32_t *)&(((uint8_t *)data)[dataOffset]);
 				dataOffset += 4;
 			}
+			UNUSED_PARM( storedMipSize );
 
 			for ( int layerIndex = 0; layerIndex < arrayLayerCount; layerIndex++ )
 			{
