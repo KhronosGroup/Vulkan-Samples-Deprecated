@@ -6,7 +6,7 @@ language:
 
 # Must list an OS otherwise the Android build does not work.
 os:
-  - osx
+  - linux
 
 jdk: oraclejdk8
 
@@ -85,11 +85,8 @@ before_install:
   # Set Android NDK path.
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then export ARCH=`uname -m`; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then wget http://dl.google.com/android/repository/android-ndk-r11c-linux-${ARCH}.zip; fi
-  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then ls -slaF; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then unzip -u -q android-ndk-r11c-linux-${ARCH}.zip; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then export ANDROID_NDK_HOME=`pwd`/android-ndk-r11c; fi
-  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then ls -slaF; fi
-  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then echo $(ANDROID_NDK_HOME); fi
 
 install:
   - pip install --user nose
