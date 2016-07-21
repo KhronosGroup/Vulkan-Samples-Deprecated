@@ -8,7 +8,7 @@ language:
 os:
   - osx
 
-jdk: oraclejdk8
+jdk: oraclejdk7
 
 matrix:
   # Show final status immediately if a test fails.
