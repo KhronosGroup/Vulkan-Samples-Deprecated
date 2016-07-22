@@ -4,7 +4,7 @@
 Description	:	This layer can be used during development to load GLSL shaders directly.
 Author		:	J.M.P. van Waveren
 Date		:	06/24/2016
-Language	:	C99
+Language	:	C++
 Format		:	Real tabs with the tab size equal to 4 spaces.
 Copyright	:	Copyright (c) 2016 Oculus VR, LLC. All Rights reserved.
 
@@ -46,7 +46,7 @@ are needed. The paths for the collocated repositories will look as follows:
 	<path>/Vulkan-LoaderAndValidationLayers/
 	<path>/glslang/
 
-On Windows make sure that the &lt;path&gt; is no more than one folder deep to
+On Windows make sure that the <path> is no more than one folder deep to
 avoid running into maximum path depth compilation issues.
 
 
@@ -572,9 +572,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
 	{
 		const VkShaderStageFlagBits stage = (VkShaderStageFlagBits) header[2];
 		const char * shaderSource = (const char *)&header[3];
+		const size_t shaderLength = pCreateInfo->codeSize - 3 * sizeof( unsigned int );
 
 		std::vector<unsigned int> spirv;
-		if ( !CompileSPIRV( shaderSource, pCreateInfo->codeSize - 3 * sizeof( unsigned int ), stage, spirv ) )
+		if ( !CompileSPIRV( shaderSource, shaderLength, stage, spirv ) )
 		{
 			return VK_ERROR_INVALID_SHADER_NV;
 		}
