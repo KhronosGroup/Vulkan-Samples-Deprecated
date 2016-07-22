@@ -7,7 +7,7 @@ buildscript {
 
 	dependencies {
 		//classpath 'com.android.tools.build:gradle-experimental:0.6.0-beta5'
-        //classpath 'com.android.tools.build:gradle-experimental:0.7.0-alpha1'
+		//classpath 'com.android.tools.build:gradle-experimental:0.7.0-alpha1'
 		classpath 'com.android.tools.build:gradle-experimental:0.8.0-alpha6'
 	}
 }
@@ -18,8 +18,7 @@ if( ndkDir == null ) { ndkDir = System.getenv('ANDROID_NDK') }
 if( ndkDir == null ) { ndkDir = System.getenv('NDK_HOME') }
 if( ndkDir == null ) { ndkDir = System.getenv('NDK_ROOT') }
 if( ndkDir == null ) { ndkDir = System.getenv('NDKROOT') }
-if( ndkDir == null )
-{
+if( ndkDir == null ) {
 	throw new GradleException('Android NDK path not found! Make sure ANDROID_NDK_HOME is set.')
 }
 def baseDir = "../../../../../../.."	// base of the Vulkan-Samples repository

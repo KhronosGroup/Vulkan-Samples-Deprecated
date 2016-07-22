@@ -7,7 +7,7 @@ include_directories(
         )
 
 add_library( VkLayer_glsl_shader SHARED glsl_shader.cpp VkLayer_glsl_shader.json )
-add_dependencies( VkLayer_glsl_shader glslang )
+add_dependencies( VkLayer_glsl_shader glslang vk_dispatch_table_helper )
 set_target_properties( VkLayer_glsl_shader PROPERTIES CXX_FLAGS "" )
 set_target_properties( VkLayer_glsl_shader PROPERTIES FOLDER layers )
 

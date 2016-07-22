@@ -59,9 +59,38 @@ VERSION HISTORY
 */
 
 #if defined( WIN32 ) || defined( _WIN32 ) || defined( WIN64 ) || defined( _WIN64 )
+	#define OS_WINDOWS
+#elif defined( __ANDROID__ )
+	#define OS_ANDROID
+#elif defined( __APPLE__ )
+	#define OS_APPLE
+	#include <Availability.h>
+	#if __IPHONE_OS_VERSION_MAX_ALLOWED
+		#define OS_APPLE_IOS
+	#elif __MAC_OS_X_VERSION_MAX_ALLOWED
+		#define OS_APPLE_MACOS
+	#endif
+#elif defined( __linux__ )
+	#define OS_LINUX
+	//#define OS_LINUX_XLIB
+	#define OS_LINUX_XCB
+#else
+	#error "unknown platform"
+#endif
+
+#if defined( OS_WINDOWS )
 	#if !defined( _CRT_SECURE_NO_WARNINGS )
 		#define _CRT_SECURE_NO_WARNINGS
 	#endif
+	#define VK_USE_PLATFORM_WIN32_KHR
+#elif defined( OS_APPLE )
+
+#elif defined( OS_LINUX_XLIB )
+	#define VK_USE_PLATFORM_XLIB_KHR
+#elif defined( OS_LINUX_XCB )
+	#define VK_USE_PLATFORM_XCB_KHR
+#elif defined( OS_ANDROID )
+	#define VK_USE_PLATFORM_ANDROID_KHR
 #endif
 
 #ifdef _MSC_VER
@@ -92,7 +121,7 @@ VERSION HISTORY
 
 #include "SPIRV/GlslangToSpv.h"
 
-#if defined( __ANDROID__ )
+#if defined( OS_ANDROID )
 #include <android/log.h>			// for __android_log_print()
 #define Print( ... )				__android_log_print( ANDROID_LOG_INFO, "qm", __VA_ARGS__ )
 #else

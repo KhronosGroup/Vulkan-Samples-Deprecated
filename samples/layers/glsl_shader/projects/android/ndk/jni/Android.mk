@@ -16,7 +16,7 @@ LOCAL_C_INCLUDES		:= \
 							$(VK_SDK_PATH)/Include \
 							$(VK_SDK_PATH)/Source/layers
 LOCAL_SRC_FILES			:= $(BASE_DIR)/samples/layers/glsl_shader/glsl_shader.cpp
-LOCAL_CXXFLAGS			:= -std=c++11 -fno-exceptions -fno-rtti -Wall -DVK_USE_PLATFORM_ANDROID_KHR
+LOCAL_CXXFLAGS			:= -std=c++11 -fno-exceptions -fno-rtti -Wall
 LOCAL_LDLIBS			:= -llog
 LOCAL_STATIC_LIBRARIES	:= glslang
 include $(BUILD_SHARED_LIBRARY)

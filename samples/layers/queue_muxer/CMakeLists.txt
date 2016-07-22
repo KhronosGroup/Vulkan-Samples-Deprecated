@@ -6,6 +6,7 @@ include_directories(
         )
 
 add_library( VkLayer_queue_muxer SHARED queue_muxer.c VkLayer_queue_muxer.json )
+add_dependencies( VkLayer_queue_muxer vk_dispatch_table_helper )
 set_target_properties( VkLayer_queue_muxer PROPERTIES CXX_FLAGS "" )
 set_target_properties( VkLayer_queue_muxer PROPERTIES FOLDER layers )
 

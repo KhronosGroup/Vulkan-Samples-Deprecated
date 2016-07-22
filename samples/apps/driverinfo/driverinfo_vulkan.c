@@ -97,7 +97,13 @@ VERSION HISTORY
 #elif defined( __ANDROID__ )
 	#define OS_ANDROID
 #elif defined( __APPLE__ )
-	#define OS_MAC
+	#define OS_APPLE
+	#include <Availability.h>
+	#if __IPHONE_OS_VERSION_MAX_ALLOWED
+		#define OS_APPLE_IOS
+	#elif __MAC_OS_X_VERSION_MAX_ALLOWED
+		#define OS_APPLE_MACOS
+	#endif
 #elif defined( __linux__ )
 	#define OS_LINUX
 	//#define OS_LINUX_XLIB
@@ -135,7 +141,7 @@ Platform headers / declarations
 
 	#define VULKAN_LOADER	"vulkan-1.dll"
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 
 	#include <sys/param.h>
 	#include <sys/sysctl.h>
@@ -144,20 +150,65 @@ Platform headers / declarations
 	#include <dlfcn.h>						// for dlopen
 	#include <Cocoa/Cocoa.h>
 
-	#include "TargetConditionals.h"
-
 	#include "vulkan/vulkan.h"
 	#include "vulkan/vk_sdk_platform.h"
 
-	//#define MOLTEN_VK
-	#if defined( MOLTEN_VK )
-		#import <QuartzCore/CAMetalLayer.h>
-	#elif TARGET_OS_IPHONE
-		#define VK_KHR_IOS_SURFACE_EXTENSION_NAME	"VK_KHR_ios_surface"
-		#define VULKAN_LOADER						"libvulkan.dylib"
-	#else
-		#define VK_KHR_OSX_SURFACE_EXTENSION_NAME	"VK_KHR_osx_surface"
-		#define VULKAN_LOADER						"libvulkan.dylib"
+	#if defined( OS_APPLE_IOS )
+		#include <UIKit/UIKit.h>
+		#if defined( VK_USE_PLATFORM_IOS_MVK )
+			#include <QuartzCore/CAMetalLayer.h>
+			#include <MoltenVK/vk_mvk_moltenvk.h>
+			#include <MoltenVK/vk_mvk_ios_surface.h>
+			#define VkIOSSurfaceCreateInfoKHR						VkIOSSurfaceCreateInfoMVK
+			#define VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR	VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_MVK
+			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			VK_MVK_IOS_SURFACE_EXTENSION_NAME
+			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateIOSSurfaceMVK
+			#define vkCreateSurfaceKHR								vkCreateIOSSurfaceMVK
+		#else
+			// Only here to make the code compile.
+			typedef VkFlags VkIOSSurfaceCreateFlagsKHR;
+			typedef struct VkIOSSurfaceCreateInfoKHR {
+				VkStructureType				sType;
+				const void *				pNext;
+				VkIOSSurfaceCreateFlagsKHR	flags;
+				UIView *					pView;
+			} VkIOSSurfaceCreateInfoKHR;
+			#define VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR	1000015000
+			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			"VK_KHR_ios_surface"
+			typedef VkResult (VKAPI_PTR *PFN_vkCreateIOSSurfaceKHR)(VkInstance instance, const VkIOSSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
+			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateIOSSurfaceKHR
+			#define vkCreateSurfaceKHR								vkCreateIOSSurfaceKHR
+			#define VULKAN_LOADER									"libvulkan.dylib"
+		#endif
+	#endif
+
+	#if defined( OS_APPLE_MACOS )
+		#include <AppKit/AppKit.h>
+		#if defined( VK_USE_PLATFORM_MACOS_MVK )
+			#include <QuartzCore/CAMetalLayer.h>
+			#include <MoltenVK/vk_mvk_moltenvk.h>
+			#include <MoltenVK/vk_mvk_macos_surface.h>
+			#define VkMacOSSurfaceCreateInfoKHR						VkMacOSSurfaceCreateInfoMVK
+			#define VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_KHR	VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK
+			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			VK_MVK_MACOS_SURFACE_EXTENSION_NAME
+			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateMacOSSurfaceMVK
+			#define vkCreateSurfaceKHR								vkCreateMacOSSurfaceMVK
+		#else
+			// Only here to make the code compile.
+			typedef VkFlags VkMacOSSurfaceCreateFlagsKHR;
+			typedef struct VkMacOSSurfaceCreateInfoKHR {
+				VkStructureType					sType;
+				const void *					pNext;
+				VkMacOSSurfaceCreateFlagsKHR	flags;
+				NSView *						pView;
+			} VkMacOSSurfaceCreateInfoKHR;
+			#define VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_KHR	1000015000
+			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			"VK_KHR_macos_surface"
+			typedef VkResult (VKAPI_PTR *PFN_vkCreateMacOSSurfaceKHR)(VkInstance instance, const VkMacOSSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
+			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateMacOSSurfaceKHR
+			#define vkCreateSurfaceKHR								vkCreateMacOSSurfaceKHR
+			#define VULKAN_LOADER									"libvulkan.dylib"
+		#endif
 	#endif
 
 	#pragma clang diagnostic ignored "-Wunused-function"
@@ -281,7 +332,7 @@ static void Print( const char * format, ... )
 
 	printf( buffer );
 	OutputDebugString( buffer );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	char buffer[4096];
 	va_list args;
 	va_start( args, format );
@@ -318,7 +369,27 @@ static void Error( const char * format, ... )
 	OutputDebugString( buffer );
 
 	MessageBox( NULL, buffer, "ERROR", MB_OK | MB_ICONINFORMATION );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_IOS )
+	char buffer[4096];
+	va_list args;
+	va_start( args, format );
+	int length = vsnprintf( buffer, 4096, format, args );
+	va_end( args );
+
+	NSLog( @"%s\n", buffer );
+
+	if ( [NSThread isMainThread] )
+	{
+		NSString * string = [[NSString alloc] initWithBytes:buffer length:length encoding:NSASCIIStringEncoding];
+		UIAlertController* alert = [UIAlertController alertControllerWithTitle: @"Error"
+																	   message: string
+																preferredStyle: UIAlertControllerStyleAlert];
+		[alert addAction: [UIAlertAction actionWithTitle: @"OK"
+												   style: UIAlertActionStyleDefault
+												 handler: ^(UIAlertAction * action) {}]];
+		[UIApplication.sharedApplication.keyWindow.rootViewController presentViewController: alert animated: YES completion: nil];
+	}
+#elif defined( OS_APPLE_MACOS )
 	char buffer[4096];
 	va_list args;
 	va_start( args, format );
@@ -376,27 +447,10 @@ static const char * GetOSVersion()
 	}
 
 	return "Microsoft Windows";
-#elif defined( OS_MAC )
-	static char version[1024];
-	size_t len;
-	int mib[2] = { CTL_KERN, KERN_OSRELEASE };
-    
-	if ( sysctl( mib, 2, version, &len, NULL, 0 ) == 0 )
-	{
-		const char * dot = strstr( version, "." );
-		if ( dot != NULL )
-		{
-			const int kernelMajor = (int)strtol( version, (char **)NULL, 10 );
-			const int kernelMinor = (int)strtol( dot + 1, (char **)NULL, 10 );
-			const int osxMajor = 10;
-			const int osxMinor = kernelMajor - 4;
-			const int osxSub = kernelMinor + 1;
-			snprintf( version, sizeof( version ), "Apple Mac OS X %d.%d.%d", osxMajor, osxMinor, osxSub );
-			return version;
-		}
-	}
-
-	return "Apple Mac OS X";
+#elif defined( OS_APPLE_IOS )
+	return [NSString stringWithFormat: @"Apple iOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
+#elif defined( OS_APPLE_MACOS )
+	return [NSString stringWithFormat: @"Apple macOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
 #elif defined( OS_LINUX )
 	static char buffer[1024];
 
@@ -475,7 +529,7 @@ static const char * GetCPUVersion()
 			return processor;
 		}
 	}
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	static char processor[1024];
 	size_t processor_length = sizeof( processor );
 	sysctlbyname( "machdep.cpu.brand_string", &processor, &processor_length, NULL, 0 );
@@ -551,9 +605,6 @@ Console
 
 static void Console_Resize( const short numLines, const short numColumns )
 {
-	UNUSED_PARM( numLines );
-	UNUSED_PARM( numColumns );
-
 #if defined( OS_WINDOWS )
 	DWORD pids[2];
 	DWORD num_pids = GetConsoleProcessList( pids, ARRAY_SIZE( pids ) );
@@ -581,6 +632,9 @@ static void Console_Resize( const short numLines, const short numColumns )
 		rect.Bottom = 100 - 1;
 		SetConsoleWindowInfo( consoleHandle, TRUE, &rect );
 	}
+#else
+	UNUSED_PARM( numLines );
+	UNUSED_PARM( numColumns );
 #endif
 }
 
@@ -706,7 +760,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	instance->vkEnumerateInstanceLayerProperties = (PFN_vkEnumerateInstanceLayerProperties)GetProcAddress( instance->loader, "vkEnumerateInstanceLayerProperties" );
 	instance->vkEnumerateInstanceExtensionProperties = (PFN_vkEnumerateInstanceExtensionProperties)GetProcAddress( instance->loader, "vkEnumerateInstanceExtensionProperties" );
 	instance->vkCreateInstance = (PFN_vkCreateInstance)GetProcAddress( instance->loader, "vkCreateInstance" );
-#elif defined( OS_LINUX ) || defined( OS_ANDROID ) || defined( OS_MAC )
+#elif defined( OS_LINUX ) || defined( OS_ANDROID ) || defined( OS_APPLE )
 	instance->loader = dlopen( VULKAN_LOADER, RTLD_NOW | RTLD_LOCAL );
 	if ( instance->loader == NULL )
 	{
