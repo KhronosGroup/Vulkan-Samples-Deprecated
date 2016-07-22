@@ -1,3 +1,4 @@
+SAVED_LOCAL_PATH := $(LOCAL_PATH)
 LOCAL_PATH := $(abspath $(call my-dir))
 
 # base of the Vulkan-Samples repository
@@ -103,4 +104,4 @@ LOCAL_EXPORT_C_INCLUDES	:= $(GLSLANG_DIR)
 LOCAL_STATIC_LIBRARIES	:= OSDependent OGLCompiler SPIRV HLSL
 include $(BUILD_STATIC_LIBRARY)
 
-LOCAL_PATH := SAVED_LOCAL_PATH
+LOCAL_PATH := $(SAVED_LOCAL_PATH)

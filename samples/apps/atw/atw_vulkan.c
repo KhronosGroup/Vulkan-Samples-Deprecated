@@ -333,6 +333,7 @@ Platform headers / declarations
 
 	#include "vulkan/vulkan.h"
 	#include "vulkan/vk_sdk_platform.h"
+	#include "vulkan/vk_format.h"
 
 	#define VULKAN_LOADER	"vulkan-1.dll"
 	#define OUTPUT_PATH		""
@@ -348,6 +349,8 @@ Platform headers / declarations
 	#include <dlfcn.h>						// for dlopen
 
 	#include "vulkan/vulkan.h"
+	#include "vulkan/vk_sdk_platform.h"
+	#include "vulkan/vk_format.h"
 
 	#if defined( OS_APPLE_IOS )
 		#include <UIKit/UIKit.h>
@@ -446,6 +449,7 @@ Platform headers / declarations
 
 	#include "vulkan/vulkan.h"
 	#include "vulkan/vk_sdk_platform.h"
+	#include "vulkan/vk_format.h"
 
 	#define VULKAN_LOADER	"libvulkan-1.so"
 	#define OUTPUT_PATH		""
@@ -480,6 +484,7 @@ Platform headers / declarations
 
 	#include "vulkan/vulkan.h"
 	#include "vulkan/vk_sdk_platform.h"
+	#include "vulkan/vk_format.h"
 
 	#define VULKAN_LOADER	"libvulkan.so"
 	#define OUTPUT_PATH		"/sdcard/"
@@ -6371,54 +6376,6 @@ static VkAccessFlags GpuBuffer_GetBufferAccess( const GpuBufferType_t type )
 			( ( type == GPU_BUFFER_TYPE_STORAGE ) ?	( VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT ) : 0 ) ) ) );
 }
 
-static void GpuBuffer_StagedCopy( GpuContext_t * context, GpuBuffer_t * destBuffer, const size_t dataSize, const void * data )
-{
-	VkBufferCreateInfo bufferCreateInfo;
-	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferCreateInfo.pNext = NULL;
-	bufferCreateInfo.flags = 0;
-	bufferCreateInfo.size = dataSize;
-	bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-	bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	bufferCreateInfo.queueFamilyIndexCount = 0;
-	bufferCreateInfo.pQueueFamilyIndices = NULL;
-
-	VkBuffer srcBuffer;
-	VK( context->device->vkCreateBuffer( context->device->device, &bufferCreateInfo, VK_ALLOCATOR, &srcBuffer ) );
-
-	VkMemoryRequirements memoryRequirements;
-	VC( context->device->vkGetBufferMemoryRequirements( context->device->device, srcBuffer, &memoryRequirements ) );
-
-	VkMemoryAllocateInfo memoryAllocateInfo;
-	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	memoryAllocateInfo.pNext = NULL;
-	memoryAllocateInfo.allocationSize = memoryRequirements.size;
-	memoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
-
-	VkDeviceMemory srcMemory;
-	VK( context->device->vkAllocateMemory( context->device->device, &memoryAllocateInfo, VK_ALLOCATOR, &srcMemory ) );
-	VK( context->device->vkBindBufferMemory( context->device->device, srcBuffer, srcMemory, 0 ) );
-
-	void * mapped;
-	VK( context->device->vkMapMemory( context->device->device, srcMemory, 0, memoryRequirements.size, 0, &mapped ) );
-	memcpy( mapped, data, dataSize );
-	VC( context->device->vkUnmapMemory( context->device->device, srcMemory ) );
-
-	GpuContext_CreateSetupCmdBuffer( context );
-
-	VkBufferCopy bufferCopy;
-	bufferCopy.srcOffset = 0;
-	bufferCopy.dstOffset = 0;
-	bufferCopy.size = dataSize;
-
-	VC( context->device->vkCmdCopyBuffer( context->setupCommandBuffer, srcBuffer, destBuffer->buffer, 1, &bufferCopy ) );
-
-	GpuContext_FlushSetupCmdBuffer( context );
-
-	VC( context->device->vkDestroyBuffer( context->device->device, srcBuffer, VK_ALLOCATOR ) );
-	VC( context->device->vkFreeMemory( context->device->device, srcMemory, VK_ALLOCATOR ) );
-}
-
 static bool GpuBuffer_Create( GpuContext_t * context, GpuBuffer_t * buffer, const GpuBufferType_t type,
 							const size_t dataSize, const void * data, const bool hostVisible )
 {
@@ -6464,10 +6421,69 @@ static bool GpuBuffer_Create( GpuContext_t * context, GpuBuffer_t * buffer, cons
 			VK( context->device->vkMapMemory( context->device->device, buffer->memory, 0, memoryRequirements.size, 0, &mapped ) );
 			memcpy( mapped, data, dataSize );
 			VC( context->device->vkUnmapMemory( context->device->device, buffer->memory ) );
+
+			VkMappedMemoryRange mappedMemoryRange;
+			mappedMemoryRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+			mappedMemoryRange.pNext = NULL;
+			mappedMemoryRange.memory = buffer->memory;
+			mappedMemoryRange.offset = 0;
+			mappedMemoryRange.size = VK_WHOLE_SIZE;
+			VC( context->device->vkFlushMappedMemoryRanges( context->device->device, 1, &mappedMemoryRange ) );
 		}
 		else
 		{
-			GpuBuffer_StagedCopy( context, buffer, dataSize, data );
+			VkBufferCreateInfo bufferCreateInfo;
+			bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+			bufferCreateInfo.pNext = NULL;
+			bufferCreateInfo.flags = 0;
+			bufferCreateInfo.size = dataSize;
+			bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+			bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+			bufferCreateInfo.queueFamilyIndexCount = 0;
+			bufferCreateInfo.pQueueFamilyIndices = NULL;
+
+			VkBuffer srcBuffer;
+			VK( context->device->vkCreateBuffer( context->device->device, &bufferCreateInfo, VK_ALLOCATOR, &srcBuffer ) );
+
+			VkMemoryRequirements memoryRequirements;
+			VC( context->device->vkGetBufferMemoryRequirements( context->device->device, srcBuffer, &memoryRequirements ) );
+
+			VkMemoryAllocateInfo memoryAllocateInfo;
+			memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+			memoryAllocateInfo.pNext = NULL;
+			memoryAllocateInfo.allocationSize = memoryRequirements.size;
+			memoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
+
+			VkDeviceMemory srcMemory;
+			VK( context->device->vkAllocateMemory( context->device->device, &memoryAllocateInfo, VK_ALLOCATOR, &srcMemory ) );
+			VK( context->device->vkBindBufferMemory( context->device->device, srcBuffer, srcMemory, 0 ) );
+
+			void * mapped;
+			VK( context->device->vkMapMemory( context->device->device, srcMemory, 0, memoryRequirements.size, 0, &mapped ) );
+			memcpy( mapped, data, dataSize );
+			VC( context->device->vkUnmapMemory( context->device->device, srcMemory ) );
+
+			VkMappedMemoryRange mappedMemoryRange;
+			mappedMemoryRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+			mappedMemoryRange.pNext = NULL;
+			mappedMemoryRange.memory = srcMemory;
+			mappedMemoryRange.offset = 0;
+			mappedMemoryRange.size = VK_WHOLE_SIZE;
+			VC( context->device->vkFlushMappedMemoryRanges( context->device->device, 1, &mappedMemoryRange ) );
+
+			GpuContext_CreateSetupCmdBuffer( context );
+
+			VkBufferCopy bufferCopy;
+			bufferCopy.srcOffset = 0;
+			bufferCopy.dstOffset = 0;
+			bufferCopy.size = dataSize;
+
+			VC( context->device->vkCmdCopyBuffer( context->setupCommandBuffer, srcBuffer, buffer->buffer, 1, &bufferCopy ) );
+
+			GpuContext_FlushSetupCmdBuffer( context );
+
+			VC( context->device->vkDestroyBuffer( context->device->device, srcBuffer, VK_ALLOCATOR ) );
+			VC( context->device->vkFreeMemory( context->device->device, srcMemory, VK_ALLOCATOR ) );
 		}
 	}
 
@@ -6489,7 +6505,7 @@ static void GpuBuffer_Destroy( GpuContext_t * context, GpuBuffer_t * buffer )
 
 GPU texture.
 
-Supports loading textures from raw data.
+Supports loading textures from raw data or OpenGL KTX container files.
 For optimal performance a texture should only be created or modified at load time, not at runtime.
 Note that the geometry code assumes the texture origin 0,0 = left-top as opposed to left-bottom.
 In other words, textures are expected to be stored top-down as opposed to bottom-up.
@@ -6513,8 +6529,8 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 								const int width, const int height, const int depth,
 								const int numberOfArrayElements, const int numberOfFaces,
 								const bool mipmaps, const bool border );
-static bool GpuTexture_CreateFromFile( GpuContext_t * context, GpuTexture_t * texture, const char * fileName );
 static bool GpuTexture_CreateFromSwapChain( GpuContext_t * context, GpuTexture_t * texture, const GpuWindow_t * window, int index );
+static bool GpuTexture_CreateFromFile( GpuContext_t * context, GpuTexture_t * texture, const char * fileName );
 static void GpuTexture_Destroy( GpuContext_t * context, GpuTexture_t * texture );
 
 static void GpuTexture_SetFilter( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureFilter_t filter );
@@ -6536,15 +6552,15 @@ typedef enum
 
 	GPU_TEXTURE_FORMAT_R8_SNORM				= VK_FORMAT_R8_SNORM,					// 1-component, 8-bit signed normalized
 	GPU_TEXTURE_FORMAT_R8G8_SNORM			= VK_FORMAT_R8G8_SNORM,					// 2-component, 8-bit signed normalized
-	GPU_TEXTURE_FORMAT_R8G8B8_SNORM			= VK_FORMAT_R8G8B8_SNORM,				// 4-component, 8-bit signed normalized
+	GPU_TEXTURE_FORMAT_R8G8B8_SNORM			= VK_FORMAT_R8G8B8A8_SNORM,				// 4-component, 8-bit signed normalized
 
 	GPU_TEXTURE_FORMAT_R8_UINT				= VK_FORMAT_R8_UINT,					// 1-component, 8-bit unsigned integer
 	GPU_TEXTURE_FORMAT_R8G8_UINT			= VK_FORMAT_R8G8_UINT,					// 2-component, 8-bit unsigned integer
-	GPU_TEXTURE_FORMAT_R8G8B8A8_UINT		= VK_FORMAT_R8G8B8_UINT,				// 4-component, 8-bit unsigned integer
+	GPU_TEXTURE_FORMAT_R8G8B8A8_UINT		= VK_FORMAT_R8G8B8A8_UINT,				// 4-component, 8-bit unsigned integer
 
 	GPU_TEXTURE_FORMAT_R8_SINT				= VK_FORMAT_R8_SINT,					// 1-component, 8-bit signed integer
 	GPU_TEXTURE_FORMAT_R8G8_SINT			= VK_FORMAT_R8G8_SINT,					// 2-component, 8-bit signed integer
-	GPU_TEXTURE_FORMAT_R8G8B8_SINT			= VK_FORMAT_R8G8B8_SINT,				// 4-component, 8-bit signed integer
+	GPU_TEXTURE_FORMAT_R8G8B8_SINT			= VK_FORMAT_R8G8B8A8_SINT,				// 4-component, 8-bit signed integer
 
 	GPU_TEXTURE_FORMAT_R8_SRGB				= VK_FORMAT_R8_SRGB,					// 1-component, 8-bit sRGB
 	GPU_TEXTURE_FORMAT_R8G8_SRGB			= VK_FORMAT_R8G8_SRGB,					// 2-component, 8-bit sRGB
@@ -6844,7 +6860,6 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 										const void * data, const size_t dataSize, const bool mipSizeStored )
 {
 	UNUSED_PARM( dataSize );
-	UNUSED_PARM( mipSizeStored );	// Only used for KTX files.
 
 	memset( texture, 0, sizeof( GpuTexture_t ) );
 
@@ -6982,7 +6997,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 
 		GpuContext_FlushSetupCmdBuffer( context );
 	}
-	else	// Copy source data through a linear image.
+	else	// Copy source data through a staging buffer.
 	{
 		assert( sampleCount == GPU_SAMPLE_COUNT_1 );
 
@@ -7016,10 +7031,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 		const int numDataLevels = ( numberOfMipmapLevels >= 1 ) ? numberOfMipmapLevels : 1;
 		bool compressed = false;
 
-		// Using a staging buffer to initialize the tiled image is preferred over using a linear
-		// staging image, because the Vulkan specification requires vkCmdCopyBufferToImage while
-		// support for linear images is implementation dependent. Some implementations do not
-		// support any linear images.
+		// Using a staging buffer to initialize the tiled image.
 		VkBufferCreateInfo bufferCreateInfo;
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.pNext = NULL;
@@ -7079,6 +7091,15 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 			const int mipWidth = ( width >> mipLevel ) >= 1 ? ( width >> mipLevel ) : 1;
 			const int mipHeight = ( height >> mipLevel ) >= 1 ? ( height >> mipLevel ) : 1;
 			const int mipDepth = ( depth >> mipLevel ) >= 1 ? ( depth >> mipLevel ) : 1;
+
+			uint32_t totalMipSize = 0;
+			uint32_t storedMipSize = 0;
+			if ( mipSizeStored )
+			{
+				storedMipSize = *(uint32_t *)&(((uint8_t *)data)[dataOffset]);
+				dataOffset += 4;
+			}
+			UNUSED_PARM( storedMipSize );
 
 			for ( int layerIndex = 0; layerIndex < arrayLayerCount; layerIndex++ )
 			{
@@ -7239,8 +7260,19 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 						}
 					}
 
+					totalMipSize += mipSize;
 					dataOffset += mipSize;
+					if ( mipSizeStored && ( depth <= 1 && numberOfArrayElements <= 1 ) )
+					{
+						assert( mipSize == storedMipSize );
+						dataOffset += 3 - ( ( mipSize + 3 ) % 4 );
+					}
 				}
+			}
+			if ( mipSizeStored && ( depth > 1 || numberOfArrayElements > 1 ) )
+			{
+				assert( totalMipSize == storedMipSize );
+				dataOffset += 3 - ( ( totalMipSize + 3 ) % 4 );
 			}
 		}
 
@@ -7573,6 +7605,107 @@ static bool GpuTexture_CreateFromSwapChain( GpuContext_t * context, GpuTexture_t
 	GpuTexture_UpdateSampler( context, texture );
 
 	return true;
+}
+
+static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * texture, const char * fileName,
+									const unsigned char * buffer, const size_t bufferSize )
+{
+	memset( texture, 0, sizeof( GpuTexture_t ) );
+
+#pragma pack(1)
+	typedef struct
+	{
+		unsigned char	identifier[12];
+		unsigned int	endianness;
+		unsigned int	glType;
+		unsigned int	glTypeSize;
+		unsigned int	glFormat;
+		unsigned int	glInternalFormat;
+		unsigned int	glBaseInternalFormat;
+		unsigned int	pixelWidth;
+		unsigned int	pixelHeight;
+		unsigned int	pixelDepth;
+		unsigned int	numberOfArrayElements;
+		unsigned int	numberOfFaces;
+		unsigned int	numberOfMipmapLevels;
+		unsigned int	bytesOfKeyValueData;
+	} GlHeaderKTX_t;
+#pragma pack()
+
+	if ( bufferSize < sizeof( GlHeaderKTX_t ) )
+	{
+    	Error( "%s: Invalid KTX file", fileName );
+        return false;
+	}
+
+	const unsigned char fileIdentifier[12] =
+	{
+		(unsigned char)'\xAB', 'K', 'T', 'X', ' ', '1', '1', (unsigned char)'\xBB', '\r', '\n', '\x1A', '\n'
+	};
+
+	const GlHeaderKTX_t * header = (GlHeaderKTX_t *)buffer;
+	if ( memcmp( header->identifier, fileIdentifier, sizeof( fileIdentifier ) ) != 0 )
+	{
+		Error( "%s: Invalid KTX file", fileName );
+		return false;
+	}
+	// only support little endian
+	if ( header->endianness != 0x04030201 )
+	{
+		Error( "%s: KTX file has wrong endianess", fileName );
+		return false;
+	}
+	// skip the key value data
+	const size_t startTex = sizeof( GlHeaderKTX_t ) + header->bytesOfKeyValueData;
+	if ( ( startTex < sizeof( GlHeaderKTX_t ) ) || ( startTex >= bufferSize ) )
+	{
+		Error( "%s: Invalid KTX header sizes", fileName );
+		return false;
+	}
+
+	const int numberOfArrayElements = ( header->numberOfArrayElements >= 1 ) ? header->numberOfArrayElements : 1;
+	const int numberOfFaces = ( header->numberOfFaces >= 1 ) ? header->numberOfFaces : 1;
+	const int numberOfMipmapLevels = header->numberOfMipmapLevels;
+	const int depth = ( header->pixelDepth >= 1 ) ? header->pixelDepth : 1;
+	const VkFormat format = vkGetVulkanFormatFromOpenGLInternalFormat( header->glInternalFormat );
+
+	return GpuTexture_CreateInternal( context, texture, fileName,
+									format, GPU_SAMPLE_COUNT_1,
+									header->pixelWidth, header->pixelHeight, depth,
+									numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
+									buffer + startTex, bufferSize - startTex, true );
+}
+
+static bool GpuTexture_CreateFromFile( GpuContext_t * context, GpuTexture_t * texture, const char * fileName )
+{
+	memset( texture, 0, sizeof( GpuTexture_t ) );
+
+	FILE * fp = fopen( fileName, "rb" );
+	if ( fp == NULL )
+	{
+		Error( "Failed to open %s", fileName );
+		return false;
+	}
+
+	fseek( fp, 0L, SEEK_END );
+	size_t bufferSize = ftell( fp );
+	fseek( fp, 0L, SEEK_SET );
+
+	unsigned char * buffer = (unsigned char *) malloc( bufferSize );
+	if ( fread( buffer, 1, bufferSize, fp ) != bufferSize )
+	{
+		Error( "Failed to read %s", fileName );
+		free( buffer );
+		fclose( fp );
+		return false;
+	}
+	fclose( fp );
+
+	bool success = GpuTexture_CreateFromKTX( context, texture, fileName, buffer, bufferSize );
+
+	free( buffer );
+
+	return success;
 }
 
 static void GpuTexture_Destroy( GpuContext_t * context, GpuTexture_t * texture )
