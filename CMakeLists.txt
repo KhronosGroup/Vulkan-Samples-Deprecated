@@ -11,11 +11,36 @@ set_property( GLOBAL PROPERTY PREDEFINED_TARGETS_FOLDER "" )
 set( MAJOR "1" )
 
 include_directories(
-		"external/include"
-		"../Vulkan-LoaderAndValidationLayers/include"
-		"$ENV{VK_SDK_PATH}/Include" )
+        "external/include"
+        "../Vulkan-LoaderAndValidationLayers/include"
+        "$ENV{VK_SDK_PATH}/Include" )
 
-if( NOT WIN32 )
+add_custom_target(
+    target_that_always_runs ALL
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/fake.h )
+
+if( WIN32 )
+    STRING( REGEX REPLACE "/" "\\\\" BASE_DIR "${CMAKE_SOURCE_DIR}" )
+    add_custom_command( TARGET target_that_always_runs
+        PRE_BUILD
+        COMMAND IF NOT exist ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\build\\layers (mkdir ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\build\\layers)
+        COMMAND python ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\vk-generate.py Win32 dispatch-table-ops layer > ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\build\\layers\\vk_dispatch_table_helper.h
+        VERBATIM )
+elseif( APPLE )
+    set( BASE_DIR "${CMAKE_SOURCE_DIR}" )
+    add_custom_command( TARGET target_that_always_runs
+        PRE_BUILD
+        COMMAND mkdir -p ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers
+        COMMAND python ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/vk-generate.py Xcb dispatch-table-ops layer > ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h
+        VERBATIM )
+else()
+    set( BASE_DIR "${CMAKE_SOURCE_DIR}" )
+    add_custom_command( TARGET target_that_always_runs
+        PRE_BUILD
+        COMMAND mkdir -p ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers
+        COMMAND python ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/vk-generate.py Xcb dispatch-table-ops layer > ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h
+        VERBATIM )
+
     set( XLIB_LIBRARIES X11 Xxf86vm Xrandr )
     set( XCB_LIBRARIES xcb xcb-keysyms xcb-randr )
 endif()

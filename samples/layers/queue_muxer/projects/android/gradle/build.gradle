@@ -6,7 +6,7 @@ buildscript {
 
 	dependencies {
 		//classpath 'com.android.tools.build:gradle-experimental:0.6.0-beta5'
-        //classpath 'com.android.tools.build:gradle-experimental:0.7.0-alpha1'
+		//classpath 'com.android.tools.build:gradle-experimental:0.7.0-alpha1'
 		classpath 'com.android.tools.build:gradle-experimental:0.8.0-alpha6'
 	}
 }
@@ -45,7 +45,7 @@ model {
 	android.ndk {
 		moduleName = "VkLayer_queue_muxer"
 
-		CFlags.addAll(["-std=c99", "-Wall", "-DVK_USE_PLATFORM_ANDROID_KHR"])
+		CFlags.addAll(["-std=c99", "-Wall"])
 
 		CFlags.addAll([
 			"-I${file("${baseDir}/external/include")}".toString(),

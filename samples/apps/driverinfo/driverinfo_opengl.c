@@ -102,7 +102,13 @@ VERSION HISTORY
 #elif defined( __ANDROID__ )
 	#define OS_ANDROID
 #elif defined( __APPLE__ )
-	#define OS_MAC
+	#define OS_APPLE
+	#include <Availability.h>
+	#if __IPHONE_OS_VERSION_MAX_ALLOWED
+		#define OS_APPLE_IOS
+	#elif __MAC_OS_X_VERSION_MAX_ALLOWED
+		#define OS_APPLE_MACOS
+	#endif
 #elif defined( __linux__ )
 	#define OS_LINUX
 	#define OS_LINUX_XLIB		// Xlib + Xlib GLX 1.3
@@ -142,7 +148,7 @@ Platform headers / declarations
 	#include <GL/glext.h>
 	#include <GL/wglext.h>
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 
 	// Apple is still at OpenGL 4.1
 	#define OPENGL_VERSION_MAJOR	4
@@ -275,7 +281,7 @@ static void Print( const char * format, ... )
 
 	OutputDebugString( buffer );
 	printf( buffer );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	char buffer[4096];
 	va_list args;
 	va_start( args, format );
@@ -312,7 +318,27 @@ static void Error( const char * format, ... )
 	OutputDebugString( buffer );
 
 	MessageBox( NULL, buffer, "ERROR", MB_OK | MB_ICONINFORMATION );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE_IOS )
+	char buffer[4096];
+	va_list args;
+	va_start( args, format );
+	int length = vsnprintf( buffer, 4096, format, args );
+	va_end( args );
+
+	NSLog( @"%s\n", buffer );
+
+	if ( [NSThread isMainThread] )
+	{
+		NSString * string = [[NSString alloc] initWithBytes:buffer length:length encoding:NSASCIIStringEncoding];
+		UIAlertController* alert = [UIAlertController alertControllerWithTitle: @"Error"
+																	   message: string
+																preferredStyle: UIAlertControllerStyleAlert];
+		[alert addAction: [UIAlertAction actionWithTitle: @"OK"
+												   style: UIAlertActionStyleDefault
+												 handler: ^(UIAlertAction * action) {}]];
+		[UIApplication.sharedApplication.keyWindow.rootViewController presentViewController: alert animated: YES completion: nil];
+	}
+#elif defined( OS_APPLE_MACOS )
 	char buffer[4096];
 	va_list args;
 	va_start( args, format );
@@ -370,27 +396,10 @@ static const char * GetOSVersion()
 	}
 
 	return "Microsoft Windows";
-#elif defined( OS_MAC )
-	static char version[1024];
-	size_t len;
-	int mib[2] = { CTL_KERN, KERN_OSRELEASE };
-    
-	if ( sysctl( mib, 2, version, &len, NULL, 0 ) == 0 )
-	{
-		const char * dot = strstr( version, "." );
-		if ( dot != NULL )
-		{
-			const int kernelMajor = (int)strtol( version, (char **)NULL, 10 );
-			const int kernelMinor = (int)strtol( dot + 1, (char **)NULL, 10 );
-			const int osxMajor = 10;
-			const int osxMinor = kernelMajor - 4;
-			const int osxSub = kernelMinor + 1;
-			snprintf( version, sizeof( version ), "Apple Mac OS X %d.%d.%d", osxMajor, osxMinor, osxSub );
-			return version;
-		}
-	}
-
-	return "Apple Mac OS X";
+#elif defined( OS_APPLE_IOS )
+	return [NSString stringWithFormat: @"Apple iOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
+#elif defined( OS_APPLE_MACOS )
+	return [NSString stringWithFormat: @"Apple macOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
 #elif defined( OS_LINUX )
 	static char buffer[1024];
 
@@ -469,7 +478,7 @@ static const char * GetCPUVersion()
 			return processor;
 		}
 	}
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	static char processor[1024];
 	size_t processor_length = sizeof( processor );
 	sysctlbyname( "machdep.cpu.brand_string", &processor, &processor_length, NULL, 0 );
@@ -633,7 +642,7 @@ static const char * GlErrorString( GLenum error )
 		ENUM_STRING_CASE( GL_INVALID_OPERATION );
 		ENUM_STRING_CASE( GL_INVALID_FRAMEBUFFER_OPERATION );
 		ENUM_STRING_CASE( GL_OUT_OF_MEMORY );
-#if !defined( OS_MAC ) && !defined( OS_ANDROID )
+#if !defined( OS_APPLE ) && !defined( OS_ANDROID )
 		ENUM_STRING_CASE( GL_STACK_UNDERFLOW );
 		ENUM_STRING_CASE( GL_STACK_OVERFLOW );
 #endif
@@ -681,7 +690,7 @@ typedef struct
 	HWND					hWnd;
 	HDC						hDC;
 	HGLRC					hGLRC;
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	CGDirectDisplayID		display;
 	NSOpenGLContext *		nsContext;
 	CGLContextObj			cglContext;
@@ -753,7 +762,7 @@ static void GpuContext_Destroy( GpuContext_t * context )
 		context->hInstance = NULL;
 	}
 	context->hDC = NULL;
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	CGLSetCurrentContext( NULL );
 	if ( context->nsContext != NULL )
 	{
@@ -970,7 +979,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 	return true;
 }
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 
 static bool GpuContext_Create( GpuContext_t * context )
 {
@@ -1350,7 +1359,7 @@ static void GpuContext_SetCurrent( GpuContext_t * context )
 {
 #if defined( OS_WINDOWS )
 	wglMakeCurrent( context->hDC, context->hGLRC );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	CGLSetCurrentContext( context->cglContext );
 #elif defined( OS_LINUX_XLIB )
 	glXMakeCurrent( context->display, context->glxDrawable, context->glxContext );
@@ -1368,7 +1377,7 @@ static void GpuContext_UnsetCurrent( GpuContext_t * context )
 {
 #if defined( OS_WINDOWS )
 	wglMakeCurrent( context->hDC, NULL );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	CGLSetCurrentContext( NULL );
 #elif defined( OS_LINUX_XLIB )
 	glXMakeCurrent( context->display, None, NULL );
@@ -1383,7 +1392,7 @@ static bool GpuContext_CheckCurrent( GpuContext_t * context )
 {
 #if defined( OS_WINDOWS )
 	return ( wglGetCurrentContext() == context->hGLRC );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	return ( CGLGetCurrentContext() == context->cglContext );
 #elif defined( OS_LINUX_XLIB )
 	return ( glXGetCurrentContext() == context->glxContext );
@@ -2101,7 +2110,7 @@ int main( int argc, char * argv[] )
 		PFNWGLGETEXTENSIONSSTRINGARBPROC wglGetExtensionsStringARB = (PFNWGLGETEXTENSIONSSTRINGARBPROC) GetExtension( "wglGetExtensionsStringARB" );
 		const char * string = ( wglGetExtensionsStringARB != NULL ) ? wglGetExtensionsStringARB( context.hDC ) : "";
 		#define WSI_TYPE "WGL"
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 		const char * string = "";
 		#define WSI_TYPE "NSOpenGL"
 #elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB )

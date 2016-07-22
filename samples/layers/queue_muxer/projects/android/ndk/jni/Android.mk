@@ -12,7 +12,7 @@ LOCAL_C_INCLUDES := $(BASE_DIR)/Vulkan-Samples/external/include \
                     $(VK_SDK_PATH)/Include \
                     $(VK_SDK_PATH)/Source/layers
 LOCAL_SRC_FILES  := $(BASE_DIR)/samples/layers/queue_muxer/queue_muxer.c
-LOCAL_CFLAGS     := -std=c99 -Wall -DVK_USE_PLATFORM_ANDROID_KHR
+LOCAL_CFLAGS     := -std=c99 -Wall
 LOCAL_LDLIBS     := -llog
 
 include $(BUILD_SHARED_LIBRARY)
