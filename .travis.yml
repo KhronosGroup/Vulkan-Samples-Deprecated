@@ -87,6 +87,7 @@ before_install:
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then wget http://dl.google.com/android/repository/android-ndk-r12b-linux-${ARCH}.zip; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then unzip -u -q android-ndk-r12b-linux-${ARCH}.zip; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then export ANDROID_NDK_HOME=`pwd`/android-ndk-r12b; fi
+  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then export JAVA_HOME="/usr/lib/jvm/java-7-oracle"; fi
 
 install:
   - pip install --user nose
