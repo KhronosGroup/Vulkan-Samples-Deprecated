@@ -357,6 +357,7 @@ Platform headers / declarations
 	#define GL_EXT_color_subtable
 	#include <GL/glext.h>
 	#include <GL/wglext.h>
+	#include <GL/gl_format.h>
 
 	#define OUTPUT_PATH				""
 
@@ -379,6 +380,7 @@ Platform headers / declarations
 	#include <OpenGL/OpenGL.h>
 	#include <OpenGL/gl3.h>
 	#include <OpenGL/gl3ext.h>
+	#include <GL/gl_format.h>
 
 	#define OUTPUT_PATH				""
 
@@ -420,6 +422,7 @@ Platform headers / declarations
 		#include <xcb/dri2.h>
 	#endif
 	#include <GL/glx.h>
+	#include <GL/gl_format.h>
 
 	#define OUTPUT_PATH				""
 
@@ -458,6 +461,7 @@ Platform headers / declarations
 		#include <GLES3/gl31.h>
 	#endif
 	#include <GLES3/gl3ext.h>
+	#include <GL/gl_format.h>
 
 	#define OUTPUT_PATH				"/sdcard/"
 
@@ -6216,7 +6220,7 @@ static void GpuBuffer_Destroy( GpuContext_t * context, GpuBuffer_t * buffer )
 
 GPU texture.
 
-Supports loading textures from raw data or OpenGL KTX container files.
+Supports loading textures from raw data or KTX container files.
 Textures are always created as immutable textures.
 For optimal performance a texture should only be created or modified at load time, not at runtime.
 Note that the geometry code assumes the texture origin 0,0 = left-top as opposed to left-bottom.
@@ -6437,8 +6441,8 @@ typedef enum
 typedef enum
 {
 	GPU_TEXTURE_DEFAULT_CHECKERBOARD,	// 16x16 checkerboard pattern (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
-	GPU_TEXTURE_DEFAULT_CIRCLES,		// 32x32 block pattern with circles (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
-	GPU_TEXTURE_DEFAULT_PYRAMIDS		// 16x16 block pattern of pyramids (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
+	GPU_TEXTURE_DEFAULT_PYRAMIDS,		// 16x16 block pattern of pyramids (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
+	GPU_TEXTURE_DEFAULT_CIRCLES			// 32x32 block pattern with circles (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
 } GpuTextureDefault_t;
 
 typedef struct
@@ -6474,7 +6478,7 @@ static int IntegerLog2( int i )
 // 'depth' must be >= 1 and <= 32768.
 // 'numberOfArrayElements' must be >= 1.
 // 'numberOfFaces' must be either 1 or 6.
-// 'numberOfMipmapLevels' must be >= 1.
+// 'numberOfMipmapLevels' must be -1 or >= 1.
 // 'numberOfMipmapLevels' includes the finest level.
 // 'numberOfMipmapLevels' set to -1 will allocate the full mip chain.
 // 'data' may be NULL to allocate a texture without initialization.
@@ -6893,14 +6897,14 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 
 	if ( defaultType == GPU_TEXTURE_DEFAULT_CHECKERBOARD )
 	{
-		const int sp = 4;
+		const int blockSize = 16;	// must be a power of two
 		for ( int layer = 0; layer < depth * numberOfArrayElements * numberOfFaces; layer++ )
 		{
 			for ( int y = 0; y < height; y++ )
 			{
 				for ( int x = 0; x < width; x++ )
 				{
-					if ( ( ( ( x >> sp ) ^ ( y >> sp ) ) & 1 ) == 0 )
+					if ( ( ( ( x / blockSize ) ^ ( y / blockSize ) ) & 1 ) == 0 )
 					{
 						data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + 0] = ( layer & 1 ) == 0 ? 96 : 160;
 						data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + 1] = 64;
@@ -6917,8 +6921,43 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 			}
 		}
 	}
+	else if ( defaultType == GPU_TEXTURE_DEFAULT_PYRAMIDS )
+	{
+		const int blockSize = 16;	// must be a power of two
+		for ( int layer = 0; layer < depth * numberOfArrayElements * numberOfFaces; layer++ )
+		{
+			for ( int y = 0; y < height; y++ )
+			{
+				for ( int x = 0; x < width; x++ )
+				{
+					const int mask = blockSize - 1;
+					const int lx = x & mask;
+					const int ly = y & mask;
+					const int rx = mask - lx;
+					const int ry = mask - ly;
+
+					char cx = 0;
+					char cy = 0;
+					if ( lx != ly && lx != ry )
+					{
+						int m = blockSize;
+						if ( lx < m ) { m = lx; cx = -96; cy =   0; }
+						if ( ly < m ) { m = ly; cx =   0; cy = -96; }
+						if ( rx < m ) { m = rx; cx = +96; cy =   0; }
+						if ( ry < m ) { m = ry; cx =   0; cy = +96; }
+					}
+					data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + 0] = 128 + cx;
+					data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + 1] = 128 + cy;
+					data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + 2] = 128 + 85;
+					data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + 3] = 255;
+				}
+			}
+		}
+	}
 	else if ( defaultType == GPU_TEXTURE_DEFAULT_CIRCLES )
 	{
+		const int blockSize = 32;	// must be a power of two
+		const int radius = 10;
 		const unsigned char colors[4][4] =
 		{
 			{ 0xFF, 0x00, 0x00, 0xFF },
@@ -6932,54 +6971,21 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 			{
 				for ( int x = 0; x < width; x++ )
 				{
-					// Pick a color per 32x32 block of texels.
-					const int index =	( ( ( y >> 4 ) & 2 ) ^ ( ( x >> 5 ) & 2 ) ) |
-										( ( ( x >> 5 ) & 1 ) ^ ( ( y >> 6 ) & 1 ) );
+					// Pick a color per block of texels.
+					const int index =	( ( ( y / ( blockSize / 2 ) ) & 2 ) ^ ( ( x / ( blockSize * 1 ) ) & 2 ) ) |
+										( ( ( x / ( blockSize * 1 ) ) & 1 ) ^ ( ( y / ( blockSize * 2 ) ) & 1 ) );
 
 					// Draw a circle with radius 10 centered inside each 32x32 block of texels.
-					const int dX = ( x & ~31 ) + 16 - x;
-					const int dY = ( y & ~31 ) + 16 - y;
-					const int dS = abs( dX * dX + dY * dY - 10 * 10 );
-					const int scale = ( dS <= 32 ) ? dS : 32;
+					const int dX = ( x & ~( blockSize - 1 ) ) + ( blockSize / 2 ) - x;
+					const int dY = ( y & ~( blockSize - 1 ) ) + ( blockSize / 2 ) - y;
+					const int dS = abs( dX * dX + dY * dY - radius * radius );
+					const int scale = ( dS <= blockSize ) ? dS : blockSize;
 
 					for ( int c = 0; c < TEXEL_SIZE - 1; c++ )
 					{
 						data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + c] = (unsigned char)( ( colors[index][c] * scale ) >> 5 );
 					}
 					data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + TEXEL_SIZE - 1] = 255;
-				}
-			}
-		}
-	}
-	else if ( defaultType == GPU_TEXTURE_DEFAULT_PYRAMIDS )
-	{
-		const int sp = 4;
-		for ( int layer = 0; layer < depth * numberOfArrayElements * numberOfFaces; layer++ )
-		{
-			for ( int y = 0; y < height; y++ )
-			{
-				for ( int x = 0; x < width; x++ )
-				{
-					const int mask = ( 1 << sp ) - 1;
-					const int lx = x & mask;
-					const int ly = y & mask;
-					const int rx = mask - lx;
-					const int ry = mask - ly;
-
-					char cx = 0;
-					char cy = 0;
-					if ( lx != ly && lx != ry )
-					{
-						int m = 1 << sp;
-						if ( lx < m ) { m = lx; cx = -96; cy =   0; }
-						if ( ly < m ) { m = ly; cx =   0; cy = -96; }
-						if ( rx < m ) { m = rx; cx = +96; cy =   0; }
-						if ( ry < m ) { m = ry; cx =   0; cy = +96; }
-					}
-					data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + 0] = 128 + cx;
-					data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + 1] = 128 + cy;
-					data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + 2] = 128 + 85;
-					data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + 3] = 255;
 				}
 			}
 		}
@@ -7027,6 +7033,8 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 	return success;
 }
 
+// This KTX loader does not do any conversions. In other words, the format
+// stored in the KTX file must be the same as the glInternaltFormat.
 static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * texture, const char * fileName,
 									const unsigned char * buffer, const size_t bufferSize )
 {
@@ -7083,13 +7091,36 @@ static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * tex
 		return false;
 	}
 
+	const GLenum derivedFormat = glGetFormatFromInternalFormat( header->glInternalFormat );
+	const GLenum derivedType = glGetTypeFromInternalFormat( header->glInternalFormat );
+
+	UNUSED_PARM( derivedFormat );
+	UNUSED_PARM( derivedType );
+
+	// The glFormat and glType must be either both be zero or both be non-zero.
+	assert( ( header->glFormat == 0 ) == ( header->glType == 0 ) );
+	// Uncompressed glTypeSize must be 1, 2, 4 or 8.
+	assert( header->glFormat == 0 || header->glTypeSize == 1 || header->glTypeSize == 2 || header->glTypeSize == 4 || header->glTypeSize == 8 );
+	// Uncompressed glFormat must match the format derived from glInternalFormat.
+	assert( header->glFormat == 0 || header->glFormat == derivedFormat );
+	// Uncompressed glType must match the type derived from glInternalFormat.
+	assert( header->glFormat == 0 || header->glType == derivedType );
+	// Uncompressed glBaseInternalFormat must be the same as glFormat.
+	assert( header->glFormat == 0 || header->glBaseInternalFormat == header->glFormat );
+	// Compressed glTypeSize must be 1.
+	assert( header->glFormat != 0 || header->glTypeSize == 1 );
+	// Compressed glBaseInternalFormat must match the format drived from glInternalFormat.
+	assert( header->glFormat != 0 || header->glBaseInternalFormat == derivedFormat );
+
 	const int numberOfArrayElements = ( header->numberOfArrayElements >= 1 ) ? header->numberOfArrayElements : 1;
 	const int numberOfFaces = ( header->numberOfFaces >= 1 ) ? header->numberOfFaces : 1;
 	const int numberOfMipmapLevels = header->numberOfMipmapLevels;
+	const int depth = ( header->pixelDepth >= 1 ) ? header->pixelDepth : 1;
+	const GLenum format = header->glInternalFormat;
 
 	return GpuTexture_CreateInternal( context, texture, fileName,
-									header->glInternalFormat, GPU_SAMPLE_COUNT_1,
-									header->pixelWidth, header->pixelHeight, header->pixelDepth,
+									format, GPU_SAMPLE_COUNT_1,
+									header->pixelWidth, header->pixelHeight, depth,
 									numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
 									buffer + startTex, bufferSize - startTex, true );
 }

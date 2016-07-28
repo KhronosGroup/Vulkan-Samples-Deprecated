@@ -384,11 +384,8 @@ Hexagon QDSP6
 #include "HAP_farf.h"
 #include "hexagon_types.h"
 #include "hexagon_protos.h"
+#include "qurt.h"
 #include "qurt_atomic_ops.h"
-#include "qurt_thread.h"
-#include "qurt_rmutex.h"
-#include "qurt_cond.h"
-#include "qurt_printf.h"
 #include "TimeWarp.h"				// MeshCoord_t
 
 #if 1	// manual prefetching significantly improves the performance
@@ -406,13 +403,13 @@ Hexagon QDSP6
 #define FARF_DEBUG_MSG_LEVEL		HAP_LEVEL_HIGH
 #define Print(...)					FARF( ALWAYS, __VA_ARGS__ )
 
-#if !defined( __HEXAGON_V50__ )
+#if !defined( __HEXAGON_V50__ ) && ( __HEXAGON_ARCH__ >= 50 )
 #define __HEXAGON_V50__				1	// Snapdragon 805 (8x84)
 #endif
-#if !defined( __HEXAGON_V56__ )
+#if !defined( __HEXAGON_V56__ ) && ( __HEXAGON_ARCH__ >= 56 )
 #define __HEXAGON_V56__				1	// Snapdragon 810 (8x94)
 #endif
-#if !defined( __HEXAGON_V60__ )
+#if !defined( __HEXAGON_V60__ ) && ( __HEXAGON_ARCH__ >= 60 )
 #define __HEXAGON_V60__				1	// Snapdragon 820 (8x96)
 #endif
 
@@ -420,9 +417,22 @@ typedef unsigned char Byte;
 typedef unsigned int Word32;
 typedef unsigned long long Word64;
 
-inline Word32 Q6_R_extract_Pl( Word64 Rss ) { return (Word32)( Rss ); }
-inline Word32 Q6_R_extract_Ph( Word64 Rss ) { return (Word32)( Rss >> 32 ); }
-inline Word64 Q6_P_memb_fifo_PRI( Word64 Rss, const Byte * Rt, Word32 s11 ) { return ( Rss >> 8 ) | ( (Word64)Rt[s11] << 56 ); }
+static inline Word32 Q6_R_extract_Pl( Word64 Rss ) { return (Word32)( Rss ); }
+static inline Word32 Q6_R_extract_Ph( Word64 Rss ) { return (Word32)( Rss >> 32 ); }
+
+static inline Word64 Q6_P_memb_fifo_PR( Word64 Rss, const Byte * Rt )
+{
+#if 1
+	return ( Rss >> 8 ) | ( (Word64)(Rt[0]) << 56 );
+#else
+    __asm__ __volatile__(
+		"	%0 = memb_fifo(%1)\n"
+        :
+        : "r" (Rss), "r" (Rt)
+        : );
+	return Rss;
+#endif
+}
 
 // Fetch all cache lines touched by the linear address range.
 // Issues L2FETCH for up to 64kB.
@@ -450,7 +460,7 @@ static void dspcache_l2fetch_linear( const void * addr, unsigned int bytes )
 // Issues box-type L2FETCH for a box that is up to 255 bytes wide x 255 bytes high, with stride up to 16383.
 static void dspcache_l2fetch_box( const void * addr, unsigned int width, unsigned int height, unsigned int stride )
 {
-	Word64 mask;
+	Word64 temp;
     __asm__ __volatile__(
 		"	{\n"
 		"		%3 = combine(%2.L,%3.L)\n"		// width : height
@@ -459,7 +469,7 @@ static void dspcache_l2fetch_box( const void * addr, unsigned int width, unsigne
 		"	}{\n"
 		"		l2fetch(%1,%0)\n"				// l2fetch [addr, stride : width : height]
 		"	}\n"
-        : "=&r" (mask)
+        : "=&r" (temp)
         : "r" (addr), "r" (width), "r" (height), "r" (stride)
         : );
 }
@@ -3655,6 +3665,103 @@ static void Warp32x32_SampleBilinearPlanarRGB(
 				"memory"
 		);
 
+#elif 0//defined( __HEXAGON_V50__ )	// 2 pixels per iteration appears to be optimal
+
+		Word32 dxy0 = Q6_R_combine_RlRl( deltaY8, deltaX8 );
+		Word64 dxy2 = Q6_P_vaslh_PI( Q6_P_combine_RR( dxy0, dxy0 ), 1 );		// dx2, dy2, dx2, dy2
+
+		Word32 sxy0 = Q6_R_combine_RlRl( localSrcY8, localSrcX8 );				// sx0, sy0
+		Word64 sxy2 = Q6_P_combine_RR( Q6_R_vaddh_RR( sxy0, dxy0 ), sxy0 );		// sx0, sy0, sx1, sy1
+
+		Word32 pch0 = Q6_R_combine_RlRl( srcPitchInTexels, Q6_R_equals_I( 1 ) );
+		Word64 pch2 = Q6_P_combine_RR( pch0, pch0 );
+		Word64 pchr = Q6_P_combine_RR( srcPitchInTexels, srcPitchInTexels );
+
+		Word64 cfrX = Q6_P_shuffeh_PP( sxy2, sxy2 );		// sx0, sx0, sx1, sx1
+		Word64 cfrY = Q6_P_shuffoh_PP( sxy2, sxy2 );		// sy0, sy0, sy1, sy1
+
+		Word64 dfrX = Q6_P_shuffeh_PP( dxy2, dxy2 );		// dx2, dx2, dx2, dx2
+		Word64 dfrY = Q6_P_shuffoh_PP( dxy2, dxy2 );		// dy2, dy2, dy2, dy2
+
+		cfrX = Q6_P_shuffeb_PP( cfrX, cfrX );				// fx0, fx0, fx0, fx0, fx1, fx1, fx1, fx1
+		cfrY = Q6_P_shuffeb_PP( cfrY, cfrY );				// fy0, fy0, fy0, fy0, fy1, fy1, fy1, fy1
+
+		dfrX = Q6_P_shuffeb_PP( dfrX, dfrX );				// dx2, dx2, dx2, dx2, dx2, dx2, dx2, dx2
+		dfrY = Q6_P_shuffeb_PP( dfrY, dfrY );				// dy2, dy2, dy2, dy2, dy2, dy2, dy2, dy2
+
+		Word64 zero = Q6_P_combine_II(  0,  0 );			// 0x0000000000000000
+		Word64 none = Q6_P_combine_II( -1, -1 );			// 0xFFFFFFFFFFFFFFFF
+
+		Word64 xfrX = Q6_P_shuffeh_PP( zero, none );		// 0x0000FFFF0000FFFF
+		Word64 xfrY = Q6_P_shuffeb_PP( zero, none );		// 0x00FF00FF00FF00FF
+
+		cfrX = Q6_P_xor_PP( cfrX, xfrX );					// 1-fx0, 1-fx0,   fx0, fx0, 1-fx1, 1-fx1,   fx1, fx1
+		cfrY = Q6_P_xor_PP( cfrY, xfrY );					// 1-fy0,   fy0, 1-fy0, fy0, 1-fy1,   fy1, 1-fy1, fy1
+
+		dfrX = Q6_P_vsubb_PP( Q6_P_xor_PP( dfrX, xfrX ), xfrX );
+		dfrY = Q6_P_vsubb_PP( Q6_P_xor_PP( dfrY, xfrY ), xfrY );
+
+		for ( int x = 0; x < 32; x += 2 )
+		{
+			Word64 offset0 = Q6_P_vdmpy_PP_sat( Q6_P_vasrh_PI( sxy2, STP ), pch2 );
+			Word64 offset1 = Q6_P_vaddw_PP( offset0, pchr );
+
+			Word64 t0 = 0;
+			t0 = Q6_P_memb_fifo_PR( t0, &localSrcRed[ Q6_R_extract_Pl( offset0 ) + 0] );	// r0
+			t0 = Q6_P_memb_fifo_PR( t0, &localSrcRed[ Q6_R_extract_Pl( offset1 ) + 0] );	// r2
+			t0 = Q6_P_memb_fifo_PR( t0, &localSrcRed[ Q6_R_extract_Pl( offset0 ) + 1] );	// r1
+			t0 = Q6_P_memb_fifo_PR( t0, &localSrcRed[ Q6_R_extract_Pl( offset1 ) + 1] );	// r3
+			t0 = Q6_P_memb_fifo_PR( t0, &localSrcBlue[ Q6_R_extract_Pl( offset0 ) + 0] );	// b0
+			t0 = Q6_P_memb_fifo_PR( t0, &localSrcBlue[ Q6_R_extract_Pl( offset1 ) + 0] );	// b2
+			t0 = Q6_P_memb_fifo_PR( t0, &localSrcBlue[ Q6_R_extract_Pl( offset0 ) + 1] );	// b1
+			t0 = Q6_P_memb_fifo_PR( t0, &localSrcBlue[ Q6_R_extract_Pl( offset1 ) + 1] );	// b3
+
+			Word64 t1 = 0;
+			t1 = Q6_P_memb_fifo_PR( t1, &localSrcGreen[ Q6_R_extract_Pl( offset0 ) + 0] );	// g0
+			t1 = Q6_P_memb_fifo_PR( t1, &localSrcGreen[ Q6_R_extract_Pl( offset1 ) + 0] );	// g2
+			t1 = Q6_P_memb_fifo_PR( t1, &localSrcGreen[ Q6_R_extract_Pl( offset0 ) + 1] );	// g1
+			t1 = Q6_P_memb_fifo_PR( t1, &localSrcGreen[ Q6_R_extract_Pl( offset1 ) + 1] );	// g3
+			t1 = Q6_P_lsr_PI( t1, 32 );
+
+			Word64 t2 = 0;
+			t2 = Q6_P_memb_fifo_PR( t2, &localSrcRed[ Q6_R_extract_Ph( offset0 ) + 0] );	// r0
+			t2 = Q6_P_memb_fifo_PR( t2, &localSrcRed[ Q6_R_extract_Ph( offset1 ) + 0] );	// r2
+			t2 = Q6_P_memb_fifo_PR( t2, &localSrcRed[ Q6_R_extract_Ph( offset0 ) + 1] );	// r1
+			t2 = Q6_P_memb_fifo_PR( t2, &localSrcRed[ Q6_R_extract_Ph( offset1 ) + 1] );	// r3
+			t2 = Q6_P_memb_fifo_PR( t2, &localSrcBlue[ Q6_R_extract_Ph( offset0 ) + 0] );	// b0
+			t2 = Q6_P_memb_fifo_PR( t2, &localSrcBlue[ Q6_R_extract_Ph( offset1 ) + 0] );	// b2
+			t2 = Q6_P_memb_fifo_PR( t2, &localSrcBlue[ Q6_R_extract_Ph( offset0 ) + 1] );	// b1
+			t2 = Q6_P_memb_fifo_PR( t2, &localSrcBlue[ Q6_R_extract_Ph( offset1 ) + 1] );	// b3
+
+			Word64 t3 = 0;
+			t3 = Q6_P_memb_fifo_PR( t3, &localSrcGreen[ Q6_R_extract_Ph( offset0 ) + 0] );	// g0
+			t3 = Q6_P_memb_fifo_PR( t3, &localSrcGreen[ Q6_R_extract_Ph( offset1 ) + 0] );	// g2
+			t3 = Q6_P_memb_fifo_PR( t3, &localSrcGreen[ Q6_R_extract_Ph( offset0 ) + 1] );	// g1
+			t3 = Q6_P_memb_fifo_PR( t3, &localSrcGreen[ Q6_R_extract_Ph( offset1 ) + 1] );	// g3
+			t3 = Q6_P_lsr_PI( t3, 32 );
+
+			Word32 m0 = Q6_R_vtrunohb_P( Q6_P_vmpybu_RR( Q6_R_extract_Pl( cfrX ), Q6_R_extract_Pl( cfrY ) ) );
+			Word32 m1 = Q6_R_vtrunohb_P( Q6_P_vmpybu_RR( Q6_R_extract_Ph( cfrX ), Q6_R_extract_Ph( cfrY ) ) );
+
+			Word64 f0 = Q6_P_combine_RR( m0, m0 );
+			Word64 f1 = Q6_P_combine_RR( m1, m1 );
+
+			t0 = Q6_P_vrmpybu_PP( t0, f0 );			// r, b
+			t1 = Q6_P_vrmpybu_PP( t1, f0 );			// g, a
+			t2 = Q6_P_vrmpybu_PP( t2, f1 );			// r, b
+			t3 = Q6_P_vrmpybu_PP( t3, f1 );			// g, a
+
+			t0 = Q6_P_shuffeh_PP( t1, t0 );			// r, g, b, a
+			t2 = Q6_P_shuffeh_PP( t3, t2 );			// r, g, b, a
+
+			*(Word64 *)&destRow[x] = Q6_P_combine_RR( Q6_R_vtrunohb_P( t2 ), Q6_R_vtrunohb_P( t0 ) );
+
+			sxy2 = Q6_P_vaddh_PP( sxy2, dxy2 );
+
+			cfrX = Q6_P_vaddub_PP( cfrX, dfrX );
+			cfrY = Q6_P_vaddub_PP( cfrY, dfrY );
+		}
+
 #elif defined( __HEXAGON_V50__ )	// 2 pixels per iteration appears to be optimal
 
 		Word32 dxy0 = Q6_R_combine_RlRl( deltaY8, deltaX8 );
@@ -6575,11 +6682,12 @@ static bool Thread_Create( Thread_t * thread, const char * threadName, threadFun
 	}
 #elif defined( OS_HEXAGON )
 	const int stackSize = 16 * 1024;
-	thread->stack = malloc( stackSize );
+	thread->stack = malloc( stackSize + 128 );
+	void * aligned = (void *)( ( (size_t)thread->stack + 127 ) & ~127 );
 	qurt_thread_attr_t attr;
 	qurt_thread_attr_init( &attr );
 	qurt_thread_attr_set_name( &attr, (char *)threadName );
-	qurt_thread_attr_set_stack_addr( &attr, thread->stack );
+	qurt_thread_attr_set_stack_addr( &attr, aligned );
 	qurt_thread_attr_set_stack_size( &attr, stackSize );
 	qurt_thread_attr_set_priority( &attr, qurt_thread_get_priority( qurt_thread_get_id() ) );
 	int ret = qurt_thread_create( &thread->handle, &attr, ThreadFunctionInternal, (void *)thread );
@@ -6663,11 +6771,12 @@ static void ThreadPool_Join( ThreadPool_t * pool );
 ================================================================================================================================
 */
 
-#define NUM_WORKERS		4
+#define MAX_WORKERS		4
 
 typedef struct
 {
-	Thread_t threads[NUM_WORKERS];
+	Thread_t	threads[MAX_WORKERS];
+	int			threadCount;
 } ThreadPool_t;
 
 void PoolStartThread( void * data )
@@ -6680,7 +6789,16 @@ void PoolStartThread( void * data )
 
 static void ThreadPool_Create( ThreadPool_t * pool )
 {
-	for ( int i = 0; i < NUM_WORKERS; i++ )
+	pool->threadCount = MAX_WORKERS;
+#if defined( OS_HEXAGON )
+	qurt_sysenv_max_hthreads_t num_threads;
+	if ( qurt_sysenv_get_max_hw_threads( &num_threads ) == QURT_EOK )
+	{
+		pool->threadCount = num_threads.max_hthreads;
+	}
+#endif
+
+	for ( int i = 0; i < pool->threadCount; i++ )
 	{
 		Thread_Create( &pool->threads[i], "worker", PoolStartThread, NULL );
 		Thread_Signal( &pool->threads[i] );
@@ -6690,7 +6808,7 @@ static void ThreadPool_Create( ThreadPool_t * pool )
 
 static void ThreadPool_Destroy( ThreadPool_t * pool )
 {
-	for ( int i = 0; i < NUM_WORKERS; i++ )
+	for ( int i = 0; i < pool->threadCount; i++ )
 	{
 		Thread_Destroy( &pool->threads[i] );
 	}
@@ -6698,7 +6816,7 @@ static void ThreadPool_Destroy( ThreadPool_t * pool )
 
 static void ThreadPool_Submit( ThreadPool_t * pool, threadFunction_t threadFunction, void * threadData )
 {
-	for ( int i = 0; i < NUM_WORKERS; i++ )
+	for ( int i = 0; i < pool->threadCount; i++ )
 	{
 		Thread_Submit( &pool->threads[i], threadFunction, threadData );
 	}
@@ -6706,7 +6824,7 @@ static void ThreadPool_Submit( ThreadPool_t * pool, threadFunction_t threadFunct
 
 static void ThreadPool_Join( ThreadPool_t * pool )
 {
-	for ( int i = 0; i < NUM_WORKERS; i++ )
+	for ( int i = 0; i < pool->threadCount; i++ )
 	{
 		Thread_Join( &pool->threads[i] );
 	}
@@ -6750,6 +6868,15 @@ static void GetHmdViewMatrixForTime( Matrix4x4f_t * viewMatrix, const uint64_t t
 
 void TimeWarpThread( TimeWarpThreadData_t * data )
 {
+#if defined( __HEXAGON_V60__ )
+	int r = qurt_hvx_lock( QURT_HVX_MODE_64B );
+	if ( r != QURT_EOK )
+	{
+		// fall back to non HVX code?
+		return;
+	}
+#endif
+
 	const size_t numMeshCoords = ( data->destTilesHigh + 1 ) * ( data->destTilesWide + 1 );
 	const MeshCoord_t * meshCoordsBasePtr = (const MeshCoord_t *) data->meshCoords;
 	const MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
@@ -6843,6 +6970,10 @@ void TimeWarpThread( TimeWarpThreadData_t * data )
 													&timeWarpStartTransform, &timeWarpEndTransform );
 		}
 	}
+
+#if defined( __HEXAGON_V60__ )
+	qurt_hvx_unlock();
+#endif
 }
 
 #if defined( OS_HEXAGON )
@@ -6860,6 +6991,9 @@ enum
 
 #pragma weak HAP_get_chip_family_id
 extern uint32_t HAP_get_chip_family_id( void );
+
+#pragma weak HAP_power_set
+extern int HAP_power_set( void * context, HAP_power_request_t * request );
 
 int TimeWarpInterface_GetDspVersion()
 {
@@ -6893,6 +7027,9 @@ static ThreadPool_t threadPool;
 int TimeWarpInterface_Init()
 {
 #if defined( OS_HEXAGON )
+//	const char * fileName = "atw_cpu_dsp.c";
+//	HAP_setFARFRuntimeLoggingParams( 0x1f, &fileName, 1 );
+
 	const int DEFAULT_CLOCK_FREQ_PERCENTAGE	= 100;
 	const int DEFAULT_BUS_FREQ_PERCENTAGE	= 100;
 	const int DEFAULT_MAX_RPC_USEC			= 1000;	// microseconds tolerable wakeup latency upon RPC (or other) interrupt
@@ -6902,13 +7039,60 @@ int TimeWarpInterface_Init()
 	Print( "DSP %d%%, BUS %d%%, RPC %d uSec\n", DEFAULT_CLOCK_FREQ_PERCENTAGE, DEFAULT_BUS_FREQ_PERCENTAGE, DEFAULT_MAX_RPC_USEC );
 #endif
 
+#if defined( __HEXAGON_V60__ )
+	if ( (void*)HAP_power_set != NULL )
+	{
+		HAP_power_request_t request;
+		request.type = HAP_power_set_HVX;
+		request.hvx.power_up = TRUE;
+		int retval = HAP_power_set( NULL, &request );
+		if ( retval != 0 && retval != HAP_POWER_ERR_UNSUPPORTED_API )
+		{
+			Print( "unable to power on HVX (result=%d)", retval );
+		}
+	}
+	if ( (void*)HAP_power_set != NULL )
+	{
+		HAP_power_request_t request;
+		request.type = HAP_power_set_apptype;
+		request.apptype = HAP_POWER_COMPUTE_CLIENT_CLASS;
+		int retval = HAP_power_set( NULL, &request );
+		if ( retval != 0 && retval != HAP_POWER_ERR_UNSUPPORTED_API )
+		{
+			Print( "unable to set the app type to compute (result=%d)\n", retval );
+		}
+	}
+	int reserved = qurt_hvx_reserve( QURT_HVX_RESERVE_ALL_AVAILABLE );
+#endif
+
 	ThreadPool_Create( &threadPool );
+
+#if defined( __HEXAGON_V60__ )
+	return reserved;
+#else
 	return 0;	// AEE_SUCCESS
+#endif
 }
 
 int TimeWarpInterface_Shutdown()
 {
 	ThreadPool_Destroy( &threadPool );
+
+#if defined( __HEXAGON_V60__ )
+	qurt_hvx_cancel_reserve();
+
+	if ( (void*)HAP_power_set != NULL )
+	{
+		HAP_power_request_t request;
+		request.type = HAP_power_set_HVX;
+		request.hvx.power_up = FALSE;
+		int retval = HAP_power_set( NULL, &request );
+		if ( retval != 0 && retval != HAP_POWER_ERR_UNSUPPORTED_API )
+		{
+			Print( "unable to power off HVX (result=%d)", retval );
+		}
+	}
+#endif
 
 #if defined( OS_HEXAGON )
 	HAP_power_request( 0, 0, -1 );
@@ -7820,7 +8004,8 @@ void TestTimeWarp()
 	printf( "adspmsgd_start() %s\n", ( adspmsgd_result == 0 ) ? "succeeded" : "failed" );
 #endif
 
-	TimeWarpInterface_Init();
+	int units = TimeWarpInterface_Init();
+	Print( "HVX units = %d\n", units );
 
 	for ( int sampling = 0; sampling < 5; sampling++ )
 	{

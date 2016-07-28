@@ -252,16 +252,6 @@ Common defines
 #define APPLICATION_NAME				"DriverInfo"
 #define WINDOW_TITLE					"DriverInfo"
 
-#if !defined( GL_SR8_EXT )
-	#define GL_SR8_EXT					0x8FBD
-#endif
-#if !defined( GL_SRG8_EXT )
-	#define GL_SRG8_EXT					0x8FBE
-#endif
-#if !defined( EGL_OPENGL_ES3_BIT )
-	#define EGL_OPENGL_ES3_BIT			0x0040
-#endif
-
 /*
 ================================================================================================================================
 
@@ -663,6 +653,14 @@ static void GlCheckErrors( const char * function )
 	}
 }
 
+/*
+================================================================================================================================
+
+OpenGL Extensions.
+
+================================================================================================================================
+*/
+
 #if defined( OS_WINDOWS )
 PROC GetExtension( const char * functionName )
 {
@@ -673,6 +671,16 @@ void ( *GetExtension( const char * functionName ) )()
 {
 	return glXGetProcAddress( (const GLubyte *)functionName );
 }
+#endif
+
+#if !defined( GL_SR8_EXT )
+	#define GL_SR8_EXT					0x8FBD
+#endif
+#if !defined( GL_SRG8_EXT )
+	#define GL_SRG8_EXT					0x8FBE
+#endif
+#if !defined( EGL_OPENGL_ES3_BIT )
+	#define EGL_OPENGL_ES3_BIT			0x0040
 #endif
 
 /*
