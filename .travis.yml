@@ -108,9 +108,6 @@ before_script:
 
 script:
   - echo "$TRAVIS_OS_NAME"
-  - mkdir "../Vulkan-LoaderAndValidationLayers/build"
-  - mkdir "../Vulkan-LoaderAndValidationLayers/build/layers"
-  - python ../Vulkan-LoaderAndValidationLayers/vk-generate.py Xcb dispatch-table-ops layer > "../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h"
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then mkdir build && cd build; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${VULKAN_SAMPLES_BUILD_TYPE:-Debug} -DENABLE_CODE_COVERAGE=${VULKAN_SAMPLES_CODE_COVERAGE:-OFF} ..; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then ninja; fi

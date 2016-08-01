@@ -19,19 +19,19 @@ if( WIN32 )
     STRING( REGEX REPLACE "/" "\\\\" BASE_DIR "${CMAKE_SOURCE_DIR}" )
     add_custom_target( vk_dispatch_table_helper
         COMMAND IF NOT exist ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\build\\layers (mkdir ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\build\\layers)
-        COMMAND python ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\vk-generate.py Win32 dispatch-table-ops layer > ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\build\\layers\\vk_dispatch_table_helper.h
+        COMMAND python ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\vk-generate.py AllPlatforms dispatch-table-ops layer > ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\build\\layers\\vk_dispatch_table_helper.h
         )
 elseif( APPLE )
     set( BASE_DIR "${CMAKE_SOURCE_DIR}" )
     add_custom_target( vk_dispatch_table_helper
         COMMAND mkdir -p ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers
-        COMMAND python ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/vk-generate.py Xcb dispatch-table-ops layer > ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h
+        COMMAND python ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/vk-generate.py AllPlatforms dispatch-table-ops layer > ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h
         )
 else()
     set( BASE_DIR "${CMAKE_SOURCE_DIR}" )
     add_custom_target( vk_dispatch_table_helper
         COMMAND mkdir -p ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers
-        COMMAND python ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/vk-generate.py Xcb dispatch-table-ops layer > ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h
+        COMMAND python ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/vk-generate.py AllPlatforms dispatch-table-ops layer > ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h
         )
 
     set( XLIB_LIBRARIES X11 Xxf86vm Xrandr )
