@@ -16,7 +16,7 @@ matrix:
   include:
     # Android build.
     - language: android
-      sudo: false
+      sudo: required
       dist: precise
       env: VULKAN_SAMPLES_ANDROID=ON ANDROID_TARGET=android-21 ANDROID_ABI=armeabi-v7a
     # Linux GCC debug build.
@@ -81,6 +81,7 @@ android:
   components:
     - tools
     - platform-tools
+    - build-tools-23.0.2
     - android-23
 
 before_install:
