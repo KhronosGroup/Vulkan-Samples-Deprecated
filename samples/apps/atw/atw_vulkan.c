@@ -514,6 +514,7 @@ Common headers
 #include <assert.h>
 #include <string.h>			// for memset
 #include <errno.h>			// for EBUSY, ETIMEDOUT etc.
+#include <ctype.h>			// for isspace, isdigit
 
 /*
 ================================
