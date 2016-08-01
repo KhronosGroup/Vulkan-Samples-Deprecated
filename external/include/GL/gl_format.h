@@ -32,7 +32,31 @@ DESCRIPTION
 
 This header stores the OpenGL formats/types and two simple routines
 to derive the format/type from an internal format. These routines
-are useful to verify the data in a KTX container filer.
+are useful to verify the data in a KTX container files. The OpenGL
+constants are generally useful to convert files like KTX and glTF
+to different graphics APIs.
+
+This header stores the OpenGL formats/types that are used as parameters
+to the following OpenGL functions:
+
+void glTexImage2D( GLenum target, GLint level, GLint internalFormat,
+	GLsizei width, GLsizei height, GLint border,
+	GLenum format, GLenum type, const GLvoid * data );
+void glTexImage3D( GLenum target, GLint level, GLint internalFormat,
+	GLsizei width, GLsizei height, GLsizei depth, GLint border,
+	GLenum format, GLenum type, const GLvoid * data );
+void glCompressedTexImage2D( GLenum target, GLint level, GLenum internalformat,
+	GLsizei width, GLsizei height, GLint border,
+	GLsizei imageSize, const GLvoid * data );
+void glCompressedTexImage3D( GLenum target, GLint level, GLenum internalformat,
+	GLsizei width, GLsizei height, GLsizei depth, GLint border,
+	GLsizei imageSize, const GLvoid * data );
+void glTexStorage2D( GLenum target, GLsizei levels, GLenum internalformat,
+	GLsizei width, GLsizei height );
+void glTexStorage3D( GLenum target, GLsizei levels, GLenum internalformat,
+	GLsizei width, GLsizei height, GLsizei depth );
+void glVertexAttribPointer( GLuint index, GLint size, GLenum type, GLboolean normalized,
+	GLsizei stride, const GLvoid * pointer);
 
 
 IMPLEMENTATION
@@ -40,7 +64,8 @@ IMPLEMENTATION
 
 This file does not include OpenGL / OpenGL ES headers because:
 
-  1. Including OpenGL / OpenGL ES headers is a platform dependent mess.
+  1. Including OpenGL / OpenGL ES headers is platform dependent and
+     may require a separate installation of an OpenGL SDK.
   2. The OpenGL format/type constants are the same between extensions and core.
   3. The OpenGL format/type constants are the same between OpenGL and OpenGL ES.
   4. The OpenGL constants in this header are also used to derive Vulkan formats
@@ -73,6 +98,10 @@ typedef unsigned int GLenum;
 typedef unsigned char GLboolean;
 typedef unsigned int GLuint;
 
+#if !defined( GL_INVALID_VALUE )
+#define GL_INVALID_VALUE								0x0501
+#endif
+
 /*
 ================================================================================================================================
 
@@ -96,8 +125,17 @@ Format to glTexImage2D and glTexImage3D.
 #if !defined( GL_LUMINANCE )
 #define GL_LUMINANCE									0x1909	// deprecated
 #endif
+#if !defined( GL_SLUMINANCE )
+#define GL_SLUMINANCE									0x8C46	// deprecated, same as GL_SLUMINANCE_EXT
+#endif
 #if !defined( GL_LUMINANCE_ALPHA )
 #define GL_LUMINANCE_ALPHA								0x190A	// deprecated
+#endif
+#if !defined( GL_SLUMINANCE_ALPHA )
+#define GL_SLUMINANCE_ALPHA								0x8C44	// deprecated, same as GL_SLUMINANCE_ALPHA_EXT
+#endif
+#if !defined( GL_INTENSITY )
+#define GL_INTENSITY									0x8049	// deprecated, same as GL_INTENSITY_EXT
 #endif
 #if !defined( GL_RG )
 #define GL_RG											0x8227	// same as GL_RG_EXT  
@@ -147,6 +185,9 @@ Format to glTexImage2D and glTexImage3D.
 #if !defined( GL_BGRA_INTEGER )
 #define GL_BGRA_INTEGER									0x8D9B	// same as GL_BGRA_INTEGER_EXT
 #endif
+#if !defined( GL_COLOR_INDEX )
+#define GL_COLOR_INDEX									0x1900	// deprecated
+#endif
 #if !defined( GL_STENCIL_INDEX )
 #define GL_STENCIL_INDEX								0x1901
 #endif
@@ -154,7 +195,7 @@ Format to glTexImage2D and glTexImage3D.
 #define GL_DEPTH_COMPONENT								0x1902
 #endif
 #if !defined( GL_DEPTH_STENCIL )
-#define GL_DEPTH_STENCIL								0x84F9	// same as GL_DEPTH_STENCIL_EXT and GL_DEPTH_STENCIL_NV
+#define GL_DEPTH_STENCIL								0x84F9	// same as GL_DEPTH_STENCIL_NV and GL_DEPTH_STENCIL_EXT and GL_DEPTH_STENCIL_OES
 #endif
 
 /*
@@ -183,11 +224,17 @@ Type to glTexImage2D, glTexImage3D and glVertexAttribPointer.
 #if !defined( GL_UNSIGNED_INT )
 #define GL_UNSIGNED_INT									0x1405
 #endif
+#if !defined( GL_INT64 )
+#define GL_INT64										0x140E	// same as GL_INT64_NV and GL_INT64_ARB
+#endif
+#if !defined( GL_UNSIGNED_INT64 )
+#define GL_UNSIGNED_INT64								0x140F	// same as GL_UNSIGNED_INT64_NV and GL_UNSIGNED_INT64_ARB
+#endif
 #if !defined( GL_HALF_FLOAT )
 #define GL_HALF_FLOAT									0x140B	// same as GL_HALF_FLOAT_NV and GL_HALF_FLOAT_ARB
 #endif
 #if !defined( GL_HALF_FLOAT_OES )
-#define GL_HALF_FLOAT_OES								0x8D61	// FIXME: why is this different?
+#define GL_HALF_FLOAT_OES								0x8D61	// FIXME: why is this different from GL_HALF_FLOAT?
 #endif
 #if !defined( GL_FLOAT )
 #define GL_FLOAT										0x1406
@@ -211,7 +258,7 @@ Type to glTexImage2D, glTexImage3D and glVertexAttribPointer.
 #define GL_UNSIGNED_SHORT_4_4_4_4						0x8033	// same as GL_UNSIGNED_SHORT_4_4_4_4_EXT
 #endif
 #if !defined( GL_UNSIGNED_SHORT_4_4_4_4_REV )
-#define GL_UNSIGNED_SHORT_4_4_4_4_REV					0x8365	// same as  GL_UNSIGNED_SHORT_4_4_4_4_REV_EXT and GL_UNSIGNED_SHORT_4_4_4_4_REV_IMG
+#define GL_UNSIGNED_SHORT_4_4_4_4_REV					0x8365	// same as GL_UNSIGNED_SHORT_4_4_4_4_REV_IMG and GL_UNSIGNED_SHORT_4_4_4_4_REV_EXT
 #endif
 #if !defined( GL_UNSIGNED_SHORT_5_5_5_1 )
 #define GL_UNSIGNED_SHORT_5_5_5_1						0x8034	// same as GL_UNSIGNED_SHORT_5_5_5_1_EXT
@@ -238,10 +285,10 @@ Type to glTexImage2D, glTexImage3D and glVertexAttribPointer.
 #define GL_UNSIGNED_INT_5_9_9_9_REV						0x8C3E	// same as GL_UNSIGNED_INT_5_9_9_9_REV_EXT
 #endif
 #if !defined( GL_UNSIGNED_INT_24_8 )
-#define GL_UNSIGNED_INT_24_8							0x84FA	// same as GL_UNSIGNED_INT_24_8_EXT and GL_UNSIGNED_INT_24_8_NV
+#define GL_UNSIGNED_INT_24_8							0x84FA	// same as GL_UNSIGNED_INT_24_8_NV and GL_UNSIGNED_INT_24_8_EXT and GL_UNSIGNED_INT_24_8_OES
 #endif
 #if !defined( GL_FLOAT_32_UNSIGNED_INT_24_8_REV )
-#define GL_FLOAT_32_UNSIGNED_INT_24_8_REV				0x8DAD	// same as GL_FLOAT_32_UNSIGNED_INT_24_8_REV_NV
+#define GL_FLOAT_32_UNSIGNED_INT_24_8_REV				0x8DAD	// same as GL_FLOAT_32_UNSIGNED_INT_24_8_REV_NV and GL_FLOAT_32_UNSIGNED_INT_24_8_REV_ARB
 #endif
 
 /*
@@ -434,7 +481,7 @@ Internal format to glTexImage2D, glTexImage3D, glCompressedTexImage2D, glCompres
 #endif
 
 //
-// Odd bits per component
+// Packed
 //
 
 #if !defined( GL_R3_G3_B2 )
@@ -474,10 +521,262 @@ Internal format to glTexImage2D, glTexImage3D, glCompressedTexImage2D, glCompres
 #define GL_RGB10_A2UI									0x906F
 #endif
 #if !defined( GL_R11F_G11F_B10F )
-#define GL_R11F_G11F_B10F								0x8C3A	// same as GL_R11F_G11F_B10F_EXT and GL_R11F_G11F_B10F_APPLE
+#define GL_R11F_G11F_B10F								0x8C3A	// same as GL_R11F_G11F_B10F_APPLE and GL_R11F_G11F_B10F_EXT
 #endif
 #if !defined( GL_RGB9_E5 )
-#define GL_RGB9_E5										0x8C3D	// same as GL_RGB9_E5_EXT and GL_RGB9_E5_APPLE
+#define GL_RGB9_E5										0x8C3D	// same as GL_RGB9_E5_APPLE and GL_RGB9_E5_EXT
+#endif
+
+//
+// Alpha
+//
+
+#if !defined( GL_ALPHA4 )
+#define GL_ALPHA4										0x803B	// deprecated, same as GL_ALPHA4_EXT
+#endif
+#if !defined( GL_ALPHA8 )
+#define GL_ALPHA8										0x803C	// deprecated, same as GL_ALPHA8_EXT
+#endif
+#if !defined( GL_ALPHA8_SNORM )
+#define GL_ALPHA8_SNORM									0x9014	// deprecated
+#endif
+#if !defined( GL_ALPHA8UI_EXT )
+#define GL_ALPHA8UI_EXT									0x8D7E	// deprecated
+#endif
+#if !defined( GL_ALPHA8I_EXT )
+#define GL_ALPHA8I_EXT									0x8D90	// deprecated
+#endif
+#if !defined( GL_ALPHA12 )
+#define GL_ALPHA12										0x803D	// deprecated, same as GL_ALPHA12_EXT
+#endif
+#if !defined( GL_ALPHA16 )
+#define GL_ALPHA16										0x803E	// deprecated, same as GL_ALPHA16_EXT
+#endif
+#if !defined( GL_ALPHA16_SNORM )
+#define GL_ALPHA16_SNORM								0x9018	// deprecated
+#endif
+#if !defined( GL_ALPHA16UI_EXT )
+#define GL_ALPHA16UI_EXT								0x8D78	// deprecated
+#endif
+#if !defined( GL_ALPHA16I_EXT )
+#define GL_ALPHA16I_EXT									0x8D8A	// deprecated
+#endif
+#if !defined( GL_ALPHA16F_ARB )
+#define GL_ALPHA16F_ARB									0x881C	// deprecated, same as GL_ALPHA_FLOAT16_APPLE and GL_ALPHA_FLOAT16_ATI
+#endif
+#if !defined( GL_ALPHA32UI_EXT )
+#define GL_ALPHA32UI_EXT								0x8D72	// deprecated
+#endif
+#if !defined( GL_ALPHA32I_EXT )
+#define GL_ALPHA32I_EXT									0x8D84	// deprecated
+#endif
+#if !defined( GL_ALPHA32F_ARB )
+#define GL_ALPHA32F_ARB									0x8816	// deprecated, same as GL_ALPHA_FLOAT32_APPLE and GL_ALPHA_FLOAT32_ATI
+#endif
+
+//
+// Luminance
+//
+
+#if !defined( GL_LUMINANCE4 )
+#define GL_LUMINANCE4									0x803F	// deprecated, same as GL_LUMINANCE4_EXT
+#endif
+#if !defined( GL_LUMINANCE8 )
+#define GL_LUMINANCE8									0x8040	// deprecated, same as GL_LUMINANCE8_EXT
+#endif
+#if !defined( GL_LUMINANCE8_SNORM )
+#define GL_LUMINANCE8_SNORM								0x9015	// deprecated
+#endif
+#if !defined( GL_SLUMINANCE8 )
+#define GL_SLUMINANCE8									0x8C47	// deprecated, same as GL_SLUMINANCE8_EXT
+#endif
+#if !defined( GL_LUMINANCE8UI_EXT )
+#define GL_LUMINANCE8UI_EXT								0x8D80	// deprecated
+#endif
+#if !defined( GL_LUMINANCE8I_EXT )
+#define GL_LUMINANCE8I_EXT								0x8D92	// deprecated
+#endif
+#if !defined( GL_LUMINANCE12 )
+#define GL_LUMINANCE12									0x8041	// deprecated, same as GL_LUMINANCE12_EXT
+#endif
+#if !defined( GL_LUMINANCE16 )
+#define GL_LUMINANCE16									0x8042	// deprecated, same as GL_LUMINANCE16_EXT
+#endif
+#if !defined( GL_LUMINANCE16_SNORM )
+#define GL_LUMINANCE16_SNORM							0x9019	// deprecated
+#endif
+#if !defined( GL_LUMINANCE16UI_EXT )
+#define GL_LUMINANCE16UI_EXT							0x8D7A	// deprecated
+#endif
+#if !defined( GL_LUMINANCE16I_EXT )
+#define GL_LUMINANCE16I_EXT								0x8D8C	// deprecated
+#endif
+#if !defined( GL_LUMINANCE16F_ARB )
+#define GL_LUMINANCE16F_ARB								0x881E	// deprecated, same as GL_LUMINANCE_FLOAT16_APPLE and GL_LUMINANCE_FLOAT16_ATI
+#endif
+#if !defined( GL_LUMINANCE32UI_EXT )
+#define GL_LUMINANCE32UI_EXT							0x8D74	// deprecated
+#endif
+#if !defined( GL_LUMINANCE32I_EXT )
+#define GL_LUMINANCE32I_EXT								0x8D86	// deprecated
+#endif
+#if !defined( GL_LUMINANCE32F_ARB )
+#define GL_LUMINANCE32F_ARB								0x8818	// deprecated, same as GL_LUMINANCE_FLOAT32_APPLE and GL_LUMINANCE_FLOAT32_ATI
+#endif
+
+//
+// Luminance/Alpha
+//
+
+#if !defined( GL_LUMINANCE4_ALPHA4 )
+#define GL_LUMINANCE4_ALPHA4							0x8043	// deprecated, same as GL_LUMINANCE4_ALPHA4_EXT
+#endif
+#if !defined( GL_LUMINANCE6_ALPHA2 )
+#define GL_LUMINANCE6_ALPHA2							0x8044	// deprecated, same as GL_LUMINANCE6_ALPHA2_EXT
+#endif
+#if !defined( GL_LUMINANCE8_ALPHA8 )
+#define GL_LUMINANCE8_ALPHA8							0x8045	// deprecated, same as GL_LUMINANCE8_ALPHA8_EXT
+#endif
+#if !defined( GL_LUMINANCE8_ALPHA8_SNORM )
+#define GL_LUMINANCE8_ALPHA8_SNORM						0x9016	// deprecated
+#endif
+#if !defined( GL_SLUMINANCE8_ALPHA8 )
+#define GL_SLUMINANCE8_ALPHA8							0x8C45	// deprecated, same as GL_SLUMINANCE8_ALPHA8_EXT
+#endif
+#if !defined( GL_LUMINANCE_ALPHA8UI_EXT )
+#define GL_LUMINANCE_ALPHA8UI_EXT						0x8D81	// deprecated
+#endif
+#if !defined( GL_LUMINANCE_ALPHA8I_EXT )
+#define GL_LUMINANCE_ALPHA8I_EXT						0x8D93	// deprecated
+#endif
+#if !defined( GL_LUMINANCE12_ALPHA4 )
+#define GL_LUMINANCE12_ALPHA4							0x8046	// deprecated, same as GL_LUMINANCE12_ALPHA4_EXT
+#endif
+#if !defined( GL_LUMINANCE12_ALPHA12 )
+#define GL_LUMINANCE12_ALPHA12							0x8047	// deprecated, same as GL_LUMINANCE12_ALPHA12_EXT
+#endif
+#if !defined( GL_LUMINANCE16_ALPHA16 )
+#define GL_LUMINANCE16_ALPHA16							0x8048	// deprecated, same as GL_LUMINANCE16_ALPHA16_EXT
+#endif
+#if !defined( GL_LUMINANCE16_ALPHA16_SNORM )
+#define GL_LUMINANCE16_ALPHA16_SNORM					0x901A	// deprecated
+#endif
+#if !defined( GL_LUMINANCE_ALPHA16UI_EXT )
+#define GL_LUMINANCE_ALPHA16UI_EXT						0x8D7B	// deprecated
+#endif
+#if !defined( GL_LUMINANCE_ALPHA16I_EXT )
+#define GL_LUMINANCE_ALPHA16I_EXT						0x8D8D	// deprecated
+#endif
+#if !defined( GL_LUMINANCE_ALPHA16F_ARB )
+#define GL_LUMINANCE_ALPHA16F_ARB						0x881F	// deprecated, same as GL_LUMINANCE_ALPHA_FLOAT16_APPLE and GL_LUMINANCE_ALPHA_FLOAT16_ATI
+#endif
+#if !defined( GL_LUMINANCE_ALPHA32UI_EXT )
+#define GL_LUMINANCE_ALPHA32UI_EXT						0x8D75	// deprecated
+#endif
+#if !defined( GL_LUMINANCE_ALPHA32I_EXT )
+#define GL_LUMINANCE_ALPHA32I_EXT						0x8D87	// deprecated
+#endif
+#if !defined( GL_LUMINANCE_ALPHA32F_ARB )
+#define GL_LUMINANCE_ALPHA32F_ARB						0x8819	// deprecated, same as GL_LUMINANCE_ALPHA_FLOAT32_APPLE and GL_LUMINANCE_ALPHA_FLOAT32_ATI
+#endif
+
+//
+// Intensity
+//
+
+#if !defined( GL_INTENSITY4 )
+#define GL_INTENSITY4									0x804A	// deprecated, same as GL_INTENSITY4_EXT
+#endif
+#if !defined( GL_INTENSITY8 )
+#define GL_INTENSITY8									0x804B	// deprecated, same as GL_INTENSITY8_EXT
+#endif
+#if !defined( GL_INTENSITY8_SNORM )
+#define GL_INTENSITY8_SNORM								0x9017	// deprecated
+#endif
+#if !defined( GL_INTENSITY8UI_EXT )
+#define GL_INTENSITY8UI_EXT								0x8D7F	// deprecated
+#endif
+#if !defined( GL_INTENSITY8I_EXT )
+#define GL_INTENSITY8I_EXT								0x8D91	// deprecated
+#endif
+#if !defined( GL_INTENSITY12 )
+#define GL_INTENSITY12									0x804C	// deprecated, same as GL_INTENSITY12_EXT
+#endif
+#if !defined( GL_INTENSITY16 )
+#define GL_INTENSITY16									0x804D	// deprecated, same as GL_INTENSITY16_EXT
+#endif
+#if !defined( GL_INTENSITY16_SNORM )
+#define GL_INTENSITY16_SNORM							0x901B	// deprecated
+#endif
+#if !defined( GL_INTENSITY16UI_EXT )
+#define GL_INTENSITY16UI_EXT							0x8D79	// deprecated
+#endif
+#if !defined( GL_INTENSITY16I_EXT )
+#define GL_INTENSITY16I_EXT								0x8D8B	// deprecated
+#endif
+#if !defined( GL_INTENSITY16F_ARB )
+#define GL_INTENSITY16F_ARB								0x881D	// deprecated, same as GL_INTENSITY_FLOAT16_APPLE and GL_INTENSITY_FLOAT16_ATI
+#endif
+#if !defined( GL_INTENSITY32UI_EXT )
+#define GL_INTENSITY32UI_EXT							0x8D73	// deprecated
+#endif
+#if !defined( GL_INTENSITY32I_EXT )
+#define GL_INTENSITY32I_EXT								0x8D85	// deprecated
+#endif
+#if !defined( GL_INTENSITY32F_ARB )
+#define GL_INTENSITY32F_ARB								0x8817	// deprecated, same as GL_INTENSITY_FLOAT32_APPLE and GL_INTENSITY_FLOAT32_ATI
+#endif
+
+//
+// Generic compression
+//
+
+#if !defined( GL_COMPRESSED_RED )
+#define GL_COMPRESSED_RED								0x8225
+#endif
+#if !defined( GL_COMPRESSED_ALPHA )
+#define GL_COMPRESSED_ALPHA								0x84E9	// deprecated, same as GL_COMPRESSED_ALPHA_ARB
+#endif
+#if !defined( GL_COMPRESSED_LUMINANCE )
+#define GL_COMPRESSED_LUMINANCE							0x84EA	// deprecated, same as GL_COMPRESSED_LUMINANCE_ARB
+#endif
+#if !defined( GL_COMPRESSED_SLUMINANCE )
+#define GL_COMPRESSED_SLUMINANCE						0x8C4A	// deprecated, same as GL_COMPRESSED_SLUMINANCE_EXT
+#endif
+#if !defined( GL_COMPRESSED_LUMINANCE_ALPHA )
+#define GL_COMPRESSED_LUMINANCE_ALPHA					0x84EB	// deprecated, same as GL_COMPRESSED_LUMINANCE_ALPHA_ARB
+#endif
+#if !defined( GL_COMPRESSED_SLUMINANCE_ALPHA )
+#define GL_COMPRESSED_SLUMINANCE_ALPHA					0x8C4B	// deprecated, same as GL_COMPRESSED_SLUMINANCE_ALPHA_EXT
+#endif
+#if !defined( GL_COMPRESSED_INTENSITY )
+#define GL_COMPRESSED_INTENSITY							0x84EC	// deprecated, same as GL_COMPRESSED_INTENSITY_ARB
+#endif
+#if !defined( GL_COMPRESSED_RG )
+#define GL_COMPRESSED_RG								0x8226
+#endif
+#if !defined( GL_COMPRESSED_RGB )
+#define GL_COMPRESSED_RGB								0x84ED	// same as GL_COMPRESSED_RGB_ARB
+#endif
+#if !defined( GL_COMPRESSED_RGBA )
+#define GL_COMPRESSED_RGBA								0x84EE	// same as GL_COMPRESSED_RGBA_ARB
+#endif
+#if !defined( GL_COMPRESSED_SRGB )
+#define GL_COMPRESSED_SRGB								0x8C48	// same as GL_COMPRESSED_SRGB_EXT
+#endif
+#if !defined( GL_COMPRESSED_SRGB_ALPHA )
+#define GL_COMPRESSED_SRGB_ALPHA						0x8C49	// same as GL_COMPRESSED_SRGB_ALPHA_EXT
+#endif
+
+//
+// FXT1
+//
+
+#if !defined( GL_COMPRESSED_RGB_FXT1_3DFX )
+#define GL_COMPRESSED_RGB_FXT1_3DFX						0x86B0	// deprecated
+#endif
+#if !defined( GL_COMPRESSED_RGBA_FXT1_3DFX )
+#define GL_COMPRESSED_RGBA_FXT1_3DFX					0x86B1	// deprecated
 #endif
 
 //
@@ -591,6 +890,31 @@ Internal format to glTexImage2D, glTexImage3D, glCompressedTexImage2D, glCompres
 #endif
 
 //
+// PVRTC
+//
+
+#if !defined( GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG )
+#define GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG				0x8C01
+#define GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG				0x8C00
+#define GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG				0x8C03
+#define GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG				0x8C02
+#endif
+#if !defined( GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG )
+#define GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG				0x9137
+#define GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG				0x9138
+#endif
+#if !defined( GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT )
+#define GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT				0x8A54
+#define GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT				0x8A55
+#define GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT		0x8A56
+#define GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT		0x8A57
+#endif
+#if !defined( GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG )
+#define GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG		0x93F0
+#define GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG		0x93F1
+#endif
+
+//
 // ASTC
 //
 
@@ -665,7 +989,7 @@ Internal format to glTexImage2D, glTexImage3D, glCompressedTexImage2D, glCompres
 #endif
 
 //
-// Palletized
+// Palletized (combined palette)
 //
 
 #if !defined( GL_PALETTE4_RGB8_OES )
@@ -681,35 +1005,59 @@ Internal format to glTexImage2D, glTexImage3D, glCompressedTexImage2D, glCompres
 #define GL_PALETTE8_RGB5_A1_OES							0x8B99
 #endif
 
-
 //
-// Luminance/alpha/intensity
+// Palletized (separate palette)
 //
 
-#if !defined( GL_ALPHA4 )
-#define GL_ALPHA4										0x803B	// deprecated, same as GL_ALPHA4_EXT
-#define GL_ALPHA8										0x803C	// deprecated, same as GL_ALPHA8_EXT
-#define GL_ALPHA12										0x803D	// deprecated, same as GL_ALPHA12_EXT
-#define GL_ALPHA16										0x803E	// deprecated, same as GL_ALPHA16_EXT
-#define GL_LUMINANCE4									0x803F	// deprecated, same as GL_LUMINANCE4_EXT
-#define GL_LUMINANCE8									0x8040	// deprecated, same as GL_LUMINANCE8_EXT
-#define GL_LUMINANCE12									0x8041	// deprecated, same as GL_LUMINANCE12_EXT
-#define GL_LUMINANCE16									0x8042	// deprecated, same as GL_LUMINANCE16_EXT
-#define GL_SLUMINANCE8									0x8C47	// deprecated, same as GL_SLUMINANCE8_EXT
-#define GL_LUMINANCE4_ALPHA4							0x8043	// deprecated, same as GL_LUMINANCE4_ALPHA4_EXT
-#define GL_LUMINANCE6_ALPHA2							0x8044	// deprecated, same as GL_LUMINANCE6_ALPHA2_EXT
-#define GL_LUMINANCE8_ALPHA8							0x8045	// deprecated, same as GL_LUMINANCE8_ALPHA8_EXT
-#define GL_LUMINANCE12_ALPHA4							0x8046	// deprecated, same as GL_LUMINANCE12_ALPHA4_EXT
-#define GL_LUMINANCE12_ALPHA12							0x8047	// deprecated, same as GL_LUMINANCE12_ALPHA12_EXT
-#define GL_LUMINANCE16_ALPHA16							0x8048	// deprecated, same as GL_LUMINANCE16_ALPHA16_EXT
-#define GL_SLUMINANCE8_ALPHA8							0x8C45	// deprecated, same as GL_SLUMINANCE8_ALPHA8_EXT
-#define GL_INTENSITY									0x8049	// deprecated, same as GL_INTENSITY_EXT
-#define GL_INTENSITY4									0x804A	// deprecated, same as GL_INTENSITY4_EXT
-#define GL_INTENSITY8									0x804B	// deprecated, same as GL_INTENSITY8_EXT
-#define GL_INTENSITY12									0x804C	// deprecated, same as GL_INTENSITY12_EXT
-#define GL_INTENSITY16									0x804D	// deprecated, same as GL_INTENSITY16_EXT
+#if !defined( GL_COLOR_INDEX1_EXT )
+#define GL_COLOR_INDEX1_EXT								0x80E2	// deprecated
+#define GL_COLOR_INDEX2_EXT								0x80E3	// deprecated
+#define GL_COLOR_INDEX4_EXT								0x80E4	// deprecated
+#define GL_COLOR_INDEX8_EXT								0x80E5	// deprecated
+#define GL_COLOR_INDEX12_EXT							0x80E6	// deprecated
+#define GL_COLOR_INDEX16_EXT							0x80E7	// deprecated
 #endif
 
+//
+// Depth/stencil
+//
+
+#if !defined( GL_DEPTH_COMPONENT16 )
+#define GL_DEPTH_COMPONENT16							0x81A5	// same as GL_DEPTH_COMPONENT16_SGIX and GL_DEPTH_COMPONENT16_ARB
+#endif
+#if !defined( GL_DEPTH_COMPONENT24 )
+#define GL_DEPTH_COMPONENT24							0x81A6	// same as GL_DEPTH_COMPONENT24_SGIX and GL_DEPTH_COMPONENT24_ARB
+#endif
+#if !defined( GL_DEPTH_COMPONENT32 )
+#define GL_DEPTH_COMPONENT32							0x81A7	// same as GL_DEPTH_COMPONENT32_SGIX and GL_DEPTH_COMPONENT32_ARB and GL_DEPTH_COMPONENT32_OES
+#endif
+#if !defined( GL_DEPTH_COMPONENT32F )
+#define GL_DEPTH_COMPONENT32F							0x8CAC	// same as GL_DEPTH_COMPONENT32F_ARB
+#endif
+#if !defined( GL_DEPTH_COMPONENT32F_NV )
+#define GL_DEPTH_COMPONENT32F_NV						0x8DAB	// FIXME: why is this different from GL_DEPTH_COMPONENT32F?
+#endif
+#if !defined( GL_STENCIL_INDEX1 )
+#define GL_STENCIL_INDEX1								0x8D46	// same as GL_STENCIL_INDEX1_EXT
+#endif
+#if !defined( GL_STENCIL_INDEX4 )
+#define GL_STENCIL_INDEX4								0x8D47	// same as GL_STENCIL_INDEX4_EXT
+#endif
+#if !defined( GL_STENCIL_INDEX8 )
+#define GL_STENCIL_INDEX8								0x8D48	// same as GL_STENCIL_INDEX8_EXT
+#endif
+#if !defined( GL_STENCIL_INDEX16 )
+#define GL_STENCIL_INDEX16								0x8D49	// same as GL_STENCIL_INDEX16_EXT
+#endif
+#if !defined( GL_DEPTH24_STENCIL8 )
+#define GL_DEPTH24_STENCIL8								0x88F0	// same as GL_DEPTH24_STENCIL8_EXT and GL_DEPTH24_STENCIL8_OES
+#endif
+#if !defined( GL_DEPTH32F_STENCIL8 )
+#define GL_DEPTH32F_STENCIL8							0x8CAD	// same as GL_DEPTH32F_STENCIL8_ARB
+#endif
+#if !defined( GL_DEPTH32F_STENCIL8_NV )
+#define GL_DEPTH32F_STENCIL8_NV							0x8DAC	// FIXME: why is this different from GL_DEPTH32F_STENCIL8?
+#endif
 
 static inline GLenum glGetFormatFromInternalFormat( const GLenum internalFormat )
 {
@@ -790,7 +1138,7 @@ static inline GLenum glGetFormatFromInternalFormat( const GLenum internalFormat 
 		case GL_RGBA32F:										return GL_RGBA;		// 4-component, 32-bit floating-point
 
 		//
-		// Odd bits per component
+		// Packed
 		//
 		case GL_R3_G3_B2:										return GL_RGB;		// 3-component 3:3:2,       unsigned normalized
 		case GL_RGB4:											return GL_RGB;		// 3-component 4:4:4,       unsigned normalized
@@ -853,6 +1201,24 @@ static inline GLenum glGetFormatFromInternalFormat( const GLenum internalFormat 
 		case GL_COMPRESSED_RG11_EAC:							return GL_RG;		// 2-component ETC, unsigned normalized
 		case GL_COMPRESSED_SIGNED_R11_EAC:						return GL_RED;		// 1-component ETC, signed normalized
 		case GL_COMPRESSED_SIGNED_RG11_EAC:						return GL_RG;		// 2-component ETC, signed normalized
+
+		//
+		// PVRTC
+		//
+
+		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				return GL_RGB;		// 3-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				return GL_RGB;		// 3-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				return GL_RGBA;		// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				return GL_RGBA;		// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG:				return GL_RGBA;		// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG:				return GL_RGBA;		// 4-component PVRTC, unsigned normalized
+
+		case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:				return GL_RGB;		// 3-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:				return GL_RGB;		// 3-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:			return GL_RGBA;		// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:			return GL_RGBA;		// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG:			return GL_RGBA;		// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG:			return GL_RGBA;		// 4-component PVRTC, sRGB
 
 		//
 		// ASTC
@@ -930,7 +1296,23 @@ static inline GLenum glGetFormatFromInternalFormat( const GLenum internalFormat 
 		case GL_PALETTE8_RGBA4_OES:								return GL_RGBA;		// 4-component 4:4:4:4, 8-bit palette, unsigned normalized
 		case GL_PALETTE8_RGB5_A1_OES:							return GL_RGBA;		// 4-component 5:5:5:1, 8-bit palette, unsigned normalized
 
-		default:												return GL_RGBA;
+		//
+		// Depth/stencil
+		//
+		case GL_DEPTH_COMPONENT16:								return GL_DEPTH_COMPONENT;
+		case GL_DEPTH_COMPONENT24:								return GL_DEPTH_COMPONENT;
+		case GL_DEPTH_COMPONENT32:								return GL_DEPTH_COMPONENT;
+		case GL_DEPTH_COMPONENT32F:								return GL_DEPTH_COMPONENT;
+		case GL_DEPTH_COMPONENT32F_NV:							return GL_DEPTH_COMPONENT;
+		case GL_STENCIL_INDEX1:									return GL_STENCIL_INDEX;
+		case GL_STENCIL_INDEX4:									return GL_STENCIL_INDEX;
+		case GL_STENCIL_INDEX8:									return GL_STENCIL_INDEX;
+		case GL_STENCIL_INDEX16:								return GL_STENCIL_INDEX;
+		case GL_DEPTH24_STENCIL8:								return GL_DEPTH_STENCIL;
+		case GL_DEPTH32F_STENCIL8:								return GL_DEPTH_STENCIL;
+		case GL_DEPTH32F_STENCIL8_NV:							return GL_DEPTH_STENCIL;
+
+		default:												return GL_INVALID_VALUE;
 	}
 }
 
@@ -941,226 +1323,262 @@ static inline GLenum glGetTypeFromInternalFormat( const GLenum internalFormat )
 		//
 		// 8 bits per component
 		//
-		case GL_R8:												return GL_UNSIGNED_BYTE;	// 1-component, 8-bit unsigned normalized
-		case GL_RG8:											return GL_UNSIGNED_BYTE;	// 2-component, 8-bit unsigned normalized
-		case GL_RGB8:											return GL_UNSIGNED_BYTE;	// 3-component, 8-bit unsigned normalized
-		case GL_RGBA8:											return GL_UNSIGNED_BYTE;	// 4-component, 8-bit unsigned normalized
+		case GL_R8:												return GL_UNSIGNED_BYTE;				// 1-component, 8-bit unsigned normalized
+		case GL_RG8:											return GL_UNSIGNED_BYTE;				// 2-component, 8-bit unsigned normalized
+		case GL_RGB8:											return GL_UNSIGNED_BYTE;				// 3-component, 8-bit unsigned normalized
+		case GL_RGBA8:											return GL_UNSIGNED_BYTE;				// 4-component, 8-bit unsigned normalized
 
-		case GL_R8_SNORM:										return GL_BYTE;				// 1-component, 8-bit signed normalized
-		case GL_RG8_SNORM:										return GL_BYTE;				// 2-component, 8-bit signed normalized
-		case GL_RGB8_SNORM:										return GL_BYTE;				// 3-component, 8-bit signed normalized
-		case GL_RGBA8_SNORM:									return GL_BYTE;				// 4-component, 8-bit signed normalized
+		case GL_R8_SNORM:										return GL_BYTE;							// 1-component, 8-bit signed normalized
+		case GL_RG8_SNORM:										return GL_BYTE;							// 2-component, 8-bit signed normalized
+		case GL_RGB8_SNORM:										return GL_BYTE;							// 3-component, 8-bit signed normalized
+		case GL_RGBA8_SNORM:									return GL_BYTE;							// 4-component, 8-bit signed normalized
 
-		case GL_R8UI:											return GL_UNSIGNED_BYTE;	// 1-component, 8-bit unsigned integer
-		case GL_RG8UI:											return GL_UNSIGNED_BYTE;	// 2-component, 8-bit unsigned integer
-		case GL_RGB8UI:											return GL_UNSIGNED_BYTE;	// 3-component, 8-bit unsigned integer
-		case GL_RGBA8UI:										return GL_UNSIGNED_BYTE;	// 4-component, 8-bit unsigned integer
+		case GL_R8UI:											return GL_UNSIGNED_BYTE;				// 1-component, 8-bit unsigned integer
+		case GL_RG8UI:											return GL_UNSIGNED_BYTE;				// 2-component, 8-bit unsigned integer
+		case GL_RGB8UI:											return GL_UNSIGNED_BYTE;				// 3-component, 8-bit unsigned integer
+		case GL_RGBA8UI:										return GL_UNSIGNED_BYTE;				// 4-component, 8-bit unsigned integer
 
-		case GL_R8I:											return GL_BYTE;				// 1-component, 8-bit signed integer
-		case GL_RG8I:											return GL_BYTE;				// 2-component, 8-bit signed integer
-		case GL_RGB8I:											return GL_BYTE;				// 3-component, 8-bit signed integer
-		case GL_RGBA8I:											return GL_BYTE;				// 4-component, 8-bit signed integer
+		case GL_R8I:											return GL_BYTE;							// 1-component, 8-bit signed integer
+		case GL_RG8I:											return GL_BYTE;							// 2-component, 8-bit signed integer
+		case GL_RGB8I:											return GL_BYTE;							// 3-component, 8-bit signed integer
+		case GL_RGBA8I:											return GL_BYTE;							// 4-component, 8-bit signed integer
 
-		case GL_SR8:											return GL_UNSIGNED_BYTE;	// 1-component, 8-bit sRGB
-		case GL_SRG8:											return GL_UNSIGNED_BYTE;	// 2-component, 8-bit sRGB
-		case GL_SRGB8:											return GL_UNSIGNED_BYTE;	// 3-component, 8-bit sRGB
-		case GL_SRGB8_ALPHA8:									return GL_UNSIGNED_BYTE;	// 4-component, 8-bit sRGB
+		case GL_SR8:											return GL_UNSIGNED_BYTE;				// 1-component, 8-bit sRGB
+		case GL_SRG8:											return GL_UNSIGNED_BYTE;				// 2-component, 8-bit sRGB
+		case GL_SRGB8:											return GL_UNSIGNED_BYTE;				// 3-component, 8-bit sRGB
+		case GL_SRGB8_ALPHA8:									return GL_UNSIGNED_BYTE;				// 4-component, 8-bit sRGB
 
 		//
 		// 16 bits per component
 		//
-		case GL_R16:											return GL_UNSIGNED_SHORT;	// 1-component, 16-bit unsigned normalized
-		case GL_RG16:											return GL_UNSIGNED_SHORT;	// 2-component, 16-bit unsigned normalized
-		case GL_RGB16:											return GL_UNSIGNED_SHORT;	// 3-component, 16-bit unsigned normalized
-		case GL_RGBA16:											return GL_UNSIGNED_SHORT;	// 4-component, 16-bit unsigned normalized
+		case GL_R16:											return GL_UNSIGNED_SHORT;				// 1-component, 16-bit unsigned normalized
+		case GL_RG16:											return GL_UNSIGNED_SHORT;				// 2-component, 16-bit unsigned normalized
+		case GL_RGB16:											return GL_UNSIGNED_SHORT;				// 3-component, 16-bit unsigned normalized
+		case GL_RGBA16:											return GL_UNSIGNED_SHORT;				// 4-component, 16-bit unsigned normalized
 
-		case GL_R16_SNORM:										return GL_SHORT;			// 1-component, 16-bit signed normalized
-		case GL_RG16_SNORM:										return GL_SHORT;			// 2-component, 16-bit signed normalized
-		case GL_RGB16_SNORM:									return GL_SHORT;			// 3-component, 16-bit signed normalized
-		case GL_RGBA16_SNORM:									return GL_SHORT;			// 4-component, 16-bit signed normalized
+		case GL_R16_SNORM:										return GL_SHORT;						// 1-component, 16-bit signed normalized
+		case GL_RG16_SNORM:										return GL_SHORT;						// 2-component, 16-bit signed normalized
+		case GL_RGB16_SNORM:									return GL_SHORT;						// 3-component, 16-bit signed normalized
+		case GL_RGBA16_SNORM:									return GL_SHORT;						// 4-component, 16-bit signed normalized
 
-		case GL_R16UI:											return GL_UNSIGNED_SHORT;	// 1-component, 16-bit unsigned integer
-		case GL_RG16UI:											return GL_UNSIGNED_SHORT;	// 2-component, 16-bit unsigned integer
-		case GL_RGB16UI:										return GL_UNSIGNED_SHORT;	// 3-component, 16-bit unsigned integer
-		case GL_RGBA16UI:										return GL_UNSIGNED_SHORT;	// 4-component, 16-bit unsigned integer
+		case GL_R16UI:											return GL_UNSIGNED_SHORT;				// 1-component, 16-bit unsigned integer
+		case GL_RG16UI:											return GL_UNSIGNED_SHORT;				// 2-component, 16-bit unsigned integer
+		case GL_RGB16UI:										return GL_UNSIGNED_SHORT;				// 3-component, 16-bit unsigned integer
+		case GL_RGBA16UI:										return GL_UNSIGNED_SHORT;				// 4-component, 16-bit unsigned integer
 
-		case GL_R16I:											return GL_SHORT;			// 1-component, 16-bit signed integer
-		case GL_RG16I:											return GL_SHORT;			// 2-component, 16-bit signed integer
-		case GL_RGB16I:											return GL_SHORT;			// 3-component, 16-bit signed integer
-		case GL_RGBA16I:										return GL_SHORT;			// 4-component, 16-bit signed integer
+		case GL_R16I:											return GL_SHORT;						// 1-component, 16-bit signed integer
+		case GL_RG16I:											return GL_SHORT;						// 2-component, 16-bit signed integer
+		case GL_RGB16I:											return GL_SHORT;						// 3-component, 16-bit signed integer
+		case GL_RGBA16I:										return GL_SHORT;						// 4-component, 16-bit signed integer
 
-		case GL_R16F:											return GL_HALF_FLOAT;		// 1-component, 16-bit floating-point
-		case GL_RG16F:											return GL_HALF_FLOAT;		// 2-component, 16-bit floating-point
-		case GL_RGB16F:											return GL_HALF_FLOAT;		// 3-component, 16-bit floating-point
-		case GL_RGBA16F:										return GL_HALF_FLOAT;		// 4-component, 16-bit floating-point
+		case GL_R16F:											return GL_HALF_FLOAT;					// 1-component, 16-bit floating-point
+		case GL_RG16F:											return GL_HALF_FLOAT;					// 2-component, 16-bit floating-point
+		case GL_RGB16F:											return GL_HALF_FLOAT;					// 3-component, 16-bit floating-point
+		case GL_RGBA16F:										return GL_HALF_FLOAT;					// 4-component, 16-bit floating-point
 
 		//
 		// 32 bits per component
 		//
-		case GL_R32UI:											return GL_UNSIGNED_INT;		// 1-component, 32-bit unsigned integer
-		case GL_RG32UI:											return GL_UNSIGNED_INT;		// 2-component, 32-bit unsigned integer
-		case GL_RGB32UI:										return GL_UNSIGNED_INT;		// 3-component, 32-bit unsigned integer
-		case GL_RGBA32UI:										return GL_UNSIGNED_INT;		// 4-component, 32-bit unsigned integer
+		case GL_R32UI:											return GL_UNSIGNED_INT;					// 1-component, 32-bit unsigned integer
+		case GL_RG32UI:											return GL_UNSIGNED_INT;					// 2-component, 32-bit unsigned integer
+		case GL_RGB32UI:										return GL_UNSIGNED_INT;					// 3-component, 32-bit unsigned integer
+		case GL_RGBA32UI:										return GL_UNSIGNED_INT;					// 4-component, 32-bit unsigned integer
 
-		case GL_R32I:											return GL_INT;				// 1-component, 32-bit signed integer
-		case GL_RG32I:											return GL_INT;				// 2-component, 32-bit signed integer
-		case GL_RGB32I:											return GL_INT;				// 3-component, 32-bit signed integer
-		case GL_RGBA32I:										return GL_INT;				// 4-component, 32-bit signed integer
+		case GL_R32I:											return GL_INT;							// 1-component, 32-bit signed integer
+		case GL_RG32I:											return GL_INT;							// 2-component, 32-bit signed integer
+		case GL_RGB32I:											return GL_INT;							// 3-component, 32-bit signed integer
+		case GL_RGBA32I:										return GL_INT;							// 4-component, 32-bit signed integer
 
-		case GL_R32F:											return GL_FLOAT;			// 1-component, 32-bit floating-point
-		case GL_RG32F:											return GL_FLOAT;			// 2-component, 32-bit floating-point
-		case GL_RGB32F:											return GL_FLOAT;			// 3-component, 32-bit floating-point
-		case GL_RGBA32F:										return GL_FLOAT;			// 4-component, 32-bit floating-point
+		case GL_R32F:											return GL_FLOAT;						// 1-component, 32-bit floating-point
+		case GL_RG32F:											return GL_FLOAT;						// 2-component, 32-bit floating-point
+		case GL_RGB32F:											return GL_FLOAT;						// 3-component, 32-bit floating-point
+		case GL_RGBA32F:										return GL_FLOAT;						// 4-component, 32-bit floating-point
 
 		//
-		// Odd bits per component
+		// Packed
 		//
-		case GL_R3_G3_B2:										return GL_UNSIGNED_BYTE;	// 3-component 3:3:2,       unsigned normalized
-		case GL_RGB4:											return GL_UNSIGNED_BYTE;	// 3-component 4:4:4,       unsigned normalized
-		case GL_RGB5:											return GL_UNSIGNED_BYTE;	// 3-component 5:5:5,       unsigned normalized
-		case GL_RGB565:											return GL_UNSIGNED_BYTE;	// 3-component 5:6:5,       unsigned normalized
-		case GL_RGB10:											return GL_UNSIGNED_BYTE;	// 3-component 10:10:10,    unsigned normalized
-		case GL_RGB12:											return GL_UNSIGNED_BYTE;	// 3-component 12:12:12,    unsigned normalized
-		case GL_RGBA2:											return GL_UNSIGNED_BYTE;	// 4-component 2:2:2:2,     unsigned normalized
-		case GL_RGBA4:											return GL_UNSIGNED_BYTE;	// 4-component 4:4:4:4,     unsigned normalized
-		case GL_RGBA12:											return GL_UNSIGNED_BYTE;	// 4-component 12:12:12:12, unsigned normalized
-		case GL_RGB5_A1:										return GL_UNSIGNED_BYTE;	// 4-component 5:5:5:1,     unsigned normalized
-		case GL_RGB10_A2:										return GL_UNSIGNED_BYTE;	// 4-component 10:10:10:2,  unsigned normalized
-		case GL_RGB10_A2UI:										return GL_UNSIGNED_BYTE;	// 4-component 10:10:10:2,  unsigned integer
-		case GL_R11F_G11F_B10F:									return GL_FLOAT;			// 3-component 11:11:10,    floating-point
-		case GL_RGB9_E5:										return GL_FLOAT;			// 3-component/exp 9:9:9/5, floating-point
+		case GL_R3_G3_B2:										return GL_UNSIGNED_BYTE_2_3_3_REV;		// 3-component 3:3:2,       unsigned normalized
+		case GL_RGB4:											return GL_UNSIGNED_SHORT_4_4_4_4;		// 3-component 4:4:4,       unsigned normalized
+		case GL_RGB5:											return GL_UNSIGNED_SHORT_5_5_5_1;		// 3-component 5:5:5,       unsigned normalized
+		case GL_RGB565:											return GL_UNSIGNED_SHORT_5_6_5;			// 3-component 5:6:5,       unsigned normalized
+		case GL_RGB10:											return GL_UNSIGNED_INT_10_10_10_2;		// 3-component 10:10:10,    unsigned normalized
+		case GL_RGB12:											return GL_UNSIGNED_SHORT;				// 3-component 12:12:12,    unsigned normalized
+		case GL_RGBA2:											return GL_UNSIGNED_BYTE;				// 4-component 2:2:2:2,     unsigned normalized
+		case GL_RGBA4:											return GL_UNSIGNED_SHORT_4_4_4_4;		// 4-component 4:4:4:4,     unsigned normalized
+		case GL_RGBA12:											return GL_UNSIGNED_SHORT;				// 4-component 12:12:12:12, unsigned normalized
+		case GL_RGB5_A1:										return GL_UNSIGNED_SHORT_5_5_5_1;		// 4-component 5:5:5:1,     unsigned normalized
+		case GL_RGB10_A2:										return GL_UNSIGNED_INT_2_10_10_10_REV;	// 4-component 10:10:10:2,  unsigned normalized
+		case GL_RGB10_A2UI:										return GL_UNSIGNED_INT_2_10_10_10_REV;	// 4-component 10:10:10:2,  unsigned integer
+		case GL_R11F_G11F_B10F:									return GL_UNSIGNED_INT_10F_11F_11F_REV;	// 3-component 11:11:10,    floating-point
+		case GL_RGB9_E5:										return GL_UNSIGNED_INT_5_9_9_9_REV;		// 3-component/exp 9:9:9/5, floating-point
 
 		//
 		// S3TC/DXT/BC
 		//
 
-		case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:					return GL_UNSIGNED_BYTE;	// line through 3D space, unsigned normalized
-		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:					return GL_UNSIGNED_BYTE;	// line through 3D space plus 1-bit alpha, unsigned normalized
-		case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:					return GL_UNSIGNED_BYTE;	// line through 3D space plus line through 1D space, unsigned normalized
-		case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:					return GL_UNSIGNED_BYTE;	// line through 3D space plus 4-bit alpha, unsigned normalized
+		case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space, unsigned normalized
+		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space plus 1-bit alpha, unsigned normalized
+		case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space plus line through 1D space, unsigned normalized
+		case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space plus 4-bit alpha, unsigned normalized
 
-		case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:					return GL_UNSIGNED_BYTE;	// line through 3D space, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:			return GL_UNSIGNED_BYTE;	// line through 3D space plus 1-bit alpha, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:			return GL_UNSIGNED_BYTE;	// line through 3D space plus line through 1D space, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:			return GL_UNSIGNED_BYTE;	// line through 3D space plus 4-bit alpha, sRGB
+		case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:			return GL_UNSIGNED_BYTE;				// line through 3D space plus 1-bit alpha, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:			return GL_UNSIGNED_BYTE;				// line through 3D space plus line through 1D space, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:			return GL_UNSIGNED_BYTE;				// line through 3D space plus 4-bit alpha, sRGB
 
-		case GL_COMPRESSED_LUMINANCE_LATC1_EXT:					return GL_UNSIGNED_BYTE;	// line through 1D space, unsigned normalized
-		case GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT:			return GL_UNSIGNED_BYTE;	// two lines through 1D space, unsigned normalized
-		case GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT:			return GL_UNSIGNED_BYTE;	// line through 1D space, signed normalized
-		case GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT:	return GL_UNSIGNED_BYTE;	// two lines through 1D space, signed normalized
+		case GL_COMPRESSED_LUMINANCE_LATC1_EXT:					return GL_UNSIGNED_BYTE;				// line through 1D space, unsigned normalized
+		case GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT:			return GL_UNSIGNED_BYTE;				// two lines through 1D space, unsigned normalized
+		case GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT:			return GL_UNSIGNED_BYTE;				// line through 1D space, signed normalized
+		case GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT:	return GL_UNSIGNED_BYTE;				// two lines through 1D space, signed normalized
 
-		case GL_COMPRESSED_RED_RGTC1:							return GL_UNSIGNED_BYTE;	// line through 1D space, unsigned normalized
-		case GL_COMPRESSED_RG_RGTC2:							return GL_UNSIGNED_BYTE;	// two lines through 1D space, unsigned normalized
-		case GL_COMPRESSED_SIGNED_RED_RGTC1:					return GL_UNSIGNED_BYTE;	// line through 1D space, signed normalized
-		case GL_COMPRESSED_SIGNED_RG_RGTC2:						return GL_UNSIGNED_BYTE;	// two lines through 1D space, signed normalized
+		case GL_COMPRESSED_RED_RGTC1:							return GL_UNSIGNED_BYTE;				// line through 1D space, unsigned normalized
+		case GL_COMPRESSED_RG_RGTC2:							return GL_UNSIGNED_BYTE;				// two lines through 1D space, unsigned normalized
+		case GL_COMPRESSED_SIGNED_RED_RGTC1:					return GL_UNSIGNED_BYTE;				// line through 1D space, signed normalized
+		case GL_COMPRESSED_SIGNED_RG_RGTC2:						return GL_UNSIGNED_BYTE;				// two lines through 1D space, signed normalized
 
-		case GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT:				return GL_FLOAT;			// 3-component, unsigned floating-point
-		case GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT:				return GL_FLOAT;			// 3-component, signed floating-point
-		case GL_COMPRESSED_RGBA_BPTC_UNORM:						return GL_UNSIGNED_BYTE;	// 4-component, unsigned normalized
-		case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:				return GL_UNSIGNED_BYTE;	// 4-component, sRGB
+		case GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT:				return GL_FLOAT;						// 3-component, unsigned floating-point
+		case GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT:				return GL_FLOAT;						// 3-component, signed floating-point
+		case GL_COMPRESSED_RGBA_BPTC_UNORM:						return GL_UNSIGNED_BYTE;				// 4-component, unsigned normalized
+		case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:				return GL_UNSIGNED_BYTE;				// 4-component, sRGB
 
 		//
 		// ETC
 		//
-		case GL_ETC1_RGB8_OES:									return GL_UNSIGNED_BYTE;	// 3-component ETC1, unsigned normalized" ),
+		case GL_ETC1_RGB8_OES:									return GL_UNSIGNED_BYTE;				// 3-component ETC1, unsigned normalized" ),
 
-		case GL_COMPRESSED_RGB8_ETC2:							return GL_UNSIGNED_BYTE;	// 3-component ETC2, unsigned normalized
-		case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return GL_UNSIGNED_BYTE;	// 4-component ETC2 with 1-bit alpha, unsigned normalized
-		case GL_COMPRESSED_RGBA8_ETC2_EAC:						return GL_UNSIGNED_BYTE;	// 4-component ETC2, unsigned normalized
+		case GL_COMPRESSED_RGB8_ETC2:							return GL_UNSIGNED_BYTE;				// 3-component ETC2, unsigned normalized
+		case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return GL_UNSIGNED_BYTE;				// 4-component ETC2 with 1-bit alpha, unsigned normalized
+		case GL_COMPRESSED_RGBA8_ETC2_EAC:						return GL_UNSIGNED_BYTE;				// 4-component ETC2, unsigned normalized
 
-		case GL_COMPRESSED_SRGB8_ETC2:							return GL_UNSIGNED_BYTE;	// 3-component ETC2, sRGB
-		case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return GL_UNSIGNED_BYTE;	// 4-component ETC2 with 1-bit alpha, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:				return GL_UNSIGNED_BYTE;	// 4-component ETC2, sRGB
+		case GL_COMPRESSED_SRGB8_ETC2:							return GL_UNSIGNED_BYTE;				// 3-component ETC2, sRGB
+		case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return GL_UNSIGNED_BYTE;				// 4-component ETC2 with 1-bit alpha, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:				return GL_UNSIGNED_BYTE;				// 4-component ETC2, sRGB
 
-		case GL_COMPRESSED_R11_EAC:								return GL_UNSIGNED_BYTE;	// 1-component ETC, unsigned normalized
-		case GL_COMPRESSED_RG11_EAC:							return GL_UNSIGNED_BYTE;	// 2-component ETC, unsigned normalized
-		case GL_COMPRESSED_SIGNED_R11_EAC:						return GL_UNSIGNED_BYTE;	// 1-component ETC, signed normalized
-		case GL_COMPRESSED_SIGNED_RG11_EAC:						return GL_UNSIGNED_BYTE;	// 2-component ETC, signed normalized
+		case GL_COMPRESSED_R11_EAC:								return GL_UNSIGNED_BYTE;				// 1-component ETC, unsigned normalized
+		case GL_COMPRESSED_RG11_EAC:							return GL_UNSIGNED_BYTE;				// 2-component ETC, unsigned normalized
+		case GL_COMPRESSED_SIGNED_R11_EAC:						return GL_UNSIGNED_BYTE;				// 1-component ETC, signed normalized
+		case GL_COMPRESSED_SIGNED_RG11_EAC:						return GL_UNSIGNED_BYTE;				// 2-component ETC, signed normalized
+
+		//
+		// PVRTC
+		//
+
+		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 3-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 3-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG:				return GL_UNSIGNED_BYTE;				// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG:				return GL_UNSIGNED_BYTE;				// 4-component PVRTC, unsigned normalized
+
+		case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:				return GL_UNSIGNED_BYTE;				// 3-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:				return GL_UNSIGNED_BYTE;				// 3-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:			return GL_UNSIGNED_BYTE;				// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:			return GL_UNSIGNED_BYTE;				// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG:			return GL_UNSIGNED_BYTE;				// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG:			return GL_UNSIGNED_BYTE;				// 4-component PVRTC, sRGB
 
 		//
 		// ASTC
 		//
-		case GL_COMPRESSED_RGBA_ASTC_4x4_KHR:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 4x4 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_5x4_KHR:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 5x4 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_5x5_KHR:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 5x5 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_6x5_KHR:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 6x5 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_6x6_KHR:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 6x6 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_8x5_KHR:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 8x5 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_8x6_KHR:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 8x6 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_8x8_KHR:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 8x8 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_10x5_KHR:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 10x5 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_10x6_KHR:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 10x6 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_10x8_KHR:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 10x8 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_10x10_KHR:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 10x10 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_12x10_KHR:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 12x10 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_12x12_KHR:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 12x12 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_4x4_KHR:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_5x4_KHR:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 5x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_5x5_KHR:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 5x5 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_6x5_KHR:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 6x5 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_6x6_KHR:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 6x6 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_8x5_KHR:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 8x5 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_8x6_KHR:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 8x6 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_8x8_KHR:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 8x8 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_10x5_KHR:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 10x5 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_10x6_KHR:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 10x6 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_10x8_KHR:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 10x8 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_10x10_KHR:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 10x10 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_12x10_KHR:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 12x10 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_12x12_KHR:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 12x12 blocks, unsigned normalized
 
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 4x4 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4_KHR:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 5x4 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5_KHR:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 5x5 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5_KHR:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 6x5 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6_KHR:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 6x6 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x5_KHR:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 8x5 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x6_KHR:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 8x6 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 8x8 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x5_KHR:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 10x5 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x6_KHR:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 10x6 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x8_KHR:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 10x8 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x10_KHR:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 10x10 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 12x10 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 12x12 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4_KHR:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 5x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5_KHR:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 5x5 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5_KHR:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 6x5 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6_KHR:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 6x6 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x5_KHR:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 8x5 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x6_KHR:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 8x6 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 8x8 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x5_KHR:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 10x5 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x6_KHR:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 10x6 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x8_KHR:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 10x8 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x10_KHR:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 10x10 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 12x10 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 12x12 blocks, sRGB
 
-		case GL_COMPRESSED_RGBA_ASTC_3x3x3_OES:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 3x3x3 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_4x3x3_OES:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 4x3x3 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_4x4x3_OES:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 4x4x3 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_4x4x4_OES:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 4x4x4 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_5x4x4_OES:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 5x4x4 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_5x5x4_OES:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 5x5x4 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_5x5x5_OES:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 5x5x5 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_6x5x5_OES:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 6x5x5 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_6x6x5_OES:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 6x6x5 blocks, unsigned normalized
-		case GL_COMPRESSED_RGBA_ASTC_6x6x6_OES:					return GL_UNSIGNED_BYTE;	// 4-component ASTC, 6x6x6 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_3x3x3_OES:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 3x3x3 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_4x3x3_OES:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 4x3x3 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_4x4x3_OES:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 4x4x3 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_4x4x4_OES:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 4x4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_5x4x4_OES:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 5x4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_5x5x4_OES:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 5x5x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_5x5x5_OES:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 5x5x5 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_6x5x5_OES:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 6x5x5 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_6x6x5_OES:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 6x6x5 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_ASTC_6x6x6_OES:					return GL_UNSIGNED_BYTE;				// 4-component ASTC, 6x6x6 blocks, unsigned normalized
 
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_3x3x3_OES:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 3x3x3 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x3x3_OES:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 4x3x3 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4x3_OES:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 4x4x3 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4x4_OES:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 4x4x4 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4x4_OES:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 5x4x4 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5x4_OES:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 5x5x4 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5x5_OES:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 5x5x5 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5x5_OES:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 6x5x5 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x5_OES:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 6x6x5 blocks, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x6_OES:			return GL_UNSIGNED_BYTE;	// 4-component ASTC, 6x6x6 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_3x3x3_OES:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 3x3x3 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x3x3_OES:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 4x3x3 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4x3_OES:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 4x4x3 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4x4_OES:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 4x4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4x4_OES:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 5x4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5x4_OES:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 5x5x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5x5_OES:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 5x5x5 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5x5_OES:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 6x5x5 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x5_OES:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 6x6x5 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x6_OES:			return GL_UNSIGNED_BYTE;				// 4-component ASTC, 6x6x6 blocks, sRGB
 
 		//
 		// ATC
 		//
-		case GL_ATC_RGB_AMD:									return GL_UNSIGNED_BYTE;	// 3-component, unsigned normalized
-		case GL_ATC_RGBA_EXPLICIT_ALPHA_AMD:					return GL_UNSIGNED_BYTE;	// 4-component, unsigned normalized
-		case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:				return GL_UNSIGNED_BYTE;	// 4-component, unsigned normalized
+		case GL_ATC_RGB_AMD:									return GL_UNSIGNED_BYTE;				// 3-component, unsigned normalized
+		case GL_ATC_RGBA_EXPLICIT_ALPHA_AMD:					return GL_UNSIGNED_BYTE;				// 4-component, unsigned normalized
+		case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:				return GL_UNSIGNED_BYTE;				// 4-component, unsigned normalized
 
 		//
 		// Palletized
 		//
-		case GL_PALETTE4_RGB8_OES:								return GL_UNSIGNED_BYTE;	// 3-component 8:8:8,   4-bit palette, unsigned normalized
-		case GL_PALETTE4_RGBA8_OES:								return GL_UNSIGNED_BYTE;	// 4-component 8:8:8:8, 4-bit palette, unsigned normalized
-		case GL_PALETTE4_R5_G6_B5_OES:							return GL_UNSIGNED_BYTE;	// 3-component 5:6:5,   4-bit palette, unsigned normalized
-		case GL_PALETTE4_RGBA4_OES:								return GL_UNSIGNED_BYTE;	// 4-component 4:4:4:4, 4-bit palette, unsigned normalized
-		case GL_PALETTE4_RGB5_A1_OES:							return GL_UNSIGNED_BYTE;	// 4-component 5:5:5:1, 4-bit palette, unsigned normalized
-		case GL_PALETTE8_RGB8_OES:								return GL_UNSIGNED_BYTE;	// 3-component 8:8:8,   8-bit palette, unsigned normalized
-		case GL_PALETTE8_RGBA8_OES:								return GL_UNSIGNED_BYTE;	// 4-component 8:8:8:8, 8-bit palette, unsigned normalized
-		case GL_PALETTE8_R5_G6_B5_OES:							return GL_UNSIGNED_BYTE;	// 3-component 5:6:5,   8-bit palette, unsigned normalized
-		case GL_PALETTE8_RGBA4_OES:								return GL_UNSIGNED_BYTE;	// 4-component 4:4:4:4, 8-bit palette, unsigned normalized
-		case GL_PALETTE8_RGB5_A1_OES:							return GL_UNSIGNED_BYTE;	// 4-component 5:5:5:1, 8-bit palette, unsigned normalized
+		case GL_PALETTE4_RGB8_OES:								return GL_UNSIGNED_BYTE;				// 3-component 8:8:8,   4-bit palette, unsigned normalized
+		case GL_PALETTE4_RGBA8_OES:								return GL_UNSIGNED_BYTE;				// 4-component 8:8:8:8, 4-bit palette, unsigned normalized
+		case GL_PALETTE4_R5_G6_B5_OES:							return GL_UNSIGNED_SHORT_5_6_5;			// 3-component 5:6:5,   4-bit palette, unsigned normalized
+		case GL_PALETTE4_RGBA4_OES:								return GL_UNSIGNED_SHORT_4_4_4_4;		// 4-component 4:4:4:4, 4-bit palette, unsigned normalized
+		case GL_PALETTE4_RGB5_A1_OES:							return GL_UNSIGNED_SHORT_5_5_5_1;		// 4-component 5:5:5:1, 4-bit palette, unsigned normalized
+		case GL_PALETTE8_RGB8_OES:								return GL_UNSIGNED_BYTE;				// 3-component 8:8:8,   8-bit palette, unsigned normalized
+		case GL_PALETTE8_RGBA8_OES:								return GL_UNSIGNED_BYTE;				// 4-component 8:8:8:8, 8-bit palette, unsigned normalized
+		case GL_PALETTE8_R5_G6_B5_OES:							return GL_UNSIGNED_SHORT_5_6_5;			// 3-component 5:6:5,   8-bit palette, unsigned normalized
+		case GL_PALETTE8_RGBA4_OES:								return GL_UNSIGNED_SHORT_4_4_4_4;		// 4-component 4:4:4:4, 8-bit palette, unsigned normalized
+		case GL_PALETTE8_RGB5_A1_OES:							return GL_UNSIGNED_SHORT_5_5_5_1;		// 4-component 5:5:5:1, 8-bit palette, unsigned normalized
 
-		default:												return GL_UNSIGNED_BYTE;
+		//
+		// Depth/stencil
+		//
+		case GL_DEPTH_COMPONENT16:								return GL_UNSIGNED_SHORT;
+		case GL_DEPTH_COMPONENT24:								return GL_UNSIGNED_INT_24_8;
+		case GL_DEPTH_COMPONENT32:								return GL_UNSIGNED_INT;
+		case GL_DEPTH_COMPONENT32F:								return GL_FLOAT;
+		case GL_DEPTH_COMPONENT32F_NV:							return GL_FLOAT;
+		case GL_STENCIL_INDEX1:									return GL_UNSIGNED_BYTE;
+		case GL_STENCIL_INDEX4:									return GL_UNSIGNED_BYTE;
+		case GL_STENCIL_INDEX8:									return GL_UNSIGNED_BYTE;
+		case GL_STENCIL_INDEX16:								return GL_UNSIGNED_SHORT;
+		case GL_DEPTH24_STENCIL8:								return GL_UNSIGNED_INT_24_8;
+		case GL_DEPTH32F_STENCIL8:								return GL_FLOAT_32_UNSIGNED_INT_24_8_REV;
+		case GL_DEPTH32F_STENCIL8_NV:							return GL_FLOAT_32_UNSIGNED_INT_24_8_REV;
+
+		default:												return GL_INVALID_VALUE;
 	}
 }
 
 typedef enum GlFormatSizeFlagBits {
-	GL_FORMAT_SIZE_PACKED_BIT = 0x00000001,
-	GL_FORMAT_SIZE_COMPRESSED_BIT = 0x00000002,
-	GL_FORMAT_SIZE_PALETTIZED_BIT = 0x00000004,
+	GL_FORMAT_SIZE_PACKED_BIT				= 0x00000001,
+	GL_FORMAT_SIZE_COMPRESSED_BIT			= 0x00000002,
+	GL_FORMAT_SIZE_PALETTIZED_BIT			= 0x00000004,
+	GL_FORMAT_SIZE_DEPTH_BIT				= 0x00000008,
+	GL_FORMAT_SIZE_STENCIL_BIT				= 0x00000010,
 } GlFormatSizeFlagBits;
 
 typedef unsigned int GlFormatSizeFlags;
@@ -1327,7 +1745,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 
 		//
-		// Odd bits per component
+		// Packed
 		//
 		case GL_R3_G3_B2:										// 3-component 3:3:2, unsigned normalized
 			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
@@ -1348,7 +1766,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		case GL_RGB5:											// 3-component 5:5:5, unsigned normalized
 			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
-			pFormatSize->blockSizeInBits = 15;
+			pFormatSize->blockSizeInBits = 16;
 			pFormatSize->blockWidth = 1;
 			pFormatSize->blockHeight = 1;
 			pFormatSize->blockDepth = 1;
@@ -1364,7 +1782,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		case GL_RGB10:											// 3-component 10:10:10, unsigned normalized
 			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
-			pFormatSize->blockSizeInBits = 30;
+			pFormatSize->blockSizeInBits = 32;
 			pFormatSize->blockWidth = 1;
 			pFormatSize->blockHeight = 1;
 			pFormatSize->blockDepth = 1;
@@ -1396,7 +1814,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		case GL_RGBA12:											// 4-component 12:12:12:12, unsigned normalized
 			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
-			pFormatSize->blockSizeInBits = 16;
+			pFormatSize->blockSizeInBits = 48;
 			pFormatSize->blockWidth = 1;
 			pFormatSize->blockHeight = 1;
 			pFormatSize->blockDepth = 1;
@@ -1420,7 +1838,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		case GL_RGB10_A2UI:										// 4-component 10:10:10:2, unsigned integer
 			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
-			pFormatSize->blockSizeInBits = 16;
+			pFormatSize->blockSizeInBits = 32;
 			pFormatSize->blockWidth = 1;
 			pFormatSize->blockHeight = 1;
 			pFormatSize->blockDepth = 1;
@@ -1438,7 +1856,6 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		//
 		// S3TC/DXT/BC
 		//
-
 		case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:					// line through 3D space, unsigned normalized
 		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:					// line through 3D space plus 1-bit alpha, unsigned normalized
 		case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:					// line through 3D space, sRGB
@@ -1551,6 +1968,37 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
+			pFormatSize->blockWidth = 4;
+			pFormatSize->blockHeight = 4;
+			pFormatSize->blockDepth = 1;
+			break;
+
+		//
+		// PVRTC
+		//
+
+		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				// 3-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG:				// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:				// 3-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:			// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG:			// 4-component PVRTC, sRGB
+			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->paletteSizeInBits = 0;
+			pFormatSize->blockSizeInBits = 64;
+			pFormatSize->blockWidth = 8;
+			pFormatSize->blockHeight = 4;
+			pFormatSize->blockDepth = 1;
+			break;
+		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				// 3-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG:				// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:				// 3-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:			// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG:			// 4-component PVRTC, sRGB
+			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->paletteSizeInBits = 0;
+			pFormatSize->blockSizeInBits = 64;
 			pFormatSize->blockWidth = 4;
 			pFormatSize->blockHeight = 4;
 			pFormatSize->blockDepth = 1;
@@ -1849,6 +2297,78 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->flags = GL_FORMAT_SIZE_PALETTIZED_BIT;
 			pFormatSize->paletteSizeInBits = 256 * 16;
 			pFormatSize->blockSizeInBits = 8;
+			pFormatSize->blockWidth = 1;
+			pFormatSize->blockHeight = 1;
+			pFormatSize->blockDepth = 1;
+			break;
+
+		//
+		// Depth/stencil
+		//
+		case GL_DEPTH_COMPONENT16:
+			pFormatSize->flags = GL_FORMAT_SIZE_DEPTH_BIT;
+			pFormatSize->paletteSizeInBits = 0;
+			pFormatSize->blockSizeInBits = 16;
+			pFormatSize->blockWidth = 1;
+			pFormatSize->blockHeight = 1;
+			pFormatSize->blockDepth = 1;
+			break;
+		case GL_DEPTH_COMPONENT24:
+		case GL_DEPTH_COMPONENT32:
+		case GL_DEPTH_COMPONENT32F:
+		case GL_DEPTH_COMPONENT32F_NV:
+			pFormatSize->flags = GL_FORMAT_SIZE_DEPTH_BIT;
+			pFormatSize->paletteSizeInBits = 0;
+			pFormatSize->blockSizeInBits = 32;
+			pFormatSize->blockWidth = 1;
+			pFormatSize->blockHeight = 1;
+			pFormatSize->blockDepth = 1;
+			break;
+		case GL_STENCIL_INDEX1:
+			pFormatSize->flags = GL_FORMAT_SIZE_STENCIL_BIT;
+			pFormatSize->paletteSizeInBits = 0;
+			pFormatSize->blockSizeInBits = 1;
+			pFormatSize->blockWidth = 1;
+			pFormatSize->blockHeight = 1;
+			pFormatSize->blockDepth = 1;
+			break;
+		case GL_STENCIL_INDEX4:
+			pFormatSize->flags = GL_FORMAT_SIZE_STENCIL_BIT;
+			pFormatSize->paletteSizeInBits = 0;
+			pFormatSize->blockSizeInBits = 4;
+			pFormatSize->blockWidth = 1;
+			pFormatSize->blockHeight = 1;
+			pFormatSize->blockDepth = 1;
+			break;
+		case GL_STENCIL_INDEX8:
+			pFormatSize->flags = GL_FORMAT_SIZE_STENCIL_BIT;
+			pFormatSize->paletteSizeInBits = 0;
+			pFormatSize->blockSizeInBits = 8;
+			pFormatSize->blockWidth = 1;
+			pFormatSize->blockHeight = 1;
+			pFormatSize->blockDepth = 1;
+			break;
+		case GL_STENCIL_INDEX16:
+			pFormatSize->flags = GL_FORMAT_SIZE_STENCIL_BIT;
+			pFormatSize->paletteSizeInBits = 0;
+			pFormatSize->blockSizeInBits = 16;
+			pFormatSize->blockWidth = 1;
+			pFormatSize->blockHeight = 1;
+			pFormatSize->blockDepth = 1;
+			break;
+		case GL_DEPTH24_STENCIL8:
+			pFormatSize->flags = GL_FORMAT_SIZE_DEPTH_BIT | GL_FORMAT_SIZE_STENCIL_BIT;
+			pFormatSize->paletteSizeInBits = 0;
+			pFormatSize->blockSizeInBits = 32;
+			pFormatSize->blockWidth = 1;
+			pFormatSize->blockHeight = 1;
+			pFormatSize->blockDepth = 1;
+			break;
+		case GL_DEPTH32F_STENCIL8:
+		case GL_DEPTH32F_STENCIL8_NV:
+			pFormatSize->flags = GL_FORMAT_SIZE_DEPTH_BIT | GL_FORMAT_SIZE_STENCIL_BIT;
+			pFormatSize->paletteSizeInBits = 0;
+			pFormatSize->blockSizeInBits = 64;
 			pFormatSize->blockWidth = 1;
 			pFormatSize->blockHeight = 1;
 			pFormatSize->blockDepth = 1;

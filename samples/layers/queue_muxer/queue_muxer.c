@@ -57,7 +57,7 @@ will look as follows:
 	<path>/Vulkan-Samples/
 	<path>/Vulkan-LoaderAndValidationLayers/
 
-On Windows make sure that the &lt;path&gt; is no more than one folder deep to
+On Windows make sure that the path is no more than one folder deep to
 avoid running into maximum path depth compilation issues.
 
 

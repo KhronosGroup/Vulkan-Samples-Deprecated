@@ -38,13 +38,17 @@ The functions in this header file convert the format, internalFormat and type
 that are used as parameters to the following OpenGL functions:
 
 void glTexImage2D( GLenum target, GLint level, GLint internalFormat,
-	GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid * data );
+	GLsizei width, GLsizei height, GLint border,
+	GLenum format, GLenum type, const GLvoid * data );
 void glTexImage3D( GLenum target, GLint level, GLint internalFormat,
-	GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid * data );
+	GLsizei width, GLsizei height, GLsizei depth, GLint border,
+	GLenum format, GLenum type, const GLvoid * data );
 void glCompressedTexImage2D( GLenum target, GLint level, GLenum internalformat,
-	GLsizei width, GLsizei height, GLint border, GLsizei imageSize, const GLvoid * data );
+	GLsizei width, GLsizei height, GLint border,
+	GLsizei imageSize, const GLvoid * data );
 void glCompressedTexImage3D( GLenum target, GLint level, GLenum internalformat,
-	GLsizei width, GLsizei height, GLsizei depth, GLint border, GLsizei imageSize, const GLvoid * data );
+	GLsizei width, GLsizei height, GLsizei depth, GLint border,
+	GLsizei imageSize, const GLvoid * data );
 void glTexStorage2D( GLenum target, GLsizei levels, GLenum internalformat,
 	GLsizei width, GLsizei height );
 void glTexStorage3D( GLenum target, GLsizei levels, GLenum internalformat,
@@ -58,7 +62,8 @@ IMPLEMENTATION
 
 This file does not include OpenGL / OpenGL ES headers because:
 
-  1. Including OpenGL / OpenGL ES headers is a platform dependent mess.
+  1. Including OpenGL / OpenGL ES headers is platform dependent and
+     may require a separate installation of an OpenGL SDK.
   2. The OpenGL format/type constants are the same between extensions and core.
   3. The OpenGL format/type constants are the same between OpenGL and OpenGL ES.
   4. File formats like KTX and glTF may use OpenGL formats and types that
@@ -103,8 +108,8 @@ static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const G
 				case GL_RGBA_INTEGER:			return VK_FORMAT_R8G8B8A8_UINT;
 				case GL_BGRA_INTEGER:			return VK_FORMAT_B8G8R8A8_UINT;
 				case GL_STENCIL_INDEX:			return VK_FORMAT_S8_UINT;
-				case GL_DEPTH_COMPONENT:		return VK_FORMAT_X8_D24_UNORM_PACK32;
-				case GL_DEPTH_STENCIL:			return VK_FORMAT_D24_UNORM_S8_UINT;
+				case GL_DEPTH_COMPONENT:		return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_STENCIL:			return VK_FORMAT_UNDEFINED;
 			}
 			break;
 		}
@@ -124,9 +129,9 @@ static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const G
 				case GL_BGR_INTEGER:			return VK_FORMAT_B8G8R8_SINT;
 				case GL_RGBA_INTEGER:			return VK_FORMAT_R8G8B8A8_SINT;
 				case GL_BGRA_INTEGER:			return VK_FORMAT_B8G8R8A8_SINT;
-				case GL_STENCIL_INDEX:			return VK_FORMAT_S8_UINT;
-				case GL_DEPTH_COMPONENT:		return VK_FORMAT_X8_D24_UNORM_PACK32;
-				case GL_DEPTH_STENCIL:			return VK_FORMAT_D24_UNORM_S8_UINT;
+				case GL_STENCIL_INDEX:			return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_COMPONENT:		return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_STENCIL:			return VK_FORMAT_UNDEFINED;
 			}
 			break;
 		}
@@ -150,7 +155,7 @@ static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const G
 				case GL_BGR_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_RGBA_INTEGER:			return VK_FORMAT_R16G16B16A16_UINT;
 				case GL_BGRA_INTEGER:			return VK_FORMAT_UNDEFINED;
-				case GL_STENCIL_INDEX:			return VK_FORMAT_S8_UINT;
+				case GL_STENCIL_INDEX:			return VK_FORMAT_UNDEFINED;
 				case GL_DEPTH_COMPONENT:		return VK_FORMAT_D16_UNORM;
 				case GL_DEPTH_STENCIL:			return VK_FORMAT_D16_UNORM_S8_UINT;
 			}
@@ -172,9 +177,9 @@ static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const G
 				case GL_BGR_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_RGBA_INTEGER:			return VK_FORMAT_R16G16B16A16_SINT;
 				case GL_BGRA_INTEGER:			return VK_FORMAT_UNDEFINED;
-				case GL_STENCIL_INDEX:			return VK_FORMAT_S8_UINT;
-				case GL_DEPTH_COMPONENT:		return VK_FORMAT_D16_UNORM;
-				case GL_DEPTH_STENCIL:			return VK_FORMAT_D16_UNORM_S8_UINT;
+				case GL_STENCIL_INDEX:			return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_COMPONENT:		return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_STENCIL:			return VK_FORMAT_UNDEFINED;
 			}
 			break;
 		}
@@ -195,9 +200,9 @@ static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const G
 				case GL_BGR_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_RGBA_INTEGER:			return VK_FORMAT_R16G16B16A16_SFLOAT;
 				case GL_BGRA_INTEGER:			return VK_FORMAT_UNDEFINED;
-				case GL_STENCIL_INDEX:			return VK_FORMAT_S8_UINT;
-				case GL_DEPTH_COMPONENT:		return VK_FORMAT_D16_UNORM;
-				case GL_DEPTH_STENCIL:			return VK_FORMAT_D16_UNORM_S8_UINT;
+				case GL_STENCIL_INDEX:			return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_COMPONENT:		return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_STENCIL:			return VK_FORMAT_UNDEFINED;
 			}
 			break;
 		}
@@ -221,7 +226,7 @@ static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const G
 				case GL_BGR_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_RGBA_INTEGER:			return VK_FORMAT_R32G32B32A32_UINT;
 				case GL_BGRA_INTEGER:			return VK_FORMAT_UNDEFINED;
-				case GL_STENCIL_INDEX:			return VK_FORMAT_S8_UINT;
+				case GL_STENCIL_INDEX:			return VK_FORMAT_UNDEFINED;
 				case GL_DEPTH_COMPONENT:		return VK_FORMAT_X8_D24_UNORM_PACK32;
 				case GL_DEPTH_STENCIL:			return VK_FORMAT_D24_UNORM_S8_UINT;
 			}
@@ -243,9 +248,9 @@ static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const G
 				case GL_BGR_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_RGBA_INTEGER:			return VK_FORMAT_R32G32B32A32_SINT;
 				case GL_BGRA_INTEGER:			return VK_FORMAT_UNDEFINED;
-				case GL_STENCIL_INDEX:			return VK_FORMAT_S8_UINT;
-				case GL_DEPTH_COMPONENT:		return VK_FORMAT_X8_D24_UNORM_PACK32;
-				case GL_DEPTH_STENCIL:			return VK_FORMAT_D24_UNORM_S8_UINT;
+				case GL_STENCIL_INDEX:			return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_COMPONENT:		return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_STENCIL:			return VK_FORMAT_UNDEFINED;
 			}
 			break;
 		}
@@ -265,7 +270,7 @@ static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const G
 				case GL_BGR_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_RGBA_INTEGER:			return VK_FORMAT_R32G32B32A32_SFLOAT;
 				case GL_BGRA_INTEGER:			return VK_FORMAT_UNDEFINED;
-				case GL_STENCIL_INDEX:			return VK_FORMAT_S8_UINT;
+				case GL_STENCIL_INDEX:			return VK_FORMAT_UNDEFINED;
 				case GL_DEPTH_COMPONENT:		return VK_FORMAT_D32_SFLOAT;
 				case GL_DEPTH_STENCIL:			return VK_FORMAT_D32_SFLOAT_S8_UINT;
 			}
@@ -275,6 +280,50 @@ static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const G
 		//
 		// 64 bits per component
 		//
+		case GL_UNSIGNED_INT64:
+		{
+			switch ( format )
+			{
+				case GL_RED:					return VK_FORMAT_R64_UINT;
+				case GL_RG:						return VK_FORMAT_R64G64_UINT;
+				case GL_RGB:					return VK_FORMAT_R64G64B64_UINT;
+				case GL_BGR:					return VK_FORMAT_UNDEFINED;
+				case GL_RGBA:					return VK_FORMAT_R64G64B64A64_UINT;
+				case GL_BGRA:					return VK_FORMAT_UNDEFINED;
+				case GL_RED_INTEGER:			return VK_FORMAT_R64_UINT;
+				case GL_RG_INTEGER:				return VK_FORMAT_R64G64_UINT;
+				case GL_RGB_INTEGER:			return VK_FORMAT_R64G64B64_UINT;
+				case GL_BGR_INTEGER:			return VK_FORMAT_UNDEFINED;
+				case GL_RGBA_INTEGER:			return VK_FORMAT_R64G64B64A64_UINT;
+				case GL_BGRA_INTEGER:			return VK_FORMAT_UNDEFINED;
+				case GL_STENCIL_INDEX:			return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_COMPONENT:		return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_STENCIL:			return VK_FORMAT_UNDEFINED;
+			}
+			break;
+		}
+		case GL_INT64:
+		{
+			switch ( format )
+			{
+				case GL_RED:					return VK_FORMAT_R64_SINT;
+				case GL_RG:						return VK_FORMAT_R64G64_SINT;
+				case GL_RGB:					return VK_FORMAT_R64G64B64_SINT;
+				case GL_BGR:					return VK_FORMAT_UNDEFINED;
+				case GL_RGBA:					return VK_FORMAT_R64G64B64A64_SINT;
+				case GL_BGRA:					return VK_FORMAT_UNDEFINED;
+				case GL_RED_INTEGER:			return VK_FORMAT_R64_SINT;
+				case GL_RG_INTEGER:				return VK_FORMAT_R64G64_SINT;
+				case GL_RGB_INTEGER:			return VK_FORMAT_R64G64B64_SINT;
+				case GL_BGR_INTEGER:			return VK_FORMAT_UNDEFINED;
+				case GL_RGBA_INTEGER:			return VK_FORMAT_R64G64B64A64_SINT;
+				case GL_BGRA_INTEGER:			return VK_FORMAT_UNDEFINED;
+				case GL_STENCIL_INDEX:			return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_COMPONENT:		return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_STENCIL:			return VK_FORMAT_UNDEFINED;
+			}
+			break;
+		}
 		case GL_DOUBLE:
 		{
 			switch ( format )
@@ -291,27 +340,27 @@ static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const G
 				case GL_BGR_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_RGBA_INTEGER:			return VK_FORMAT_R64G64B64A64_SFLOAT;
 				case GL_BGRA_INTEGER:			return VK_FORMAT_UNDEFINED;
-				case GL_STENCIL_INDEX:			return VK_FORMAT_S8_UINT;
-				case GL_DEPTH_COMPONENT:		return VK_FORMAT_D32_SFLOAT;
-				case GL_DEPTH_STENCIL:			return VK_FORMAT_D32_SFLOAT_S8_UINT;
+				case GL_STENCIL_INDEX:			return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_COMPONENT:		return VK_FORMAT_UNDEFINED;
+				case GL_DEPTH_STENCIL:			return VK_FORMAT_UNDEFINED;
 			}
 			break;
 		}
 
 		//
-		// Odd bits per component
+		// Packed
 		//
 		case GL_UNSIGNED_BYTE_3_3_2:
 			assert( format == GL_RGB || format == GL_RGB_INTEGER );
 			return VK_FORMAT_UNDEFINED;
 		case GL_UNSIGNED_BYTE_2_3_3_REV:
-			assert( format == GL_RGB || format == GL_RGB_INTEGER );
+			assert( format == GL_BGR || format == GL_BGR_INTEGER );
 			return VK_FORMAT_UNDEFINED;
 		case GL_UNSIGNED_SHORT_5_6_5:
 			assert( format == GL_RGB || format == GL_RGB_INTEGER );
 			return VK_FORMAT_R5G6B5_UNORM_PACK16;
 		case GL_UNSIGNED_SHORT_5_6_5_REV:
-			assert( format == GL_RGB || format == GL_RGB_INTEGER );
+			assert( format == GL_BGR || format == GL_BGR_INTEGER );
 			return VK_FORMAT_B5G6R5_UNORM_PACK16;
 		case GL_UNSIGNED_SHORT_4_4_4_4:
 			assert( format == GL_RGB || format == GL_BGRA || format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER );
@@ -338,10 +387,10 @@ static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const G
 			assert( format == GL_RGB || format == GL_BGRA || format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER );
 			return ( format == GL_RGB_INTEGER || format == GL_BGRA_INTEGER ) ? VK_FORMAT_A2B10G10R10_UINT_PACK32 : VK_FORMAT_A2B10G10R10_UNORM_PACK32;
 		case GL_UNSIGNED_INT_10F_11F_11F_REV:
-			assert( format == GL_RGB );
+			assert( format == GL_RGB || format == GL_BGR );
 			return VK_FORMAT_B10G11R11_UFLOAT_PACK32;
 		case GL_UNSIGNED_INT_5_9_9_9_REV:
-			assert( format == GL_RGB );
+			assert( format == GL_RGB || format == GL_BGR );
 			return VK_FORMAT_E5B9G9R9_UFLOAT_PACK32;
 		case GL_UNSIGNED_INT_24_8:
 			assert( format == GL_DEPTH_STENCIL );
@@ -462,6 +511,28 @@ static inline VkFormat vkGetFormatFromOpenGLType( const GLenum type, const GLuin
 		//
 		// 64 bits per component
 		//
+		case GL_UNSIGNED_INT64:
+		{
+			switch ( numComponents )
+			{
+				case 1:							return VK_FORMAT_R64_UINT;
+				case 2:							return VK_FORMAT_R64G64_UINT;
+				case 3:							return VK_FORMAT_R64G64B64_UINT;
+				case 4:							return VK_FORMAT_R64G64B64A64_UINT;
+			}
+			break;
+		}
+		case GL_INT64:
+		{
+			switch ( numComponents )
+			{
+				case 1:							return VK_FORMAT_R64_SINT;
+				case 2:							return VK_FORMAT_R64G64_SINT;
+				case 3:							return VK_FORMAT_R64G64B64_SINT;
+				case 4:							return VK_FORMAT_R64G64B64A64_SINT;
+			}
+			break;
+		}
 		case GL_DOUBLE:
 		{
 			switch ( numComponents )
@@ -475,7 +546,7 @@ static inline VkFormat vkGetFormatFromOpenGLType( const GLenum type, const GLuin
 		}
 
 		//
-		// Odd bits per component
+		// Packed
 		//
 		case GL_UNSIGNED_BYTE_3_3_2:			return VK_FORMAT_UNDEFINED;
 		case GL_UNSIGNED_BYTE_2_3_3_REV:		return VK_FORMAT_UNDEFINED;
@@ -577,7 +648,7 @@ static inline VkFormat vkGetFormatFromOpenGLInternalFormat( const GLenum interna
 		case GL_RGBA32F:										return VK_FORMAT_R32G32B32A32_SFLOAT;		// 4-component, 32-bit floating-point
 
 		//
-		// Odd bits per component
+		// Packed
 		//
 		case GL_R3_G3_B2:										return VK_FORMAT_UNDEFINED;					// 3-component 3:3:2,       unsigned normalized
 		case GL_RGB4:											return VK_FORMAT_UNDEFINED;					// 3-component 4:4:4,       unsigned normalized
@@ -640,6 +711,24 @@ static inline VkFormat vkGetFormatFromOpenGLInternalFormat( const GLenum interna
 		case GL_COMPRESSED_RG11_EAC:							return VK_FORMAT_EAC_R11G11_UNORM_BLOCK;	// 2-component ETC, unsigned normalized
 		case GL_COMPRESSED_SIGNED_R11_EAC:						return VK_FORMAT_EAC_R11_SNORM_BLOCK;		// 1-component ETC, signed normalized
 		case GL_COMPRESSED_SIGNED_RG11_EAC:						return VK_FORMAT_EAC_R11G11_SNORM_BLOCK;	// 2-component ETC, signed normalized
+
+		//
+		// PVRTC
+		//
+
+		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 3-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 3-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG:				return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG:				return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, unsigned normalized
+
+		case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:				return VK_FORMAT_UNDEFINED;					// 3-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:				return VK_FORMAT_UNDEFINED;					// 3-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:			return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:			return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG:			return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG:			return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, sRGB
 
 		//
 		// ASTC
@@ -717,14 +806,32 @@ static inline VkFormat vkGetFormatFromOpenGLInternalFormat( const GLenum interna
 		case GL_PALETTE8_RGBA4_OES:								return VK_FORMAT_UNDEFINED;					// 4-component 4:4:4:4, 8-bit palette, unsigned normalized
 		case GL_PALETTE8_RGB5_A1_OES:							return VK_FORMAT_UNDEFINED;					// 4-component 5:5:5:1, 8-bit palette, unsigned normalized
 
+		//
+		// Depth/stencil
+		//
+		case GL_DEPTH_COMPONENT16:								return VK_FORMAT_D16_UNORM;
+		case GL_DEPTH_COMPONENT24:								return VK_FORMAT_X8_D24_UNORM_PACK32;
+		case GL_DEPTH_COMPONENT32:								return VK_FORMAT_UNDEFINED;
+		case GL_DEPTH_COMPONENT32F:								return VK_FORMAT_D32_SFLOAT;
+		case GL_DEPTH_COMPONENT32F_NV:							return VK_FORMAT_D32_SFLOAT;
+		case GL_STENCIL_INDEX1:									return VK_FORMAT_UNDEFINED;
+		case GL_STENCIL_INDEX4:									return VK_FORMAT_UNDEFINED;
+		case GL_STENCIL_INDEX8:									return VK_FORMAT_S8_UINT;
+		case GL_STENCIL_INDEX16:								return VK_FORMAT_UNDEFINED;
+		case GL_DEPTH24_STENCIL8:								return VK_FORMAT_D24_UNORM_S8_UINT;
+		case GL_DEPTH32F_STENCIL8:								return VK_FORMAT_D32_SFLOAT_S8_UINT;
+		case GL_DEPTH32F_STENCIL8_NV:							return VK_FORMAT_D32_SFLOAT_S8_UINT;
+
 		default:												return VK_FORMAT_UNDEFINED;
 	}
 }
 
 typedef enum VkFormatSizeFlagBits {
-	VK_FORMAT_SIZE_PACKED_BIT = 0x00000001,
-	VK_FORMAT_SIZE_COMPRESSED_BIT = 0x00000002,
-	VK_FORMAT_SIZE_PALETTIZED_BIT = 0x00000004,
+	VK_FORMAT_SIZE_PACKED_BIT				= 0x00000001,
+	VK_FORMAT_SIZE_COMPRESSED_BIT			= 0x00000002,
+	VK_FORMAT_SIZE_PALETTIZED_BIT			= 0x00000004,
+	VK_FORMAT_SIZE_DEPTH_BIT				= 0x00000008,
+	VK_FORMAT_SIZE_STENCIL_BIT				= 0x00000010,
 } VkFormatSizeFlagBits;
 
 typedef VkFlags VkFormatSizeFlags;
@@ -1013,7 +1120,7 @@ static inline void vkGetFormatSize( const VkFormat format, VkFormatSize * pForma
 			pFormatSize->blockDepth = 1;
 			break;
 		case VK_FORMAT_D16_UNORM:
-			pFormatSize->flags = 0;
+			pFormatSize->flags = VK_FORMAT_SIZE_DEPTH_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 2 * 8;
 			pFormatSize->blockWidth = 1;
@@ -1021,7 +1128,7 @@ static inline void vkGetFormatSize( const VkFormat format, VkFormatSize * pForma
 			pFormatSize->blockDepth = 1;
 			break;
 		case VK_FORMAT_X8_D24_UNORM_PACK32:
-			pFormatSize->flags = VK_FORMAT_SIZE_PACKED_BIT;
+			pFormatSize->flags = VK_FORMAT_SIZE_PACKED_BIT | VK_FORMAT_SIZE_DEPTH_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 4 * 8;
 			pFormatSize->blockWidth = 1;
@@ -1029,7 +1136,7 @@ static inline void vkGetFormatSize( const VkFormat format, VkFormatSize * pForma
 			pFormatSize->blockDepth = 1;
 			break;
 		case VK_FORMAT_D32_SFLOAT:
-			pFormatSize->flags = 0;
+			pFormatSize->flags = VK_FORMAT_SIZE_DEPTH_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 4 * 8;
 			pFormatSize->blockWidth = 1;
@@ -1037,7 +1144,7 @@ static inline void vkGetFormatSize( const VkFormat format, VkFormatSize * pForma
 			pFormatSize->blockDepth = 1;
 			break;
 		case VK_FORMAT_S8_UINT:
-			pFormatSize->flags = 0;
+			pFormatSize->flags = VK_FORMAT_SIZE_STENCIL_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 1 * 8;
 			pFormatSize->blockWidth = 1;
@@ -1045,7 +1152,7 @@ static inline void vkGetFormatSize( const VkFormat format, VkFormatSize * pForma
 			pFormatSize->blockDepth = 1;
 			break;
 		case VK_FORMAT_D16_UNORM_S8_UINT:
-			pFormatSize->flags = 0;
+			pFormatSize->flags = VK_FORMAT_SIZE_DEPTH_BIT | VK_FORMAT_SIZE_STENCIL_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 3 * 8;
 			pFormatSize->blockWidth = 1;
@@ -1053,7 +1160,7 @@ static inline void vkGetFormatSize( const VkFormat format, VkFormatSize * pForma
 			pFormatSize->blockDepth = 1;
 			break;
 		case VK_FORMAT_D24_UNORM_S8_UINT:
-			pFormatSize->flags = 0;
+			pFormatSize->flags = VK_FORMAT_SIZE_DEPTH_BIT | VK_FORMAT_SIZE_STENCIL_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 4 * 8;
 			pFormatSize->blockWidth = 1;
@@ -1061,9 +1168,9 @@ static inline void vkGetFormatSize( const VkFormat format, VkFormatSize * pForma
 			pFormatSize->blockDepth = 1;
 			break;
 		case VK_FORMAT_D32_SFLOAT_S8_UINT:
-			pFormatSize->flags = 0;
+			pFormatSize->flags = VK_FORMAT_SIZE_DEPTH_BIT | VK_FORMAT_SIZE_STENCIL_BIT;
 			pFormatSize->paletteSizeInBits = 0;
-			pFormatSize->blockSizeInBits = 5 * 8;
+			pFormatSize->blockSizeInBits = 8 * 8;
 			pFormatSize->blockWidth = 1;
 			pFormatSize->blockHeight = 1;
 			pFormatSize->blockDepth = 1;

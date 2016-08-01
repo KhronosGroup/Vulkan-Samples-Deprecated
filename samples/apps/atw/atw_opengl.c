@@ -490,7 +490,6 @@ Common headers
 #include <assert.h>
 #include <string.h>			// for memset
 #include <errno.h>			// for EBUSY, ETIMEDOUT etc.
-#include <ctype.h>			// for isspace() and isdigit()
 
 /*
 ================================
@@ -6236,11 +6235,11 @@ GpuTexture_t
 static bool GpuTexture_Create2D( GpuContext_t * context, GpuTexture_t * texture,
 								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
 								const int width, const int height, const int numberOfMipmapLevels,
-								const void * data, const size_t dataSize );
+								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize );
 static bool GpuTexture_Create2DArray( GpuContext_t * context, GpuTexture_t * texture,
 								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
 								const int width, const int height, const int numberOfArrayElements, const int numberOfMipmapLevels,
-								const void * data, const size_t dataSize );
+								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize );
 static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureDefault_t defaultType,
 								const int width, const int height, const int depth,
 								const int numberOfArrayElements, const int numberOfFaces,
@@ -6414,15 +6413,17 @@ typedef enum
 
 typedef enum
 {
-	GPU_TEXTURE_USAGE_UNDEFINED,
-	GPU_TEXTURE_USAGE_GENERAL,
-	GPU_TEXTURE_USAGE_TRANSFER_SRC,
-	GPU_TEXTURE_USAGE_TRANSFER_DST,
-	GPU_TEXTURE_USAGE_SAMPLED,
-	GPU_TEXTURE_USAGE_STORAGE,
-	GPU_TEXTURE_USAGE_COLOR_ATTACHMENT,
-	GPU_TEXTURE_USAGE_PRESENTATION
+	GPU_TEXTURE_USAGE_UNDEFINED			= BIT( 0 ),
+	GPU_TEXTURE_USAGE_GENERAL			= BIT( 1 ),
+	GPU_TEXTURE_USAGE_TRANSFER_SRC		= BIT( 2 ),
+	GPU_TEXTURE_USAGE_TRANSFER_DST		= BIT( 3 ),
+	GPU_TEXTURE_USAGE_SAMPLED			= BIT( 4 ),
+	GPU_TEXTURE_USAGE_STORAGE			= BIT( 5 ),
+	GPU_TEXTURE_USAGE_COLOR_ATTACHMENT	= BIT( 6 ),
+	GPU_TEXTURE_USAGE_PRESENTATION		= BIT( 7 )
 } GpuTextureUsage_t;
+
+typedef unsigned int GpuTextureUsageFlags_t;
 
 typedef enum
 {
@@ -6454,6 +6455,7 @@ typedef struct
 	int						mipCount;
 	GpuSampleCount_t		sampleCount;
 	GpuTextureUsage_t		usage;
+	GpuTextureUsageFlags_t	usageFlags;
 	GpuTextureWrapMode_t	wrapMode;
 	GpuTextureFilter_t		filter;
 	float					maxAnisotropy;
@@ -6489,6 +6491,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 										const GLenum glInternalFormat, const GpuSampleCount_t sampleCount,
 										const int width, const int height, const int depth,
 										const int numberOfArrayElements, const int numberOfFaces, const int numberOfMipmapLevels,
+										const GpuTextureUsageFlags_t usageFlags,
 										const void * data, const size_t dataSize, const bool mipSizeStored )
 {
 	UNUSED_PARM( context );
@@ -6571,6 +6574,8 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	texture->layerCount = numberOfArrayElements;
 	texture->mipCount = numStorageLevels;
 	texture->sampleCount = sampleCount;
+	texture->usage = GPU_TEXTURE_USAGE_UNDEFINED;
+	texture->usageFlags = usageFlags;
 	texture->wrapMode = GPU_TEXTURE_WRAP_MODE_REPEAT;
 	texture->filter = ( numStorageLevels > 1 ) ? GPU_TEXTURE_FILTER_BILINEAR : GPU_TEXTURE_FILTER_LINEAR;
 	texture->maxAnisotropy = 1.0f;
@@ -6863,26 +6868,26 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 static bool GpuTexture_Create2D( GpuContext_t * context, GpuTexture_t * texture,
 								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
 								const int width, const int height, const int numberOfMipmapLevels,
-								const void * data, const size_t dataSize )
+								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize )
 {
 	const int depth = 1;
 	const int numberOfArrayElements = 1;
 	const int numberOfFaces = 1;
 	return GpuTexture_CreateInternal( context, texture, "data", (GLenum)format, sampleCount, width, height, depth,
 										numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
-										data, dataSize, false );
+										usageFlags, data, dataSize, false );
 }
 
 static bool GpuTexture_Create2DArray( GpuContext_t * context, GpuTexture_t * texture,
 								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
 								const int width, const int height, const int numberOfArrayElements, const int numberOfMipmapLevels,
-								const void * data, const size_t dataSize )
+								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize )
 {
 	const int depth = 1;
 	const int numberOfFaces = 1;
 	return GpuTexture_CreateInternal( context, texture, "data", (GLenum)format, sampleCount, width, height, depth,
 										numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
-										data, dataSize, false );
+										usageFlags, data, dataSize, false );
 }
 
 static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureDefault_t defaultType,
@@ -6983,7 +6988,7 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 
 					for ( int c = 0; c < TEXEL_SIZE - 1; c++ )
 					{
-						data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + c] = (unsigned char)( ( colors[index][c] * scale ) >> 5 );
+						data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + c] = (unsigned char)( ( colors[index][c] * scale ) / blockSize );
 					}
 					data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + TEXEL_SIZE - 1] = 255;
 				}
@@ -7026,7 +7031,7 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 	bool success = GpuTexture_CreateInternal( context, texture, "data", GL_RGBA8, GPU_SAMPLE_COUNT_1,
 												width, height, depth,
 												numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
-												data, dataSize, false );
+												GPU_TEXTURE_USAGE_SAMPLED, data, dataSize, false );
 
 	free( data );
 
@@ -7122,7 +7127,7 @@ static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * tex
 									format, GPU_SAMPLE_COUNT_1,
 									header->pixelWidth, header->pixelHeight, depth,
 									numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
-									buffer + startTex, bufferSize - startTex, true );
+									GPU_TEXTURE_USAGE_SAMPLED, buffer + startTex, bufferSize - startTex, true );
 }
 
 static bool GpuTexture_CreateFromFile( GpuContext_t * context, GpuTexture_t * texture, const char * fileName )
@@ -7899,7 +7904,8 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 	const GLenum colorFormat = GpuContext_InternalSurfaceColorFormat( renderPass->colorFormat );
 	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
 	{
-		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)colorFormat, GPU_SAMPLE_COUNT_1, width, height, 1, NULL, 0 );
+		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)colorFormat, GPU_SAMPLE_COUNT_1,
+			width, height, 1, GPU_TEXTURE_USAGE_SAMPLED | GPU_TEXTURE_USAGE_COLOR_ATTACHMENT | GPU_TEXTURE_USAGE_STORAGE, NULL, 0 );
 		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 	}
 
@@ -8008,7 +8014,8 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 	const GLenum colorFormat = GpuContext_InternalSurfaceColorFormat( renderPass->colorFormat );
 	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
 	{
-		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)colorFormat, GPU_SAMPLE_COUNT_1, width, height, numLayers, 1, NULL, 0 );
+		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)colorFormat, GPU_SAMPLE_COUNT_1,
+			width, height, numLayers, 1, GPU_TEXTURE_USAGE_SAMPLED | GPU_TEXTURE_USAGE_COLOR_ATTACHMENT | GPU_TEXTURE_USAGE_STORAGE, NULL, 0 );
 		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 	}
 
@@ -9675,7 +9682,7 @@ static GpuFence_t * GpuCommandBuffer_SubmitPrimary( GpuCommandBuffer_t * command
 
 static void GpuCommandBuffer_ChangeTextureUsage( GpuCommandBuffer_t * commandBuffer, GpuTexture_t * texture, const GpuTextureUsage_t usage )
 {
-	UNUSED_PARM( texture );
+	assert( ( texture->usageFlags & usage ) != 0 );
 
 	texture->usage = usage;
 
@@ -11698,10 +11705,10 @@ static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * 
 			const size_t rgbaSize = numMeshCoords * 4 * sizeof( float );
 			GpuTexture_Create2D( context, &compute->distortionImage[eye][channel],
 								GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT, GPU_SAMPLE_COUNT_1,
-								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, rgbaFloat, rgbaSize );
+								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, GPU_TEXTURE_USAGE_STORAGE, rgbaFloat, rgbaSize );
 			GpuTexture_Create2D( context, &compute->timeWarpImage[eye][channel],
 								GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT, GPU_SAMPLE_COUNT_1,
-								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, NULL, 0 );
+								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, GPU_TEXTURE_USAGE_STORAGE | GPU_TEXTURE_USAGE_SAMPLED, NULL, 0 );
 		}
 	}
 	free( rgbaFloat );

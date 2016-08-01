@@ -6520,11 +6520,11 @@ GpuTexture_t
 static bool GpuTexture_Create2D( GpuContext_t * context, GpuTexture_t * texture,
 								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
 								const int width, const int height, const int numberOfMipmapLevels,
-								const void * data, const size_t dataSize );
+								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize );
 static bool GpuTexture_Create2DArray( GpuContext_t * context, GpuTexture_t * texture,
 								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
 								const int width, const int height, const int numberOfArrayElements, const int numberOfMipmapLevels,
-								const void * data, const size_t dataSize );
+								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize );
 static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureDefault_t defaultType,
 								const int width, const int height, const int depth,
 								const int numberOfArrayElements, const int numberOfFaces,
@@ -6676,15 +6676,17 @@ typedef enum
 
 typedef enum
 {
-	GPU_TEXTURE_USAGE_UNDEFINED,
-	GPU_TEXTURE_USAGE_GENERAL,
-	GPU_TEXTURE_USAGE_TRANSFER_SRC,
-	GPU_TEXTURE_USAGE_TRANSFER_DST,
-	GPU_TEXTURE_USAGE_SAMPLED,
-	GPU_TEXTURE_USAGE_STORAGE,
-	GPU_TEXTURE_USAGE_COLOR_ATTACHMENT,
-	GPU_TEXTURE_USAGE_PRESENTATION
+	GPU_TEXTURE_USAGE_UNDEFINED			= BIT( 0 ),
+	GPU_TEXTURE_USAGE_GENERAL			= BIT( 1 ),
+	GPU_TEXTURE_USAGE_TRANSFER_SRC		= BIT( 2 ),
+	GPU_TEXTURE_USAGE_TRANSFER_DST		= BIT( 3 ),
+	GPU_TEXTURE_USAGE_SAMPLED			= BIT( 4 ),
+	GPU_TEXTURE_USAGE_STORAGE			= BIT( 5 ),
+	GPU_TEXTURE_USAGE_COLOR_ATTACHMENT	= BIT( 6 ),
+	GPU_TEXTURE_USAGE_PRESENTATION		= BIT( 7 )
 } GpuTextureUsage_t;
+
+typedef unsigned int GpuTextureUsageFlags_t;
 
 typedef enum
 {
@@ -6716,6 +6718,7 @@ typedef struct
 	int						mipCount;
 	GpuSampleCount_t		sampleCount;
 	GpuTextureUsage_t		usage;
+	GpuTextureUsageFlags_t	usageFlags;
 	GpuTextureWrapMode_t	wrapMode;
 	GpuTextureFilter_t		filter;
 	float					maxAnisotropy;
@@ -6802,6 +6805,8 @@ static VkPipelineStageFlags PipelineStagesForTextureUsage( const GpuTextureUsage
 
 static void GpuTexture_ChangeUsage( GpuContext_t * context, VkCommandBuffer cmdBuffer, GpuTexture_t * texture, const GpuTextureUsage_t usage )
 {
+	assert( ( texture->usageFlags & usage ) != 0 );
+
 	const VkImageLayout newImageLayout = LayoutForTextureUsage( usage );
 
 	VkImageMemoryBarrier imageMemoryBarrier;
@@ -6857,6 +6862,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 										const VkFormat format, const GpuSampleCount_t sampleCount,
 										const int width, const int height, const int depth,
 										const int numberOfArrayElements, const int numberOfFaces, const int numberOfMipmapLevels,
+										const GpuTextureUsageFlags_t usageFlags,
 										const void * data, const size_t dataSize, const bool mipSizeStored )
 {
 	UNUSED_PARM( dataSize );
@@ -6903,19 +6909,30 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	VkFormatProperties props;
 	VC( context->device->instance->vkGetPhysicalDeviceFormatProperties( context->device->physicalDevice, format, &props ) );
 
-	// Must be able to sample the tiled image during rendering.
-	if ( ( props.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT ) == 0 )
+	// If this image is sampled.
+	if ( ( usageFlags & GPU_TEXTURE_USAGE_SAMPLED ) != 0 )
 	{
-		Error( "%s: Unsupported texture format %d", fileName, format );
-		return false;
-	}
-
-	if ( numberOfMipmapLevels < 1 )
-	{
-		// Must be able to blit from the tiled image to create mip maps.
-		if ( ( props.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT ) == 0 )
+		if ( ( props.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT ) == 0 )
 		{
-			Error( "%s: Unable to create mip maps for texture format %d", fileName, format );
+			Error( "%s: Texture format %d cannot be sampled", fileName, format );
+			return false;
+		}
+	}
+	// If this image is rendered to.
+	if ( ( usageFlags & GPU_TEXTURE_USAGE_COLOR_ATTACHMENT ) != 0 )
+	{
+		if ( ( props.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT ) == 0 )
+		{
+			Error( "%s: Texture format %d cannot be rendered to", fileName, format );
+			return false;
+		}
+	}
+	// If this image is used for storage.
+	if ( ( usageFlags & GPU_TEXTURE_USAGE_STORAGE ) != 0 )
+	{
+		if ( ( props.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT ) == 0 )
+		{
+			Error( "%s: Texture format %d cannot be used for storage", fileName, format );
 			return false;
 		}
 	}
@@ -6929,18 +6946,24 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	texture->layerCount = arrayLayerCount;
 	texture->mipCount = numStorageLevels;
 	texture->sampleCount = sampleCount;
+	texture->usage = GPU_TEXTURE_USAGE_UNDEFINED;
+	texture->usageFlags = usageFlags;
 	texture->wrapMode = GPU_TEXTURE_WRAP_MODE_REPEAT;
 	texture->filter = ( numStorageLevels > 1 ) ? GPU_TEXTURE_FILTER_BILINEAR : GPU_TEXTURE_FILTER_LINEAR;
 	texture->maxAnisotropy = 1.0f;
 	texture->format = format;
 
 	const VkImageUsageFlags usage =
-		// Must be able to initialize and sample the image.
-		VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+		// Must be able to copy to the image for initialization.
+		( ( usageFlags & GPU_TEXTURE_USAGE_TRANSFER_DST ) != 0 || data != NULL ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0 ) |
 		// Must be able to blit from the image to create mip maps.
-		( numberOfMipmapLevels < 1 ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0 ) |
-		// If data is provided, then assume the image will never be written after initialization.
-		( data == NULL ? ( VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT ) : 0 );
+		( ( usageFlags & GPU_TEXTURE_USAGE_TRANSFER_SRC ) != 0 || ( data != NULL && numberOfMipmapLevels < 1 ) ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0 ) |
+		// If this image is sampled.
+		( ( usageFlags & GPU_TEXTURE_USAGE_SAMPLED ) != 0 ? VK_IMAGE_USAGE_SAMPLED_BIT : 0 ) |
+		// If this image is rendered to.
+		( ( usageFlags & GPU_TEXTURE_USAGE_COLOR_ATTACHMENT ) != 0 ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0 ) |
+		// If this image is used for storage.
+		( ( usageFlags & GPU_TEXTURE_USAGE_STORAGE ) != 0 ? VK_IMAGE_USAGE_STORAGE_BIT : 0 );
 
 	// Create tiled image.
 	VkImageCreateInfo imageCreateInfo;
@@ -7106,6 +7129,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 			uint32_t storedMipSize = 0;
 			if ( mipSizeStored )
 			{
+				assert( dataOffset + 4 <= dataSize );
 				storedMipSize = *(uint32_t *)&(((uint8_t *)data)[dataOffset]);
 				dataOffset += 4;
 			}
@@ -7270,6 +7294,8 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 						}
 					}
 
+					assert( dataOffset + mipSize <= dataSize );
+
 					totalMipSize += mipSize;
 					dataOffset += mipSize;
 					if ( mipSizeStored && ( depth <= 1 && numberOfArrayElements <= 1 ) )
@@ -7426,24 +7452,26 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 static bool GpuTexture_Create2D( GpuContext_t * context, GpuTexture_t * texture,
 								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
 								const int width, const int height, const int numberOfMipmapLevels,
-								const void * data, const size_t dataSize )
+								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize )
 {
 	const int depth = 1;
 	const int numberOfArrayElements = 1;
 	const int numberOfFaces = 1;
 	return GpuTexture_CreateInternal( context, texture, "data", (VkFormat)format, sampleCount, width, height, depth,
-										numberOfArrayElements, numberOfFaces, numberOfMipmapLevels, data, dataSize, false );
+										numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
+										usageFlags, data, dataSize, false );
 }
 
 static bool GpuTexture_Create2DArray( GpuContext_t * context, GpuTexture_t * texture,
 								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
 								const int width, const int height, const int numberOfArrayElements, const int numberOfMipmapLevels,
-								const void * data, const size_t dataSize )
+								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize )
 {
 	const int depth = 1;
 	const int numberOfFaces = 1;
 	return GpuTexture_CreateInternal( context, texture, "data", (VkFormat)format, sampleCount, width, height, depth,
-										numberOfArrayElements, numberOfFaces, numberOfMipmapLevels, data, dataSize, false );
+										numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
+										usageFlags, data, dataSize, false );
 }
 
 static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureDefault_t defaultType,
@@ -7544,7 +7572,7 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 
 					for ( int c = 0; c < TEXEL_SIZE - 1; c++ )
 					{
-						data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + c] = (unsigned char)( ( colors[index][c] * scale ) >> 5 );
+						data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + c] = (unsigned char)( ( colors[index][c] * scale ) / blockSize );
 					}
 					data[layer * layerSize + ( y * width + x ) * TEXEL_SIZE + TEXEL_SIZE - 1] = 255;
 				}
@@ -7587,7 +7615,7 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 	bool success = GpuTexture_CreateInternal( context, texture, "data", VK_FORMAT_R8G8B8A8_UNORM, GPU_SAMPLE_COUNT_1,
 												width, height, depth,
 												numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
-												data, dataSize, false );
+												GPU_TEXTURE_USAGE_SAMPLED, data, dataSize, false );
 
 	free( data );
 
@@ -7708,7 +7736,7 @@ static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * tex
 									format, GPU_SAMPLE_COUNT_1,
 									header->pixelWidth, header->pixelHeight, depth,
 									numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
-									buffer + startTex, bufferSize - startTex, true );
+									GPU_TEXTURE_USAGE_SAMPLED, buffer + startTex, bufferSize - startTex, true );
 }
 
 static bool GpuTexture_CreateFromFile( GpuContext_t * context, GpuTexture_t * texture, const char * fileName )
@@ -8489,7 +8517,8 @@ static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebu
 
 	if ( renderPass->sampleCount > GPU_SAMPLE_COUNT_1 )
 	{
-		GpuTexture_Create2D( &window->context, &framebuffer->renderTexture, (GpuTextureFormat_t)renderPass->internalColorFormat, renderPass->sampleCount, window->windowWidth, window->windowHeight, 1, NULL, 0 );
+		GpuTexture_Create2D( &window->context, &framebuffer->renderTexture, (GpuTextureFormat_t)renderPass->internalColorFormat, renderPass->sampleCount,
+			window->windowWidth, window->windowHeight, 1, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT, NULL, 0 );
 		GpuContext_CreateSetupCmdBuffer( &window->context );
 		GpuTexture_ChangeUsage( &window->context, window->context.setupCommandBuffer, &framebuffer->renderTexture, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
 		GpuContext_FlushSetupCmdBuffer( &window->context );
@@ -8561,13 +8590,15 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 
 	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
 	{
-		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)renderPass->internalColorFormat, GPU_SAMPLE_COUNT_1, width, height, 1, NULL, 0 );
+		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)renderPass->internalColorFormat, GPU_SAMPLE_COUNT_1,
+			width, height, 1, GPU_TEXTURE_USAGE_SAMPLED | GPU_TEXTURE_USAGE_COLOR_ATTACHMENT | GPU_TEXTURE_USAGE_STORAGE, NULL, 0 );
 		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 	}
 
 	if ( renderPass->sampleCount > GPU_SAMPLE_COUNT_1 )
 	{
-		GpuTexture_Create2D( context, &framebuffer->renderTexture, (GpuTextureFormat_t)renderPass->internalColorFormat, renderPass->sampleCount, width, height, 1, NULL, 0 );
+		GpuTexture_Create2D( context, &framebuffer->renderTexture, (GpuTextureFormat_t)renderPass->internalColorFormat, renderPass->sampleCount,
+			width, height, 1, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT, NULL, 0 );
 		GpuContext_CreateSetupCmdBuffer( context );
 		GpuTexture_ChangeUsage( context, context->setupCommandBuffer, &framebuffer->renderTexture, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
 		GpuContext_FlushSetupCmdBuffer( context );
@@ -8640,7 +8671,8 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 
 	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
 	{
-		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)renderPass->internalColorFormat, GPU_SAMPLE_COUNT_1, width, height, numLayers, 1, NULL, 0 );
+		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)renderPass->internalColorFormat, GPU_SAMPLE_COUNT_1,
+			width, height, numLayers, 1, GPU_TEXTURE_USAGE_SAMPLED | GPU_TEXTURE_USAGE_COLOR_ATTACHMENT | GPU_TEXTURE_USAGE_STORAGE, NULL, 0 );
 		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 	}
 
@@ -8653,7 +8685,8 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 	{
 		framebuffer->renderViews = (VkImageView *) malloc( numBuffers * numLayers * sizeof( VkImageView ) );
 
-		GpuTexture_Create2DArray( context, &framebuffer->renderTexture, (GpuTextureFormat_t)renderPass->internalColorFormat, renderPass->sampleCount, width, height, numLayers, 1, NULL, 0 );
+		GpuTexture_Create2DArray( context, &framebuffer->renderTexture, (GpuTextureFormat_t)renderPass->internalColorFormat, renderPass->sampleCount,
+			width, height, numLayers, 1, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT, NULL, 0 );
 		GpuContext_CreateSetupCmdBuffer( context );
 		GpuTexture_ChangeUsage( context, context->setupCommandBuffer, &framebuffer->renderTexture, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
 		GpuContext_FlushSetupCmdBuffer( context );
@@ -13480,10 +13513,10 @@ static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * 
 			const size_t rgbaSize = numMeshCoords * 4 * sizeof( float );
 			GpuTexture_Create2D( context, &compute->distortionImage[eye][channel],
 								GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT, GPU_SAMPLE_COUNT_1,
-								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, rgbaFloat, rgbaSize );
+								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, GPU_TEXTURE_USAGE_STORAGE, rgbaFloat, rgbaSize );
 			GpuTexture_Create2D( context, &compute->timeWarpImage[eye][channel],
 								GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT, GPU_SAMPLE_COUNT_1,
-								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, NULL, 0 );
+								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, GPU_TEXTURE_USAGE_STORAGE | GPU_TEXTURE_USAGE_SAMPLED, NULL, 0 );
 		}
 	}
 	free( rgbaFloat );
@@ -13774,7 +13807,7 @@ static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	{
 		timeWarp->newEyeTextures.texture[eye] = &timeWarp->defaultTexture;
 		timeWarp->newEyeTextures.completionFence[eye] = NULL;
-		timeWarp->newEyeTextures.arrayLayer[eye] = 0;
+		timeWarp->newEyeTextures.arrayLayer[eye] = eye;
 	}
 	timeWarp->newEyeTextures.cpuTime = 0.0f;
 	timeWarp->newEyeTextures.gpuTime = 0.0f;
@@ -13783,8 +13816,8 @@ static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	timeWarp->projectionMatrix = timeWarp->newEyeTextures.projectionMatrix;
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		timeWarp->eyeTexture[eye] = &timeWarp->defaultTexture;
-		timeWarp->eyeArrayLayer[eye] = eye;
+		timeWarp->eyeTexture[eye] = timeWarp->newEyeTextures.texture[eye];
+		timeWarp->eyeArrayLayer[eye] = timeWarp->newEyeTextures.arrayLayer[eye];
 	}
 
 	timeWarp->eyeTexturesPresentIndex = 1;
@@ -13916,8 +13949,8 @@ static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp,
 {
 	EyeTextures_t newEyeTextures;
 	newEyeTextures.index = timeWarp->eyeTexturesPresentIndex++;
-	newEyeTextures.projectionMatrix = *projectionMatrix;
 	newEyeTextures.viewMatrix = *viewMatrix;
+	newEyeTextures.projectionMatrix = *projectionMatrix;
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
 		newEyeTextures.texture[eye] = eyeTexture[eye];
@@ -15352,11 +15385,11 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 
 	scene->modelMatrix = (Matrix4x4f_t *) AllocAlignedMemory( maxDimension * maxDimension * maxDimension * sizeof( Matrix4x4f_t ), sizeof( Matrix4x4f_t ) );
 
-	GpuTexture_t cubemap_dxt;
-	GpuTexture_CreateFromFile( context, &cubemap_dxt, "cubemap1536_dxt.ktx" );
-
-	GpuTexture_t cubemap_astc;
-	GpuTexture_CreateFromFile( context, &cubemap_astc, "cubemap1536_astc.ktx" );
+//	GpuTexture_t cubemap_dxt;
+//	GpuTexture_CreateFromFile( context, &cubemap_dxt, "cubemap1536_dxt.ktx" );
+//
+//	GpuTexture_t cubemap_astc;
+//	GpuTexture_CreateFromFile( context, &cubemap_astc, "cubemap1536_astc.ktx" );
 }
 
 static void Scene_Destroy( GpuContext_t * context, Scene_t * scene )
