@@ -1,6 +1,6 @@
 #!/bin/bash
 
-mkdir ../Vulkan-LoaderAndValidationLayers/build/layers
+mkdir -p ../Vulkan-LoaderAndValidationLayers/build/layers
 python ../Vulkan-LoaderAndValidationLayers/vk-generate.py AllPlatforms dispatch-table-ops layer > "../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h"
 
 ${ANDROID_NDK_HOME}/ndk-build -C samples/apps/atw/projects/android/ndk/atw_cpu_dsp/ NDK_LIBS_OUT=../../../../../../../build/android/ndk/apps/atw_cpu_dsp/libs NDK_OUT=../../../../../../../build/android/ndk/apps/atw_cpu_dsp/obj
