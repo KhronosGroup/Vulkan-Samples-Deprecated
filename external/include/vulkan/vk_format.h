@@ -68,7 +68,7 @@ This file does not include OpenGL / OpenGL ES headers because:
   3. The OpenGL format/type constants are the same between OpenGL and OpenGL ES.
   4. File formats like KTX and glTF may use OpenGL formats and types that
      are not supported by the OpenGL implementation on the platform but are
-	 supported by the Vulkan implementation.
+     supported by the Vulkan implementation.
 
 
 ENTRY POINTS
@@ -715,7 +715,6 @@ static inline VkFormat vkGetFormatFromOpenGLInternalFormat( const GLenum interna
 		//
 		// PVRTC
 		//
-
 		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 3-component PVRTC, unsigned normalized
 		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 3-component PVRTC, unsigned normalized
 		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, unsigned normalized

@@ -70,8 +70,8 @@ This file does not include OpenGL / OpenGL ES headers because:
   3. The OpenGL format/type constants are the same between OpenGL and OpenGL ES.
   4. The OpenGL constants in this header are also used to derive Vulkan formats
      from the OpenGL formats/types stored in files like KTX and glTF. These file
-	 formats may use OpenGL formats/types that are not supported by the OpenGL
-	 implementation on the platform but are supported by the Vulkan implementation.
+     formats may use OpenGL formats/types that are not supported by the OpenGL
+     implementation on the platform but are supported by the Vulkan implementation.
 
 
 ENTRY POINTS
@@ -1205,7 +1205,6 @@ static inline GLenum glGetFormatFromInternalFormat( const GLenum internalFormat 
 		//
 		// PVRTC
 		//
-
 		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				return GL_RGB;		// 3-component PVRTC, unsigned normalized
 		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				return GL_RGB;		// 3-component PVRTC, unsigned normalized
 		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				return GL_RGBA;		// 4-component PVRTC, unsigned normalized
@@ -1462,7 +1461,6 @@ static inline GLenum glGetTypeFromInternalFormat( const GLenum internalFormat )
 		//
 		// PVRTC
 		//
-
 		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 3-component PVRTC, unsigned normalized
 		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 3-component PVRTC, unsigned normalized
 		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 4-component PVRTC, unsigned normalized
@@ -1976,7 +1974,6 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		//
 		// PVRTC
 		//
-
 		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				// 3-component PVRTC, unsigned normalized
 		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				// 4-component PVRTC, unsigned normalized
 		case GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG:				// 4-component PVRTC, unsigned normalized
