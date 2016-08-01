@@ -16,7 +16,9 @@ matrix:
   include:
     # Android build.
     - language: android
-      sudo: false
+      os: linux
+      sudo: required
+      dist: precise
       env: VULKAN_SAMPLES_ANDROID=ON ANDROID_TARGET=android-21 ANDROID_ABI=armeabi-v7a
     # Linux GCC debug build.
     - os: linux
@@ -24,7 +26,7 @@ matrix:
       sudo: required
       dist: trusty
       env: VULKAN_SAMPLES_BUILD_TYPE=Debug
-    # Linux GCC build.
+    # Linux GCC release build.
     - os: linux
       compiler: gcc
       sudo: required
@@ -36,7 +38,7 @@ matrix:
       sudo: required
       dist: trusty
       env: VULKAN_SAMPLES_BUILD_TYPE=Debug
-    # Linux Clang build.
+    # Linux Clang release build.
     - os: linux
       compiler: clang
       sudo: required
@@ -53,7 +55,7 @@ matrix:
       compiler: clang
       sudo: required
       env: VULKAN_SAMPLES_BUILD_TYPE=Debug
-    # Mac OS X Clang build.
+    # Mac OS X Clang release build.
     - os: osx
       compiler: clang
       sudo: required
@@ -89,7 +91,7 @@ before_install:
   # Install the appropriate Linux packages.
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update && sudo apt-get -y install python3 libx11-dev libxxf86vm-dev libxrandr-dev libxcb1-dev libxcb-keysyms1-dev libxcb-icccm4-dev; fi
   # Install the Android NDK.
-  - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then export NDK_CCACHE=ccache; fi
+  #- if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then export NDK_CCACHE=ccache; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then export ARCH=`uname -m`; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then wget http://dl.google.com/android/repository/android-ndk-r12b-linux-${ARCH}.zip; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then unzip -u -q android-ndk-r12b-linux-${ARCH}.zip; fi
@@ -108,9 +110,6 @@ before_script:
 
 script:
   - echo "$TRAVIS_OS_NAME"
-  - mkdir "../Vulkan-LoaderAndValidationLayers/build"
-  - mkdir "../Vulkan-LoaderAndValidationLayers/build/layers"
-  - python ../Vulkan-LoaderAndValidationLayers/vk-generate.py Xcb dispatch-table-ops layer > "../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h"
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then mkdir build && cd build; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${VULKAN_SAMPLES_BUILD_TYPE:-Debug} -DENABLE_CODE_COVERAGE=${VULKAN_SAMPLES_CODE_COVERAGE:-OFF} ..; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then ninja; fi
