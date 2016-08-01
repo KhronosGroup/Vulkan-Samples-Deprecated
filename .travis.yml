@@ -80,10 +80,10 @@ addons:
 
 android:
   components:
-    #- tools
-    #- platform-tools
-    #- build-tools-23.0.2
-    #- android-23
+    - tools
+    - platform-tools
+    - build-tools-23.0.2
+    - android-23
 
 before_install:
   # Install ninja on Mac OS X.
