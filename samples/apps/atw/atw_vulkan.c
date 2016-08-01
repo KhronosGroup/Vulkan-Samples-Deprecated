@@ -6553,7 +6553,7 @@ typedef enum
 
 	GPU_TEXTURE_FORMAT_R8_SNORM				= VK_FORMAT_R8_SNORM,					// 1-component, 8-bit signed normalized
 	GPU_TEXTURE_FORMAT_R8G8_SNORM			= VK_FORMAT_R8G8_SNORM,					// 2-component, 8-bit signed normalized
-	GPU_TEXTURE_FORMAT_R8G8B8_SNORM			= VK_FORMAT_R8G8B8A8_SNORM,				// 4-component, 8-bit signed normalized
+	GPU_TEXTURE_FORMAT_R8G8B8A8_SNORM		= VK_FORMAT_R8G8B8A8_SNORM,				// 4-component, 8-bit signed normalized
 
 	GPU_TEXTURE_FORMAT_R8_UINT				= VK_FORMAT_R8_UINT,					// 1-component, 8-bit unsigned integer
 	GPU_TEXTURE_FORMAT_R8G8_UINT			= VK_FORMAT_R8G8_UINT,					// 2-component, 8-bit unsigned integer
@@ -6561,7 +6561,7 @@ typedef enum
 
 	GPU_TEXTURE_FORMAT_R8_SINT				= VK_FORMAT_R8_SINT,					// 1-component, 8-bit signed integer
 	GPU_TEXTURE_FORMAT_R8G8_SINT			= VK_FORMAT_R8G8_SINT,					// 2-component, 8-bit signed integer
-	GPU_TEXTURE_FORMAT_R8G8B8_SINT			= VK_FORMAT_R8G8B8A8_SINT,				// 4-component, 8-bit signed integer
+	GPU_TEXTURE_FORMAT_R8G8B8A8_SINT		= VK_FORMAT_R8G8B8A8_SINT,				// 4-component, 8-bit signed integer
 
 	GPU_TEXTURE_FORMAT_R8_SRGB				= VK_FORMAT_R8_SRGB,					// 1-component, 8-bit sRGB
 	GPU_TEXTURE_FORMAT_R8G8_SRGB			= VK_FORMAT_R8G8_SRGB,					// 2-component, 8-bit sRGB
@@ -6705,8 +6705,8 @@ typedef enum
 
 typedef enum
 {
-	GPU_TEXTURE_DEFAULT_CHECKERBOARD,	// 16x16 checkerboard pattern (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
-	GPU_TEXTURE_DEFAULT_PYRAMIDS,		// 16x16 block pattern of pyramids (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
+	GPU_TEXTURE_DEFAULT_CHECKERBOARD,	// 32x32 checkerboard pattern (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
+	GPU_TEXTURE_DEFAULT_PYRAMIDS,		// 32x32 block pattern of pyramids (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
 	GPU_TEXTURE_DEFAULT_CIRCLES			// 32x32 block pattern with circles (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
 } GpuTextureDefault_t;
 
@@ -7487,7 +7487,7 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 
 	if ( defaultType == GPU_TEXTURE_DEFAULT_CHECKERBOARD )
 	{
-		const int blockSize = 16;	// must be a power of two
+		const int blockSize = 32;	// must be a power of two
 		for ( int layer = 0; layer < depth * numberOfArrayElements * numberOfFaces; layer++ )
 		{
 			for ( int y = 0; y < height; y++ )
@@ -7513,7 +7513,7 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 	}
 	else if ( defaultType == GPU_TEXTURE_DEFAULT_PYRAMIDS )
 	{
-		const int blockSize = 16;	// must be a power of two
+		const int blockSize = 32;	// must be a power of two
 		for ( int layer = 0; layer < depth * numberOfArrayElements * numberOfFaces; layer++ )
 		{
 			for ( int y = 0; y < height; y++ )
