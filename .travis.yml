@@ -18,7 +18,7 @@ matrix:
     - language: android
       os: linux
       sudo: required
-      dist: trusty
+      dist: precise
       env: VULKAN_SAMPLES_ANDROID=ON ANDROID_TARGET=android-21 ANDROID_ABI=armeabi-v7a
     # Linux GCC debug build.
     - os: linux
