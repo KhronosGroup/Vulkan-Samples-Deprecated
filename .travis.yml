@@ -2,7 +2,7 @@
 # https://travis-ci.org
 
 language:
-  - 
+  - cpp
 
 # Must list an OS otherwise the Android build does not work.
 os:
@@ -23,30 +23,30 @@ matrix:
     - os: linux
       compiler: gcc
       sudo: required
-      dist: precise
+      dist: trusty
       env: VULKAN_SAMPLES_BUILD_TYPE=Debug
     # Linux GCC build.
     - os: linux
       compiler: gcc
       sudo: required
-      dist: precise
+      dist: trusty
       env: VULKAN_SAMPLES_BUILD_TYPE=Release
     # Linux Clang debug build.
     - os: linux
       compiler: clang
       sudo: required
-      dist: precise
+      dist: trusty
       env: VULKAN_SAMPLES_BUILD_TYPE=Debug
     # Linux Clang build.
     - os: linux
       compiler: clang
       sudo: required
-      dist: precise
+      dist: trusty
       env: VULKAN_SAMPLES_BUILD_TYPE=Release
     # Linux GCC build for code coverage.
     - os: linux
       sudo: required
-      dist: precise
+      dist: trusty
       compiler: gcc
       env: VULKAN_SAMPLES_CODE_COVERAGE=ON
     # Mac OS X Clang debug build.
