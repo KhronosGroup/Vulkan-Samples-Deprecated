@@ -1470,7 +1470,7 @@ formats[] =
 	FORMAT_ENUM_STRING( GL_R16_EXT,											false, "1-component, 16-bit unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_RG16_EXT,										false, "2-component, 16-bit unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_RGB16_EXT,										false, "3-component, 16-bit unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_RGB16_EXT,										false, "4-component, 16-bit unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_RGBA16_EXT,										false, "4-component, 16-bit unsigned normalized" ),
 #endif
 
 #if defined( GL_R16_SNORM )
@@ -1482,7 +1482,7 @@ formats[] =
 	FORMAT_ENUM_STRING( GL_R16_SNORM_EXT,									false, "1-component, 16-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RG16_SNORM_EXT,									false, "2-component, 16-bit signed normalized" ),
 	FORMAT_ENUM_STRING( GL_RGB16_SNORM_EXT,									false, "3-component, 16-bit signed normalized" ),
-	FORMAT_ENUM_STRING( GL_RGB16_SNORM_EXT,									false, "4-component, 16-bit signed normalized" ),
+	FORMAT_ENUM_STRING( GL_RGBA16_SNORM_EXT,								false, "4-component, 16-bit signed normalized" ),
 #endif
 
 	FORMAT_ENUM_STRING( GL_R16UI,											false, "1-component, 16-bit unsigned integer" ),
@@ -1519,7 +1519,7 @@ formats[] =
 	FORMAT_ENUM_STRING( GL_RGBA32F,											false, "4-component, 32-bit floating-point" ),
 
 	//
-	// Odd bits per component
+	// Packed
 	//
 #if defined( GL_R3_G3_B2 )
 	FORMAT_ENUM_STRING( GL_R3_G3_B2,										false, "3-component 3:3:2,       unsigned normalized" ),
@@ -1565,21 +1565,8 @@ formats[] =
 #endif
 
 	//
-	// Compressed formats
+	// Generic compression
 	//
-#if defined( GL_PALETTE4_RGB8_OES )
-	FORMAT_ENUM_STRING( GL_PALETTE4_RGB8_OES,								true, "3-component 8:8:8,   4-bit palette, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_PALETTE4_RGBA8_OES,								true, "4-component 8:8:8:8, 4-bit palette, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_PALETTE4_R5_G6_B5_OES,							true, "3-component 5:6:5,   4-bit palette, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_PALETTE4_RGBA4_OES,								true, "4-component 4:4:4:4, 4-bit palette, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_PALETTE4_RGB5_A1_OES,							true, "4-component 5:5:5:1, 4-bit palette, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_PALETTE8_RGB8_OES,								true, "3-component 8:8:8,   8-bit palette, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_PALETTE8_RGBA8_OES,								true, "4-component 8:8:8:8, 8-bit palette, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_PALETTE8_R5_G6_B5_OES,							true, "3-component 5:6:5,   8-bit palette, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_PALETTE8_RGBA4_OES,								true, "4-component 4:4:4:4, 8-bit palette, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_PALETTE8_RGB5_A1_OES,							true, "4-component 5:5:5:1, 8-bit palette, unsigned normalized" ),
-#endif
-
 #if defined( GL_COMPRESSED_RED )
 	FORMAT_ENUM_STRING( GL_COMPRESSED_RED,									true, "1-component, generic, unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_RG,									true, "2-component, generic, unsigned normalized" ),
@@ -1589,6 +1576,9 @@ formats[] =
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB_ALPHA,							true, "4-component, generic, sRGB" ),
 #endif
 
+	//
+	// S3TC/DXT/BC
+	//
 #if defined( GL_COMPRESSED_RGB_S3TC_DXT1_EXT )
 	FORMAT_ENUM_STRING( GL_COMPRESSED_RGB_S3TC_DXT1_EXT,					true, "line through 3D space, unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,					true, "line through 3D space plus 1-bit alpha, unsigned normalized" ),
@@ -1624,12 +1614,9 @@ formats[] =
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM,				true, "4-component, sRGB" ),
 #endif
 
-#if defined( GL_ATC_RGB_AMD )
-	FORMAT_ENUM_STRING( GL_ATC_RGB_AMD,										true, "3-component, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_ATC_RGBA_EXPLICIT_ALPHA_AMD,						true, "4-component, unsigned normalized" ),
-	FORMAT_ENUM_STRING( GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD,					true, "4-component, unsigned normalized" ),
-#endif
-
+	//
+	// ETC
+	//
 #if defined( GL_ETC1_RGB8_OES )
 	FORMAT_ENUM_STRING( GL_ETC1_RGB8_OES,									true, "3-component ETC1, unsigned normalized" ),
 #endif
@@ -1651,6 +1638,33 @@ formats[] =
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SIGNED_RG11_EAC,						true, "2-component ETC, signed normalized" ),
 #endif
 
+	//
+	// PVRTC
+	//
+#if defined( GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG )
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG,					true, "3-component PVRTC, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG,					true, "3-component PVRTC, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG,				true, "4-component PVRTC, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG,				true, "4-component PVRTC, unsigned normalized" ),
+#endif
+#if defined( GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG )
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG,				true, "4-component PVRTC, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG,				true, "4-component PVRTC, unsigned normalized" ),
+#endif
+#if defined( GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT )
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT,				true, "3-component PVRTC, sRGB" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT,				true, "3-component PVRTC, sRGB" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT,			true, "4-component PVRTC, sRGB" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT,			true, "4-component PVRTC, sRGB" ),
+#endif
+#if defined( GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG )
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG,			true, "4-component PVRTC, sRGB" ),
+	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG,			true, "4-component PVRTC, sRGB" ),
+#endif
+
+	//
+	// ASTC
+	//
 #if defined( GL_COMPRESSED_RGBA_ASTC_4x4_KHR )
 	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_4x4_KHR,					true, "4-component ASTC, 4x4 blocks, unsigned normalized" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_RGBA_ASTC_5x4_KHR,					true, "4-component ASTC, 5x4 blocks, unsigned normalized" ),
@@ -1705,6 +1719,31 @@ formats[] =
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5x5_OES,			true, "4-component ASTC, 6x5x5 blocks, sRGB" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x5_OES,			true, "4-component ASTC, 6x6x5 blocks, sRGB" ),
 	FORMAT_ENUM_STRING( GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x6_OES,			true, "4-component ASTC, 6x6x6 blocks, sRGB" ),
+#endif
+
+	//
+	// ATC
+	//
+#if defined( GL_ATC_RGB_AMD )
+	FORMAT_ENUM_STRING( GL_ATC_RGB_AMD,										true, "3-component, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_ATC_RGBA_EXPLICIT_ALPHA_AMD,						true, "4-component, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD,					true, "4-component, unsigned normalized" ),
+#endif
+
+	//
+	// Palletized
+	//
+#if defined( GL_PALETTE4_RGB8_OES )
+	FORMAT_ENUM_STRING( GL_PALETTE4_RGB8_OES,								true, "3-component 8:8:8,   4-bit palette, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_PALETTE4_RGBA8_OES,								true, "4-component 8:8:8:8, 4-bit palette, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_PALETTE4_R5_G6_B5_OES,							true, "3-component 5:6:5,   4-bit palette, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_PALETTE4_RGBA4_OES,								true, "4-component 4:4:4:4, 4-bit palette, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_PALETTE4_RGB5_A1_OES,							true, "4-component 5:5:5:1, 4-bit palette, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_PALETTE8_RGB8_OES,								true, "3-component 8:8:8,   8-bit palette, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_PALETTE8_RGBA8_OES,								true, "4-component 8:8:8:8, 8-bit palette, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_PALETTE8_R5_G6_B5_OES,							true, "3-component 5:6:5,   8-bit palette, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_PALETTE8_RGBA4_OES,								true, "4-component 4:4:4:4, 8-bit palette, unsigned normalized" ),
+	FORMAT_ENUM_STRING( GL_PALETTE8_RGB5_A1_OES,							true, "4-component 5:5:5:1, 8-bit palette, unsigned normalized" ),
 #endif
 };
 

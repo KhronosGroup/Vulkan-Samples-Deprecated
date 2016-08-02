@@ -4,10 +4,6 @@
 language:
   - cpp
 
-# Must list an OS otherwise the Android build does not work.
-os:
-  - osx
-
 jdk: oraclejdk8
 
 matrix:
