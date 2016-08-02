@@ -1,9 +1,6 @@
 # Linux Build Configuration for Travis
 # https://travis-ci.org
 
-language:
-  - cpp
-
 jdk: oraclejdk8
 
 matrix:
@@ -18,48 +15,51 @@ matrix:
       env: VULKAN_SAMPLES_ANDROID=ON ANDROID_TARGET=android-21 ANDROID_ABI=armeabi-v7a
     # Linux GCC debug build.
     - os: linux
+      language: cpp
       compiler: gcc
       sudo: required
       dist: trusty
       env: VULKAN_SAMPLES_BUILD_TYPE=Debug
     # Linux GCC release build.
     - os: linux
+      language: cpp
       compiler: gcc
       sudo: required
       dist: trusty
       env: VULKAN_SAMPLES_BUILD_TYPE=Release
     # Linux Clang debug build.
     - os: linux
+      language: cpp
       compiler: clang
       sudo: required
       dist: trusty
       env: VULKAN_SAMPLES_BUILD_TYPE=Debug
     # Linux Clang release build.
     - os: linux
+      language: cpp
       compiler: clang
       sudo: required
       dist: trusty
       env: VULKAN_SAMPLES_BUILD_TYPE=Release
     # Linux GCC build for code coverage.
     - os: linux
+      language: cpp
+      compiler: gcc
       sudo: required
       dist: trusty
-      compiler: gcc
       env: VULKAN_SAMPLES_CODE_COVERAGE=ON
     # Mac OS X Clang debug build.
     - os: osx
+      language: cpp
       compiler: clang
       sudo: required
       env: VULKAN_SAMPLES_BUILD_TYPE=Debug
     # Mac OS X Clang release build.
     - os: osx
+      language: cpp
       compiler: clang
       sudo: required
       env: VULKAN_SAMPLES_BUILD_TYPE=Release
-  exclude:
-    # Exclude Mac OS X GCC build.
-    - os: osx
-      language: cpp
 
 cache:
   apt: true
