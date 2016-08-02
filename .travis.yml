@@ -51,7 +51,7 @@ matrix:
       compiler: clang
       sudo: required
       dist: trusty
-      env: VULKAN_SAMPLES_CODE_SCAN_BUILD=ON
+      env: VULKAN_SAMPLES_SCAN_BUILD=ON
     # Mac OS X Clang debug build.
     - os: osx
       compiler: clang
@@ -111,12 +111,7 @@ script:
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then ninja; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then ctest -j`nproc` --output-on-failure; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then ./build_android.sh; fi
-  - if [[ "VULKAN_SAMPLES_CODE_SCAN_BUILD" == "ON" ]]; then
-       export CCC_CC=clang
-       export CCC_CXX=clang++
-       scan-build cmake -GNinja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug ..
-       scan-build ninja;
-    fi
+  - if [[ "$VULKAN_SAMPLES_SCAN_BUILD" == "ON" ]]; then scan-build cmake -G -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug ..; fi
 
 after_success:
   # Collect coverage and push to coveralls.info.
