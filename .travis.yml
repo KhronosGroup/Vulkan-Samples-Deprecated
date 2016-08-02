@@ -46,6 +46,12 @@ matrix:
       sudo: required
       dist: trusty
       env: VULKAN_SAMPLES_CODE_COVERAGE=ON
+    # Linux Clang build for scan-build.
+    - os: linux
+      compiler: clang
+      sudo: required
+      dist: trusty
+      env: VULKAN_SAMPLES_CODE_SCAN_BUILD=ON
     # Mac OS X Clang debug build.
     - os: osx
       compiler: clang
@@ -100,13 +106,12 @@ before_script:
   - git clone https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers.git ../Vulkan-LoaderAndValidationLayers
 
 script:
-  - echo "$TRAVIS_OS_NAME"
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then mkdir build && cd build; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${VULKAN_SAMPLES_BUILD_TYPE:-Debug} -DENABLE_CODE_COVERAGE=${VULKAN_SAMPLES_CODE_COVERAGE:-OFF} ..; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then ninja; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" != "ON" ]]; then ctest -j`nproc` --output-on-failure; fi
   - if [[ "$VULKAN_SAMPLES_ANDROID" == "ON" ]]; then ./build_android.sh; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" && "$VULKAN_SAMPLES_BUILD_TYPE" == "Debug" ]]; then
+  - if [[ "VULKAN_SAMPLES_CODE_SCAN_BUILD" == "ON" ]]; then
        export CCC_CC=clang
        export CCC_CXX=clang++
        scan-build cmake -GNinja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug ..
