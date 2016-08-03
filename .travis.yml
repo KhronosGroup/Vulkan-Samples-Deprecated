@@ -111,7 +111,8 @@ script:
   - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "COVERAGE" ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${VULKAN_SAMPLES_BUILD_TYPE:-Debug} -DENABLE_CODE_COVERAGE=ON ..; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "NORMAL" || "$VULKAN_SAMPLES_BUILD_CONFIG" == "COVERAGE" ]]; then ninja; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "NORMAL" || "$VULKAN_SAMPLES_BUILD_CONFIG" == "COVERAGE" ]]; then ctest -j`nproc` --output-on-failure; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "SCAN"    ]]; then scan-build cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug ..; fi
+  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "SCAN"    ]]; then scan-build cmake -GNinja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug ..; fi
+  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "SCAN"    ]]; then scan-build ninja; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then ./build_android.sh; fi
 
 after_success:
