@@ -8122,8 +8122,8 @@ void TestTimeWarp()
 
 int main( int argc, char * argv[] )
 {
-	argc = argc;
-	argv = argv;
+	(void)argc;
+	(void)argv;
 
 	const int dspVersion = TimeWarpInterface_GetDspVersion();
 	char dspVersionString[32];

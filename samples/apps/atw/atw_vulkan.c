@@ -7634,6 +7634,7 @@ static bool GpuTexture_CreateFromSwapChain( GpuContext_t * context, GpuTexture_t
 	texture->mipCount = 1;
 	texture->sampleCount = GPU_SAMPLE_COUNT_1;
 	texture->usage = GPU_TEXTURE_USAGE_UNDEFINED;
+	texture->usageFlags = GPU_TEXTURE_USAGE_STORAGE | GPU_TEXTURE_USAGE_COLOR_ATTACHMENT | GPU_TEXTURE_USAGE_PRESENTATION;
 	texture->wrapMode = GPU_TEXTURE_WRAP_MODE_REPEAT;
 	texture->filter = GPU_TEXTURE_FILTER_LINEAR;
 	texture->maxAnisotropy = 1.0f;
@@ -15385,12 +15386,6 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 	scene->smallRotationY = 0.0f;
 
 	scene->modelMatrix = (Matrix4x4f_t *) AllocAlignedMemory( maxDimension * maxDimension * maxDimension * sizeof( Matrix4x4f_t ), sizeof( Matrix4x4f_t ) );
-
-//	GpuTexture_t cubemap_dxt;
-//	GpuTexture_CreateFromFile( context, &cubemap_dxt, "cubemap1536_dxt.ktx" );
-//
-//	GpuTexture_t cubemap_astc;
-//	GpuTexture_CreateFromFile( context, &cubemap_astc, "cubemap1536_astc.ktx" );
 }
 
 static void Scene_Destroy( GpuContext_t * context, Scene_t * scene )

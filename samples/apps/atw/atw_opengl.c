@@ -526,7 +526,6 @@ Common defines
 #define ES_HIGHP						""		// GLSL "430" disallows a precision qualifier on a image2D
 #endif
 
-
 /*
 ================================================================================================================================
 
