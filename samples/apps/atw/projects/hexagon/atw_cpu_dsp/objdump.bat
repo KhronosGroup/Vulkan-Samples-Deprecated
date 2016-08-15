@@ -1,0 +1,1 @@
+C:\Qualcomm\HEXAGON_Tools\7.2.12\Examples\Profiling\proftool\scripts\objdump.py hexagon_Release_dynamic\atw_cpu_dsp.o >hexagon_Release_dynamic\atw_cpu_dsp.asm

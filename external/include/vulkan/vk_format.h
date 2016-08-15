@@ -82,6 +82,9 @@ static inline void vkGetFormatSize( const VkFormat format, VkFormatSize * pForma
 ================================================================================================
 */
 
+#if !defined( VK_FORMAT_H )
+#define VK_FORMAT_H
+
 #include "../GL/gl_format.h"
 
 static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const GLenum type )
@@ -194,11 +197,11 @@ static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const G
 				case GL_BGR:					return VK_FORMAT_UNDEFINED;
 				case GL_RGBA:					return VK_FORMAT_R16G16B16A16_SFLOAT;
 				case GL_BGRA:					return VK_FORMAT_UNDEFINED;
-				case GL_RED_INTEGER:			return VK_FORMAT_R16_SFLOAT;
-				case GL_RG_INTEGER:				return VK_FORMAT_R16G16_SFLOAT;
-				case GL_RGB_INTEGER:			return VK_FORMAT_R16G16B16_SFLOAT;
+				case GL_RED_INTEGER:			return VK_FORMAT_UNDEFINED;
+				case GL_RG_INTEGER:				return VK_FORMAT_UNDEFINED;
+				case GL_RGB_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_BGR_INTEGER:			return VK_FORMAT_UNDEFINED;
-				case GL_RGBA_INTEGER:			return VK_FORMAT_R16G16B16A16_SFLOAT;
+				case GL_RGBA_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_BGRA_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_STENCIL_INDEX:			return VK_FORMAT_UNDEFINED;
 				case GL_DEPTH_COMPONENT:		return VK_FORMAT_UNDEFINED;
@@ -264,11 +267,11 @@ static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const G
 				case GL_BGR:					return VK_FORMAT_UNDEFINED;
 				case GL_RGBA:					return VK_FORMAT_R32G32B32A32_SFLOAT;
 				case GL_BGRA:					return VK_FORMAT_UNDEFINED;
-				case GL_RED_INTEGER:			return VK_FORMAT_R32_SFLOAT;
-				case GL_RG_INTEGER:				return VK_FORMAT_R32G32_SFLOAT;
-				case GL_RGB_INTEGER:			return VK_FORMAT_R32G32B32_SFLOAT;
+				case GL_RED_INTEGER:			return VK_FORMAT_UNDEFINED;
+				case GL_RG_INTEGER:				return VK_FORMAT_UNDEFINED;
+				case GL_RGB_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_BGR_INTEGER:			return VK_FORMAT_UNDEFINED;
-				case GL_RGBA_INTEGER:			return VK_FORMAT_R32G32B32A32_SFLOAT;
+				case GL_RGBA_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_BGRA_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_STENCIL_INDEX:			return VK_FORMAT_UNDEFINED;
 				case GL_DEPTH_COMPONENT:		return VK_FORMAT_D32_SFLOAT;
@@ -290,11 +293,11 @@ static inline VkFormat vkGetFormatFromOpenGLFormat( const GLenum format, const G
 				case GL_BGR:					return VK_FORMAT_UNDEFINED;
 				case GL_RGBA:					return VK_FORMAT_R64G64B64A64_UINT;
 				case GL_BGRA:					return VK_FORMAT_UNDEFINED;
-				case GL_RED_INTEGER:			return VK_FORMAT_R64_UINT;
-				case GL_RG_INTEGER:				return VK_FORMAT_R64G64_UINT;
-				case GL_RGB_INTEGER:			return VK_FORMAT_R64G64B64_UINT;
+				case GL_RED_INTEGER:			return VK_FORMAT_UNDEFINED;
+				case GL_RG_INTEGER:				return VK_FORMAT_UNDEFINED;
+				case GL_RGB_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_BGR_INTEGER:			return VK_FORMAT_UNDEFINED;
-				case GL_RGBA_INTEGER:			return VK_FORMAT_R64G64B64A64_UINT;
+				case GL_RGBA_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_BGRA_INTEGER:			return VK_FORMAT_UNDEFINED;
 				case GL_STENCIL_INDEX:			return VK_FORMAT_UNDEFINED;
 				case GL_DEPTH_COMPONENT:		return VK_FORMAT_UNDEFINED;
@@ -669,65 +672,65 @@ static inline VkFormat vkGetFormatFromOpenGLInternalFormat( const GLenum interna
 		// S3TC/DXT/BC
 		//
 
-		case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:					return VK_FORMAT_BC1_RGB_UNORM_BLOCK;		// line through 3D space, unsigned normalized
-		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:					return VK_FORMAT_BC1_RGBA_UNORM_BLOCK;		// line through 3D space plus 1-bit alpha, unsigned normalized
-		case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:					return VK_FORMAT_BC2_UNORM_BLOCK;			// line through 3D space plus line through 1D space, unsigned normalized
-		case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:					return VK_FORMAT_BC3_UNORM_BLOCK;			// line through 3D space plus 4-bit alpha, unsigned normalized
+		case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:					return VK_FORMAT_BC1_RGB_UNORM_BLOCK;		// line through 3D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:					return VK_FORMAT_BC1_RGBA_UNORM_BLOCK;		// line through 3D space plus 1-bit alpha, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:					return VK_FORMAT_BC2_UNORM_BLOCK;			// line through 3D space plus line through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:					return VK_FORMAT_BC3_UNORM_BLOCK;			// line through 3D space plus 4-bit alpha, 4x4 blocks, unsigned normalized
 
-		case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:					return VK_FORMAT_BC1_RGB_SRGB_BLOCK;		// line through 3D space, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:			return VK_FORMAT_BC1_RGBA_SRGB_BLOCK;		// line through 3D space plus 1-bit alpha, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:			return VK_FORMAT_BC2_SRGB_BLOCK;			// line through 3D space plus line through 1D space, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:			return VK_FORMAT_BC3_SRGB_BLOCK;			// line through 3D space plus 4-bit alpha, sRGB
+		case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:					return VK_FORMAT_BC1_RGB_SRGB_BLOCK;		// line through 3D space, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:			return VK_FORMAT_BC1_RGBA_SRGB_BLOCK;		// line through 3D space plus 1-bit alpha, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:			return VK_FORMAT_BC2_SRGB_BLOCK;			// line through 3D space plus line through 1D space, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:			return VK_FORMAT_BC3_SRGB_BLOCK;			// line through 3D space plus 4-bit alpha, 4x4 blocks, sRGB
 
-		case GL_COMPRESSED_LUMINANCE_LATC1_EXT:					return VK_FORMAT_BC4_UNORM_BLOCK;			// line through 1D space, unsigned normalized
-		case GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT:			return VK_FORMAT_BC5_UNORM_BLOCK;			// two lines through 1D space, unsigned normalized
-		case GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT:			return VK_FORMAT_BC4_SNORM_BLOCK;			// line through 1D space, signed normalized
-		case GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT:	return VK_FORMAT_BC5_SNORM_BLOCK;			// two lines through 1D space, signed normalized
+		case GL_COMPRESSED_LUMINANCE_LATC1_EXT:					return VK_FORMAT_BC4_UNORM_BLOCK;			// line through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT:			return VK_FORMAT_BC5_UNORM_BLOCK;			// two lines through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT:			return VK_FORMAT_BC4_SNORM_BLOCK;			// line through 1D space, 4x4 blocks, signed normalized
+		case GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT:	return VK_FORMAT_BC5_SNORM_BLOCK;			// two lines through 1D space, 4x4 blocks, signed normalized
 
-		case GL_COMPRESSED_RED_RGTC1:							return VK_FORMAT_BC4_UNORM_BLOCK;			// line through 1D space, unsigned normalized
-		case GL_COMPRESSED_RG_RGTC2:							return VK_FORMAT_BC5_UNORM_BLOCK;			// two lines through 1D space, unsigned normalized
-		case GL_COMPRESSED_SIGNED_RED_RGTC1:					return VK_FORMAT_BC4_SNORM_BLOCK;			// line through 1D space, signed normalized
-		case GL_COMPRESSED_SIGNED_RG_RGTC2:						return VK_FORMAT_BC5_SNORM_BLOCK;			// two lines through 1D space, signed normalized
+		case GL_COMPRESSED_RED_RGTC1:							return VK_FORMAT_BC4_UNORM_BLOCK;			// line through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RG_RGTC2:							return VK_FORMAT_BC5_UNORM_BLOCK;			// two lines through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_RED_RGTC1:					return VK_FORMAT_BC4_SNORM_BLOCK;			// line through 1D space, 4x4 blocks, signed normalized
+		case GL_COMPRESSED_SIGNED_RG_RGTC2:						return VK_FORMAT_BC5_SNORM_BLOCK;			// two lines through 1D space, 4x4 blocks, signed normalized
 
-		case GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT:				return VK_FORMAT_BC6H_UFLOAT_BLOCK;			// 3-component, unsigned floating-point
-		case GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT:				return VK_FORMAT_BC6H_SFLOAT_BLOCK;			// 3-component, signed floating-point
-		case GL_COMPRESSED_RGBA_BPTC_UNORM:						return VK_FORMAT_BC7_UNORM_BLOCK;			// 4-component, unsigned normalized
-		case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:				return VK_FORMAT_BC7_SRGB_BLOCK;			// 4-component, sRGB
+		case GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT:				return VK_FORMAT_BC6H_UFLOAT_BLOCK;			// 3-component, 4x4 blocks, unsigned floating-point
+		case GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT:				return VK_FORMAT_BC6H_SFLOAT_BLOCK;			// 3-component, 4x4 blocks, signed floating-point
+		case GL_COMPRESSED_RGBA_BPTC_UNORM:						return VK_FORMAT_BC7_UNORM_BLOCK;			// 4-component, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:				return VK_FORMAT_BC7_SRGB_BLOCK;			// 4-component, 4x4 blocks, sRGB
 
 		//
 		// ETC
 		//
-		case GL_ETC1_RGB8_OES:									return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;	// 3-component ETC1, unsigned normalized" ),
+		case GL_ETC1_RGB8_OES:									return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;	// 3-component ETC1, 4x4 blocks, unsigned normalized" ),
 
-		case GL_COMPRESSED_RGB8_ETC2:							return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;	// 3-component ETC2, unsigned normalized
-		case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK;	// 4-component ETC2 with 1-bit alpha, unsigned normalized
-		case GL_COMPRESSED_RGBA8_ETC2_EAC:						return VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK;	// 4-component ETC2, unsigned normalized
+		case GL_COMPRESSED_RGB8_ETC2:							return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;	// 3-component ETC2, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK;	// 4-component ETC2 with 1-bit alpha, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA8_ETC2_EAC:						return VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK;	// 4-component ETC2, 4x4 blocks, unsigned normalized
 
-		case GL_COMPRESSED_SRGB8_ETC2:							return VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK;	// 3-component ETC2, sRGB
-		case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK;	// 4-component ETC2 with 1-bit alpha, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:				return VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK;	// 4-component ETC2, sRGB
+		case GL_COMPRESSED_SRGB8_ETC2:							return VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK;	// 3-component ETC2, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK;	// 4-component ETC2 with 1-bit alpha, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:				return VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK;	// 4-component ETC2, 4x4 blocks, sRGB
 
-		case GL_COMPRESSED_R11_EAC:								return VK_FORMAT_EAC_R11_UNORM_BLOCK;		// 1-component ETC, unsigned normalized
-		case GL_COMPRESSED_RG11_EAC:							return VK_FORMAT_EAC_R11G11_UNORM_BLOCK;	// 2-component ETC, unsigned normalized
-		case GL_COMPRESSED_SIGNED_R11_EAC:						return VK_FORMAT_EAC_R11_SNORM_BLOCK;		// 1-component ETC, signed normalized
-		case GL_COMPRESSED_SIGNED_RG11_EAC:						return VK_FORMAT_EAC_R11G11_SNORM_BLOCK;	// 2-component ETC, signed normalized
+		case GL_COMPRESSED_R11_EAC:								return VK_FORMAT_EAC_R11_UNORM_BLOCK;		// 1-component ETC, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RG11_EAC:							return VK_FORMAT_EAC_R11G11_UNORM_BLOCK;	// 2-component ETC, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_R11_EAC:						return VK_FORMAT_EAC_R11_SNORM_BLOCK;		// 1-component ETC, 4x4 blocks, signed normalized
+		case GL_COMPRESSED_SIGNED_RG11_EAC:						return VK_FORMAT_EAC_R11G11_SNORM_BLOCK;	// 2-component ETC, 4x4 blocks, signed normalized
 
 		//
 		// PVRTC
 		//
-		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 3-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 3-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG:				return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG:				return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 3-component PVRTC, 16x8 blocks, unsigned normalized
+		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 3-component PVRTC,  8x8 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, 16x8 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				return VK_FORMAT_UNDEFINED;					// 4-component PVRTC,  8x8 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG:				return VK_FORMAT_UNDEFINED;					// 4-component PVRTC,  8x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG:				return VK_FORMAT_UNDEFINED;					// 4-component PVRTC,  4x4 blocks, unsigned normalized
 
-		case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:				return VK_FORMAT_UNDEFINED;					// 3-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:				return VK_FORMAT_UNDEFINED;					// 3-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:			return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:			return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG:			return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG:			return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:				return VK_FORMAT_UNDEFINED;					// 3-component PVRTC, 16x8 blocks, sRGB
+		case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:				return VK_FORMAT_UNDEFINED;					// 3-component PVRTC,  8x8 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:			return VK_FORMAT_UNDEFINED;					// 4-component PVRTC, 16x8 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:			return VK_FORMAT_UNDEFINED;					// 4-component PVRTC,  8x8 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG:			return VK_FORMAT_UNDEFINED;					// 4-component PVRTC,  8x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG:			return VK_FORMAT_UNDEFINED;					// 4-component PVRTC,  4x4 blocks, sRGB
 
 		//
 		// ASTC
@@ -787,9 +790,9 @@ static inline VkFormat vkGetFormatFromOpenGLInternalFormat( const GLenum interna
 		//
 		// ATC
 		//
-		case GL_ATC_RGB_AMD:									return VK_FORMAT_UNDEFINED;					// 3-component, unsigned normalized
-		case GL_ATC_RGBA_EXPLICIT_ALPHA_AMD:					return VK_FORMAT_UNDEFINED;					// 4-component, unsigned normalized
-		case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:				return VK_FORMAT_UNDEFINED;					// 4-component, unsigned normalized
+		case GL_ATC_RGB_AMD:									return VK_FORMAT_UNDEFINED;					// 3-component, 4x4 blocks, unsigned normalized
+		case GL_ATC_RGBA_EXPLICIT_ALPHA_AMD:					return VK_FORMAT_UNDEFINED;					// 4-component, 4x4 blocks, unsigned normalized
+		case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:				return VK_FORMAT_UNDEFINED;					// 4-component, 4x4 blocks, unsigned normalized
 
 		//
 		// Palletized
@@ -1364,3 +1367,5 @@ static inline void vkGetFormatSize( const VkFormat format, VkFormatSize * pForma
 			break;
 	}
 }
+
+#endif // !VK_FORMAT_H

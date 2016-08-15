@@ -526,7 +526,6 @@ Common defines
 #define ES_HIGHP						""		// GLSL "430" disallows a precision qualifier on a image2D
 #endif
 
-
 /*
 ================================================================================================================================
 
@@ -6268,7 +6267,7 @@ typedef enum
 
 	GPU_TEXTURE_FORMAT_R8_SNORM				= GL_R8_SNORM,										// 1-component, 8-bit signed normalized
 	GPU_TEXTURE_FORMAT_R8G8_SNORM			= GL_RG8_SNORM,										// 2-component, 8-bit signed normalized
-	GPU_TEXTURE_FORMAT_R8G8B8_SNORM			= GL_RGBA8_SNORM,									// 4-component, 8-bit signed normalized
+	GPU_TEXTURE_FORMAT_R8G8B8A8_SNORM		= GL_RGBA8_SNORM,									// 4-component, 8-bit signed normalized
 
 	GPU_TEXTURE_FORMAT_R8_UINT				= GL_R8UI,											// 1-component, 8-bit unsigned integer
 	GPU_TEXTURE_FORMAT_R8G8_UINT			= GL_RG8UI,											// 2-component, 8-bit unsigned integer
@@ -6276,7 +6275,7 @@ typedef enum
 
 	GPU_TEXTURE_FORMAT_R8_SINT				= GL_R8I,											// 1-component, 8-bit signed integer
 	GPU_TEXTURE_FORMAT_R8G8_SINT			= GL_RG8I,											// 2-component, 8-bit signed integer
-	GPU_TEXTURE_FORMAT_R8G8B8_SINT			= GL_RGBA8I,										// 4-component, 8-bit signed integer
+	GPU_TEXTURE_FORMAT_R8G8B8A8_SINT		= GL_RGBA8I,										// 4-component, 8-bit signed integer
 
 	GPU_TEXTURE_FORMAT_R8_SRGB				= GL_SR8_EXT,										// 1-component, 8-bit sRGB
 	GPU_TEXTURE_FORMAT_R8G8_SRGB			= GL_SRG8_EXT,										// 2-component, 8-bit sRGB
@@ -6292,7 +6291,7 @@ typedef enum
 #elif defined( GL_R16_EXT )
 	GPU_TEXTURE_FORMAT_R16_UNORM			= GL_R16_EXT,										// 1-component, 16-bit unsigned normalized
 	GPU_TEXTURE_FORMAT_R16G16_UNORM			= GL_RG16_EXT,										// 2-component, 16-bit unsigned normalized
-	GPU_TEXTURE_FORMAT_R16G16B16A16_UNORM	= GL_RGB16_EXT,										// 4-component, 16-bit unsigned normalized
+	GPU_TEXTURE_FORMAT_R16G16B16A16_UNORM	= GL_RGBA16_EXT,									// 4-component, 16-bit unsigned normalized
 #endif
 
 #if defined( GL_R16_SNORM )
@@ -6302,7 +6301,7 @@ typedef enum
 #elif defined( GL_R16_SNORM_EXT )
 	GPU_TEXTURE_FORMAT_R16_SNORM			= GL_R16_SNORM_EXT,									// 1-component, 16-bit signed normalized
 	GPU_TEXTURE_FORMAT_R16G16_SNORM			= GL_RG16_SNORM_EXT,								// 2-component, 16-bit signed normalized
-	GPU_TEXTURE_FORMAT_R16G16B16A16_SNORM	= GL_RGB16_SNORM_EXT,								// 4-component, 16-bit signed normalized
+	GPU_TEXTURE_FORMAT_R16G16B16A16_SNORM	= GL_RGBA16_SNORM_EXT,								// 4-component, 16-bit signed normalized
 #endif
 
 	GPU_TEXTURE_FORMAT_R16_UINT				= GL_R16UI,											// 1-component, 16-bit unsigned integer
@@ -6442,8 +6441,8 @@ typedef enum
 
 typedef enum
 {
-	GPU_TEXTURE_DEFAULT_CHECKERBOARD,	// 16x16 checkerboard pattern (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
-	GPU_TEXTURE_DEFAULT_PYRAMIDS,		// 16x16 block pattern of pyramids (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
+	GPU_TEXTURE_DEFAULT_CHECKERBOARD,	// 32x32 checkerboard pattern (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
+	GPU_TEXTURE_DEFAULT_PYRAMIDS,		// 32x32 block pattern of pyramids (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
 	GPU_TEXTURE_DEFAULT_CIRCLES			// 32x32 block pattern with circles (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
 } GpuTextureDefault_t;
 
@@ -6903,7 +6902,7 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 
 	if ( defaultType == GPU_TEXTURE_DEFAULT_CHECKERBOARD )
 	{
-		const int blockSize = 16;	// must be a power of two
+		const int blockSize = 32;	// must be a power of two
 		for ( int layer = 0; layer < depth * numberOfArrayElements * numberOfFaces; layer++ )
 		{
 			for ( int y = 0; y < height; y++ )
@@ -6929,7 +6928,7 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 	}
 	else if ( defaultType == GPU_TEXTURE_DEFAULT_PYRAMIDS )
 	{
-		const int blockSize = 16;	// must be a power of two
+		const int blockSize = 32;	// must be a power of two
 		for ( int layer = 0; layer < depth * numberOfArrayElements * numberOfFaces; layer++ )
 		{
 			for ( int y = 0; y < height; y++ )

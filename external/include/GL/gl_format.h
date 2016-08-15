@@ -84,6 +84,9 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 ================================================================================================
 */
 
+#if !defined( GL_FORMAT_H )
+#define GL_FORMAT_H
+
 #include <assert.h>
 
 #if defined(_WIN32)
@@ -234,7 +237,7 @@ Type to glTexImage2D, glTexImage3D and glVertexAttribPointer.
 #define GL_HALF_FLOAT									0x140B	// same as GL_HALF_FLOAT_NV and GL_HALF_FLOAT_ARB
 #endif
 #if !defined( GL_HALF_FLOAT_OES )
-#define GL_HALF_FLOAT_OES								0x8D61	// FIXME: why is this different from GL_HALF_FLOAT?
+#define GL_HALF_FLOAT_OES								0x8D61	// Note that this different from GL_HALF_FLOAT.
 #endif
 #if !defined( GL_FLOAT )
 #define GL_FLOAT										0x1406
@@ -1035,7 +1038,7 @@ Internal format to glTexImage2D, glTexImage3D, glCompressedTexImage2D, glCompres
 #define GL_DEPTH_COMPONENT32F							0x8CAC	// same as GL_DEPTH_COMPONENT32F_ARB
 #endif
 #if !defined( GL_DEPTH_COMPONENT32F_NV )
-#define GL_DEPTH_COMPONENT32F_NV						0x8DAB	// FIXME: why is this different from GL_DEPTH_COMPONENT32F?
+#define GL_DEPTH_COMPONENT32F_NV						0x8DAB	// Note that this different from GL_DEPTH_COMPONENT32F.
 #endif
 #if !defined( GL_STENCIL_INDEX1 )
 #define GL_STENCIL_INDEX1								0x8D46	// same as GL_STENCIL_INDEX1_EXT
@@ -1056,7 +1059,7 @@ Internal format to glTexImage2D, glTexImage3D, glCompressedTexImage2D, glCompres
 #define GL_DEPTH32F_STENCIL8							0x8CAD	// same as GL_DEPTH32F_STENCIL8_ARB
 #endif
 #if !defined( GL_DEPTH32F_STENCIL8_NV )
-#define GL_DEPTH32F_STENCIL8_NV							0x8DAC	// FIXME: why is this different from GL_DEPTH32F_STENCIL8?
+#define GL_DEPTH32F_STENCIL8_NV							0x8DAC	// Note that this different from GL_DEPTH32F_STENCIL8.
 #endif
 
 static inline GLenum glGetFormatFromInternalFormat( const GLenum internalFormat )
@@ -1159,65 +1162,65 @@ static inline GLenum glGetFormatFromInternalFormat( const GLenum internalFormat 
 		// S3TC/DXT/BC
 		//
 
-		case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:					return GL_RGB;		// line through 3D space, unsigned normalized
-		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:					return GL_RGBA;		// line through 3D space plus 1-bit alpha, unsigned normalized
-		case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:					return GL_RGBA;		// line through 3D space plus line through 1D space, unsigned normalized
-		case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:					return GL_RGBA;		// line through 3D space plus 4-bit alpha, unsigned normalized
+		case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:					return GL_RGB;		// line through 3D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:					return GL_RGBA;		// line through 3D space plus 1-bit alpha, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:					return GL_RGBA;		// line through 3D space plus line through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:					return GL_RGBA;		// line through 3D space plus 4-bit alpha, 4x4 blocks, unsigned normalized
 
-		case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:					return GL_RGB;		// line through 3D space, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:			return GL_RGBA;		// line through 3D space plus 1-bit alpha, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:			return GL_RGBA;		// line through 3D space plus line through 1D space, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:			return GL_RGBA;		// line through 3D space plus 4-bit alpha, sRGB
+		case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:					return GL_RGB;		// line through 3D space, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:			return GL_RGBA;		// line through 3D space plus 1-bit alpha, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:			return GL_RGBA;		// line through 3D space plus line through 1D space, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:			return GL_RGBA;		// line through 3D space plus 4-bit alpha, 4x4 blocks, sRGB
 
-		case GL_COMPRESSED_LUMINANCE_LATC1_EXT:					return GL_RED;		// line through 1D space, unsigned normalized
-		case GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT:			return GL_RG;		// two lines through 1D space, unsigned normalized
-		case GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT:			return GL_RED;		// line through 1D space, signed normalized
-		case GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT:	return GL_RG;		// two lines through 1D space, signed normalized
+		case GL_COMPRESSED_LUMINANCE_LATC1_EXT:					return GL_RED;		// line through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT:			return GL_RG;		// two lines through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT:			return GL_RED;		// line through 1D space, 4x4 blocks, signed normalized
+		case GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT:	return GL_RG;		// two lines through 1D space, 4x4 blocks, signed normalized
 
-		case GL_COMPRESSED_RED_RGTC1:							return GL_RED;		// line through 1D space, unsigned normalized
-		case GL_COMPRESSED_RG_RGTC2:							return GL_RG;		// two lines through 1D space, unsigned normalized
-		case GL_COMPRESSED_SIGNED_RED_RGTC1:					return GL_RED;		// line through 1D space, signed normalized
-		case GL_COMPRESSED_SIGNED_RG_RGTC2:						return GL_RG;		// two lines through 1D space, signed normalized
+		case GL_COMPRESSED_RED_RGTC1:							return GL_RED;		// line through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RG_RGTC2:							return GL_RG;		// two lines through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_RED_RGTC1:					return GL_RED;		// line through 1D space, 4x4 blocks, signed normalized
+		case GL_COMPRESSED_SIGNED_RG_RGTC2:						return GL_RG;		// two lines through 1D space, 4x4 blocks, signed normalized
 
-		case GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT:				return GL_RGB;		// 3-component, unsigned floating-point
-		case GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT:				return GL_RGB;		// 3-component, signed floating-point
-		case GL_COMPRESSED_RGBA_BPTC_UNORM:						return GL_RGBA;		// 4-component, unsigned normalized
-		case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:				return GL_RGBA;		// 4-component, sRGB
+		case GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT:				return GL_RGB;		// 3-component, 4x4 blocks, unsigned floating-point
+		case GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT:				return GL_RGB;		// 3-component, 4x4 blocks, signed floating-point
+		case GL_COMPRESSED_RGBA_BPTC_UNORM:						return GL_RGBA;		// 4-component, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:				return GL_RGBA;		// 4-component, 4x4 blocks, sRGB
 
 		//
 		// ETC
 		//
-		case GL_ETC1_RGB8_OES:									return GL_RGB;		// 3-component ETC1, unsigned normalized" ),
+		case GL_ETC1_RGB8_OES:									return GL_RGB;		// 3-component ETC1, 4x4 blocks, unsigned normalized
 
-		case GL_COMPRESSED_RGB8_ETC2:							return GL_RGB;		// 3-component ETC2, unsigned normalized
-		case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return GL_RGBA;		// 4-component ETC2 with 1-bit alpha, unsigned normalized
-		case GL_COMPRESSED_RGBA8_ETC2_EAC:						return GL_RGBA;		// 4-component ETC2, unsigned normalized
+		case GL_COMPRESSED_RGB8_ETC2:							return GL_RGB;		// 3-component ETC2, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return GL_RGBA;		// 4-component ETC2 with 1-bit alpha, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA8_ETC2_EAC:						return GL_RGBA;		// 4-component ETC2, 4x4 blocks, unsigned normalized
 
-		case GL_COMPRESSED_SRGB8_ETC2:							return GL_RGB;		// 3-component ETC2, sRGB
-		case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return GL_RGBA;		// 4-component ETC2 with 1-bit alpha, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:				return GL_RGBA;		// 4-component ETC2, sRGB
+		case GL_COMPRESSED_SRGB8_ETC2:							return GL_RGB;		// 3-component ETC2, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return GL_RGBA;		// 4-component ETC2 with 1-bit alpha, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:				return GL_RGBA;		// 4-component ETC2, 4x4 blocks, sRGB
 
-		case GL_COMPRESSED_R11_EAC:								return GL_RED;		// 1-component ETC, unsigned normalized
-		case GL_COMPRESSED_RG11_EAC:							return GL_RG;		// 2-component ETC, unsigned normalized
-		case GL_COMPRESSED_SIGNED_R11_EAC:						return GL_RED;		// 1-component ETC, signed normalized
-		case GL_COMPRESSED_SIGNED_RG11_EAC:						return GL_RG;		// 2-component ETC, signed normalized
+		case GL_COMPRESSED_R11_EAC:								return GL_RED;		// 1-component ETC, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RG11_EAC:							return GL_RG;		// 2-component ETC, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_R11_EAC:						return GL_RED;		// 1-component ETC, 4x4 blocks, signed normalized
+		case GL_COMPRESSED_SIGNED_RG11_EAC:						return GL_RG;		// 2-component ETC, 4x4 blocks, signed normalized
 
 		//
 		// PVRTC
 		//
-		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				return GL_RGB;		// 3-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				return GL_RGB;		// 3-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				return GL_RGBA;		// 4-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				return GL_RGBA;		// 4-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG:				return GL_RGBA;		// 4-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG:				return GL_RGBA;		// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				return GL_RGB;		// 3-component PVRTC, 16x8 blocks, unsigned normalized
+		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				return GL_RGB;		// 3-component PVRTC,  8x8 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				return GL_RGBA;		// 4-component PVRTC, 16x8 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				return GL_RGBA;		// 4-component PVRTC,  8x8 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG:				return GL_RGBA;		// 4-component PVRTC,  8x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG:				return GL_RGBA;		// 4-component PVRTC,  4x4 blocks, unsigned normalized
 
-		case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:				return GL_RGB;		// 3-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:				return GL_RGB;		// 3-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:			return GL_RGBA;		// 4-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:			return GL_RGBA;		// 4-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG:			return GL_RGBA;		// 4-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG:			return GL_RGBA;		// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:				return GL_RGB;		// 3-component PVRTC, 16x8 blocks, sRGB
+		case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:				return GL_RGB;		// 3-component PVRTC,  8x8 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:			return GL_RGBA;		// 4-component PVRTC, 16x8 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:			return GL_RGBA;		// 4-component PVRTC,  8x8 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG:			return GL_RGBA;		// 4-component PVRTC,  8x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG:			return GL_RGBA;		// 4-component PVRTC,  4x4 blocks, sRGB
 
 		//
 		// ASTC
@@ -1277,9 +1280,9 @@ static inline GLenum glGetFormatFromInternalFormat( const GLenum internalFormat 
 		//
 		// ATC
 		//
-		case GL_ATC_RGB_AMD:									return GL_RGB;		// 3-component, unsigned normalized
-		case GL_ATC_RGBA_EXPLICIT_ALPHA_AMD:					return GL_RGBA;		// 4-component, unsigned normalized
-		case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:				return GL_RGBA;		// 4-component, unsigned normalized
+		case GL_ATC_RGB_AMD:									return GL_RGB;		// 3-component, 4x4 blocks, unsigned normalized
+		case GL_ATC_RGBA_EXPLICIT_ALPHA_AMD:					return GL_RGBA;		// 4-component, 4x4 blocks, unsigned normalized
+		case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:				return GL_RGBA;		// 4-component, 4x4 blocks, unsigned normalized
 
 		//
 		// Palletized
@@ -1415,65 +1418,65 @@ static inline GLenum glGetTypeFromInternalFormat( const GLenum internalFormat )
 		// S3TC/DXT/BC
 		//
 
-		case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space, unsigned normalized
-		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space plus 1-bit alpha, unsigned normalized
-		case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space plus line through 1D space, unsigned normalized
-		case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space plus 4-bit alpha, unsigned normalized
+		case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space plus 1-bit alpha, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space plus line through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space plus 4-bit alpha, 4x4 blocks, unsigned normalized
 
-		case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:			return GL_UNSIGNED_BYTE;				// line through 3D space plus 1-bit alpha, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:			return GL_UNSIGNED_BYTE;				// line through 3D space plus line through 1D space, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:			return GL_UNSIGNED_BYTE;				// line through 3D space plus 4-bit alpha, sRGB
+		case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:					return GL_UNSIGNED_BYTE;				// line through 3D space, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:			return GL_UNSIGNED_BYTE;				// line through 3D space plus 1-bit alpha, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:			return GL_UNSIGNED_BYTE;				// line through 3D space plus line through 1D space, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:			return GL_UNSIGNED_BYTE;				// line through 3D space plus 4-bit alpha, 4x4 blocks, sRGB
 
-		case GL_COMPRESSED_LUMINANCE_LATC1_EXT:					return GL_UNSIGNED_BYTE;				// line through 1D space, unsigned normalized
-		case GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT:			return GL_UNSIGNED_BYTE;				// two lines through 1D space, unsigned normalized
-		case GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT:			return GL_UNSIGNED_BYTE;				// line through 1D space, signed normalized
-		case GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT:	return GL_UNSIGNED_BYTE;				// two lines through 1D space, signed normalized
+		case GL_COMPRESSED_LUMINANCE_LATC1_EXT:					return GL_UNSIGNED_BYTE;				// line through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT:			return GL_UNSIGNED_BYTE;				// two lines through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT:			return GL_UNSIGNED_BYTE;				// line through 1D space, 4x4 blocks, signed normalized
+		case GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT:	return GL_UNSIGNED_BYTE;				// two lines through 1D space, 4x4 blocks, signed normalized
 
-		case GL_COMPRESSED_RED_RGTC1:							return GL_UNSIGNED_BYTE;				// line through 1D space, unsigned normalized
-		case GL_COMPRESSED_RG_RGTC2:							return GL_UNSIGNED_BYTE;				// two lines through 1D space, unsigned normalized
-		case GL_COMPRESSED_SIGNED_RED_RGTC1:					return GL_UNSIGNED_BYTE;				// line through 1D space, signed normalized
-		case GL_COMPRESSED_SIGNED_RG_RGTC2:						return GL_UNSIGNED_BYTE;				// two lines through 1D space, signed normalized
+		case GL_COMPRESSED_RED_RGTC1:							return GL_UNSIGNED_BYTE;				// line through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RG_RGTC2:							return GL_UNSIGNED_BYTE;				// two lines through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_RED_RGTC1:					return GL_UNSIGNED_BYTE;				// line through 1D space, 4x4 blocks, signed normalized
+		case GL_COMPRESSED_SIGNED_RG_RGTC2:						return GL_UNSIGNED_BYTE;				// two lines through 1D space, 4x4 blocks, signed normalized
 
-		case GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT:				return GL_FLOAT;						// 3-component, unsigned floating-point
-		case GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT:				return GL_FLOAT;						// 3-component, signed floating-point
-		case GL_COMPRESSED_RGBA_BPTC_UNORM:						return GL_UNSIGNED_BYTE;				// 4-component, unsigned normalized
-		case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:				return GL_UNSIGNED_BYTE;				// 4-component, sRGB
+		case GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT:				return GL_FLOAT;						// 3-component, 4x4 blocks, unsigned floating-point
+		case GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT:				return GL_FLOAT;						// 3-component, 4x4 blocks, signed floating-point
+		case GL_COMPRESSED_RGBA_BPTC_UNORM:						return GL_UNSIGNED_BYTE;				// 4-component, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:				return GL_UNSIGNED_BYTE;				// 4-component, 4x4 blocks, sRGB
 
 		//
 		// ETC
 		//
-		case GL_ETC1_RGB8_OES:									return GL_UNSIGNED_BYTE;				// 3-component ETC1, unsigned normalized" ),
+		case GL_ETC1_RGB8_OES:									return GL_UNSIGNED_BYTE;				// 3-component ETC1, 4x4 blocks, unsigned normalized" ),
 
-		case GL_COMPRESSED_RGB8_ETC2:							return GL_UNSIGNED_BYTE;				// 3-component ETC2, unsigned normalized
-		case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return GL_UNSIGNED_BYTE;				// 4-component ETC2 with 1-bit alpha, unsigned normalized
-		case GL_COMPRESSED_RGBA8_ETC2_EAC:						return GL_UNSIGNED_BYTE;				// 4-component ETC2, unsigned normalized
+		case GL_COMPRESSED_RGB8_ETC2:							return GL_UNSIGNED_BYTE;				// 3-component ETC2, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return GL_UNSIGNED_BYTE;				// 4-component ETC2 with 1-bit alpha, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA8_ETC2_EAC:						return GL_UNSIGNED_BYTE;				// 4-component ETC2, 4x4 blocks, unsigned normalized
 
-		case GL_COMPRESSED_SRGB8_ETC2:							return GL_UNSIGNED_BYTE;				// 3-component ETC2, sRGB
-		case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return GL_UNSIGNED_BYTE;				// 4-component ETC2 with 1-bit alpha, sRGB
-		case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:				return GL_UNSIGNED_BYTE;				// 4-component ETC2, sRGB
+		case GL_COMPRESSED_SRGB8_ETC2:							return GL_UNSIGNED_BYTE;				// 3-component ETC2, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:		return GL_UNSIGNED_BYTE;				// 4-component ETC2 with 1-bit alpha, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:				return GL_UNSIGNED_BYTE;				// 4-component ETC2, 4x4 blocks, sRGB
 
-		case GL_COMPRESSED_R11_EAC:								return GL_UNSIGNED_BYTE;				// 1-component ETC, unsigned normalized
-		case GL_COMPRESSED_RG11_EAC:							return GL_UNSIGNED_BYTE;				// 2-component ETC, unsigned normalized
-		case GL_COMPRESSED_SIGNED_R11_EAC:						return GL_UNSIGNED_BYTE;				// 1-component ETC, signed normalized
-		case GL_COMPRESSED_SIGNED_RG11_EAC:						return GL_UNSIGNED_BYTE;				// 2-component ETC, signed normalized
+		case GL_COMPRESSED_R11_EAC:								return GL_UNSIGNED_BYTE;				// 1-component ETC, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RG11_EAC:							return GL_UNSIGNED_BYTE;				// 2-component ETC, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_R11_EAC:						return GL_UNSIGNED_BYTE;				// 1-component ETC, 4x4 blocks, signed normalized
+		case GL_COMPRESSED_SIGNED_RG11_EAC:						return GL_UNSIGNED_BYTE;				// 2-component ETC, 4x4 blocks, signed normalized
 
 		//
 		// PVRTC
 		//
-		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 3-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 3-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 4-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 4-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG:				return GL_UNSIGNED_BYTE;				// 4-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG:				return GL_UNSIGNED_BYTE;				// 4-component PVRTC, unsigned normalized
+		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 3-component PVRTC, 16x8 blocks, unsigned normalized
+		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 3-component PVRTC,  8x8 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 4-component PVRTC, 16x8 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				return GL_UNSIGNED_BYTE;				// 4-component PVRTC,  8x8 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG:				return GL_UNSIGNED_BYTE;				// 4-component PVRTC,  8x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG:				return GL_UNSIGNED_BYTE;				// 4-component PVRTC,  4x4 blocks, unsigned normalized
 
-		case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:				return GL_UNSIGNED_BYTE;				// 3-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:				return GL_UNSIGNED_BYTE;				// 3-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:			return GL_UNSIGNED_BYTE;				// 4-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:			return GL_UNSIGNED_BYTE;				// 4-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG:			return GL_UNSIGNED_BYTE;				// 4-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG:			return GL_UNSIGNED_BYTE;				// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:				return GL_UNSIGNED_BYTE;				// 3-component PVRTC, 16x8 blocks, sRGB
+		case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:				return GL_UNSIGNED_BYTE;				// 3-component PVRTC,  8x8 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:			return GL_UNSIGNED_BYTE;				// 4-component PVRTC, 16x8 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:			return GL_UNSIGNED_BYTE;				// 4-component PVRTC,  8x8 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG:			return GL_UNSIGNED_BYTE;				// 4-component PVRTC,  8x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG:			return GL_UNSIGNED_BYTE;				// 4-component PVRTC,  4x4 blocks, sRGB
 
 		//
 		// ASTC
@@ -1533,9 +1536,9 @@ static inline GLenum glGetTypeFromInternalFormat( const GLenum internalFormat )
 		//
 		// ATC
 		//
-		case GL_ATC_RGB_AMD:									return GL_UNSIGNED_BYTE;				// 3-component, unsigned normalized
-		case GL_ATC_RGBA_EXPLICIT_ALPHA_AMD:					return GL_UNSIGNED_BYTE;				// 4-component, unsigned normalized
-		case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:				return GL_UNSIGNED_BYTE;				// 4-component, unsigned normalized
+		case GL_ATC_RGB_AMD:									return GL_UNSIGNED_BYTE;				// 3-component, 4x4 blocks, unsigned normalized
+		case GL_ATC_RGBA_EXPLICIT_ALPHA_AMD:					return GL_UNSIGNED_BYTE;				// 4-component, 4x4 blocks, unsigned normalized
+		case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:				return GL_UNSIGNED_BYTE;				// 4-component, 4x4 blocks, unsigned normalized
 
 		//
 		// Palletized
@@ -1854,10 +1857,10 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		//
 		// S3TC/DXT/BC
 		//
-		case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:					// line through 3D space, unsigned normalized
-		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:					// line through 3D space plus 1-bit alpha, unsigned normalized
-		case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:					// line through 3D space, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:			// line through 3D space plus 1-bit alpha, sRGB
+		case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:					// line through 3D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:					// line through 3D space plus 1-bit alpha, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:					// line through 3D space, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:			// line through 3D space plus 1-bit alpha, 4x4 blocks, sRGB
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
@@ -1865,10 +1868,10 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockHeight = 4;
 			pFormatSize->blockDepth = 1;
 			break;
-		case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:					// line through 3D space plus line through 1D space, unsigned normalized
-		case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:					// line through 3D space plus 4-bit alpha, unsigned normalized
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:			// line through 3D space plus line through 1D space, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:			// line through 3D space plus 4-bit alpha, sRGB
+		case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:					// line through 3D space plus line through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:					// line through 3D space plus 4-bit alpha, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:			// line through 3D space plus line through 1D space, 4x4 blocks, sRGB
+		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:			// line through 3D space plus 4-bit alpha, 4x4 blocks, sRGB
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
@@ -1877,8 +1880,8 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 
-		case GL_COMPRESSED_LUMINANCE_LATC1_EXT:					// line through 1D space, unsigned normalized
-		case GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT:			// line through 1D space, signed normalized
+		case GL_COMPRESSED_LUMINANCE_LATC1_EXT:					// line through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT:			// line through 1D space, 4x4 blocks, signed normalized
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
@@ -1886,8 +1889,8 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockHeight = 4;
 			pFormatSize->blockDepth = 1;
 			break;
-		case GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT:			// two lines through 1D space, unsigned normalized
-		case GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT:	// two lines through 1D space, signed normalized
+		case GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT:			// two lines through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT:	// two lines through 1D space, 4x4 blocks, signed normalized
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
@@ -1896,8 +1899,8 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 
-		case GL_COMPRESSED_RED_RGTC1:							// line through 1D space, unsigned normalized
-		case GL_COMPRESSED_SIGNED_RED_RGTC1:					// line through 1D space, signed normalized
+		case GL_COMPRESSED_RED_RGTC1:							// line through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_RED_RGTC1:					// line through 1D space, 4x4 blocks, signed normalized
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
@@ -1905,8 +1908,8 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockHeight = 4;
 			pFormatSize->blockDepth = 1;
 			break;
-		case GL_COMPRESSED_RG_RGTC2:							// two lines through 1D space, unsigned normalized
-		case GL_COMPRESSED_SIGNED_RG_RGTC2:						// two lines through 1D space, signed normalized
+		case GL_COMPRESSED_RG_RGTC2:							// two lines through 1D space, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_RG_RGTC2:						// two lines through 1D space, 4x4 blocks, signed normalized
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
@@ -1915,10 +1918,10 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 
-		case GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT:				// 3-component, unsigned floating-point
-		case GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT:				// 3-component, signed floating-point
-		case GL_COMPRESSED_RGBA_BPTC_UNORM:						// 4-component, unsigned normalized
-		case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:				// 4-component, sRGB
+		case GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT:				// 3-component, 4x4 blocks, unsigned floating-point
+		case GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT:				// 3-component, 4x4 blocks, signed floating-point
+		case GL_COMPRESSED_RGBA_BPTC_UNORM:						// 4-component, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:				// 4-component, 4x4 blocks, sRGB
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
@@ -1930,11 +1933,11 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		//
 		// ETC
 		//
-		case GL_ETC1_RGB8_OES:									// 3-component ETC1, unsigned normalized" ),
-		case GL_COMPRESSED_RGB8_ETC2:							// 3-component ETC2, unsigned normalized
-		case GL_COMPRESSED_SRGB8_ETC2:							// 3-component ETC2, sRGB
-		case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:		// 4-component ETC2 with 1-bit alpha, unsigned normalized
-		case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:		// 4-component ETC2 with 1-bit alpha, sRGB
+		case GL_ETC1_RGB8_OES:									// 3-component ETC1, 4x4 blocks, unsigned normalized" ),
+		case GL_COMPRESSED_RGB8_ETC2:							// 3-component ETC2, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB8_ETC2:							// 3-component ETC2, 4x4 blocks, sRGB
+		case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:		// 4-component ETC2 with 1-bit alpha, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:		// 4-component ETC2 with 1-bit alpha, 4x4 blocks, sRGB
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
@@ -1942,8 +1945,8 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockHeight = 4;
 			pFormatSize->blockDepth = 1;
 			break;
-		case GL_COMPRESSED_RGBA8_ETC2_EAC:						// 4-component ETC2, unsigned normalized
-		case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:				// 4-component ETC2, sRGB
+		case GL_COMPRESSED_RGBA8_ETC2_EAC:						// 4-component ETC2, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:				// 4-component ETC2, 4x4 blocks, sRGB
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
@@ -1952,8 +1955,8 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 
-		case GL_COMPRESSED_R11_EAC:								// 1-component ETC, unsigned normalized
-		case GL_COMPRESSED_SIGNED_R11_EAC:						// 1-component ETC, signed normalized
+		case GL_COMPRESSED_R11_EAC:								// 1-component ETC, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_R11_EAC:						// 1-component ETC, 4x4 blocks, signed normalized
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
@@ -1961,8 +1964,8 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockHeight = 4;
 			pFormatSize->blockDepth = 1;
 			break;
-		case GL_COMPRESSED_RG11_EAC:							// 2-component ETC, unsigned normalized
-		case GL_COMPRESSED_SIGNED_RG11_EAC:						// 2-component ETC, signed normalized
+		case GL_COMPRESSED_RG11_EAC:							// 2-component ETC, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SIGNED_RG11_EAC:						// 2-component ETC, 4x4 blocks, signed normalized
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
@@ -1974,12 +1977,30 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		//
 		// PVRTC
 		//
-		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				// 3-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				// 4-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG:				// 4-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:				// 3-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:			// 4-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG:			// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				// 3-component PVRTC, 16x8 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:				// 3-component PVRTC, 16x8 blocks, sRGB
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				// 4-component PVRTC, 16x8 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:			// 4-component PVRTC, 16x8 blocks, sRGB
+			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->paletteSizeInBits = 0;
+			pFormatSize->blockSizeInBits = 64;
+			pFormatSize->blockWidth = 16;
+			pFormatSize->blockHeight = 8;
+			pFormatSize->blockDepth = 1;
+			break;
+		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				// 3-component PVRTC, 8x8 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:				// 3-component PVRTC, 8x8 blocks, sRGB
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				// 4-component PVRTC, 8x8 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:			// 4-component PVRTC, 8x8 blocks, sRGB
+			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->paletteSizeInBits = 0;
+			pFormatSize->blockSizeInBits = 64;
+			pFormatSize->blockWidth = 8;
+			pFormatSize->blockHeight = 8;
+			pFormatSize->blockDepth = 1;
+			break;
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG:				// 4-component PVRTC, 8x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG:			// 4-component PVRTC, 8x4 blocks, sRGB
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
@@ -1987,12 +2008,8 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockHeight = 4;
 			pFormatSize->blockDepth = 1;
 			break;
-		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				// 3-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				// 4-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG:				// 4-component PVRTC, unsigned normalized
-		case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:				// 3-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:			// 4-component PVRTC, sRGB
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG:			// 4-component PVRTC, sRGB
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG:				// 4-component PVRTC, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG:			// 4-component PVRTC, 4x4 blocks, sRGB
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
@@ -2225,7 +2242,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		//
 		// ATC
 		//
-		case GL_ATC_RGB_AMD:									// 3-component, unsigned normalized
+		case GL_ATC_RGB_AMD:									// 3-component, 4x4 blocks, unsigned normalized
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
@@ -2233,8 +2250,8 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockHeight = 4;
 			pFormatSize->blockDepth = 1;
 			break;
-		case GL_ATC_RGBA_EXPLICIT_ALPHA_AMD:					// 4-component, unsigned normalized
-		case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:				// 4-component, unsigned normalized
+		case GL_ATC_RGBA_EXPLICIT_ALPHA_AMD:					// 4-component, 4x4 blocks, unsigned normalized
+		case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:				// 4-component, 4x4 blocks, unsigned normalized
 			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
@@ -2381,3 +2398,5 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 	}
 }
+
+#endif // !GL_FORMAT_H
