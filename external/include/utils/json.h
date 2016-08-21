@@ -27,8 +27,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 
+JSON
+====
+
 The JavaScript Object Notation (JSON) Data Interchange Format
-=============================================================
 
 http://www.json.org/
 http://rfc7159.net/rfc7159
@@ -39,8 +41,8 @@ DESCRIPTION
 ===========
 
 This is a Document Object Model (DOM) style JSON implementation where
-JSON data is represented in memory as an object tree. The code is written
-in straight C99 for maximum portability.
+JSON data is represented in memory as an object tree. For maximum portability
+the code is written in straight C99 without using any third party libraries.
 
 There are various syntactically pretty C++ JSON parsers and writers,
 but the syntactical sugar tends to come at a performance cost.
@@ -59,10 +61,9 @@ As a trivial optimization this implementation continues iterating over
 the members of an object where it left off during the last lookup.
 If the DOM is traversed in the order it is stored, then this results
 in only a single string comparison per lookup. This implementation
-keeps objects in the same order in the DOM as they appear in the
-JSON text.
+keeps objects in the same order in the DOM and the JSON text.
 
-This implementation stores the children of an object, or the elements
+This implementation stores the members of an object, or the elements
 of an array, as a single flat array in memory. While this may require
 re-allocation during construction or parsing, with geometric growth
 there are only O(log(N)) allocations and the re-allocation is not nearly
@@ -70,57 +71,138 @@ as costly as iterating a linked list of objects that are all separately
 allocated. Having a flat array is not only more cache friendly but
 also allows direct indexing of an array.
 
-This implementation is more lenient than the JSON specification and
-technically invalid JSON text may still parse correctly.
+This implementation includes several trivial optimizations that allow
+it to compete with 'rapidjson' when it comes to parsing performance.
+However, in most cases simplicity and correctness are favored over
+aggressive or low level optimizations that may break compatibility
+or conformance.
+
+This implementation can accurately represent the full 8-bit, 16-bit,
+32-bit and 64-bit, both signed and unsigned integer ranges.
+This implementation can also accurately represent all 32-bit and 64-bit
+floating-point values. The minimum/maximum floating-point numbers are
+parsed with full precision and all other floating-point numbers are
+represented within 4 ulps. For instance, this implementation parses
+the following numbers with full precision.
+
+	INT8_MIN         -128
+	INT16_MIN        -32768
+	INT32_MIN        -2147483648
+	INT64_MIN        -9223372036854775808
+	INT8_MAX         127
+	INT16_MAX        32767
+	INT32_MAX        2147483647
+	INT64_MAX        9223372036854775807
+	UINT8_MAX        255
+	UINT16_MAX       65535
+	UINT32_MAX       4294967295
+	UINT64_MAX       18446744073709551615
+	FLT_MIN          1.175494351e-38
+	FLT_MAX          3.402823466e+38
+	DBL_MIN          2.2250738585072014e-308
+	DBL_MAX          1.7976931348623158e+308
+
+Integer values smaller than INT64_MIN or larger than UINT64_MAX are
+stored as foating-point. JSON does not support floating-point values
+like Infinity and NaN. Therefore floating-point values smaller than
+DBL_MIN or larger than DBL_MAX turn into DBL_MIN and DBL_MAX respectively.
+
+This implementation supports both UTF8 and UTF16 with surrogate pairs.
 
 This implementation was designed to be robust, allowing completely
-invalid JSON text to be parsed without crashing. All interface
-functions continue to work without fatal runtime exceptions, even
-if a NULL Json_t pointer is passed in.
+invalid JSON text to be parsed without fatal run-time exceptions.
+All interface functions continue to work, even if a NULL Json_t
+pointer is passed in.
 
 
 INTERFACE
 =========
 
-Json_t
+struct Json_t;
 
 Json_t *		Json_Create();
 void			Json_Destroy( Json_t * rootNode );
 
 bool			Json_ReadFromBuffer( Json_t * rootNode, const char * buffer, const char ** errorStringOut );
 bool			Json_ReadFromFile( Json_t * rootNode, const char * fileName, const char ** errorStringOut );
-bool			Json_WriteToBuffer( const Json_t * rootNode, char ** bufferOut, int * lengthOut );
+bool			Json_WriteToBuffer( const Json_t * rootNode, char ** bufferOut, int * lengthOut );	// Buffer is allocated with malloc.
 bool			Json_WriteToFile( const Json_t * rootNode, const char * fileName );
 
-int				Json_GetChildCount( const Json_t * parentNode );							// For both objects and arrays.
-Json_t *		Json_GetChildByIndex( const Json_t * parentNode, const int index );			// For both objects and arrays.
-Json_t *		Json_GetChildByName( const Json_t * parentNode, const char * childName );	// Only for objects with case-sensitive lookups.
-Json_t *		Json_AddChild( Json_t * parentNode, const char * childName );				// For both objects and arrays where 'childName' is ignored for arrays.
+//
+// query
+//
+
+int				Json_GetMemberCount( const Json_t * node );						// Get the number of object members or array elements.
+Json_t *		Json_GetMemberByIndex( const Json_t * node, const int index );	// Get an object member or array element by index.
+Json_t *		Json_GetMemberByName( const Json_t * node, const char * name );	// Case-sensitive lookup of an object member by name.
 
 bool			Json_IsNull( const Json_t * node );
 bool			Json_IsBoolean( const Json_t * node );
 bool			Json_IsNumber( const Json_t * node );
 bool			Json_IsInteger( const Json_t * node );
+bool			Json_IsUnsigned( const Json_t * node );
 bool			Json_IsFloatingPoint( const Json_t * node );
 bool			Json_IsString( const Json_t * node );
 bool			Json_IsObject( const Json_t * node );
 bool			Json_IsArray( const Json_t * node );
 
 bool			Json_GetBoolean( const Json_t * node, const bool defaultValue );
-int				Json_GetInt32( const Json_t * node, const int defaultValue );
-long long		Json_GetInt64( const Json_t * node, const long long defaultValue );
+int32_t			Json_GetInt32( const Json_t * node, const int32_t defaultValue );
+uint32_t		Json_GetUint32( const Json_t * node, const uint32_t defaultValue );
+int64_t			Json_GetInt64( const Json_t * node, const int64_t defaultValue );
+uint64_t		Json_GetUint64( const Json_t * node, const uint64_t defaultValue );
 float			Json_GetFloat( const Json_t * node, const float defaultValue );
 double			Json_GetDouble( const Json_t * node, const double defaultValue );
 const char *	Json_GetString( const Json_t * node, const char * defaultValue );
 
-Json_t *		Json_SetBoolean( Json_t * node, const bool value );
-Json_t *		Json_SetInt32( Json_t * node, const int value );
-Json_t *		Json_SetInt64( Json_t * node, const long long value );
-Json_t *		Json_SetFloat( Json_t * node, const float value );
-Json_t *		Json_SetDouble( Json_t * node, const double value );
-Json_t *		Json_SetString( Json_t * node, const char * value );
-Json_t *		Json_SetObject( Json_t * node );
-Json_t *		Json_SetArray( Json_t * node );
+//
+// create & modify
+//
+
+Json_t *		Json_SetObject( Json_t * node );								// Turns the node into an empty object.
+Json_t *		Json_SetArray( Json_t * node );									// Turns the node into an empty array.
+
+Json_t *		Json_AddObjectMember( Json_t * node, const char * name );		// The node must be an object.
+Json_t *		Json_AddArrayElement( Json_t * node );							// The node must be an array.
+
+Json_t *		Json_SetNull( Json_t * node );									// Turns the node into null.
+Json_t *		Json_SetBoolean( Json_t * node, const bool value );				// Turns the node into a boolean.
+Json_t *		Json_SetInt32( Json_t * node, const int32_t value );			// Turns the node into a 32-bit signed integer.
+Json_t *		Json_SetUint32( Json_t * node, const uint32_t value );			// Turns the node into a 32-bit unsigned integer.
+Json_t *		Json_SetInt64( Json_t * node, const int64_t value );			// Turns the node into a 64-bit signed integer.
+Json_t *		Json_SetUint64( Json_t * node, const uint64_t value );			// Turns the node into a 64-bit unsigned integer.
+Json_t *		Json_SetFloat( Json_t * node, const float value );				// Turns the node into a 32-bit floating-point value.
+Json_t *		Json_SetDouble( Json_t * node, const double value );			// Turns the node into a 64-bit floating-point value.
+Json_t *		Json_SetString( Json_t * node, const char * value );			// Turns the node into a string.
+
+
+USAGE
+=====
+
+The functions Json_GetMemberByIndex() and Json_GetMemberByName() may return
+NULL if the node is not an object or array, the index is out of range, or no
+member by the given name exists. All the Json_Is* functions will return false
+when a NULL node is passed in. All the Json_Get* functions will return the
+default value when a NULL node is passed in.
+
+The interface to create/modify the JSON DOM does not allow nodes to be
+inserted into the DOM because this can easily lead to cyclic references.
+Instead object members and array elements are allocated from a JSON
+object or array after which the member or element can be assigned a value.
+For instance:
+
+    Json_SetInt32( Json_AddObjectMember( object, "count" ), 10 );
+    Json_SetFloat( Json_AddArrayElement( array ), 2.0f );
+
+By default a new object member or array element will be set to null.
+
+	Json_IsNull( Json_AddObjectMember( object, "count" ) ) == true
+	Json_IsNull( Json_AddArrayElement( array ) ) == true
+
+The value can be changed by calling one of the Json_Set* functions.
+The object members and array elements are kept in the order they are
+added. An object or array can be cleared by calling Json_SetObject() or
+Json_SetArray() respectively. 
 
 
 EXAMPLES
@@ -131,25 +213,25 @@ int length = 0;
 
 {
 	Json_t * rootNode = Json_SetObject( Json_Create() );
-	Json_t * vertices = Json_SetArray( Json_AddChild( rootNode, "vertices" ) );
+	Json_t * vertices = Json_SetArray( Json_AddObjectMember( rootNode, "vertices" ) );
 	for ( int i = 0; i < 3; i++ )
 	{
-		Json_t * vertex = Json_SetObject( Json_AddChild( vertices, NULL ) );
+		Json_t * vertex = Json_SetObject( Json_AddArrayElement( vertices ) );
 
-		Json_t * position = Json_SetObject( Json_AddChild( vertex, "position" ) );
-		Json_SetFloat( Json_AddChild( position, "x" ), (float)( ( i & 1 ) >> 0 ) );
-		Json_SetFloat( Json_AddChild( position, "y" ), (float)( ( i & 2 ) >> 1 ) );
-		Json_SetFloat( Json_AddChild( position, "z" ), (float)( ( i & 4 ) >> 2 ) );
+		Json_t * position = Json_SetObject( Json_AddObjectMember( vertex, "position" ) );
+		Json_SetFloat( Json_AddObjectMember( position, "x" ), (float)( ( i & 1 ) >> 0 ) );
+		Json_SetFloat( Json_AddObjectMember( position, "y" ), (float)( ( i & 2 ) >> 1 ) );
+		Json_SetFloat( Json_AddObjectMember( position, "z" ), (float)( ( i & 4 ) >> 2 ) );
 
-		Json_t * normal = Json_SetObject( Json_AddChild( vertex, "normal" ) );
-		Json_SetFloat( Json_AddChild( normal, "x" ), 0.5f );
-		Json_SetFloat( Json_AddChild( normal, "y" ), 0.6f );
-		Json_SetFloat( Json_AddChild( normal, "z" ), 0.7f );
+		Json_t * normal = Json_SetObject( Json_AddObjectMember( vertex, "normal" ) );
+		Json_SetFloat( Json_AddObjectMember( normal, "x" ), 0.5f );
+		Json_SetFloat( Json_AddObjectMember( normal, "y" ), 0.6f );
+		Json_SetFloat( Json_AddObjectMember( normal, "z" ), 0.7f );
 	}
-	Json_t * indices = Json_SetArray( Json_AddChild( rootNode, "indices" ) );
-	for ( int i = 0; i < 3; i++ )
+	Json_t * indices = Json_SetArray( Json_AddObjectMember( rootNode, "indices" ) );
+	for ( unsigned int i = 0; i < 3; i++ )
 	{
-		Json_SetInt32( Json_AddChild( indices, NULL ), i );
+		Json_SetUint32( Json_AddArrayElement( indices ), i );
 	}
 	Json_WriteToBuffer( rootNode, &buffer, &length );
 	Json_Destroy( rootNode );
@@ -159,58 +241,89 @@ int length = 0;
 	Json_t * rootNode = Json_Create();
 	if ( Json_ReadFromBuffer( rootNode, buffer, NULL ) )
 	{
-		const Json_t * vertices = Json_GetChildByName( rootNode, "vertices" );
-		if ( Json_IsArray( vertices ) )
+		const Json_t * vertices = Json_GetMemberByName( rootNode, "vertices" );
+		for ( int i = 0; i < Json_GetMemberCount( vertices ); i++ )
 		{
-			for ( int i = 0; i < Json_GetChildCount( vertices ); i++ )
-			{
-				const Json_t * vertex = Json_GetChildByIndex( vertices, i );
+			const Json_t * vertex = Json_GetMemberByIndex( vertices, i );
 
-				const Json_t * position = Json_GetChildByName( vertex, "position" );
-				const float position_x = Json_GetFloat( Json_GetChildByName( position, "x" ), 0.0f );
-				const float position_y = Json_GetFloat( Json_GetChildByName( position, "y" ), 0.0f );
-				const float position_z = Json_GetFloat( Json_GetChildByName( position, "z" ), 0.0f );
-				(void)position_x; (void)position_y; (void)position_z;
+			const Json_t * position = Json_GetMemberByName( vertex, "position" );
+			const float position_x = Json_GetFloat( Json_GetMemberByName( position, "x" ), 0.0f );
+			const float position_y = Json_GetFloat( Json_GetMemberByName( position, "y" ), 0.0f );
+			const float position_z = Json_GetFloat( Json_GetMemberByName( position, "z" ), 0.0f );
+			(void)position_x; (void)position_y; (void)position_z;
 
-				const Json_t * normal = Json_GetChildByName( vertex, "normal" );
-				const float normal_x = Json_GetFloat( Json_GetChildByName( normal, "x" ), 0.0f );
-				const float normal_y = Json_GetFloat( Json_GetChildByName( normal, "y" ), 0.0f );
-				const float normal_z = Json_GetFloat( Json_GetChildByName( normal, "z" ), 0.0f );
-				(void)normal_x; (void)normal_y; (void)normal_z;
-			}
+			const Json_t * normal = Json_GetMemberByName( vertex, "normal" );
+			const float normal_x = Json_GetFloat( Json_GetMemberByName( normal, "x" ), 0.0f );
+			const float normal_y = Json_GetFloat( Json_GetMemberByName( normal, "y" ), 0.0f );
+			const float normal_z = Json_GetFloat( Json_GetMemberByName( normal, "z" ), 0.0f );
+			(void)normal_x; (void)normal_y; (void)normal_z;
 		}
-		const Json_t * indices = Json_GetChildByName( rootNode, "indices" );
-		if ( Json_IsArray( indices ) )
+		const Json_t * indices = Json_GetMemberByName( rootNode, "indices" );
+		for ( int i = 0; i < Json_GetMemberCount( indices ); i++ )
 		{
-			for ( int i = 0; i < Json_GetChildCount( indices ); i++ )
-			{
-				const int index = Json_GetInt32( Json_GetChildByIndex( indices, i ), 0 );
-				(void)index;
-			}
+			const unsigned int index = Json_GetUint32( Json_GetMemberByIndex( indices, i ), 0 );
+			(void)index;
 		}
 	}
 	Json_Destroy( rootNode );
 }
 
+free( buffer );
+
+
+COMPARISON
+==========
+
+The following DOM-style implementations were tested:
+                                                            
+Name        Version               Source                                   Language
+-----------------------------------------------------------------------------------
+Json_t      1.0                   this file                                C99
+rapidjson   1.02                  https://github.com/miloyip/rapidjson     C++
+sajson      Mar 24, 2016          https://github.com/chadaustin/sajson     C++
+gason       Sep 16, 2015          https://github.com/vivkin/gason          C++
+ujson4c     1.0 (ultrajson 1.34)  https://github.com/esnme/ujson4c         C99
+cJSON       Mar 19, 2016          https://github.com/DaveGamble/cJSON      C99
+OVR::JSON   Apr 9, 2013           https://developer3.oculus.com/downloads  C++
+jsoncons    Aug 19, 2016          http://danielaparker.github.io/jsoncons  C++11
+json11      Jun 20, 2016          https://github.com/dropbox/json11        C++11
+nlohmann    2.0.0                 https://github.com/nlohmann/json         C++11
+
+These implementations have the following general properties:
+
+           Const   Throws  Mutable  Maint. Member       Case       Supports  Supports  Supports  Supports  Supports  <= 4u   Clamp   Robust
+Name       source  except. DOM      order  storage      sensitive  UTF16     int32_t   uint32_t  int64_t   uint64_t  double  double  
+-------------------------------------------------------------------------------------------------------------------------------------------
+Json_t     yes     no      yes      yes    array        yes        yes       yes       yes       yes       yes       yes     yes     yes
+rapidjson  yes     yes     yes      yes    array        yes        yes       yes       yes       yes       yes       yes     no      no
+sajson     yes     no      no       no     array        yes        yes       no        no        no        no        no      no      no
+gason      no      no      no       yes    linked-list  N/A        no        yes       yes       no        no        no      no      no
+ujson4c    yes     no      yes      yes    linked-list  N/A        yes       yes       yes       yes       no        no      no      no
+cJSON      yes     no      yes      yes    linked-list  no         broken    yes       no        no        no        no      no      no
+OVR::JSON  yes     no      yes      yes    linked-list  yes        broken    yes       yes       no        no        no      no      no
+jsoncons   yes     yes     yes      yes    std::vector  yes        yes       yes       yes       yes       yes       yes     no      yes
+json11     yes     no      yes      no     std::map     yes        yes       yes       no        no        no        yes     no      yes
+nlohmann   yes     yes     yes      no     std::map     yes        yes       yes       yes       yes       yes       yes     no      no
+
+  Const source       = Is the JSON source text left unmodified and can it be freed after creating the DOM?
+  Throws except.     = Does this implementation throw exceptions during parsing?
+  Mutable DOM        = Can the DOM be modified after it is parsed or created?
+  Maint. order       = Are object members stored in the same order in the JSON text and DOM?
+  Member storage     = How are object members stored in the DOM?
+  Case sensitive     = Are object member lookups case sensitive?
+  Supports UTF16     = Does this implementation support UTF16 with surrogate pairs?
+  Supports int32_t   = Can this implementation represent the full 32-bit signed integer range?
+  Supports uint32_t  = Can this implementation represent the full 32-bit unsigned integer range?
+  Supports int64_t   = Can this implementation represent the full 64-bit signed integer range?
+  Supports uint64_t  = Can this implementation represent the full 64-bit unsigned integer range?
+  Clamp double       = Are numbers clamped to the range [DBL_MIN, DBL_MAX] to avoid infinity?
+  <= 4u double       = Are all 64-bit floating-point values accurately represented within 4 ulps?
+  Robust             = Is looking up a missing value, or value of the wrong type,
+                       safe without causing a fatal run-time exception?
+
 
 BENCHMARK
 =========
-
-The following implementations were tested:
-                                                              Case       Supports  Supports  Member       Reorders
-Name       Source                                   Language  sensitive  longlong  double    storage      members
-------------------------------------------------------------------------------------------------------------------
-Json_t     this file                                C99       yes        yes       yes       array        no
-rapidjson  https://github.com/miloyip/rapidjson     C++11     yes        yes       yes       array        no
-cJSON      https://github.com/DaveGamble/cJSON      C99       no         no        yes       linked-list  no
-OVR::JSON  https://developer3.oculus.com/downloads  C++0x     yes        no        yes       linked-list  no
-jsoncons   http://danielaparker.github.io/jsoncons  C++11     yes        yes       yes       std::vector  no
-json11     https://github.com/dropbox/json11        C++11     yes        yes       yes       std::map     no
-nlohmann   https://github.com/nlohmann/json         C++11     yes        yes       yes       std::map     no
-
-Minor changes had to made to some of these implementations to compile with GCC and Clang.
-- Exception handling was disabled in rapidjson.
-- Alternate implementations for std::to_string, std::stoi, std::strtof, std::strtold in nlohmann.
 
 This benchmark shows the time in milliseconds it takes to parse 'twitter_public_timeline.json' 1000 times.
 
@@ -223,8 +336,11 @@ Text to DOM     2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
                 VS2015-up3     VS2015-up3     GCC 4.9        GCC 4.9        Clang 3.8      Clang 3.8
 				c++11          c++11          gnustl_static  gnustl_static  c++_static     c++_static
 ----------------------------------------------------------------------------------------------------------
-  Json_t        121.930 ms     107.169 ms      260.471 ms     229.713 ms     295.828 ms     259.748 ms
-  rapidjson     111.411 ms     112.965 ms      294.813 ms     217.756 ms     322.271 ms     267.120 ms
+  Json_t        121.930 ms     107.169 ms      260.471 ms     229.713 ms     284.767 ms     244.413 ms
+  rapidjson     111.411 ms     112.965 ms      294.813 ms     217.756 ms     318.686 ms     267.120 ms
+  sajson         97.930 ms      67.170 ms      287.485 ms     167.319 ms     173.386 ms     182.552 ms
+  gason          63.300 ms      58.075 ms      116.311 ms     115.667 ms     195.282 ms     123.649 ms
+  ujson4c       118.903 ms     114.800 ms      417.591 ms     330.118 ms     364.956 ms     287.685 ms
   cJSON         188.701 ms     169.897 ms      363.644 ms     315.248 ms     423.802 ms     319.888 ms
   OVR::JSON     329.450 ms     294.698 ms      791.750 ms     883.271 ms     812.664 ms     879.435 ms
   jsoncons      289.972 ms     230.264 ms      616.342 ms     582.109 ms     618.514 ms     451.056 ms
@@ -238,8 +354,11 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
                 VS2015-up3     VS2015-up3     GCC 4.9        GCC 4.9        Clang 3.8      Clang 3.8
 				c++11          c++11          gnustl_static  gnustl_static  c++_static     c++_static
 ----------------------------------------------------------------------------------------------------------
-  Json_t         22.131 ms      19.727 ms      106.081 ms      39.828 ms      87.568 ms      42.936 ms
+  Json_t         22.131 ms      19.727 ms      106.081 ms      39.828 ms      84.220 ms      42.936 ms
   rapidjson      40.618 ms      29.887 ms       82.376 ms      48.170 ms      75.268 ms      49.578 ms
+  sajson         26.316 ms      42.084 ms      153.721 ms     113.389 ms      95.203 ms      56.443 ms
+  gason          22.675 ms      22.880 ms      212.653 ms      99.502 ms     218.437 ms     103.013 ms
+  ujson4c        24.249 ms      30.401 ms      141.612 ms      82.157 ms      96.826 ms      87.144 ms
   cJSON         271.376 ms     330.203 ms      522.007 ms     468.991 ms     600.157 ms     571.723 ms
   OVR::JSON      55.858 ms      55.793 ms      334.563 ms     205.061 ms     332.576 ms     202.970 ms
   jsoncons      150.714 ms     137.073 ms      542.477 ms     421.545 ms     963.076 ms     796.742 ms
@@ -255,10 +374,14 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdarg.h>
+#include <float.h>
 #include <assert.h>
 #include <string.h>
 #include <malloc.h>
+
+#define CLAMP( x, min, max )		( ( x >= min ) ? ( ( x <= max ) ? x : max ) : min )
 
 // JSON value type
 typedef enum
@@ -266,11 +389,12 @@ typedef enum
 	JSON_NONE		= 0,
 	JSON_NULL		= 1,	// null
 	JSON_BOOLEAN	= 2,	// true | false
-	JSON_INTEGER	= 3,	// integer
-	JSON_FLOAT		= 4,	// integer[.fraction][exponent]
-	JSON_STRING		= 5,	// "string"
-	JSON_OBJECT		= 6,	// { "name" : <value>, "name" : <value>, ... }
-	JSON_ARRAY		= 7		// [ <value>, <value>, ... ]
+	JSON_INT		= 3,	// signed integer
+	JSON_UINT		= 4,	// unsigned integer
+	JSON_FLOAT		= 5,	// integer[.fraction][exponent]
+	JSON_STRING		= 6,	// "string"
+	JSON_OBJECT		= 7,	// { "name" : <value>, "name" : <value>, ... }
+	JSON_ARRAY		= 8		// [ <value>, <value>, ... ]
 } JsonType_t;
 
 // JSON value
@@ -285,15 +409,16 @@ typedef struct Json_t
 	};
 	union
 	{
-		long long		valueInt64;		// 64-bit integer value
+		int64_t			valueInt64;		// 64-bit signed integer value
+		uint64_t		valueUint64;	// 64-bit unsigned integer value
 		double			valueDouble;	// 64-bit floating-point value
 		char *			valueString;	// string value
-		struct Json_t *	children;		// object/array children
+		struct Json_t *	members;		// object/array members
 	};
 	JsonType_t		type;				// type of value
-	int				childrenAllocated;	// number of allocated children
-	int				childCount;			// number of actual children
-	int				childIndex;			// mutable child index for faster lookups
+	int				membersAllocated;	// number of allocated members
+	int				memberCount;		// number of actual members
+	int				memberIndex;		// mutable member index for faster lookups
 } Json_t;
 
 Json_t * Json_Create()
@@ -303,28 +428,28 @@ Json_t * Json_Create()
 	return json;
 }
 
-static Json_t * Json_AllocChild( Json_t * parentNode )
+static Json_t * Json_AllocMember( Json_t * node )
 {
-	if ( parentNode->childCount >= parentNode->childrenAllocated )
+	if ( node->memberCount >= node->membersAllocated )
 	{
-		const int newAllocated = ( parentNode->childrenAllocated <= 0 ) ? 8 : parentNode->childrenAllocated * 2;
-		Json_t * newChildren = (Json_t *) malloc( newAllocated * sizeof( Json_t ) );
-		if ( parentNode->children != NULL )
+		const int newAllocated = ( node->membersAllocated <= 0 ) ? 8 : node->membersAllocated * 2;
+		Json_t * newmembers = (Json_t *) malloc( newAllocated * sizeof( Json_t ) );
+		if ( node->members != NULL )
 		{
-			memcpy( newChildren, parentNode->children, parentNode->childrenAllocated * sizeof( Json_t ) );
-			free( parentNode->children );
+			memcpy( newmembers, node->members, node->membersAllocated * sizeof( Json_t ) );
+			free( node->members );
 		}
-		parentNode->children = newChildren;
-		parentNode->childrenAllocated = newAllocated;
+		node->members = newmembers;
+		node->membersAllocated = newAllocated;
 	}
-	Json_t * child = &parentNode->children[parentNode->childCount++];
-	child->name = NULL;
-	child->valueInt64 = 0;
-	child->type = JSON_NONE;
-	child->childrenAllocated = 0;
-	child->childCount = 0;
-	child->childIndex = 0;
-	return child;
+	Json_t * member = &node->members[node->memberCount++];
+	member->name = NULL;
+	member->valueInt64 = 0;
+	member->type = JSON_NONE;
+	member->membersAllocated = 0;
+	member->memberCount = 0;
+	member->memberIndex = 0;
+	return member;
 }
 
 static void Json_FreeNode( Json_t * node, const bool freeName )
@@ -336,11 +461,11 @@ static void Json_FreeNode( Json_t * node, const bool freeName )
 	}
 	if ( node->type == JSON_OBJECT || node->type == JSON_ARRAY )
 	{
-		for ( int c = 0; c < node->childCount; c++ )
+		for ( int c = 0; c < node->memberCount; c++ )
 		{
-			Json_FreeNode( &node->children[c], true );
+			Json_FreeNode( &node->members[c], true );
 		}
-		free( node->children );
+		free( node->members );
 	}
 	else if ( node->type == JSON_STRING )
 	{
@@ -348,9 +473,9 @@ static void Json_FreeNode( Json_t * node, const bool freeName )
 	}
 	node->valueInt64 = 0;
 	node->type = JSON_NONE;
-	node->childrenAllocated = 0;
-	node->childCount = 0;
-	node->childIndex = 0;
+	node->membersAllocated = 0;
+	node->memberCount = 0;
+	node->memberIndex = 0;
 }
 
 static void Json_Destroy( Json_t * rootNode )
@@ -375,10 +500,10 @@ static const char * Json_ParseWhiteSpace( const char * buffer )
 
 // Parses a hexadecimal string up to the specified number of digits and stores the integer result in 'value'.
 // Returns a pointer to the first character after the string.
-static const char * Json_ParseHex( unsigned int * value, const unsigned int digitCount, const char * buffer )
+static const char * Json_ParseHex4( unsigned int * value, const char * buffer )
 {
 	int v = 0;
-	for( unsigned int digit = 0; digit < digitCount; digit++, buffer++ )
+	for( unsigned int digit = 0; digit < 4; digit++, buffer++ )
 	{
 		unsigned int d = buffer[0];
 
@@ -451,48 +576,29 @@ static const char * Json_ParseString( char ** value, const char * buffer, const 
 		{
 			// Transcode UTF16 to UTF8.
 			unsigned int uc = 0;
-			buffer = Json_ParseHex( &uc, 4, buffer + 2 );
-			if ( ( uc >= 0xDC00 && uc <= 0xDFFF ) || uc == 0 )
-			{
-				free( out );
-				*errorStringOut = "invalid unicode";
-				return buffer;
-			}
-
-			// UTF16 surrogate pairs.
+			buffer = Json_ParseHex4( &uc, buffer + 2 );
+			// Check for UTF16 surrogate pairs.
 			if ( uc >= 0xD800 && uc <= 0xDBFF )
 			{
 				// Second-half of surrogate.
 				if ( buffer[0] == '\\' && buffer[1] == 'u' )
 				{
 					unsigned int uc2 = 0;
-					buffer = Json_ParseHex( &uc2, 4, buffer + 2 );
-					if ( ( uc2 >= 0xDC00 && uc2 <= 0xDFFF ) || uc2 == 0 )
+					buffer = Json_ParseHex4( &uc2, buffer + 2 );
+					if ( uc2 < 0xDC00 || uc2 > 0xDFFF )
 					{
 						free( out );
 						*errorStringOut = "invalid unicode";
 						return buffer;
 					}
-					uc = 0x10000 + ( ( ( uc & 0x3FF ) << 10 ) | ( uc2 & 0x3FF ) );
+					uc = ( ( ( uc - 0xD800 ) << 10 ) | ( uc2 - 0xDC00 ) ) + 0x10000;
 				}
 			}
 
-			int outLength = 4;
-                    
-			if ( uc < 0x80 )
-			{
-				outLength = 1;
-			}
-			else if ( uc < 0x800 )
-			{
-				outLength = 2;
-			}
-			else if ( uc < 0x10000 )
-			{
-				outLength = 3;
-			}
+			const int outLength =	( ( uc < 0x80 ) ? 1 :
+									( ( uc < 0x800 ) ? 2 :
+									( ( uc < 0x10000 ) ? 3 : 4 ) ) );
 			outPtr += outLength;
-                    
 			switch ( outLength )
 			{
 				case 4: *--outPtr = (char)( ( uc | 0x80 ) & 0xBF ); uc >>= 6;	// fall through
@@ -567,9 +673,10 @@ static const double json_pow10[] =
 	1e+304,1e+305,1e+306,1e+307,1e+308
 };
 
-// Parses a number and stores the result in 'valueInt64' or 'valueDouble'.
+// Parses a number and stores the result in 'valueInt64', 'valueUint64' or 'valueDouble'.
 // Returns a pointer to the first character after the number.
-static const char * Json_ParseNumber( JsonType_t * type, long long * valueInt64, double * valueDouble, const char * buffer, const char ** errorStringOut )
+static const char * Json_ParseNumber( JsonType_t * type, int64_t * valueInt64, uint64_t * valueUint64, double * valueDouble,
+										const char * buffer, const char ** errorStringOut )
 {
 	(void)errorStringOut;
 
@@ -577,8 +684,9 @@ static const char * Json_ParseNumber( JsonType_t * type, long long * valueInt64,
 	int fractionalDigits = 0;
 	int exponentSign = 1;
 	int exponentValue = 0;
-	long long int64Value = 0;
+	uint64_t uint64Value = 0;
 	double doubleValue = 0.0;
+	bool uint64Overflowed = false;
 
 	if ( buffer[0] == '-' )
 	{
@@ -594,18 +702,27 @@ static const char * Json_ParseNumber( JsonType_t * type, long long * valueInt64,
 	// Skip leading zeros and parse integer digits.
 	while ( buffer[0] >= '0' && buffer[0] <= '9' )
 	{
-		int64Value = ( int64Value * 10 ) + ( buffer[0] - '0' );
-		doubleValue = ( doubleValue * 10.0 ) + ( buffer[0] - '0' );
+		const char d = ( buffer[0] - '0' );
+		uint64Overflowed |= ( uint64Value > ( UINT64_MAX / 10 ) ) | ( ( uint64Value * 10 ) > UINT64_MAX - d );
+		uint64Value = ( uint64Value * 10 ) + d;
+		doubleValue = ( doubleValue * 10.0 ) + d;
 		buffer++;
 	}
-	// Parse fractional digits.
+	// Parse up to 16 fractional digits.
 	if ( buffer[0] == '.' )
 	{
 		buffer++;
-		while ( buffer[0] >= '0' && buffer[0] <= '9' )
+		int nonZeroDigits = 0;
+		while ( buffer[0] >= '0' && buffer[0] <= '9' && nonZeroDigits < 16 )
 		{
 			doubleValue = ( doubleValue * 10.0 ) + ( buffer[0] - '0' );
+			nonZeroDigits += ( doubleValue != 0.0 );
 			fractionalDigits++;
+			buffer++;
+		}
+		// Skip the remaining digits.
+		while ( buffer[0] >= '0' && buffer[0] <= '9' )
+		{
 			buffer++;
 		}
 	}
@@ -631,16 +748,37 @@ static const char * Json_ParseNumber( JsonType_t * type, long long * valueInt64,
 		}
 	}
 
-	if ( fractionalDigits != 0 || exponentValue != 0 )
+	if ( fractionalDigits != 0 || exponentValue != 0 || uint64Overflowed || ( sign < 0 && uint64Value > (uint64_t)INT64_MAX + 1 ) )
 	{
-		const int exp = exponentSign * exponentValue - fractionalDigits;
 		*type = JSON_FLOAT;
-		*valueDouble = sign * doubleValue * json_pow10[308 + ( exp >= -308 ? ( exp <= 308 ? exp : 308 ) : -308 )];
+		const int exp = exponentSign * exponentValue - fractionalDigits;
+		if ( exp > 308 )
+		{
+			*valueDouble = sign * DBL_MAX;
+		}
+		else if ( exp >= -306 )
+		{
+			const double v = doubleValue * json_pow10[308 + 1] * json_pow10[308 + exp - 1];
+			*valueDouble = sign * ( v <= DBL_MAX ? v : DBL_MAX );
+		}
+		else if ( exp >= -324 )
+		{
+			*valueDouble = sign * doubleValue * json_pow10[16] * json_pow10[308 * 2 + exp - 16];
+		}
+		else
+		{
+			*valueDouble = 0.0;
+		}
+	}
+	else if ( sign < 0 )
+	{
+		*type = JSON_INT;
+		*valueInt64 = -(int64_t)uint64Value;
 	}
 	else
 	{
-		*type = JSON_INTEGER;
-		*valueInt64 = sign * int64Value;
+		*type = JSON_UINT;
+		*valueUint64 = uint64Value;
 	}
 
 	return buffer;
@@ -691,13 +829,18 @@ static const char * Json_ParseValue( Json_t * json, const char * buffer, const c
 				buffer++;
 				break;
 			}
-			if ( buffer[0] == ',' )
+			if ( json->memberCount > 0 )
 			{
+				if ( buffer[0] != ',' )
+				{
+					*errorStringOut = "missing comma";
+					return buffer;
+				}
 				buffer++;
 			}
-			Json_t * child = Json_AllocChild( json );
+			Json_t * member = Json_AllocMember( json );
 			buffer = Json_ParseWhiteSpace( buffer );
-			buffer = Json_ParseString( &child->name, buffer, errorStringOut );
+			buffer = Json_ParseString( &member->name, buffer, errorStringOut );
 			buffer = Json_ParseWhiteSpace( buffer );
 			if ( buffer[0] != ':' )
 			{
@@ -705,7 +848,7 @@ static const char * Json_ParseValue( Json_t * json, const char * buffer, const c
 				return buffer;
 			}
 			buffer++;
-			buffer = Json_ParseValue( child, buffer, errorStringOut );
+			buffer = Json_ParseValue( member, buffer, errorStringOut );
 		}
 		return buffer;
 	}
@@ -722,18 +865,23 @@ static const char * Json_ParseValue( Json_t * json, const char * buffer, const c
 				buffer++;
 				break;
 			}
-			if ( buffer[0] == ',' )
+			if ( json->memberCount > 0 )
 			{
+				if ( buffer[0] != ',' )
+				{
+					*errorStringOut = "missing comma";
+					return buffer;
+				}
 				buffer++;
 			}
-			Json_t * child = Json_AllocChild( json );
-			buffer = Json_ParseValue( child, buffer, errorStringOut );
+			Json_t * member = Json_AllocMember( json );
+			buffer = Json_ParseValue( member, buffer, errorStringOut );
 		}
 		return buffer;
 	}
 	else
 	{
-		return Json_ParseNumber( &json->type, &json->valueInt64, &json->valueDouble, buffer, errorStringOut );
+		return Json_ParseNumber( &json->type, &json->valueInt64, &json->valueUint64, &json->valueDouble, buffer, errorStringOut );
 	}
 
 	*errorStringOut = "invalid value";
@@ -855,16 +1003,22 @@ static void Json_WriteValue( const Json_t * node, char ** bufferInOut, int * len
 	{
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, (int)strlen( node->valueString ) + 2, "%s%s\n", node->valueString, lastChild ? "" : "," );
 	}
-	else if ( node->type == JSON_INTEGER )
+	else if ( node->type == JSON_INT )
 	{
 		char temp[1024];
 		const int length = sprintf( temp, "%lld", node->valueInt64 );
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, length + 2, "%s%s\n", temp, lastChild ? "" : "," );
 	}
+	else if ( node->type == JSON_UINT )
+	{
+		char temp[1024];
+		const int length = sprintf( temp, "%llu", node->valueUint64 );
+		Json_Printf( bufferInOut, lengthInOut, offsetInOut, length + 2, "%s%s\n", temp, lastChild ? "" : "," );
+	}
 	else if ( node->type == JSON_FLOAT )
 	{
 		char temp[1024];
-		const int length = sprintf( temp, "%f", node->valueDouble );
+		int length = sprintf( temp, "%g", node->valueDouble );
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, length + 2, "%s%s\n", temp, lastChild ? "" : "," );
 	}
 	else if ( node->type == JSON_STRING )
@@ -895,22 +1049,22 @@ static void Json_WriteValue( const Json_t * node, char ** bufferInOut, int * len
 	else if ( node->type == JSON_OBJECT )
 	{
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "{\n" );
-		for ( int i = 0; i < node->childCount; i++ )
+		for ( int i = 0; i < node->memberCount; i++ )
 		{
-			const Json_t * child = &node->children[i];
-			Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1 + (int)strlen( child->name ) + 5, "%s\"%s\" : ", &indentTable[maxIndent - ( indent + 1 )], child->name );
-			Json_WriteValue( child, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->childCount - 1 ) );
+			const Json_t * member = &node->members[i];
+			Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1 + (int)strlen( member->name ) + 5, "%s\"%s\" : ", &indentTable[maxIndent - ( indent + 1 )], member->name );
+			Json_WriteValue( member, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
 		}
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 2, "%s}%s\n", &indentTable[maxIndent - indent], lastChild ? "" : "," );
 	}
 	else if ( node->type == JSON_ARRAY )
 	{
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "[\n" );
-		for ( int i = 0; i < node->childCount; i++ )
+		for ( int i = 0; i < node->memberCount; i++ )
 		{
-			const Json_t * child = &node->children[i];
+			const Json_t * member = &node->members[i];
 			Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1, "%s", &indentTable[maxIndent - ( indent + 1 )] );
-			Json_WriteValue( child, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->childCount - 1 ) );
+			Json_WriteValue( member, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
 		}
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 2, "%s]%s\n", &indentTable[maxIndent - indent], lastChild ? "" : "," );
 	}
@@ -959,62 +1113,40 @@ static bool Json_WriteToFile( const Json_t * rootNode, const char * fileName )
 	return true;
 }
 
-static int Json_GetChildCount( const Json_t * parentNode )
+static int Json_GetMemberCount( const Json_t * node )
 {
-	return ( parentNode != NULL ) ? parentNode->childCount : 0;
+	return ( node != NULL ) ? node->memberCount : 0;
 }
 
-static Json_t * Json_GetChildByIndex( const Json_t * parentNode, const int index )
+static Json_t * Json_GetMemberByIndex( const Json_t * node, const int index )
 {
-	if ( parentNode != NULL )
+	if ( node != NULL )
 	{
-		if ( parentNode->type == JSON_OBJECT || parentNode->type == JSON_ARRAY )
+		if ( node->type == JSON_OBJECT || node->type == JSON_ARRAY )
 		{
-			if ( index >= 0 && index < parentNode->childCount )
+			if ( index >= 0 && index < node->memberCount )
 			{
-				return &parentNode->children[index];
+				return &node->members[index];
 			}
 		}
 	}
 	return NULL;
 }
 
-static Json_t * Json_GetChildByName( const Json_t * parentNode, const char * childName )
+static Json_t * Json_GetMemberByName( const Json_t * node, const char * name )
 {
-	if ( parentNode != NULL && parentNode->type == JSON_OBJECT )
+	if ( node != NULL && node->type == JSON_OBJECT )
 	{
-		assert( childName != NULL );
-		for ( int i = 0; i < parentNode->childCount; i++ )
+		assert( name != NULL );
+		for ( int i = 0; i < node->memberCount; i++ )
 		{
-			Json_t * child = &parentNode->children[( parentNode->childIndex + i ) % parentNode->childCount];
-			if ( strcmp( child->name, childName ) == 0 )
+			Json_t * member = &node->members[( node->memberIndex + i ) % node->memberCount];
+			if ( strcmp( member->name, name ) == 0 )
 			{
-				*(int *)&parentNode->childIndex = ( parentNode->childIndex + i + 1 ) % parentNode->childCount;	// mutable
-				return child;
+				*(int *)&node->memberIndex = ( node->memberIndex + i + 1 ) % node->memberCount;	// mutable
+				return member;
 			}
 			// Set a breakpoint here to find cases where the JSON is not parsed in order.
-		}
-	}
-	return NULL;
-}
-
-static Json_t * Json_AddChild( Json_t * parentNode, const char * childName )
-{
-	if ( parentNode != NULL )
-	{
-		if ( parentNode->type == JSON_OBJECT )
-		{
-			assert( childName != NULL );
-			Json_t * child = Json_AllocChild( parentNode );
-			const size_t length = strlen( childName );
-			child->name = (char *) malloc( length + 1 );
-			strcpy( child->name, childName );
-			child->name[length] = '\0';
-			return child;
-		}
-		else if ( parentNode->type == JSON_ARRAY )
-		{
-			return Json_AllocChild( parentNode );
 		}
 	}
 	return NULL;
@@ -1032,12 +1164,17 @@ static inline bool Json_IsBoolean( const Json_t * node )
 
 static inline bool Json_IsNumber( const Json_t * node )
 {
-	return ( node != NULL && ( node->type == JSON_INTEGER || node->type == JSON_FLOAT ) );
+	return ( node != NULL && ( node->type == JSON_INT || node->type == JSON_UINT || node->type == JSON_FLOAT ) );
 }
 
 static inline bool Json_IsInteger( const Json_t * node )
 {
-	return ( node != NULL && node->type == JSON_INTEGER );
+	return ( node != NULL && ( node->type == JSON_INT || node->type == JSON_UINT ) );
+}
+
+static inline bool Json_IsUnsigned( const Json_t * node )
+{
+	return ( node != NULL && node->type == JSON_UINT );
 }
 
 static inline bool Json_IsFloatingPoint( const Json_t * node )
@@ -1062,32 +1199,119 @@ static inline bool Json_IsArray( const Json_t * node )
 
 static inline bool Json_GetBool( const Json_t * node, const bool defaultValue )
 {
-	return Json_IsBoolean( node ) ? strcmp( node->valueString, "false" ) != 0 : defaultValue;
+	return Json_IsBoolean( node ) ? node->valueString[0] == 't' : defaultValue;
 }
 
-static inline int Json_GetInt32( const Json_t * node, const int defaultValue )
+static inline int32_t Json_GetInt32( const Json_t * node, const int32_t defaultValue )
 {
-	return Json_IsInteger( node ) ? (int)node->valueInt64 : ( Json_IsFloatingPoint( node ) ? (int)node->valueDouble : defaultValue );
+	return	( ( node == NULL ) ?				defaultValue :
+			( ( node->type == JSON_INT ) ?		(int32_t)CLAMP( node->valueInt64, INT32_MIN, INT32_MAX ) :
+			( ( node->type == JSON_UINT ) ?		(int32_t)CLAMP( node->valueUint64, 0, INT32_MAX ) :
+			( ( node->type == JSON_FLOAT ) ?	(int32_t)CLAMP( node->valueDouble, INT32_MIN, INT32_MAX ) : defaultValue ) ) ) );
 }
 
-static inline long long Json_GetInt64( const Json_t * node, const long long defaultValue )
+static inline uint32_t Json_GetUint32( const Json_t * node, const uint32_t defaultValue )
 {
-	return Json_IsInteger( node ) ? node->valueInt64 : ( Json_IsFloatingPoint( node ) ? (long long)node->valueDouble : defaultValue );
+	return	( ( node == NULL ) ?				defaultValue :
+			( ( node->type == JSON_UINT ) ?		(uint32_t)CLAMP( node->valueUint64, 0, UINT32_MAX ) :
+			( ( node->type == JSON_INT ) ?		(uint32_t)CLAMP( node->valueInt64, 0, UINT32_MAX ) :
+			( ( node->type == JSON_FLOAT ) ?	(uint32_t)CLAMP( node->valueDouble, 0, UINT32_MAX ) : defaultValue ) ) ) );
+}
+
+static inline int64_t Json_GetInt64( const Json_t * node, const int64_t defaultValue )
+{
+	return	( ( node == NULL ) ?				defaultValue :
+			( ( node->type == JSON_INT ) ?		(int64_t)node->valueInt64 :
+			( ( node->type == JSON_UINT ) ?		(int64_t)CLAMP( node->valueUint64, 0, INT64_MAX ) :
+			( ( node->type == JSON_FLOAT ) ?	(int64_t)CLAMP( node->valueDouble, INT64_MIN, INT64_MAX ) : defaultValue ) ) ) );
+}
+
+static inline uint64_t Json_GetUint64( const Json_t * node, const uint64_t defaultValue )
+{
+	return	( ( node == NULL ) ?				defaultValue :
+			( ( node->type == JSON_UINT ) ?		(uint64_t)node->valueUint64 :
+			( ( node->type == JSON_INT ) ?		(uint64_t)CLAMP( node->valueInt64, 0, INT64_MAX ) :
+			( ( node->type == JSON_FLOAT ) ?	(uint64_t)CLAMP( node->valueDouble, 0, UINT64_MAX ) : defaultValue ) ) ) );
 }
 
 static inline float Json_GetFloat( const Json_t * node, const float defaultValue )
 {
-	return Json_IsInteger( node ) ? (float)node->valueInt64 : ( Json_IsFloatingPoint( node ) ? (float)node->valueDouble : defaultValue );
+	return	( ( node == NULL ) ?				defaultValue :
+			( ( node->type == JSON_FLOAT ) ?	(float)CLAMP( node->valueDouble, FLT_MIN, FLT_MAX ) :
+			( ( node->type == JSON_INT ) ?		(float)node->valueInt64 :
+			( ( node->type == JSON_UINT ) ?		(float)node->valueUint64 : defaultValue ) ) ) );
 }
 
 static inline double Json_GetDouble( const Json_t * node, const double defaultValue )
 {
-	return Json_IsInteger( node ) ? (double)node->valueInt64 : ( Json_IsFloatingPoint( node ) ? node->valueDouble : defaultValue );
+	return	( ( node == NULL ) ?				defaultValue :
+			( ( node->type == JSON_FLOAT ) ?	(double)node->valueDouble :
+			( ( node->type == JSON_INT ) ?		(double)node->valueInt64 :
+			( ( node->type == JSON_UINT ) ?		(double)node->valueUint64 : defaultValue ) ) ) );
 }
 
 static inline const char * Json_GetString( const Json_t * node, const char * defaultValue )
 {
 	return Json_IsString( node ) ? node->valueString : defaultValue;
+}
+
+static Json_t * Json_AddObjectMember( Json_t * node, const char * name )
+{
+	if ( node != NULL && node->type == JSON_OBJECT )
+	{
+		assert( name != NULL );
+		Json_t * member = Json_AllocMember( node );
+		const size_t length = strlen( name );
+		member->name = (char *) malloc( length + 1 );
+		strcpy( member->name, name );
+		member->name[length] = '\0';
+		member->type = JSON_NULL;
+		member->valueString = (char *)"null";
+		return member;
+	}
+	return NULL;
+}
+
+static Json_t * Json_AddArrayElement( Json_t * node )
+{
+	if ( node != NULL && node->type == JSON_ARRAY )
+	{
+		Json_t * element = Json_AllocMember( node );
+		element->type = JSON_NULL;
+		element->valueString = (char *)"null";
+	}
+	return NULL;
+}
+
+static inline Json_t * Json_SetObject( Json_t * node )
+{
+	if ( node != NULL )
+	{
+		Json_FreeNode( node, false );
+		node->type = JSON_OBJECT;
+	}
+	return node;
+}
+
+static inline Json_t * Json_SetArray( Json_t * node )
+{
+	if ( node != NULL )
+	{
+		Json_FreeNode( node, false );
+		node->type = JSON_ARRAY;
+	}
+	return node;
+}
+
+static inline Json_t * Json_SetNull( Json_t * node )
+{
+	if ( node != NULL )
+	{
+		Json_FreeNode( node, false );
+		node->type = JSON_NULL;
+		node->valueString = (char *)"null";
+	}
+	return node;
 }
 
 static inline Json_t * Json_SetBoolean( Json_t * node, const bool value )
@@ -1101,24 +1325,46 @@ static inline Json_t * Json_SetBoolean( Json_t * node, const bool value )
 	return node;
 }
 
-static inline Json_t * Json_SetInt32( Json_t * node, const int value )
+static inline Json_t * Json_SetInt32( Json_t * node, const int32_t value )
 {
 	if ( node != NULL )
 	{
 		Json_FreeNode( node, false );
-		node->type = JSON_INTEGER;
+		node->type = JSON_INT;
 		node->valueInt64 = value;
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetInt64( Json_t * node, const long long value )
+static inline Json_t * Json_SetUint32( Json_t * node, const uint32_t value )
 {
 	if ( node != NULL )
 	{
 		Json_FreeNode( node, false );
-		node->type = JSON_INTEGER;
+		node->type = JSON_UINT;
+		node->valueUint64 = value;
+	}
+	return node;
+}
+
+static inline Json_t * Json_SetInt64( Json_t * node, const int64_t value )
+{
+	if ( node != NULL )
+	{
+		Json_FreeNode( node, false );
+		node->type = JSON_INT;
 		node->valueInt64 = value;
+	}
+	return node;
+}
+
+static inline Json_t * Json_SetUint64( Json_t * node, const uint64_t value )
+{
+	if ( node != NULL )
+	{
+		Json_FreeNode( node, false );
+		node->type = JSON_UINT;
+		node->valueUint64 = value;
 	}
 	return node;
 }
@@ -1155,26 +1401,6 @@ static inline Json_t * Json_SetString( Json_t * node, const char * value )
 		const int length = (int)strlen( value );
 		node->valueString = (char *) malloc( length + 1 );
 		strcpy( node->valueString, value );
-	}
-	return node;
-}
-
-static inline Json_t * Json_SetObject( Json_t * node )
-{
-	if ( node != NULL )
-	{
-		Json_FreeNode( node, false );
-		node->type = JSON_OBJECT;
-	}
-	return node;
-}
-
-static inline Json_t * Json_SetArray( Json_t * node )
-{
-	if ( node != NULL )
-	{
-		Json_FreeNode( node, false );
-		node->type = JSON_ARRAY;
 	}
 	return node;
 }
