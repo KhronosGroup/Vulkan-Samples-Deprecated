@@ -64,12 +64,12 @@ in only a single string comparison per lookup. This implementation
 keeps objects in the same order in the DOM and the JSON text.
 
 This implementation stores the members of an object, or the elements
-of an array, as a single flat array in memory. While this may require
-re-allocation during construction or parsing, with geometric growth
-there are only O(log(N)) allocations and the re-allocation is not nearly
-as costly as iterating a linked list of objects that are all separately
-allocated. Having a flat array is not only more cache friendly but
-also allows direct indexing of an array.
+of an array, as a single flat array per object or array. While this may
+require re-allocation during construction or parsing, with geometric
+growth there are only O(log(N)) allocations and the re-allocation is
+not nearly as costly as iterating a linked list of objects that are
+all separately allocated. Having a flat array is not only more cache
+friendly but also allows direct indexing of an array.
 
 This implementation includes several trivial optimizations that allow
 it to compete with 'rapidjson' when it comes to parsing performance.
@@ -77,13 +77,15 @@ However, in most cases simplicity and correctness are favored over
 aggressive or low level optimizations that may break compatibility
 or conformance.
 
-This implementation can accurately represent the full 8-bit, 16-bit,
-32-bit and 64-bit, both signed and unsigned integer ranges.
-This implementation can also accurately represent all 32-bit and 64-bit
-floating-point values. The minimum/maximum floating-point numbers are
-parsed with full precision and all other floating-point numbers are
-represented within 4 ulps. For instance, this implementation parses
-the following numbers with full precision.
+The JSON specification allows an implementation to set limits on the
+range and precision of numbers. This implementation can accurately
+represent the full 8-bit, 16-bit, 32-bit and 64-bit, signed and
+unsigned integer ranges. This implementation can also accurately
+represent all 32-bit and 64-bit floating-point values. The minimum
+and maximum floating-point numbers are parsed with full precision
+and all other floating-point numbers are represented within 4 ulps.
+For instance, this implementation parses the following numbers with
+full precision.
 
 	INT8_MIN         -128
 	INT16_MIN        -32768
@@ -102,12 +104,20 @@ the following numbers with full precision.
 	DBL_MIN          2.2250738585072014e-308
 	DBL_MAX          1.7976931348623158e+308
 
-Integer values smaller than INT64_MIN or larger than UINT64_MAX are
+Integer values less than INT64_MIN or greater than UINT64_MAX are
 stored as foating-point. JSON does not support floating-point values
-like Infinity and NaN. Therefore floating-point values smaller than
-DBL_MIN or larger than DBL_MAX turn into DBL_MIN and DBL_MAX respectively.
+like infinity and NaN. Therefore floating-point values less than
+DBL_MIN or greater than DBL_MAX are represented as DBL_MIN and DBL_MAX
+respectively.
 
-This implementation supports both UTF8 and UTF16 with surrogate pairs.
+The JSON specification allows an implementation to set limits on the
+length and character contents of strings. This implementation supports
+both UTF8 and UTF16 with surrogate pairs. UTF32 is not supported.
+This implementation does not set limits on the length of strings.
+
+The JSON specification allows an implementation to set limits on
+the maximum depth of nesting. This implementation uses a recursive
+parser with a maximum recursion depth of 128.
 
 This implementation was designed to be robust, allowing completely
 invalid JSON text to be parsed without fatal run-time exceptions.
@@ -162,8 +172,8 @@ const char *	Json_GetString( const Json_t * node, const char * defaultValue );
 Json_t *		Json_SetObject( Json_t * node );								// Turns the node into an empty object.
 Json_t *		Json_SetArray( Json_t * node );									// Turns the node into an empty array.
 
-Json_t *		Json_AddObjectMember( Json_t * node, const char * name );		// The node must be an object.
-Json_t *		Json_AddArrayElement( Json_t * node );							// The node must be an array.
+Json_t *		Json_AddObjectMember( Json_t * node, const char * name );		// Adds and returns a new object member with the given name. The node must be an object.
+Json_t *		Json_AddArrayElement( Json_t * node );							// Adds and returns a new array element. The node must be an array.
 
 Json_t *		Json_SetNull( Json_t * node );									// Turns the node into null.
 Json_t *		Json_SetBoolean( Json_t * node, const bool value );				// Turns the node into a boolean.
@@ -179,30 +189,43 @@ Json_t *		Json_SetString( Json_t * node, const char * value );			// Turns the no
 USAGE
 =====
 
-The functions Json_GetMemberByIndex() and Json_GetMemberByName() may return
-NULL if the node is not an object or array, the index is out of range, or no
-member by the given name exists. All the Json_Is* functions will return false
-when a NULL node is passed in. All the Json_Get* functions will return the
-default value when a NULL node is passed in.
+The Json_Create() function creates an empty DOM. The default value of this
+empty DOM is null:
+
+    Json_IsNull( Json_Create() ) == true
+
+The Json_Read* functions can be used to initialize the DOM from JSON text.
+The Json_Is* and Json_Get* functions can be used to query the DOM from code.
+The Json_Set* and Json_Add* functions can be used to create/modify the DOM
+from code. The Json_Write* functions can be used to write the DOM to JSON
+text. The Json_Destroy() function is used to destroy the complete DOM.
+
+The functions Json_GetMemberByIndex() and Json_GetMemberByName() are used
+to access the elements of an array and/or members of an object. These functions
+may return NULL if the node is not an object or array, the index is out of range,
+or no member by the given name exists. All the Json_Is* functions will return
+false when a NULL node is passed in. All the Json_Get* functions will return
+the default value when a NULL node is passed in.
 
 The interface to create/modify the JSON DOM does not allow nodes to be
-inserted into the DOM because this can easily lead to cyclic references.
-Instead object members and array elements are allocated from a JSON
-object or array after which the member or element can be assigned a value.
-For instance:
+inserted into the DOM because this can easily lead to cyclic references
+and testing for cyclic references would be time consuming. Instead object
+members and array elements are allocated from a JSON object or array after
+which the member or element can be assigned a value. The default value of
+a new object member or array element is null.
+
+    Json_IsNull( Json_AddObjectMember( object, "count" ) ) == true
+    Json_IsNull( Json_AddArrayElement( array ) ) == true
+
+A value in the DOM can be changed at any time by calling one of the Json_Set*
+functions. For instance:
 
     Json_SetInt32( Json_AddObjectMember( object, "count" ), 10 );
     Json_SetFloat( Json_AddArrayElement( array ), 2.0f );
 
-By default a new object member or array element will be set to null.
-
-	Json_IsNull( Json_AddObjectMember( object, "count" ) ) == true
-	Json_IsNull( Json_AddArrayElement( array ) ) == true
-
-The value can be changed by calling one of the Json_Set* functions.
-The object members and array elements are kept in the order they are
-added. An object or array can be cleared by calling Json_SetObject() or
-Json_SetArray() respectively. 
+The object members and array elements are kept in the order they are added.
+A JSON object or array can be cleared by calling Json_SetObject() or
+Json_SetArray() respectively.
 
 
 EXAMPLES
@@ -250,19 +273,16 @@ int length = 0;
 			const float position_x = Json_GetFloat( Json_GetMemberByName( position, "x" ), 0.0f );
 			const float position_y = Json_GetFloat( Json_GetMemberByName( position, "y" ), 0.0f );
 			const float position_z = Json_GetFloat( Json_GetMemberByName( position, "z" ), 0.0f );
-			(void)position_x; (void)position_y; (void)position_z;
 
 			const Json_t * normal = Json_GetMemberByName( vertex, "normal" );
 			const float normal_x = Json_GetFloat( Json_GetMemberByName( normal, "x" ), 0.0f );
 			const float normal_y = Json_GetFloat( Json_GetMemberByName( normal, "y" ), 0.0f );
 			const float normal_z = Json_GetFloat( Json_GetMemberByName( normal, "z" ), 0.0f );
-			(void)normal_x; (void)normal_y; (void)normal_z;
 		}
 		const Json_t * indices = Json_GetMemberByName( rootNode, "indices" );
 		for ( int i = 0; i < Json_GetMemberCount( indices ); i++ )
 		{
 			const unsigned int index = Json_GetUint32( Json_GetMemberByIndex( indices, i ), 0 );
-			(void)index;
 		}
 	}
 	Json_Destroy( rootNode );
@@ -298,7 +318,7 @@ Json_t     yes     no      yes      yes    array        yes        yes       yes
 rapidjson  yes     yes     yes      yes    array        yes        yes       yes       yes       yes       yes       yes     no      no
 sajson     yes     no      no       no     array        yes        yes       no        no        no        no        no      no      no
 gason      no      no      no       yes    linked-list  N/A        no        yes       yes       no        no        no      no      no
-ujson4c    yes     no      yes      yes    linked-list  N/A        yes       yes       yes       yes       no        no      no      no
+ujson4c    yes     no      yes      yes    linked-list  N/A        nb        yes       yes       yes       no        no      no      no
 cJSON      yes     no      yes      yes    linked-list  no         broken    yes       no        no        no        no      no      no
 OVR::JSON  yes     no      yes      yes    linked-list  yes        broken    yes       yes       no        no        no      no      no
 jsoncons   yes     yes     yes      yes    std::vector  yes        yes       yes       yes       yes       yes       yes     no      yes
@@ -316,8 +336,8 @@ nlohmann   yes     yes     yes      no     std::map     yes        yes       yes
   Supports uint32_t  = Can this implementation represent the full 32-bit unsigned integer range?
   Supports int64_t   = Can this implementation represent the full 64-bit signed integer range?
   Supports uint64_t  = Can this implementation represent the full 64-bit unsigned integer range?
+  <= 4u double       = Are all 64-bit floating-point values in the range [DBL_MIN, DBL_MAX] accurately represented within 4 ulps?
   Clamp double       = Are numbers clamped to the range [DBL_MIN, DBL_MAX] to avoid infinity?
-  <= 4u double       = Are all 64-bit floating-point values accurately represented within 4 ulps?
   Robust             = Is looking up a missing value, or value of the wrong type,
                        safe without causing a fatal run-time exception?
 
@@ -381,7 +401,8 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
 #include <string.h>
 #include <malloc.h>
 
-#define CLAMP( x, min, max )		( ( x >= min ) ? ( ( x <= max ) ? x : max ) : min )
+#define JSON_CLAMP( x, min, max )	( ( x >= min ) ? ( ( x <= max ) ? x : max ) : min )
+#define JSON_MAX_RECURSION			128
 
 // JSON value type
 typedef enum
@@ -425,6 +446,8 @@ Json_t * Json_Create()
 {
 	Json_t * json = (Json_t *) malloc( sizeof( Json_t ) );
 	memset( json, 0, sizeof( Json_t ) );
+	json->type = JSON_NULL;
+	json->valueString = (char *)"null";
 	return json;
 }
 
@@ -681,6 +704,7 @@ static const char * Json_ParseNumber( JsonType_t * type, int64_t * valueInt64, u
 	(void)errorStringOut;
 
 	int sign = 1;
+	int nonZeroDigits = 0;
 	int fractionalDigits = 0;
 	int exponentSign = 1;
 	int exponentValue = 0;
@@ -706,14 +730,14 @@ static const char * Json_ParseNumber( JsonType_t * type, int64_t * valueInt64, u
 		uint64Overflowed |= ( uint64Value > ( UINT64_MAX / 10 ) ) | ( ( uint64Value * 10 ) > UINT64_MAX - d );
 		uint64Value = ( uint64Value * 10 ) + d;
 		doubleValue = ( doubleValue * 10.0 ) + d;
+		nonZeroDigits += ( uint64Value != 0.0 );
 		buffer++;
 	}
-	// Parse up to 16 fractional digits.
+	// Parse fractional digits.
 	if ( buffer[0] == '.' )
 	{
 		buffer++;
-		int nonZeroDigits = 0;
-		while ( buffer[0] >= '0' && buffer[0] <= '9' && nonZeroDigits < 16 )
+		while ( buffer[0] >= '0' && buffer[0] <= '9' && nonZeroDigits < 17 )
 		{
 			doubleValue = ( doubleValue * 10.0 ) + ( buffer[0] - '0' );
 			nonZeroDigits += ( doubleValue != 0.0 );
@@ -758,12 +782,14 @@ static const char * Json_ParseNumber( JsonType_t * type, int64_t * valueInt64, u
 		}
 		else if ( exp >= -306 )
 		{
-			const double v = doubleValue * json_pow10[308 + 1] * json_pow10[308 + exp - 1];
+			const int offset = 1;
+			const double v = doubleValue * json_pow10[308 + offset] * json_pow10[308 + exp - offset];
 			*valueDouble = sign * ( v <= DBL_MAX ? v : DBL_MAX );
 		}
 		else if ( exp >= -324 )
 		{
-			*valueDouble = sign * doubleValue * json_pow10[16] * json_pow10[308 * 2 + exp - 16];
+			const int offset = 16;
+			*valueDouble = sign * doubleValue * json_pow10[offset] * json_pow10[308 * 2 + exp - offset];
 		}
 		else
 		{
@@ -784,9 +810,14 @@ static const char * Json_ParseNumber( JsonType_t * type, int64_t * valueInt64, u
 	return buffer;
 }
 
-static const char * Json_ParseValue( Json_t * json, const char * buffer, const char ** errorStringOut )
+static const char * Json_ParseValue( Json_t * json, const int recursion, const char * buffer, const char ** errorStringOut )
 {
 	assert( errorStringOut != NULL );
+	if ( recursion > JSON_MAX_RECURSION )
+	{
+		*errorStringOut = "maximum recursion";
+		return buffer;
+	}
 
 	buffer = Json_ParseWhiteSpace( buffer );
 
@@ -848,7 +879,7 @@ static const char * Json_ParseValue( Json_t * json, const char * buffer, const c
 				return buffer;
 			}
 			buffer++;
-			buffer = Json_ParseValue( member, buffer, errorStringOut );
+			buffer = Json_ParseValue( member, recursion + 1, buffer, errorStringOut );
 		}
 		return buffer;
 	}
@@ -875,7 +906,7 @@ static const char * Json_ParseValue( Json_t * json, const char * buffer, const c
 				buffer++;
 			}
 			Json_t * member = Json_AllocMember( json );
-			buffer = Json_ParseValue( member, buffer, errorStringOut );
+			buffer = Json_ParseValue( member, recursion + 1, buffer, errorStringOut );
 		}
 		return buffer;
 	}
@@ -901,7 +932,7 @@ static bool Json_ReadFromBuffer( Json_t * rootNode, const char * buffer, const c
 	Json_FreeNode( rootNode, true );
 
 	const char * error = NULL;
-	Json_ParseValue( rootNode, buffer, &error );
+	Json_ParseValue( rootNode, 0, buffer, &error );
 	if ( error != NULL )
 	{
 		if ( errorStringOut != NULL )
@@ -955,7 +986,8 @@ static bool Json_ReadFromFile( Json_t * rootNode, const char * fileName, const c
 	fclose( file );
 
 	const char * error = NULL;
-	Json_ParseValue( rootNode, buffer, &error );
+	int recursion = 0;
+	Json_ParseValue( rootNode, 0, buffer, &error );
 	if ( error != NULL )
 	{
 		if ( errorStringOut != NULL )
@@ -993,8 +1025,13 @@ static void Json_Printf( char ** bufferInOut, int * lengthInOut, int * offsetInO
 	assert( *offsetInOut <= *lengthInOut );
 }
 
-static void Json_WriteValue( const Json_t * node, char ** bufferInOut, int * lengthInOut, int * offsetInOut, const int indent, const bool lastChild )
+static void Json_WriteValue( const Json_t * node, int recursion, char ** bufferInOut, int * lengthInOut, int * offsetInOut, const int indent, const bool lastChild )
 {
+	if ( recursion > JSON_MAX_RECURSION )
+	{
+		return;
+	}
+
 	const int maxIndent = 32;
 	const char * indentTable = "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t";
 	assert( indent <= maxIndent );
@@ -1053,7 +1090,7 @@ static void Json_WriteValue( const Json_t * node, char ** bufferInOut, int * len
 		{
 			const Json_t * member = &node->members[i];
 			Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1 + (int)strlen( member->name ) + 5, "%s\"%s\" : ", &indentTable[maxIndent - ( indent + 1 )], member->name );
-			Json_WriteValue( member, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
+			Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
 		}
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 2, "%s}%s\n", &indentTable[maxIndent - indent], lastChild ? "" : "," );
 	}
@@ -1064,7 +1101,7 @@ static void Json_WriteValue( const Json_t * node, char ** bufferInOut, int * len
 		{
 			const Json_t * member = &node->members[i];
 			Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1, "%s", &indentTable[maxIndent - ( indent + 1 )] );
-			Json_WriteValue( member, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
+			Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
 		}
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 2, "%s]%s\n", &indentTable[maxIndent - indent], lastChild ? "" : "," );
 	}
@@ -1080,7 +1117,7 @@ static bool Json_WriteToBuffer( const Json_t * rootNode, char ** bufferOut, int 
 	*bufferOut = NULL;
 	*lengthOut = 0;
 	int offset = 0;
-	Json_WriteValue( rootNode, bufferOut, lengthOut, &offset, 0, true );
+	Json_WriteValue( rootNode, 0, bufferOut, lengthOut, &offset, 0, true );
 	*lengthOut = offset;
 	return true;
 }
@@ -1094,7 +1131,7 @@ static bool Json_WriteToFile( const Json_t * rootNode, const char * fileName )
 	char * buffer = NULL;
 	int length = 0;
 	int offset = 0;
-	Json_WriteValue( rootNode, &buffer, &length, &offset, 0, true );
+	Json_WriteValue( rootNode, 0, &buffer, &length, &offset, 0, true );
 
 	FILE * file = fopen( fileName, "wb" );
 	if ( file == NULL )
@@ -1205,39 +1242,39 @@ static inline bool Json_GetBool( const Json_t * node, const bool defaultValue )
 static inline int32_t Json_GetInt32( const Json_t * node, const int32_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
-			( ( node->type == JSON_INT ) ?		(int32_t)CLAMP( node->valueInt64, INT32_MIN, INT32_MAX ) :
-			( ( node->type == JSON_UINT ) ?		(int32_t)CLAMP( node->valueUint64, 0, INT32_MAX ) :
-			( ( node->type == JSON_FLOAT ) ?	(int32_t)CLAMP( node->valueDouble, INT32_MIN, INT32_MAX ) : defaultValue ) ) ) );
+			( ( node->type == JSON_INT ) ?		(int32_t)JSON_CLAMP( node->valueInt64, INT32_MIN, INT32_MAX ) :
+			( ( node->type == JSON_UINT ) ?		(int32_t)JSON_CLAMP( node->valueUint64, 0, INT32_MAX ) :
+			( ( node->type == JSON_FLOAT ) ?	(int32_t)JSON_CLAMP( node->valueDouble, INT32_MIN, INT32_MAX ) : defaultValue ) ) ) );
 }
 
 static inline uint32_t Json_GetUint32( const Json_t * node, const uint32_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
-			( ( node->type == JSON_UINT ) ?		(uint32_t)CLAMP( node->valueUint64, 0, UINT32_MAX ) :
-			( ( node->type == JSON_INT ) ?		(uint32_t)CLAMP( node->valueInt64, 0, UINT32_MAX ) :
-			( ( node->type == JSON_FLOAT ) ?	(uint32_t)CLAMP( node->valueDouble, 0, UINT32_MAX ) : defaultValue ) ) ) );
+			( ( node->type == JSON_UINT ) ?		(uint32_t)JSON_CLAMP( node->valueUint64, 0, UINT32_MAX ) :
+			( ( node->type == JSON_INT ) ?		(uint32_t)JSON_CLAMP( node->valueInt64, 0, UINT32_MAX ) :
+			( ( node->type == JSON_FLOAT ) ?	(uint32_t)JSON_CLAMP( node->valueDouble, 0, UINT32_MAX ) : defaultValue ) ) ) );
 }
 
 static inline int64_t Json_GetInt64( const Json_t * node, const int64_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_INT ) ?		(int64_t)node->valueInt64 :
-			( ( node->type == JSON_UINT ) ?		(int64_t)CLAMP( node->valueUint64, 0, INT64_MAX ) :
-			( ( node->type == JSON_FLOAT ) ?	(int64_t)CLAMP( node->valueDouble, INT64_MIN, INT64_MAX ) : defaultValue ) ) ) );
+			( ( node->type == JSON_UINT ) ?		(int64_t)JSON_CLAMP( node->valueUint64, 0, INT64_MAX ) :
+			( ( node->type == JSON_FLOAT ) ?	(int64_t)JSON_CLAMP( node->valueDouble, INT64_MIN, INT64_MAX ) : defaultValue ) ) ) );
 }
 
 static inline uint64_t Json_GetUint64( const Json_t * node, const uint64_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_UINT ) ?		(uint64_t)node->valueUint64 :
-			( ( node->type == JSON_INT ) ?		(uint64_t)CLAMP( node->valueInt64, 0, INT64_MAX ) :
-			( ( node->type == JSON_FLOAT ) ?	(uint64_t)CLAMP( node->valueDouble, 0, UINT64_MAX ) : defaultValue ) ) ) );
+			( ( node->type == JSON_INT ) ?		(uint64_t)JSON_CLAMP( node->valueInt64, 0, INT64_MAX ) :
+			( ( node->type == JSON_FLOAT ) ?	(uint64_t)JSON_CLAMP( node->valueDouble, 0, UINT64_MAX ) : defaultValue ) ) ) );
 }
 
 static inline float Json_GetFloat( const Json_t * node, const float defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
-			( ( node->type == JSON_FLOAT ) ?	(float)CLAMP( node->valueDouble, FLT_MIN, FLT_MAX ) :
+			( ( node->type == JSON_FLOAT ) ?	(float)JSON_CLAMP( node->valueDouble, FLT_MIN, FLT_MAX ) :
 			( ( node->type == JSON_INT ) ?		(float)node->valueInt64 :
 			( ( node->type == JSON_UINT ) ?		(float)node->valueUint64 : defaultValue ) ) ) );
 }
