@@ -158,9 +158,12 @@ Windows, x86 or x64
 #ifdef _MSC_VER
 #pragma warning( disable : 4204 )	// nonstandard extension used : non-constant aggregate initializer
 #pragma warning( disable : 4255 )	// '<name>' : no function prototype given: converting '()' to '(void)'
+#pragma warning( disable : 4464	)	// relative include path contains '..'
 #pragma warning( disable : 4668 )	// '__cplusplus' is not defined as a preprocessor macro, replacing with '0' for '#if/#elif'
+#pragma warning( disable : 4710	)	// 'int printf(const char *const ,...)': function not inlined
 #pragma warning( disable : 4711 )	// function '<name>' selected for automatic inline expansion
 #pragma warning( disable : 4738 )	// storing 32-bit float result in memory, possible loss of performance
+#pragma warning( disable : 4774	)	// 'printf' : format string expected in argument 1 is not a string literal
 #pragma warning( disable : 4820 )	// '<name>' : 'X' bytes padding added after data member '<member>'
 #endif
 
@@ -168,12 +171,12 @@ Windows, x86 or x64
 #pragma warning( disable : 2415 )	// variable X of static storage duration was declared but never referenced
 #endif
 
+#include <Windows.h>				// for InterlockedIncrement(), VirtualAlloc(), VirtualFree()
 #include <stdio.h>					// for printf()
 #include <stdint.h>					// for uint32_t etc.
 #include <stdbool.h>				// for bool
 #include <assert.h>					// for assert()
 #include <math.h>					// for tanf()
-#include <Windows.h>				// for InterlockedIncrement(), VirtualAlloc(), VirtualFree()
 #include <intrin.h>					// for SSE intrinsics
 
 #if 0	// using the hardware prefetcher works well
@@ -6439,7 +6442,7 @@ static void Thread_SetAffinity( int mask )
 		char buffer[1024];
 		DWORD error = GetLastError();
 		FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM, NULL, error, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ), buffer, sizeof( buffer ), NULL );
-		Print( "Failed to set thread %p affinity: %s(%d)\n", thread, buffer, error );
+		Print( "Failed to set thread %p affinity: %s(%lu)\n", (void *)thread, buffer, error );
 	}
 	else
 	{
@@ -6560,7 +6563,7 @@ static void Thread_SetRealTimePriority( int priority )
 		char buffer[1024];
 		DWORD error = GetLastError();
 		FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM, NULL, error, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ), buffer, sizeof( buffer ), NULL );
-		Print( "Failed to set process %p priority class: %s(%d)\n", process, buffer, error );
+		Print( "Failed to set process %p priority class: %s(%lu)\n", (void *)process, buffer, error );
 	}
 	else
 	{
@@ -6572,7 +6575,7 @@ static void Thread_SetRealTimePriority( int priority )
 		char buffer[1024];
 		DWORD error = GetLastError();
 		FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM, NULL, error, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ), buffer, sizeof( buffer ), NULL );
-		Print( "Failed to set thread %p priority: %s(%d)\n", thread, buffer, error );
+		Print( "Failed to set thread %p priority: %s(%lu)\n", (void *)thread, buffer, error );
 	}
 	else
 	{

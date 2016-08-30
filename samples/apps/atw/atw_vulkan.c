@@ -318,9 +318,12 @@ Platform headers / declarations
 	#ifdef _MSC_VER
 		#pragma warning( disable : 4204 )	// nonstandard extension used : non-constant aggregate initializer
 		#pragma warning( disable : 4255 )	// '<name>' : no function prototype given: converting '()' to '(void)'
+		#pragma warning( disable : 4464	)	// relative include path contains '..'
 		#pragma warning( disable : 4668 )	// '__cplusplus' is not defined as a preprocessor macro, replacing with '0' for '#if/#elif'
+		#pragma warning( disable : 4710	)	// 'int printf(const char *const ,...)': function not inlined
 		#pragma warning( disable : 4711 )	// function '<name>' selected for automatic inline expansion
 		#pragma warning( disable : 4738 )	// storing 32-bit float result in memory, possible loss of performance
+		#pragma warning( disable : 4774	)	// 'printf' : format string expected in argument 1 is not a string literal
 		#pragma warning( disable : 4820 )	// '<name>' : 'X' bytes padding added after data member '<member>'
 	#endif
 
@@ -6433,34 +6436,34 @@ static bool GpuBuffer_Create( GpuContext_t * context, GpuBuffer_t * buffer, cons
 		}
 		else
 		{
-			VkBufferCreateInfo bufferCreateInfo;
-			bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-			bufferCreateInfo.pNext = NULL;
-			bufferCreateInfo.flags = 0;
-			bufferCreateInfo.size = dataSize;
-			bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-			bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-			bufferCreateInfo.queueFamilyIndexCount = 0;
-			bufferCreateInfo.pQueueFamilyIndices = NULL;
+			VkBufferCreateInfo stagingBufferCreateInfo;
+			stagingBufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+			stagingBufferCreateInfo.pNext = NULL;
+			stagingBufferCreateInfo.flags = 0;
+			stagingBufferCreateInfo.size = dataSize;
+			stagingBufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+			stagingBufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+			stagingBufferCreateInfo.queueFamilyIndexCount = 0;
+			stagingBufferCreateInfo.pQueueFamilyIndices = NULL;
 
 			VkBuffer srcBuffer;
-			VK( context->device->vkCreateBuffer( context->device->device, &bufferCreateInfo, VK_ALLOCATOR, &srcBuffer ) );
+			VK( context->device->vkCreateBuffer( context->device->device, &stagingBufferCreateInfo, VK_ALLOCATOR, &srcBuffer ) );
 
-			VkMemoryRequirements memoryRequirements;
-			VC( context->device->vkGetBufferMemoryRequirements( context->device->device, srcBuffer, &memoryRequirements ) );
+			VkMemoryRequirements stagingMemoryRequirements;
+			VC( context->device->vkGetBufferMemoryRequirements( context->device->device, srcBuffer, &stagingMemoryRequirements ) );
 
-			VkMemoryAllocateInfo memoryAllocateInfo;
-			memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-			memoryAllocateInfo.pNext = NULL;
-			memoryAllocateInfo.allocationSize = memoryRequirements.size;
-			memoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
+			VkMemoryAllocateInfo stagingMemoryAllocateInfo;
+			stagingMemoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+			stagingMemoryAllocateInfo.pNext = NULL;
+			stagingMemoryAllocateInfo.allocationSize = stagingMemoryRequirements.size;
+			stagingMemoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, stagingMemoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
 
 			VkDeviceMemory srcMemory;
-			VK( context->device->vkAllocateMemory( context->device->device, &memoryAllocateInfo, VK_ALLOCATOR, &srcMemory ) );
+			VK( context->device->vkAllocateMemory( context->device->device, &stagingMemoryAllocateInfo, VK_ALLOCATOR, &srcMemory ) );
 			VK( context->device->vkBindBufferMemory( context->device->device, srcBuffer, srcMemory, 0 ) );
 
 			void * mapped;
-			VK( context->device->vkMapMemory( context->device->device, srcMemory, 0, memoryRequirements.size, 0, &mapped ) );
+			VK( context->device->vkMapMemory( context->device->device, srcMemory, 0, stagingMemoryRequirements.size, 0, &mapped ) );
 			memcpy( mapped, data, dataSize );
 			VC( context->device->vkUnmapMemory( context->device->device, srcMemory ) );
 
@@ -7066,34 +7069,34 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 		bool compressed = false;
 
 		// Using a staging buffer to initialize the tiled image.
-		VkBufferCreateInfo bufferCreateInfo;
-		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferCreateInfo.pNext = NULL;
-		bufferCreateInfo.flags = 0;
-		bufferCreateInfo.size = dataSize;
-		bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		bufferCreateInfo.queueFamilyIndexCount = 0;
-		bufferCreateInfo.pQueueFamilyIndices = NULL;
+		VkBufferCreateInfo stagingBufferCreateInfo;
+		stagingBufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		stagingBufferCreateInfo.pNext = NULL;
+		stagingBufferCreateInfo.flags = 0;
+		stagingBufferCreateInfo.size = dataSize;
+		stagingBufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		stagingBufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		stagingBufferCreateInfo.queueFamilyIndexCount = 0;
+		stagingBufferCreateInfo.pQueueFamilyIndices = NULL;
 
 		VkBuffer stagingBuffer;
-		VK( context->device->vkCreateBuffer( context->device->device, &bufferCreateInfo, VK_ALLOCATOR, &stagingBuffer ) );
+		VK( context->device->vkCreateBuffer( context->device->device, &stagingBufferCreateInfo, VK_ALLOCATOR, &stagingBuffer ) );
 
-		VkMemoryRequirements memoryRequirements;
-		VC( context->device->vkGetBufferMemoryRequirements( context->device->device, stagingBuffer, &memoryRequirements ) );
+		VkMemoryRequirements stagingMemoryRequirements;
+		VC( context->device->vkGetBufferMemoryRequirements( context->device->device, stagingBuffer, &stagingMemoryRequirements ) );
 
-		VkMemoryAllocateInfo memoryAllocateInfo;
-		memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		memoryAllocateInfo.pNext = NULL;
-		memoryAllocateInfo.allocationSize = memoryRequirements.size;
-		memoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
+		VkMemoryAllocateInfo stagingMemoryAllocateInfo;
+		stagingMemoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		stagingMemoryAllocateInfo.pNext = NULL;
+		stagingMemoryAllocateInfo.allocationSize = stagingMemoryRequirements.size;
+		stagingMemoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, stagingMemoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
 
 		VkDeviceMemory stagingMemory;
-		VK( context->device->vkAllocateMemory( context->device->device, &memoryAllocateInfo, VK_ALLOCATOR, &stagingMemory ) );
+		VK( context->device->vkAllocateMemory( context->device->device, &stagingMemoryAllocateInfo, VK_ALLOCATOR, &stagingMemory ) );
 		VK( context->device->vkBindBufferMemory( context->device->device, stagingBuffer, stagingMemory, 0 ) );
 
 		uint8_t * mapped;
-		VK( context->device->vkMapMemory( context->device->device, stagingMemory, 0, memoryRequirements.size, 0, (void **)&mapped ) );
+		VK( context->device->vkMapMemory( context->device->device, stagingMemory, 0, stagingMemoryRequirements.size, 0, (void **)&mapped ) );
 		memcpy( mapped, data, dataSize );
 		VC( context->device->vkUnmapMemory( context->device->device, stagingMemory ) );
 
@@ -9390,12 +9393,12 @@ static void InitVertexAttributes( const bool instance, const int numAttribs,
 		{
 			if ( ( v->attributeFlag & usedAttribsFlags ) != 0 )
 			{
-				for ( int i = 0; i < v->locationCount; i++ )
+				for ( int location = 0; location < v->locationCount; location++ )
 				{
-					attributes[*attributeCount + i].location = *attributeCount + i;
-					attributes[*attributeCount + i].binding = *bindingCount;
-					attributes[*attributeCount + i].format = v->attributeFormat;
-					attributes[*attributeCount + i].offset = (uint32_t)( i * v->attributeSize / v->locationCount );	// limited offset used for packed vertex data
+					attributes[*attributeCount + location].location = *attributeCount + location;
+					attributes[*attributeCount + location].binding = *bindingCount;
+					attributes[*attributeCount + location].format = v->attributeFormat;
+					attributes[*attributeCount + location].offset = (uint32_t)( location * v->attributeSize / v->locationCount );	// limited offset used for packed vertex data
 				}
 
 				bindings[*bindingCount].binding = *bindingCount;
@@ -10983,7 +10986,6 @@ static void GpuCommandBuffer_UpdateProgramParms( GpuCommandBuffer_t * commandBuf
 			const VkShaderStageFlags stageFlags = GpuProgramParm_GetShaderStageFlags( newParm->stage );
 			const uint32_t offset = (uint32_t) newParm->binding;
 			const uint32_t size = (uint32_t) GpuProgramParm_GetPushConstantSize( newParm->type );
-			const void * data = newParmState->parms[newParm->index];
 			VC( device->vkCmdPushConstants( cmdBuffer, newLayout->pipelineLayout, stageFlags, offset, size, data ) );
 		}
 	}
@@ -14041,28 +14043,28 @@ static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window )
 			const float * times = ( i == 0 ) ? timeWarp->cpuTimes : timeWarp->gpuTimes;
 			float barHeights[PROFILE_TIME_MAX];
 			float totalBarHeight = 0.0f;
-			for ( int i = 0; i < PROFILE_TIME_MAX; i++ )
+			for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
 			{
-				barHeights[i] = times[i] * timeWarp->refreshRate * ( 1.0f / 1000.0f );
-				totalBarHeight += barHeights[i];
+				barHeights[p] = times[p] * timeWarp->refreshRate * ( 1.0f / 1000.0f );
+				totalBarHeight += barHeights[p];
 			}
 
 			const float limit = 0.9f;
 			if ( totalBarHeight > limit )
 			{
 				totalBarHeight = 0.0f;
-				for ( int i = 0; i < PROFILE_TIME_MAX; i++ )
+				for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
 				{
-					barHeights[i] = ( totalBarHeight + barHeights[i] > limit ) ? ( limit - totalBarHeight ) : barHeights[i];
-					totalBarHeight += barHeights[i];
+					barHeights[p] = ( totalBarHeight + barHeights[p] > limit ) ? ( limit - totalBarHeight ) : barHeights[p];
+					totalBarHeight += barHeights[p];
 				}
 				barHeights[PROFILE_TIME_OVERFLOW] = 1.0f - limit;
 			}
 
 			BarGraph_t * barGraph = ( i == 0 ) ? &timeWarp->bargraphs.frameCpuTimeBarGraph : &timeWarp->bargraphs.frameGpuTimeBarGraph;
-			for ( int i = 0; i < PROFILE_TIME_MAX; i++ )
+			for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
 			{
-				BarGraph_AddBar( barGraph, i, barHeights[i], profileTimeBarColors[i], ( i == PROFILE_TIME_MAX - 1 ) );
+				BarGraph_AddBar( barGraph, p, barHeights[p], profileTimeBarColors[p], ( p == PROFILE_TIME_MAX - 1 ) );
 			}
 		}
 	}
@@ -16374,7 +16376,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 
 		if ( recreate )
 		{
-			const GpuSampleCount_t sampleCount = sampleCountTable[SceneSettings_GetSamplesLevel( &sceneSettings )];
+			const GpuSampleCount_t newSampleCount = sampleCountTable[SceneSettings_GetSamplesLevel( &sceneSettings )];
 			Scene_Destroy( &window.context, &scene );
 			BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
 			BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
@@ -16384,12 +16386,12 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			GpuRenderPass_Destroy( &window.context, &renderPass );
 			GpuWindow_Destroy( &window );
 			GpuWindow_Create( &window, &instance, &queueInfo, 0,
-							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24, sampleCount,
+							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24, newSampleCount,
 							startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
 							startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
 							startupSettings->fullscreen );
 			GpuRenderPass_Create( &window.context, &renderPass, window.colorFormat, window.depthFormat,
-									sampleCount, GPU_RENDERPASS_TYPE_INLINE,
+									newSampleCount, GPU_RENDERPASS_TYPE_INLINE,
 									GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
 									GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
 			GpuFramebuffer_CreateFromSwapchain( &window, &framebuffer, &renderPass );

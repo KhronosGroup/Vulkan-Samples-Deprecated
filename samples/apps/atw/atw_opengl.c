@@ -341,10 +341,13 @@ Platform headers / declarations
 	#ifdef _MSC_VER
 		#pragma warning( disable : 4204 )	// nonstandard extension used : non-constant aggregate initializer
 		#pragma warning( disable : 4255 )	// '<name>' : no function prototype given: converting '()' to '(void)'
+		#pragma warning( disable : 4464	)	// relative include path contains '..'
 		#pragma warning( disable : 4668 )	// '__cplusplus' is not defined as a preprocessor macro, replacing with '0' for '#if/#elif'
+		#pragma warning( disable : 4710	)	// 'int printf(const char *const ,...)': function not inlined
 		#pragma warning( disable : 4711 )	// function '<name>' selected for automatic inline expansion
 		#pragma warning( disable : 4738 )	// storing 32-bit float result in memory, possible loss of performance
-		#pragma warning( disable : 4820 )	// '<name>' : 'X' bytes padding added after data member '<member>'
+		#pragma warning( disable : 4774	)	// 'printf' : format string expected in argument 1 is not a string literal
+		#pragma warning( disable : 4820 )	// '<name>' : 'X' bytes padding added after data member '<member>'		
 	#endif
 
 	#define OPENGL_VERSION_MAJOR	4
@@ -7252,41 +7255,21 @@ static void GpuTexture_SetWrapMode( GpuContext_t * context, GpuTexture_t * textu
 /*
 ================================================================================================================================
 
-GPU geometry.
+GPU vertex attributes.
 
-For optimal performance geometry should only be created at load time, not at runtime.
-The vertex attributes are not packed. Each attribute is stored in a separate array for
-optimal binning on tiling GPUs that only transform the vertex position for the binning pass.
-Storing each attribute in a saparate array is preferred even on immediate-mode GPUs to avoid
-wasting cache space for attributes that are not used by a particular vertex shader.
-
-GpuVertexAttributeFlags_t
-GpuVertexAttributeArrays_t
 GpuTriangleIndex_t
-GpuGeometry_t
-
-static void GpuVertexAttributeArrays_Alloc( GpuVertexAttributeArrays_t * attribs, const int numVertices, const int attribsFlags );
-static void GpuVertexAttributeArrays_Free( GpuVertexAttributeArrays_t * attribs );
-static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays_t * attribs, const int numVertices,
-														const GpuTriangleIndex_t * indices, const int numIndices );
-
-static void GpuGeometry_Create( GpuContext_t * context, GpuGeometry_t * geometry,
-								const GpuVertexAttributeArrays_t * attribs, const int numVertices,
-								const GpuTriangleIndex_t * indices, const int numIndices );
-static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale );
-static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale );
-static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geometry, const int tesselation, const float offset, const float scale );
-static void GpuGeometry_Destroy( GpuContext_t * context, GpuGeometry_t * geometry );
-
-static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeometry_t * geometry, const int numInstances, const int instanceAttribsFlags );
+GpuVertexAttribute_t
+GpuVertexAttributeArraysBase_t
 
 ================================================================================================================================
 */
 
+typedef unsigned int GpuTriangleIndex_t;
+
 typedef struct
 {
 	int				attributeFlag;		// VERTEX_ATTRIBUTE_FLAG_
-	size_t			attributeOffset;	// Offset in bytes to the pointer in GpuVertexAttributeArrays_t
+	size_t			attributeOffset;	// Offset in bytes to the pointer in GpuVertexAttributeArraysBase_t
 	size_t			attributeSize;		// Size in bytes of a single attribute
 	int				componentType;		// OpenGL type of a single component
 	int				componentCount;		// Number of components per location
@@ -7294,65 +7277,17 @@ typedef struct
 	const char *	name;				// Name in vertex program
 } GpuVertexAttribute_t;
 
-typedef enum
-{
-	VERTEX_ATTRIBUTE_FLAG_POSITION	= BIT( 0 ),		// vec3 vertexPosition
-	VERTEX_ATTRIBUTE_FLAG_NORMAL	= BIT( 1 ),		// vec3 vertexNormal
-	VERTEX_ATTRIBUTE_FLAG_TANGENT	= BIT( 2 ),		// vec3 vertexTangent
-	VERTEX_ATTRIBUTE_FLAG_BINORMAL	= BIT( 3 ),		// vec3 vertexBinormal
-	VERTEX_ATTRIBUTE_FLAG_COLOR		= BIT( 4 ),		// vec4 vertexColor
-	VERTEX_ATTRIBUTE_FLAG_UV0		= BIT( 5 ),		// vec2 vertexUv0
-	VERTEX_ATTRIBUTE_FLAG_UV1		= BIT( 6 ),		// vec2 vertexUv1
-	VERTEX_ATTRIBUTE_FLAG_UV2		= BIT( 7 ),		// vec2 vertexUv2
-	VERTEX_ATTRIBUTE_FLAG_TRANSFORM	= BIT( 8 )		// mat4 vertexTransform (NOTE this mat4 takes up 4 attribute locations)
-} GpuVertexAttributeFlags_t;
-
 typedef struct
 {
-	Vector3f_t *	position;
-	Vector3f_t *	normal;
-	Vector3f_t *	tangent;
-	Vector3f_t *	binormal;
-	Vector4f_t *	color;
-	Vector2f_t *	uv0;
-	Vector2f_t *	uv1;
-	Vector2f_t *	uv2;
-	Matrix4x4f_t *	transform;
-} GpuVertexAttributeArrays_t;
+	const GpuVertexAttribute_t *	layout;
+} GpuVertexAttributeArraysBase_t;
 
-static const GpuVertexAttribute_t VertexAttributeLayout[] =
-{
-	{ VERTEX_ATTRIBUTE_FLAG_POSITION,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, position ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, position[0] ),	GL_FLOAT,	3,	1,	"vertexPosition" },
-	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, normal ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, normal[0] ),		GL_FLOAT,	3,	1,	"vertexNormal" },
-	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, tangent ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, tangent[0] ),	GL_FLOAT,	3,	1,	"vertexTangent" },
-	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, binormal ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, binormal[0] ),	GL_FLOAT,	3,	1,	"vertexBinormal" },
-	{ VERTEX_ATTRIBUTE_FLAG_COLOR,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, color ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, color[0] ),		GL_FLOAT,	4,	1,	"vertexColor" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV0,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv0 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv0[0] ),		GL_FLOAT,	2,	1,	"vertexUv0" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV1,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv1 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv1[0] ),		GL_FLOAT,	2,	1,	"vertexUv1" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV2,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv2 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv2[0] ),		GL_FLOAT,	2,	1,	"vertexUv2" },
-	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, transform ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, transform[0] ),	GL_FLOAT,	4,	4,	"vertexTransform" }
-};
-
-typedef unsigned int GpuTriangleIndex_t;
-
-typedef struct
-{
-	int			vertexCount;
-	int			instanceCount;
-	int 		indexCount;
-	int			vertexAttribsFlags;
-	int			instanceAttribsFlags;
-	GpuBuffer_t	vertexBuffer;
-	GpuBuffer_t	instanceBuffer;
-	GpuBuffer_t	indexBuffer;
-} GpuGeometry_t;
-
-static size_t GpuVertexAttributeArrays_GetDataSize( const int numVertices, const int attribsFlags )
+static size_t GpuVertexAttributeArrays_GetDataSize( const GpuVertexAttribute_t * layout, const int numVertices, const int attribsFlags )
 {
 	size_t totalSize = 0;
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &layout[i];
 		if ( ( v->attributeFlag & attribsFlags ) != 0 )
 		{
 			totalSize += v->attributeSize;
@@ -7361,11 +7296,11 @@ static size_t GpuVertexAttributeArrays_GetDataSize( const int numVertices, const
 	return numVertices * totalSize;
 }
 
-static void * GpuVertexAttributeArrays_GetDataPointer( const GpuVertexAttributeArrays_t * attribs )
+static void * GpuVertexAttributeArrays_GetDataPointer( const GpuVertexAttributeArraysBase_t * attribs )
 {
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &attribs->layout[i];
 		void * attribPtr = *(void **) ( ((char *)attribs) + v->attributeOffset );
 		if ( attribPtr != NULL )
 		{
@@ -7375,12 +7310,12 @@ static void * GpuVertexAttributeArrays_GetDataPointer( const GpuVertexAttributeA
 	return NULL;
 }
 
-static int GpuVertexAttributeArrays_GetAttribsFlags( const GpuVertexAttributeArrays_t * attribs )
+static int GpuVertexAttributeArrays_GetAttribsFlags( const GpuVertexAttributeArraysBase_t * attribs )
 {
 	int attribsFlags = 0;
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &attribs->layout[i];
 		void * attribPtr = *(void **) ( ((char *)attribs) + v->attributeOffset );
 		if ( attribPtr != NULL )
 		{
@@ -7390,21 +7325,23 @@ static int GpuVertexAttributeArrays_GetAttribsFlags( const GpuVertexAttributeArr
 	return attribsFlags;
 }
 
-static void GpuVertexAttributeArrays_Map( GpuVertexAttributeArrays_t * attribs, void * data, const size_t dataSize, const int numVertices, const int attribsFlags )
+static void GpuVertexAttributeArrays_Map( GpuVertexAttributeArraysBase_t * attribs, void * data, const size_t dataSize, const int numVertices, const int attribsFlags )
 {
-	memset( attribs, 0, sizeof( GpuVertexAttributeArrays_t ) );
-
 	unsigned char * dataBytePtr = (unsigned char *) data;
 	size_t offset = 0;
 
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &attribs->layout[i];
+		void ** attribPtr = (void **) ( ((char *)attribs) + v->attributeOffset );
 		if ( ( v->attributeFlag & attribsFlags ) != 0 )
 		{
-			void ** attribPtr = (void **) ( ((char *)attribs) + v->attributeOffset );
 			*attribPtr = ( dataBytePtr + offset );
 			offset += numVertices * v->attributeSize;
+		}
+		else
+		{
+			*attribPtr = NULL;
 		}
 	}
 
@@ -7412,41 +7349,59 @@ static void GpuVertexAttributeArrays_Map( GpuVertexAttributeArrays_t * attribs, 
 	UNUSED_PARM( dataSize );
 }
 
-static void GpuVertexAttributeArrays_Alloc( GpuVertexAttributeArrays_t * attribs, const int numVertices, const int attribsFlags )
+static void GpuVertexAttributeArrays_Alloc( GpuVertexAttributeArraysBase_t * attribs, const GpuVertexAttribute_t * layout, const int numVertices, const int attribsFlags )
 {
-	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( numVertices, attribsFlags );
+	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( layout, numVertices, attribsFlags );
 	void * data = malloc( dataSize );
-
+	attribs->layout = layout;
 	GpuVertexAttributeArrays_Map( attribs, data, dataSize, numVertices, attribsFlags );
 }
 
-static void GpuVertexAttributeArrays_Free( GpuVertexAttributeArrays_t * attribs )
+static void GpuVertexAttributeArrays_Free( GpuVertexAttributeArraysBase_t * attribs )
 {
 	void * data = GpuVertexAttributeArrays_GetDataPointer( attribs );
 	free( data );
-	memset( attribs, 0, sizeof( GpuVertexAttributeArrays_t ) );
 }
 
-static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays_t * attribs, const int numVertices,
-												const GpuTriangleIndex_t * indices, const int numIndices )
+static void * GpuVertexAttributeArrays_FindAtribute( GpuVertexAttributeArraysBase_t * attribs, const char * name )
 {
-	assert( attribs->position != NULL );
-	assert( attribs->normal != NULL );
-	assert( attribs->tangent != NULL );
-	assert( attribs->binormal != NULL );
-	assert( attribs->uv0 != NULL );
+	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
+	{
+		const GpuVertexAttribute_t * v = &attribs->layout[i];
+		if ( strcmp( v->name, name ) == 0 ) 
+		{
+			void ** attribPtr = (void **) ( ((char *)attribs) + v->attributeOffset );
+			return *attribPtr;
+		}
+	}
+	return NULL;
+}
+
+static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArraysBase_t * attribs, const int numVertices,
+														const GpuTriangleIndex_t * indices, const int numIndices )
+{
+	Vector3f_t * vertexPosition	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexPosition" );
+	Vector3f_t * vertexNormal	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexNormal" );
+	Vector3f_t * vertexTangent	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexTangent" );
+	Vector3f_t * vertexBinormal	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexBinormal" );
+	Vector2f_t * vertexUv0		= (Vector2f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexUv0" );
+
+	if ( vertexPosition == NULL || vertexNormal == NULL || vertexTangent == NULL || vertexBinormal == NULL || vertexUv0 == NULL )
+	{
+		return;
+	}
 
 	for ( int i = 0; i < numVertices; i++ )
 	{
-		Vector3f_Zero( &attribs->tangent[i] );
-		Vector3f_Zero( &attribs->binormal[i] );
+		Vector3f_Zero( &vertexTangent[i] );
+		Vector3f_Zero( &vertexBinormal[i] );
 	}
 
 	for ( int i = 0; i < numIndices; i += 3 )
 	{
 		const GpuTriangleIndex_t * v = indices + i;
-		const Vector3f_t * pos = attribs->position;
-		const Vector2f_t * uv0 = attribs->uv0;
+		const Vector3f_t * pos = vertexPosition;
+		const Vector2f_t * uv0 = vertexUv0;
 
 		const Vector3f_t delta0 = { pos[v[1]].x - pos[v[0]].x, pos[v[1]].y - pos[v[0]].y, pos[v[1]].z - pos[v[0]].z };
 		const Vector3f_t delta1 = { pos[v[2]].x - pos[v[1]].x, pos[v[2]].y - pos[v[1]].y, pos[v[2]].z - pos[v[1]].z };
@@ -7476,35 +7431,127 @@ static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays
 
 		for ( int j = 0; j < 3; j++ )
 		{
-			attribs->tangent[v[j]].x += tangent.x;
-			attribs->tangent[v[j]].y += tangent.y;
-			attribs->tangent[v[j]].z += tangent.z;
+			vertexTangent[v[j]].x += tangent.x;
+			vertexTangent[v[j]].y += tangent.y;
+			vertexTangent[v[j]].z += tangent.z;
 
-			attribs->binormal[v[j]].x += binormal.x;
-			attribs->binormal[v[j]].y += binormal.y;
-			attribs->binormal[v[j]].z += binormal.z;
+			vertexBinormal[v[j]].x += binormal.x;
+			vertexBinormal[v[j]].y += binormal.y;
+			vertexBinormal[v[j]].z += binormal.z;
 		}
 	}
 
 	for ( int i = 0; i < numVertices; i++ )
 	{
-		Vector3f_Normalize( &attribs->tangent[i] );
-		Vector3f_Normalize( &attribs->binormal[i] );
+		Vector3f_Normalize( &vertexTangent[i] );
+		Vector3f_Normalize( &vertexBinormal[i] );
 	}
 }
 
+/*
+================================================================================================================================
+
+GPU default vertex layout.
+
+GpuVertexAttributeFlags_t
+GpuVertexAttributeArrays_t
+
+================================================================================================================================
+*/
+
+typedef enum
+{
+	VERTEX_ATTRIBUTE_FLAG_POSITION	= BIT( 0 ),		// vec3 vertexPosition
+	VERTEX_ATTRIBUTE_FLAG_NORMAL	= BIT( 1 ),		// vec3 vertexNormal
+	VERTEX_ATTRIBUTE_FLAG_TANGENT	= BIT( 2 ),		// vec3 vertexTangent
+	VERTEX_ATTRIBUTE_FLAG_BINORMAL	= BIT( 3 ),		// vec3 vertexBinormal
+	VERTEX_ATTRIBUTE_FLAG_COLOR		= BIT( 4 ),		// vec4 vertexColor
+	VERTEX_ATTRIBUTE_FLAG_UV0		= BIT( 5 ),		// vec2 vertexUv0
+	VERTEX_ATTRIBUTE_FLAG_UV1		= BIT( 6 ),		// vec2 vertexUv1
+	VERTEX_ATTRIBUTE_FLAG_UV2		= BIT( 7 ),		// vec2 vertexUv2
+	VERTEX_ATTRIBUTE_FLAG_TRANSFORM	= BIT( 8 )		// mat4 vertexTransform (NOTE this mat4 takes up 4 attribute locations)
+} GpuVertexAttributeFlags_t;
+
+typedef struct
+{
+	GpuVertexAttributeArraysBase_t	base;
+	Vector3f_t *					position;
+	Vector3f_t *					normal;
+	Vector3f_t *					tangent;
+	Vector3f_t *					binormal;
+	Vector4f_t *					color;
+	Vector2f_t *					uv0;
+	Vector2f_t *					uv1;
+	Vector2f_t *					uv2;
+	Matrix4x4f_t *					transform;
+} GpuVertexAttributeArrays_t;
+
+static const GpuVertexAttribute_t DefaultVertexAttributeLayout[] =
+{
+	{ VERTEX_ATTRIBUTE_FLAG_POSITION,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, position ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, position[0] ),	GL_FLOAT,	3,	1,	"vertexPosition" },
+	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, normal ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, normal[0] ),		GL_FLOAT,	3,	1,	"vertexNormal" },
+	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, tangent ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, tangent[0] ),	GL_FLOAT,	3,	1,	"vertexTangent" },
+	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, binormal ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, binormal[0] ),	GL_FLOAT,	3,	1,	"vertexBinormal" },
+	{ VERTEX_ATTRIBUTE_FLAG_COLOR,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, color ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, color[0] ),		GL_FLOAT,	4,	1,	"vertexColor" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV0,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv0 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv0[0] ),		GL_FLOAT,	2,	1,	"vertexUv0" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV1,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv1 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv1[0] ),		GL_FLOAT,	2,	1,	"vertexUv1" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV2,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv2 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv2[0] ),		GL_FLOAT,	2,	1,	"vertexUv2" },
+	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, transform ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, transform[0] ),	GL_FLOAT,	4,	4,	"vertexTransform" },
+	{ 0, 0, 0, 0, 0, 0, "" }
+};
+
+/*
+================================================================================================================================
+
+GPU geometry.
+
+For optimal performance geometry should only be created at load time, not at runtime.
+The vertex attributes are not packed. Each attribute is stored in a separate array for
+optimal binning on tiling GPUs that only transform the vertex position for the binning pass.
+Storing each attribute in a saparate array is preferred even on immediate-mode GPUs to avoid
+wasting cache space for attributes that are not used by a particular vertex shader.
+
+GpuGeometry_t
+
 static void GpuGeometry_Create( GpuContext_t * context, GpuGeometry_t * geometry,
-								const GpuVertexAttributeArrays_t * attribs, const int numVertices,
+								const GpuVertexAttributeArraysBase_t * attribs, const int numVertices,
+								const GpuTriangleIndex_t * indices, const int numIndices );
+static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale );
+static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale );
+static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geometry, const int tesselation, const float offset, const float scale );
+static void GpuGeometry_Destroy( GpuContext_t * context, GpuGeometry_t * geometry );
+
+static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeometry_t * geometry, const int numInstances, const int instanceAttribsFlags );
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+	const GpuVertexAttribute_t *	layout;
+	int								vertexCount;
+	int								instanceCount;
+	int 							indexCount;
+	int								vertexAttribsFlags;
+	int								instanceAttribsFlags;
+	GpuBuffer_t						vertexBuffer;
+	GpuBuffer_t						instanceBuffer;
+	GpuBuffer_t						indexBuffer;
+} GpuGeometry_t;
+
+static void GpuGeometry_Create( GpuContext_t * context, GpuGeometry_t * geometry,
+								const GpuVertexAttributeArraysBase_t * attribs, const int numVertices,
 								const GpuTriangleIndex_t * indices, const int numIndices )
 {
 	memset( geometry, 0, sizeof( GpuGeometry_t ) );
 
+	geometry->layout = attribs->layout;
 	geometry->vertexCount = numVertices;
 	geometry->indexCount = numIndices;
 	geometry->vertexAttribsFlags = GpuVertexAttributeArrays_GetAttribsFlags( attribs );
 
 	const void * data = GpuVertexAttributeArrays_GetDataPointer( attribs );
-	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( geometry->vertexCount, geometry->vertexAttribsFlags );
+	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( attribs->layout, geometry->vertexCount, geometry->vertexAttribsFlags );
 
 	GpuBuffer_Create( context, &geometry->vertexBuffer, GPU_BUFFER_TYPE_VERTEX, dataSize, data, false );
 	GpuBuffer_Create( context, &geometry->indexBuffer, GPU_BUFFER_TYPE_INDEX, numIndices * sizeof( indices[0] ), indices, false );
@@ -7534,7 +7581,8 @@ static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geom
 	};
 
 	GpuVertexAttributeArrays_t quadAttribs;
-	GpuVertexAttributeArrays_Alloc( &quadAttribs, 4,
+	GpuVertexAttributeArrays_Alloc( &quadAttribs.base,
+									DefaultVertexAttributeLayout, 4,
 									VERTEX_ATTRIBUTE_FLAG_POSITION |
 									VERTEX_ATTRIBUTE_FLAG_NORMAL |
 									VERTEX_ATTRIBUTE_FLAG_TANGENT |
@@ -7553,11 +7601,11 @@ static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geom
 		quadAttribs.uv0[i].y = quadUvs[i].y;
 	}
 
-	GpuVertexAttributeArrays_CalculateTangents( &quadAttribs, 4, quadIndices, 6 );
+	GpuVertexAttributeArrays_CalculateTangents( &quadAttribs.base, 4, quadIndices, 6 );
 
-	GpuGeometry_Create( context, geometry, &quadAttribs, 4, quadIndices, 6 );
+	GpuGeometry_Create( context, geometry, &quadAttribs.base, 4, quadIndices, 6 );
 
-	GpuVertexAttributeArrays_Free( &quadAttribs );
+	GpuVertexAttributeArrays_Free( &quadAttribs.base );
 }
 
 // The cube is centered about the origin and without offset/scale spans the [-1, 1] X-Y-Z range.
@@ -7610,7 +7658,8 @@ static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geom
 	};
 
 	GpuVertexAttributeArrays_t cubeAttribs;
-	GpuVertexAttributeArrays_Alloc( &cubeAttribs, 24,
+	GpuVertexAttributeArrays_Alloc( &cubeAttribs.base,
+									DefaultVertexAttributeLayout, 24,
 									VERTEX_ATTRIBUTE_FLAG_POSITION |
 									VERTEX_ATTRIBUTE_FLAG_NORMAL |
 									VERTEX_ATTRIBUTE_FLAG_TANGENT |
@@ -7629,11 +7678,11 @@ static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geom
 		cubeAttribs.uv0[i].y = cubeUvs[i].y;
 	}
 
-	GpuVertexAttributeArrays_CalculateTangents( &cubeAttribs, 24, cubeIndices, 36 );
+	GpuVertexAttributeArrays_CalculateTangents( &cubeAttribs.base, 24, cubeIndices, 36 );
 
-	GpuGeometry_Create( context, geometry, &cubeAttribs, 24, cubeIndices, 36 );
+	GpuGeometry_Create( context, geometry, &cubeAttribs.base, 24, cubeIndices, 36 );
 
-	GpuVertexAttributeArrays_Free( &cubeAttribs );
+	GpuVertexAttributeArrays_Free( &cubeAttribs.base );
 }
 
 // The torus is centered about the origin and without offset/scale spans the [-1, 1] X-Y range and the [-0.3, 0.3] Z range.
@@ -7647,7 +7696,8 @@ static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geo
 	const int numIndices = majorTesselation * minorTesselation * 6;
 
 	GpuVertexAttributeArrays_t torusAttribs;
-	GpuVertexAttributeArrays_Alloc( &torusAttribs, numVertices,
+	GpuVertexAttributeArrays_Alloc( &torusAttribs.base,
+									DefaultVertexAttributeLayout, numVertices,
 									VERTEX_ATTRIBUTE_FLAG_POSITION |
 									VERTEX_ATTRIBUTE_FLAG_NORMAL |
 									VERTEX_ATTRIBUTE_FLAG_TANGENT |
@@ -7697,11 +7747,11 @@ static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geo
 		}
 	}
 
-	GpuVertexAttributeArrays_CalculateTangents( &torusAttribs, numVertices, torusIndices, numIndices );
+	GpuVertexAttributeArrays_CalculateTangents( &torusAttribs.base, numVertices, torusIndices, numIndices );
 
-	GpuGeometry_Create( context, geometry, &torusAttribs, numVertices, torusIndices, numIndices );
+	GpuGeometry_Create( context, geometry, &torusAttribs.base, numVertices, torusIndices, numIndices );
 
-	GpuVertexAttributeArrays_Free( &torusAttribs );
+	GpuVertexAttributeArrays_Free( &torusAttribs.base );
 	free( torusIndices );
 }
 
@@ -7719,12 +7769,13 @@ static void GpuGeometry_Destroy( GpuContext_t * context, GpuGeometry_t * geometr
 
 static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeometry_t * geometry, const int numInstances, const int instanceAttribsFlags )
 {
+	assert( geometry->layout != NULL );
 	assert( ( geometry->vertexAttribsFlags & instanceAttribsFlags ) == 0 );
 
 	geometry->instanceCount = numInstances;
 	geometry->instanceAttribsFlags = instanceAttribsFlags;
 
-	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( numInstances, geometry->instanceAttribsFlags );
+	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( geometry->layout, numInstances, geometry->instanceAttribsFlags );
 
 	GpuBuffer_Create( context, &geometry->instanceBuffer, GPU_BUFFER_TYPE_VERTEX, dataSize, NULL, false );
 }
@@ -8461,7 +8512,7 @@ static bool GpuGraphicsProgram_Create( GpuContext_t * context, GpuGraphicsProgra
 										const void * vertexSourceData, const size_t vertexSourceSize,
 										const void * fragmentSourceData, const size_t fragmentSourceSize,
 										const GpuProgramParm_t * parms, const int numParms,
-										const int vertexAttribsFlags );
+										const GpuVertexAttribute_t * vertexLayout, const int vertexAttribsFlags );
 static void GpuGraphicsProgram_Destroy( GpuContext_t * context, GpuGraphicsProgram_t * program );
 
 ================================================================================================================================
@@ -8481,7 +8532,7 @@ static bool GpuGraphicsProgram_Create( GpuContext_t * context, GpuGraphicsProgra
 										const void * vertexSourceData, const size_t vertexSourceSize,
 										const void * fragmentSourceData, const size_t fragmentSourceSize,
 										const GpuProgramParm_t * parms, const int numParms,
-										const int vertexAttribsFlags )
+										const GpuVertexAttribute_t * vertexLayout, const int vertexAttribsFlags )
 {
 	UNUSED_PARM( vertexSourceSize );
 	UNUSED_PARM( fragmentSourceSize );
@@ -8521,12 +8572,12 @@ static bool GpuGraphicsProgram_Create( GpuContext_t * context, GpuGraphicsProgra
 
 	// Bind the vertex attribute locations.
 	GLuint location = 0;
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < vertexLayout[i].attributeFlag != 0; i++ )
 	{
-		if ( ( VertexAttributeLayout[i].attributeFlag & vertexAttribsFlags ) != 0 )
+		if ( ( vertexLayout[i].attributeFlag & vertexAttribsFlags ) != 0 )
 		{
-			GL( glBindAttribLocation( program->program, location, VertexAttributeLayout[i].name ) );
-			location += VertexAttributeLayout[i].locationCount;
+			GL( glBindAttribLocation( program->program, location, vertexLayout[i].name ) );
+			location += vertexLayout[i].locationCount;
 		}
 	}
 
@@ -8773,26 +8824,27 @@ static void GpuGraphicsPipelineParms_Init( GpuGraphicsPipelineParms_t * parms )
 	parms->geometry = NULL;
 }
 
-static void InitVertexAttributes( const bool instance, const int numAttribs,
+static void InitVertexAttributes( const bool instance,
+								const GpuVertexAttribute_t * vertexLayout, const int numAttribs,
 								const int storedAttribsFlags, const int usedAttribsFlags,
 								GLuint * attribLocationCount )
 {
 	size_t offset = 0;
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < vertexLayout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &vertexLayout[i];
 		if ( ( v->attributeFlag & storedAttribsFlags ) != 0 )
 		{
 			if ( ( v->attributeFlag & usedAttribsFlags ) != 0 )
 			{
 				const size_t attribLocationSize = v->attributeSize / v->locationCount;
 				const size_t attribStride = v->attributeSize;
-				for ( int i = 0; i < v->locationCount; i++ )
+				for ( int location = 0; location < v->locationCount; location++ )
 				{
-					GL( glEnableVertexAttribArray( *attribLocationCount + i ) );
-					GL( glVertexAttribPointer( *attribLocationCount + i, v->componentCount, v->componentType, GL_FALSE,
-												(GLsizei)attribStride, (void *)( offset + i * attribLocationSize ) ) );
-					GL( glVertexAttribDivisor( *attribLocationCount + i, instance ? 1 : 0 ) );
+					GL( glEnableVertexAttribArray( *attribLocationCount + location ) );
+					GL( glVertexAttribPointer( *attribLocationCount + location, v->componentCount, v->componentType, GL_FALSE,
+												(GLsizei)attribStride, (void *)( offset + location * attribLocationSize ) ) );
+					GL( glVertexAttribDivisor( *attribLocationCount + location, instance ? 1 : 0 ) );
 				}
 				*attribLocationCount += v->locationCount;
 			}
@@ -8819,13 +8871,15 @@ static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipel
 	GLuint attribLocationCount = 0;
 
 	GL( glBindBuffer( parms->geometry->vertexBuffer.target, parms->geometry->vertexBuffer.buffer ) );
-	InitVertexAttributes( false, parms->geometry->vertexCount, parms->geometry->vertexAttribsFlags,
+	InitVertexAttributes( false, parms->geometry->layout,
+							parms->geometry->vertexCount, parms->geometry->vertexAttribsFlags,
 							parms->program->vertexAttribsFlags, &attribLocationCount );
 
 	if ( parms->geometry->instanceBuffer.buffer != 0 )
 	{
 		GL( glBindBuffer( parms->geometry->instanceBuffer.target, parms->geometry->instanceBuffer.buffer ) );
-		InitVertexAttributes( true, parms->geometry->instanceCount, parms->geometry->instanceAttribsFlags,
+		InitVertexAttributes( true, parms->geometry->layout,
+								parms->geometry->instanceCount, parms->geometry->instanceAttribsFlags,
 								parms->program->vertexAttribsFlags, &attribLocationCount );
 	}
 
@@ -9562,10 +9616,10 @@ static void GpuCommandBuffer_SubmitComputeCommand( GpuCommandBuffer_t * commandB
 static GpuBuffer_t * GpuCommandBuffer_MapBuffer( GpuCommandBuffer_t * commandBuffer, GpuBuffer_t * buffer, void ** data );
 static void GpuCommandBuffer_UnmapBuffer( GpuCommandBuffer_t * commandBuffer, GpuBuffer_t * buffer, GpuBuffer_t * mappedBuffer, const GpuBufferUnmapType_t type );
 
-static GpuBuffer_t * GpuCommandBuffer_MapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArrays_t * attribs );
+static GpuBuffer_t * GpuCommandBuffer_MapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs );
 static void GpuCommandBuffer_UnmapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuBuffer_t * mappedVertexBuffer, const GpuBufferUnmapType_t type );
 
-static GpuBuffer_t * GpuCommandBuffer_MapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArrays_t * attribs );
+static GpuBuffer_t * GpuCommandBuffer_MapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs );
 static void GpuCommandBuffer_UnmapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuBuffer_t * mappedInstanceBuffer, const GpuBufferUnmapType_t type );
 
 ================================================================================================================================
@@ -10173,11 +10227,12 @@ static void GpuCommandBuffer_UnmapBuffer( GpuCommandBuffer_t * commandBuffer, Gp
 	}
 }
 
-static GpuBuffer_t * GpuCommandBuffer_MapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArrays_t * attribs )
+static GpuBuffer_t * GpuCommandBuffer_MapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs )
 {
 	void * data = NULL;
 	GpuBuffer_t * buffer = GpuCommandBuffer_MapBuffer( commandBuffer, &geometry->vertexBuffer, &data );
 
+	attribs->layout = geometry->layout;
 	GpuVertexAttributeArrays_Map( attribs, data, buffer->size, geometry->vertexCount, geometry->vertexAttribsFlags );
 
 	return buffer;
@@ -10188,11 +10243,12 @@ static void GpuCommandBuffer_UnmapVertexAttributes( GpuCommandBuffer_t * command
 	GpuCommandBuffer_UnmapBuffer( commandBuffer, &geometry->vertexBuffer, mappedVertexBuffer, type );
 }
 
-static GpuBuffer_t * GpuCommandBuffer_MapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArrays_t * attribs )
+static GpuBuffer_t * GpuCommandBuffer_MapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs )
 {
 	void * data = NULL;
 	GpuBuffer_t * buffer = GpuCommandBuffer_MapBuffer( commandBuffer, &geometry->instanceBuffer, &data );
 
+	attribs->layout = geometry->layout;
 	GpuVertexAttributeArrays_Map( attribs, data, buffer->size, geometry->instanceCount, geometry->instanceAttribsFlags );
 
 	return buffer;
@@ -10219,6 +10275,88 @@ static void GpuCommandBuffer_Blit( GpuCommandBuffer_t * commandBuffer, GpuFrameb
 	GL( glBindFramebuffer( GL_READ_FRAMEBUFFER, 0 ) );
 	GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 ) );
 }
+
+/*
+================================================================================================================================
+
+GpuMaterial_t
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+	int pad;
+} GpuMaterial_t;
+
+/*
+================================================================================================================================
+
+GpuSurface_t
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+	GpuMaterial_t	material;
+	GpuGeometry_t	geometry;
+} GpuSurface_t;
+
+/*
+================================================================================================================================
+
+GpuModel_t
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+	GpuSurface_t *	surfaces;
+	int				surfaceCount;
+} GpuModel_t;
+
+/*
+================================================================================================================================
+
+GpuSceneModel_t
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+	GpuModel_t *	model;
+	Matrix4x4f_t	modelMatrix;
+} GpuSceneModel_t;
+
+/*
+================================================================================================================================
+
+GpuSceneNode_t
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+	Matrix4x4f_t	transform;
+} GpuSceneNode_t;
+
+/*
+================================================================================================================================
+
+GpuScene_t
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+	GpuSceneModel_t *	models;
+	int					modelCount;
+} GpuScene_t;
 
 /*
 ================================================================================================================================
@@ -10415,7 +10553,7 @@ static void BarGraph_Create( GpuContext_t * context, BarGraph_t * barGraph, GpuR
 									PROGRAM( barGraphVertexProgram ), sizeof( PROGRAM( barGraphVertexProgram ) ),
 									PROGRAM( barGraphFragmentProgram ), sizeof( PROGRAM( barGraphFragmentProgram ) ),
 									barGraphGraphicsProgramParms, 0,
-									VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_TRANSFORM );
+									barGraph->graphics.quad.layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_TRANSFORM );
 
 		GpuGraphicsPipelineParms_t pipelineParms;
 		GpuGraphicsPipelineParms_Init( &pipelineParms );
@@ -10485,7 +10623,7 @@ static void BarGraph_AddBar( BarGraph_t * barGraph, const int stackedBar, const 
 static void BarGraph_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph )
 {
 	GpuVertexAttributeArrays_t attribs;
-	GpuBuffer_t * instanceBuffer = GpuCommandBuffer_MapInstanceAttributes( commandBuffer, &barGraph->graphics.quad, &attribs );
+	GpuBuffer_t * instanceBuffer = GpuCommandBuffer_MapInstanceAttributes( commandBuffer, &barGraph->graphics.quad, &attribs.base );
 
 #if defined( GRAPHICS_API_VULKAN )
 	const float flipY = -1.0f;
@@ -11294,11 +11432,12 @@ static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t 
 	}
 
 	GpuVertexAttributeArrays_t vertexAttribs;
-	GpuVertexAttributeArrays_Alloc( &vertexAttribs, numVertices,
-							VERTEX_ATTRIBUTE_FLAG_POSITION |
-							VERTEX_ATTRIBUTE_FLAG_UV0 |
-							VERTEX_ATTRIBUTE_FLAG_UV1 |
-							VERTEX_ATTRIBUTE_FLAG_UV2 );
+	GpuVertexAttributeArrays_Alloc( &vertexAttribs.base,
+									DefaultVertexAttributeLayout, numVertices,
+									VERTEX_ATTRIBUTE_FLAG_POSITION |
+									VERTEX_ATTRIBUTE_FLAG_UV0 |
+									VERTEX_ATTRIBUTE_FLAG_UV1 |
+									VERTEX_ATTRIBUTE_FLAG_UV2 );
 
 	const int numMeshCoords = ( EYE_TILES_WIDE + 1 ) * ( EYE_TILES_HIGH + 1 );
 	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t ) );
@@ -11335,23 +11474,23 @@ static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t 
 			}
 		}
 
-		GpuGeometry_Create( context, &graphics->distortionMesh[eye], &vertexAttribs, numVertices, indices, numIndices );
+		GpuGeometry_Create( context, &graphics->distortionMesh[eye], &vertexAttribs.base, numVertices, indices, numIndices );
 	}
 
 	free( meshCoordsBasePtr );
-	GpuVertexAttributeArrays_Free( &vertexAttribs );
+	GpuVertexAttributeArrays_Free( &vertexAttribs.base );
 	free( indices );
 
 	GpuGraphicsProgram_Create( context, &graphics->timeWarpSpatialProgram,
 								PROGRAM( timeWarpSpatialVertexProgram ), sizeof( PROGRAM( timeWarpSpatialVertexProgram ) ),
 								PROGRAM( timeWarpSpatialFragmentProgram ), sizeof( PROGRAM( timeWarpSpatialFragmentProgram ) ),
 								timeWarpSpatialGraphicsProgramParms, ARRAY_SIZE( timeWarpSpatialGraphicsProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV0 );
+								graphics->distortionMesh[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV0 );
 	GpuGraphicsProgram_Create( context, &graphics->timeWarpChromaticProgram,
 								PROGRAM( timeWarpChromaticVertexProgram ), sizeof( PROGRAM( timeWarpChromaticVertexProgram ) ),
 								PROGRAM( timeWarpChromaticFragmentProgram ), sizeof( PROGRAM( timeWarpChromaticFragmentProgram ) ),
 								timeWarpChromaticGraphicsProgramParms, ARRAY_SIZE( timeWarpChromaticGraphicsProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV0 |
+								graphics->distortionMesh[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV0 |
 								VERTEX_ATTRIBUTE_FLAG_UV1 | VERTEX_ATTRIBUTE_FLAG_UV2 );
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
@@ -12295,28 +12434,28 @@ static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window )
 			const float * times = ( i == 0 ) ? timeWarp->cpuTimes : timeWarp->gpuTimes;
 			float barHeights[PROFILE_TIME_MAX];
 			float totalBarHeight = 0.0f;
-			for ( int i = 0; i < PROFILE_TIME_MAX; i++ )
+			for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
 			{
-				barHeights[i] = times[i] * timeWarp->refreshRate * ( 1.0f / 1000.0f );
-				totalBarHeight += barHeights[i];
+				barHeights[p] = times[p] * timeWarp->refreshRate * ( 1.0f / 1000.0f );
+				totalBarHeight += barHeights[p];
 			}
 
 			const float limit = 0.9f;
 			if ( totalBarHeight > limit )
 			{
 				totalBarHeight = 0.0f;
-				for ( int i = 0; i < PROFILE_TIME_MAX; i++ )
+				for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
 				{
-					barHeights[i] = ( totalBarHeight + barHeights[i] > limit ) ? ( limit - totalBarHeight ) : barHeights[i];
-					totalBarHeight += barHeights[i];
+					barHeights[p] = ( totalBarHeight + barHeights[p] > limit ) ? ( limit - totalBarHeight ) : barHeights[p];
+					totalBarHeight += barHeights[p];
 				}
 				barHeights[PROFILE_TIME_OVERFLOW] = 1.0f - limit;
 			}
 
 			BarGraph_t * barGraph = ( i == 0 ) ? &timeWarp->bargraphs.frameCpuTimeBarGraph : &timeWarp->bargraphs.frameGpuTimeBarGraph;
-			for ( int i = 0; i < PROFILE_TIME_MAX; i++ )
+			for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
 			{
-				BarGraph_AddBar( barGraph, i, barHeights[i], profileTimeBarColors[i], ( i == PROFILE_TIME_MAX - 1 ) );
+				BarGraph_AddBar( barGraph, p, barHeights[p], profileTimeBarColors[p], ( p == PROFILE_TIME_MAX - 1 ) );
 			}
 		}
 	}
@@ -12809,14 +12948,14 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 								PROGRAM( flatShadedFragmentProgram ),
 								sizeof( PROGRAM( flatShadedFragmentProgram ) ),
 								flatShadedProgramParms, ARRAY_SIZE( flatShadedProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL );
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL );
 	GpuGraphicsProgram_Create( context, &scene->program[1],
 								settings->useMultiView ? PROGRAM( normalMappedMultiViewVertexProgram ) : PROGRAM( normalMappedVertexProgram ),
 								settings->useMultiView ? sizeof( PROGRAM( normalMappedMultiViewVertexProgram ) ) : sizeof( PROGRAM( normalMappedVertexProgram ) ),
 								PROGRAM( normalMapped100LightsFragmentProgram ),
 								sizeof( PROGRAM( normalMapped100LightsFragmentProgram ) ),
 								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
 								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
 								VERTEX_ATTRIBUTE_FLAG_UV0 );
 	GpuGraphicsProgram_Create( context, &scene->program[2],
@@ -12825,7 +12964,7 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 								PROGRAM( normalMapped1000LightsFragmentProgram ),
 								sizeof( PROGRAM( normalMapped1000LightsFragmentProgram ) ),
 								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
 								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
 								VERTEX_ATTRIBUTE_FLAG_UV0 );
 	GpuGraphicsProgram_Create( context, &scene->program[3],
@@ -12834,7 +12973,7 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 								PROGRAM( normalMapped2000LightsFragmentProgram ),
 								sizeof( PROGRAM( normalMapped2000LightsFragmentProgram ) ),
 								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
 								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
 								VERTEX_ATTRIBUTE_FLAG_UV0 );
 
@@ -13857,7 +13996,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 
 		if ( recreate )
 		{
-			const GpuSampleCount_t sampleCount = sampleCountTable[SceneSettings_GetSamplesLevel( &sceneSettings )];
+			const GpuSampleCount_t newSampleCount = sampleCountTable[SceneSettings_GetSamplesLevel( &sceneSettings )];
 			Scene_Destroy( &window.context, &scene );
 			BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
 			BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
@@ -13867,12 +14006,12 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			GpuRenderPass_Destroy( &window.context, &renderPass );
 			GpuWindow_Destroy( &window );
 			GpuWindow_Create( &window, &instance, &queueInfo, 0,
-							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24, sampleCount,
+							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24, newSampleCount,
 							startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
 							startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
 							startupSettings->fullscreen );
 			GpuRenderPass_Create( &window.context, &renderPass, window.colorFormat, window.depthFormat,
-									sampleCount, GPU_RENDERPASS_TYPE_INLINE,
+									newSampleCount, GPU_RENDERPASS_TYPE_INLINE,
 									GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
 									GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
 			GpuFramebuffer_CreateFromSwapchain( &window, &framebuffer, &renderPass );
