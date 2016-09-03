@@ -151,6 +151,8 @@ bool			Json_WriteToFile( const Json_t * rootNode, const char * fileName );
 int				Json_GetMemberCount( const Json_t * node );							// Get the number of object members or array elements.
 Json_t *		Json_GetMemberByIndex( const Json_t * node, const int index );		// Get an object member or array element by index.
 Json_t *		Json_GetMemberByName( const Json_t * node, const char * name );		// Case-sensitive lookup of an object member by name.
+const int		Json_GetMemberIndexByName( const Json_t * node, const char * name );// Returns the index of a named member.
+const char *	Json_GetMemberName( const Json_t * node );							// Returns the name of this member.
 
 bool			Json_IsNull( const Json_t * node );									// Returns true if the node != NULL and the value is 'null'.
 bool			Json_IsBoolean( const Json_t * node );								// Returns true if the node != NULL and the value is 'true' or 'false'.
@@ -368,7 +370,7 @@ Text to DOM     2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
                 Intel Core i7  Intel Core i7  Qualcomm Kryo  Qualcomm Kryo  Qualcomm Kryo  Qualcomm Kryo
                 win32          win64          armeabi-v7a    arm64-v8a      armeabi-v7a    arm64-v8a
                 VS2015-up3     VS2015-up3     GCC 4.9        GCC 4.9        Clang 3.8      Clang 3.8
-				c++11          c++11          gnustl_static  gnustl_static  c++_static     c++_static
+                c++11          c++11          gnustl_static  gnustl_static  c++_static     c++_static
 ----------------------------------------------------------------------------------------------------------
   Json_t        121.930 ms     107.169 ms      260.471 ms     229.713 ms     284.767 ms     244.413 ms
   rapidjson     111.411 ms     112.965 ms      294.813 ms     217.756 ms     318.686 ms     267.120 ms
@@ -386,7 +388,7 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
                 Intel Core i7  Intel Core i7  Qualcomm Kryo  Qualcomm Kryo  Qualcomm Kryo  Qualcomm Kryo
                 win32          win64          armeabi-v7a    arm64-v8a      armeabi-v7a    arm64-v8a
                 VS2015-up3     VS2015-up3     GCC 4.9        GCC 4.9        Clang 3.8      Clang 3.8
-				c++11          c++11          gnustl_static  gnustl_static  c++_static     c++_static
+                c++11          c++11          gnustl_static  gnustl_static  c++_static     c++_static
 ----------------------------------------------------------------------------------------------------------
   Json_t         22.131 ms      19.727 ms      106.081 ms      39.828 ms      84.220 ms      42.936 ms
   rapidjson      40.618 ms      29.887 ms       82.376 ms      48.170 ms      75.268 ms      49.578 ms
@@ -405,6 +407,10 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
 #if !defined( JSON_H )
 #define JSON_H
 
+#ifdef _MSC_VER
+	#pragma warning( disable : 4201 )	// nonstandard extension used: nameless struct/union
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -415,6 +421,7 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
 #include <string.h>
 #include <malloc.h>
 
+#define JSON_MIN( x, max )			( ( x <= max ) ? x : max )
 #define JSON_CLAMP( x, min, max )	( ( x >= min ) ? ( ( x <= max ) ? x : max ) : min )
 #define JSON_MAX_RECURSION			128
 
@@ -536,7 +543,7 @@ static const char * Json_ParseWhiteSpace( const char * buffer )
 	return buffer;
 }
 
-// Parses a hexadecimal string up to the specified number of digits and stores the integer result in 'value'.
+// Parses a hexadecimal string up to four digits and stores the integer result in 'value'.
 // Returns a pointer to the first character after the string.
 static const char * Json_ParseHex4( unsigned int * value, const char * buffer )
 {
@@ -799,6 +806,7 @@ static const char * Json_ParseNumber( JsonType_t * type, int64_t * valueInt64, u
 		{
 			const int pow0 = 308 + 16;
 			const int pow1 = 308 * 2 + exp - pow0;
+			assert( pow0 >= 0 && pow0 < sizeof( json_pow10 ) / sizeof( json_pow10[0] ) );
 			assert( pow1 >= 0 && pow1 < sizeof( json_pow10 ) / sizeof( json_pow10[0] ) );
 			const double v = doubleValue * json_pow10[pow0] * json_pow10[pow1];
 			*valueDouble = sign * ( v <= DBL_MAX ? v : DBL_MAX );
@@ -807,6 +815,7 @@ static const char * Json_ParseNumber( JsonType_t * type, int64_t * valueInt64, u
 		{
 			const int pow0 = 16;
 			const int pow1 = 308 * 2 + exp - pow0;
+			assert( pow0 >= 0 && pow0 < sizeof( json_pow10 ) / sizeof( json_pow10[0] ) );
 			assert( pow1 >= 0 && pow1 < sizeof( json_pow10 ) / sizeof( json_pow10[0] ) );
 			*valueDouble = sign * doubleValue * json_pow10[pow0] * json_pow10[pow1];
 		}
@@ -868,6 +877,7 @@ static const char * Json_ParseValue( Json_t * json, const int recursion, const c
 	}
 	else if ( buffer[0] == '{' )
 	{
+		json->members = NULL;
 		json->type = JSON_OBJECT;
 
 		buffer++;
@@ -904,6 +914,7 @@ static const char * Json_ParseValue( Json_t * json, const int recursion, const c
 	}
 	else if ( buffer[0] == '[' )
 	{ 
+		json->members = NULL;
 		json->type = JSON_ARRAY;
 
 		buffer++;
@@ -933,9 +944,6 @@ static const char * Json_ParseValue( Json_t * json, const int recursion, const c
 	{
 		return Json_ParseNumber( &json->type, &json->valueInt64, &json->valueUint64, &json->valueDouble, buffer, errorStringOut );
 	}
-
-	*errorStringOut = "invalid value";
-	return buffer;
 }
 
 static bool Json_ReadFromBuffer( Json_t * rootNode, const char * buffer, const char ** errorStringOut )
@@ -1005,7 +1013,6 @@ static bool Json_ReadFromFile( Json_t * rootNode, const char * fileName, const c
 	fclose( file );
 
 	const char * error = NULL;
-	int recursion = 0;
 	Json_ParseValue( rootNode, 0, buffer, &error );
 	if ( error != NULL )
 	{
@@ -1208,6 +1215,34 @@ static Json_t * Json_GetMemberByName( const Json_t * node, const char * name )
 	return NULL;
 }
 
+const char * Json_GetMemberName( const Json_t * node )
+{
+	if ( node != NULL && node->name != NULL )
+	{
+		return node->name;
+	}
+	return "";
+}
+
+static const int Json_GetMemberIndexByName( const Json_t * node, const char * name )
+{
+	if ( node != NULL && node->type == JSON_OBJECT )
+	{
+		assert( name != NULL );
+		for ( int i = 0; i < node->memberCount; i++ )
+		{
+			Json_t * member = &node->members[( node->memberIndex + i ) % node->memberCount];
+			if ( strcmp( member->name, name ) == 0 )
+			{
+				*(int *)&node->memberIndex = ( node->memberIndex + i + 1 ) % node->memberCount;	// mutable
+				return i;
+			}
+			// Set a breakpoint here to find cases where the JSON is not parsed in order.
+		}
+	}
+	return -1;
+}
+
 static inline bool Json_IsNull( const Json_t * node )
 {
 	return ( node != NULL && node->type == JSON_NULL );
@@ -1262,14 +1297,14 @@ static inline int8_t Json_GetInt8( const Json_t * node, const int8_t defaultValu
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_INT ) ?		(int8_t)JSON_CLAMP( node->valueInt64, INT8_MIN, INT8_MAX ) :
-			( ( node->type == JSON_UINT ) ?		(int8_t)JSON_CLAMP( node->valueUint64, 0, INT8_MAX ) :
+			( ( node->type == JSON_UINT ) ?		(int8_t)JSON_MIN( node->valueUint64, INT8_MAX ) :
 			( ( node->type == JSON_FLOAT ) ?	(int8_t)JSON_CLAMP( node->valueDouble, INT8_MIN, INT8_MAX ) : defaultValue ) ) ) );
 }
 
 static inline uint8_t Json_GetUint8( const Json_t * node, const uint8_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
-			( ( node->type == JSON_UINT ) ?		(uint8_t)JSON_CLAMP( node->valueUint64, 0, UINT8_MAX ) :
+			( ( node->type == JSON_UINT ) ?		(uint8_t)JSON_MIN( node->valueUint64, UINT8_MAX ) :
 			( ( node->type == JSON_INT ) ?		(uint8_t)JSON_CLAMP( node->valueInt64, 0, UINT8_MAX ) :
 			( ( node->type == JSON_FLOAT ) ?	(uint8_t)JSON_CLAMP( node->valueDouble, 0, UINT8_MAX ) : defaultValue ) ) ) );
 }
@@ -1278,14 +1313,14 @@ static inline int16_t Json_GetInt16( const Json_t * node, const int16_t defaultV
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_INT ) ?		(int16_t)JSON_CLAMP( node->valueInt64, INT16_MIN, INT16_MAX ) :
-			( ( node->type == JSON_UINT ) ?		(int16_t)JSON_CLAMP( node->valueUint64, 0, INT16_MAX ) :
+			( ( node->type == JSON_UINT ) ?		(int16_t)JSON_MIN( node->valueUint64, INT16_MAX ) :
 			( ( node->type == JSON_FLOAT ) ?	(int16_t)JSON_CLAMP( node->valueDouble, INT16_MIN, INT16_MAX ) : defaultValue ) ) ) );
 }
 
 static inline uint16_t Json_GetUint16( const Json_t * node, const uint16_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
-			( ( node->type == JSON_UINT ) ?		(uint16_t)JSON_CLAMP( node->valueUint64, 0, UINT16_MAX ) :
+			( ( node->type == JSON_UINT ) ?		(uint16_t)JSON_MIN( node->valueUint64, UINT16_MAX ) :
 			( ( node->type == JSON_INT ) ?		(uint16_t)JSON_CLAMP( node->valueInt64, 0, UINT16_MAX ) :
 			( ( node->type == JSON_FLOAT ) ?	(uint16_t)JSON_CLAMP( node->valueDouble, 0, UINT16_MAX ) : defaultValue ) ) ) );
 }
@@ -1294,14 +1329,14 @@ static inline int32_t Json_GetInt32( const Json_t * node, const int32_t defaultV
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_INT ) ?		(int32_t)JSON_CLAMP( node->valueInt64, INT32_MIN, INT32_MAX ) :
-			( ( node->type == JSON_UINT ) ?		(int32_t)JSON_CLAMP( node->valueUint64, 0, INT32_MAX ) :
+			( ( node->type == JSON_UINT ) ?		(int32_t)JSON_MIN( node->valueUint64, INT32_MAX ) :
 			( ( node->type == JSON_FLOAT ) ?	(int32_t)JSON_CLAMP( node->valueDouble, INT32_MIN, INT32_MAX ) : defaultValue ) ) ) );
 }
 
 static inline uint32_t Json_GetUint32( const Json_t * node, const uint32_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
-			( ( node->type == JSON_UINT ) ?		(uint32_t)JSON_CLAMP( node->valueUint64, 0, UINT32_MAX ) :
+			( ( node->type == JSON_UINT ) ?		(uint32_t)JSON_MIN( node->valueUint64, UINT32_MAX ) :
 			( ( node->type == JSON_INT ) ?		(uint32_t)JSON_CLAMP( node->valueInt64, 0, UINT32_MAX ) :
 			( ( node->type == JSON_FLOAT ) ?	(uint32_t)JSON_CLAMP( node->valueDouble, 0, UINT32_MAX ) : defaultValue ) ) ) );
 }
@@ -1310,7 +1345,7 @@ static inline int64_t Json_GetInt64( const Json_t * node, const int64_t defaultV
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_INT ) ?		(int64_t)node->valueInt64 :
-			( ( node->type == JSON_UINT ) ?		(int64_t)JSON_CLAMP( node->valueUint64, 0, INT64_MAX ) :
+			( ( node->type == JSON_UINT ) ?		(int64_t)JSON_MIN( node->valueUint64, INT64_MAX ) :
 			( ( node->type == JSON_FLOAT ) ?	(int64_t)JSON_CLAMP( node->valueDouble, INT64_MIN, INT64_MAX ) : defaultValue ) ) ) );
 }
 
@@ -1325,7 +1360,7 @@ static inline uint64_t Json_GetUint64( const Json_t * node, const uint64_t defau
 static inline float Json_GetFloat( const Json_t * node, const float defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
-			( ( node->type == JSON_FLOAT ) ?	(float)JSON_CLAMP( node->valueDouble, FLT_MIN, FLT_MAX ) :
+			( ( node->type == JSON_FLOAT ) ?	(float)JSON_CLAMP( node->valueDouble, -FLT_MAX, FLT_MAX ) :
 			( ( node->type == JSON_INT ) ?		(float)node->valueInt64 :
 			( ( node->type == JSON_UINT ) ?		(float)node->valueUint64 : defaultValue ) ) ) );
 }
@@ -1373,6 +1408,7 @@ static inline Json_t * Json_SetObject( Json_t * node )
 	if ( node != NULL )
 	{
 		Json_FreeNode( node, false );
+		node->members = NULL;
 		node->type = JSON_OBJECT;
 	}
 	return node;
@@ -1383,6 +1419,7 @@ static inline Json_t * Json_SetArray( Json_t * node )
 	if ( node != NULL )
 	{
 		Json_FreeNode( node, false );
+		node->members = NULL;
 		node->type = JSON_ARRAY;
 	}
 	return node;

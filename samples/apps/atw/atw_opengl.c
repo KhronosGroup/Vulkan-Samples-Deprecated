@@ -495,6 +495,9 @@ Common headers
 #include <errno.h>			// for EBUSY, ETIMEDOUT etc.
 #include <ctype.h>			// for isspace, isdigit
 
+#include <utils/json.h>
+#include <utils/base64.h>
+
 /*
 ================================
 Common defines
@@ -1673,7 +1676,7 @@ static void FrameLog_EndFrame( const float cpuTimeMilliseconds, const float gpuT
 /*
 ================================================================================================================================
 
-Vectors and matrices.
+Vectors and matrices. All matrices are column-major.
 
 Vector2i_t
 Vector3i_t
@@ -1681,20 +1684,35 @@ Vector4i_t
 Vector2f_t
 Vector3f_t
 Vector4f_t
-Matrix3x4f_t		// This is a column-major matrix.
-Matrix4x4f_t		// This is a column-major matrix.
+Quatf_t
+Matrix2x2f_t
+Matrix2x3f_t
+Matrix2x4f_t
+Matrix3x2f_t
+Matrix3x3f_t
+Matrix3x4f_t
+Matrix4x2f_t
+Matrix4x3f_t
+Matrix4x4f_t
 
 static void Vector3f_Zero( Vector3f_t * v );
 static void Vector3f_Normalize( Vector3f_t * v );
 
+static void Matrix3x3f_TransposeFromMatrix4x4f( Matrix3x3f_t * dest, const Matrix4x4f_t * source );
+static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * dest, const Matrix4x4f_t * source );
+
 static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * matrix );
 static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * matrix, const float x, const float y, const float z );
 static void Matrix4x4f_CreateRotation( Matrix4x4f_t * matrix, const float degreesX, const float degreesY, const float degreesZ );
+static void Matrix4x4f_CreateScale( Matrix4x4f_t * matrix, const float x, const float y, const float z );
+static void Matrix4x4f_CreateScaleRotationTranslation( Matrix4x4f_t * matrix, const Vector3f_t * scale, const Quatf_t * rotation, const Vector3f_t * translation );
 static void Matrix4x4f_CreateProjection( Matrix4x4f_t * matrix, const float minX, const float maxX,
 											float const minY, const float maxY, const float nearZ, const float farZ );
 static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float fovDegreesX, const float fovDegreesY,
 											const float offsetX, const float offsetY, const float nearZ, const float farZ );
+static void Matrix4x4f_CreateFromQuaternion( Matrix3x4f_t * dest, const Quatf_t * source );
 static void Matrix4x4f_Multiply( Matrix4x4f_t * out, const Matrix4x4f_t * a, const Matrix4x4f_t * b );
+static void Matrix4x4f_Transpose( Matrix4x4f_t * result, const Matrix4x4f_t * src );
 static void Matrix4x4f_Invert( Matrix4x4f_t * result, const Matrix4x4f_t * src );
 static void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4f_t * src );
 
@@ -1749,11 +1767,62 @@ typedef struct
 	float w;
 } Vector4f_t;
 
+// Quaternion
+typedef struct
+{
+	float x;
+	float y;
+	float z;
+	float w;
+} Quatf_t;
+
+// Column-major 2x2 matrix
+typedef struct
+{
+	float m[2][2];
+} Matrix2x2f_t;
+
+// Column-major 2x3 matrix
+typedef struct
+{
+	float m[2][3];
+} Matrix2x3f_t;
+
+// Column-major 2x4 matrix
+typedef struct
+{
+	float m[2][4];
+} Matrix2x4f_t;
+
+// Column-major 3x2 matrix
+typedef struct
+{
+	float m[3][2];
+} Matrix3x2f_t;
+
+// Column-major 3x3 matrix
+typedef struct
+{
+	float m[3][3];
+} Matrix3x3f_t;
+
 // Column-major 3x4 matrix
 typedef struct
 {
 	float m[3][4];
 } Matrix3x4f_t;
+
+// Column-major 4x2 matrix
+typedef struct
+{
+	float m[4][2];
+} Matrix4x2f_t;
+
+// Column-major 4x3 matrix
+typedef struct
+{
+	float m[4][3];
+} Matrix4x3f_t;
 
 // Column-major 4x4 matrix
 typedef struct
@@ -1777,6 +1846,13 @@ static void Vector3f_Zero( Vector3f_t * v )
 	v->z = 0.0f;
 }
 
+static void Vector3f_Lerp( Vector3f_t * dest, const Vector3f_t * a, const Vector3f_t * b, const float fraction )
+{
+	dest->x = a->x + fraction * ( b->x - a->x );
+	dest->y = a->y + fraction * ( b->y - a->y );
+	dest->z = a->z + fraction * ( b->z - a->z );
+}
+
 static void Vector3f_Normalize( Vector3f_t * v )
 {
 	const float SMALLEST_NON_DENORMAL = 1.1754943508222875e-038f;	// ( 1U << 23 )
@@ -1785,6 +1861,39 @@ static void Vector3f_Normalize( Vector3f_t * v )
 	v->x *= lengthRcp;
 	v->y *= lengthRcp;
 	v->z *= lengthRcp;
+}
+
+static void Quatf_Lerp( Quatf_t * dest, const Quatf_t * a, const Quatf_t * b, const float fraction )
+{
+	const float s = a->x * b->x + a->y * b->y + a->z * b->z + a->w * b->w;
+	const float fa = 1.0f - fraction;
+	const float fb = ( s < 0.0f ) ? -fraction : fraction;
+	const float x = a->x * fa + b->x * fb;
+	const float y = a->y * fa + b->y * fb;
+	const float z = a->z * fa + b->z * fb;
+	const float w = a->w * fa + b->w * fb;
+	const float SMALLEST_NON_DENORMAL = 1.1754943508222875e-038f;	// ( 1U << 23 )
+	const float lengthSqr = x * x + y * y + z * z + w * w;
+	const float lengthRcp = ( lengthSqr >= SMALLEST_NON_DENORMAL ) ? 1.0f / sqrtf( lengthSqr ) : 1.0f;
+	dest->x = x * lengthRcp;
+	dest->y = y * lengthRcp;
+	dest->z = z * lengthRcp;
+	dest->w = w * lengthRcp;
+}
+
+static void Matrix3x3f_TransposeFromMatrix4x4f( Matrix3x3f_t * dest, const Matrix4x4f_t * source )
+{
+	dest->m[0][0] = source->m[0][0];
+	dest->m[0][1] = source->m[1][0];
+	dest->m[0][2] = source->m[2][0];
+
+	dest->m[1][0] = source->m[0][1];
+	dest->m[1][1] = source->m[1][1];
+	dest->m[1][2] = source->m[2][1];
+
+	dest->m[2][0] = source->m[0][2];
+	dest->m[2][1] = source->m[1][2];
+	dest->m[2][2] = source->m[2][2];
 }
 
 static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * dest, const Matrix4x4f_t * source )
@@ -1825,6 +1934,29 @@ static void Matrix4x4f_Multiply( Matrix4x4f_t * out, const Matrix4x4f_t * a, con
 	out->m[3][1] = a->m[0][1] * b->m[3][0] + a->m[1][1] * b->m[3][1] + a->m[2][1] * b->m[3][2] + a->m[3][1] * b->m[3][3];
 	out->m[3][2] = a->m[0][2] * b->m[3][0] + a->m[1][2] * b->m[3][1] + a->m[2][2] * b->m[3][2] + a->m[3][2] * b->m[3][3];
 	out->m[3][3] = a->m[0][3] * b->m[3][0] + a->m[1][3] * b->m[3][1] + a->m[2][3] * b->m[3][2] + a->m[3][3] * b->m[3][3];
+}
+
+static void Matrix4x4f_Transpose( Matrix4x4f_t * result, const Matrix4x4f_t * src )
+{
+	result->m[0][0] = src->m[0][0];
+	result->m[0][1] = src->m[1][0];
+	result->m[0][2] = src->m[2][0];
+	result->m[0][3] = src->m[3][0];
+
+	result->m[1][0] = src->m[0][1];
+	result->m[1][1] = src->m[1][1];
+	result->m[1][2] = src->m[2][1];
+	result->m[1][3] = src->m[3][1];
+
+	result->m[2][0] = src->m[0][2];
+	result->m[2][1] = src->m[1][2];
+	result->m[2][2] = src->m[2][2];
+	result->m[2][3] = src->m[3][2];
+
+	result->m[3][0] = src->m[0][3];
+	result->m[3][1] = src->m[1][3];
+	result->m[3][2] = src->m[2][3];
+	result->m[3][3] = src->m[3][3];
 }
 
 // Returns a 3x3 minor of a 4x4 matrix.
@@ -1934,6 +2066,83 @@ static void Matrix4x4f_CreateRotation( Matrix4x4f_t * matrix, const float degree
 	Matrix4x4f_t rotationXY;
 	Matrix4x4f_Multiply( &rotationXY, &rotationY, &rotationX );
 	Matrix4x4f_Multiply( matrix, &rotationZ, &rotationXY );
+}
+
+// Creates a scale matrix.
+static void Matrix4x4f_CreateScale( Matrix4x4f_t * matrix, const float x, const float y, const float z )
+{
+	matrix->m[0][0] = x;
+	matrix->m[0][1] = 0.0f;
+	matrix->m[0][2] = 0.0f;
+	matrix->m[0][3] = 0.0f;
+
+	matrix->m[1][0] = 0.0f;
+	matrix->m[1][1] = y;
+	matrix->m[1][2] = 0.0f;
+	matrix->m[1][3] = 0.0f;
+
+	matrix->m[2][0] = 0.0f;
+	matrix->m[2][1] = 0.0f;
+	matrix->m[2][2] = z;
+	matrix->m[2][3] = 0.0f;
+
+	matrix->m[3][0] = 0.0f;
+	matrix->m[3][1] = 0.0f;
+	matrix->m[3][2] = 0.0f;
+	matrix->m[3][3] = 1.0f;
+}
+
+static void Matrix4x4f_CreateFromQuaternion( Matrix4x4f_t * dest, const Quatf_t * quat )
+{
+	const float x2 = quat->x + quat->x;
+	const float y2 = quat->y + quat->y;
+	const float z2 = quat->z + quat->z;
+
+	const float xx2 = quat->x * x2;
+	const float yy2 = quat->y * y2;
+	const float zz2 = quat->z * z2;
+
+	const float yz2 = quat->y * z2;
+	const float wx2 = quat->w * x2;
+	const float xy2 = quat->x * y2;
+	const float wz2 = quat->w * z2;
+	const float xz2 = quat->x * z2;
+	const float wy2 = quat->w * y2;
+
+	dest->m[0][0] = 1.0f - yy2 - zz2;
+	dest->m[1][0] = xy2 - wz2;
+	dest->m[2][0] = xz2 + wy2;
+	dest->m[3][0] = 0.0f;
+
+	dest->m[0][1] = xy2 + wz2;
+	dest->m[1][1] = 1.0f - xx2 - zz2;
+	dest->m[2][1] = yz2 - wx2;
+	dest->m[3][1] = 0.0f;
+
+	dest->m[0][2] = xz2 - wy2;
+	dest->m[1][2] = yz2 + wx2;
+	dest->m[2][2] = 1.0f - xx2 - yy2;
+	dest->m[3][2] = 0.0f;
+
+	dest->m[0][3] = 0.0f;
+	dest->m[1][3] = 0.0f;
+	dest->m[2][3] = 0.0f;
+	dest->m[3][3] = 1.0f;
+}
+
+// Creates a combined scale-rotation-translation matrix.
+static void Matrix4x4f_CreateScaleRotationTranslation( Matrix4x4f_t * matrix, const Vector3f_t * scale, const Quatf_t * rotation, const Vector3f_t * translation )
+{
+	Matrix4x4f_t rotationMatrix;
+	Matrix4x4f_CreateFromQuaternion( &rotationMatrix, rotation );
+	Matrix4x4f_t scaleMatrix;
+	Matrix4x4f_CreateScale( &scaleMatrix, scale->x, scale->y, scale->z );
+	Matrix4x4f_t translationMatrix;
+	Matrix4x4f_CreateTranslation( &translationMatrix, translation->x, translation->y, translation->z );
+
+	Matrix4x4f_t combinedMatrix;
+	Matrix4x4f_Multiply( &combinedMatrix, &rotationMatrix, &scaleMatrix );
+	Matrix4x4f_Multiply( matrix, &translationMatrix, &combinedMatrix );
 }
 
 // Creates a projection matrix based on the specified dimensions.
@@ -2353,6 +2562,7 @@ PFNGLATTACHSHADERPROC								glAttachShader;
 PFNGLLINKPROGRAMPROC								glLinkProgram;
 PFNGLGETPROGRAMIVPROC								glGetProgramiv;
 PFNGLGETPROGRAMINFOLOGPROC							glGetProgramInfoLog;
+PFNGLGETATTRIBLOCATIONPROC							glGetAttribLocation;
 PFNGLBINDATTRIBLOCATIONPROC							glBindAttribLocation;
 PFNGLGETUNIFORMLOCATIONPROC							glGetUniformLocation;
 PFNGLGETUNIFORMBLOCKINDEXPROC						glGetUniformBlockIndex;
@@ -2370,7 +2580,14 @@ PFNGLUNIFORM1FVPROC									glUniform1fv;
 PFNGLUNIFORM2FVPROC									glUniform2fv;
 PFNGLUNIFORM3FVPROC									glUniform3fv;
 PFNGLUNIFORM4FVPROC									glUniform4fv;
+PFNGLUNIFORMMATRIX2FVPROC							glUniformMatrix2fv;
+PFNGLUNIFORMMATRIX2X3FVPROC							glUniformMatrix2x3fv;
+PFNGLUNIFORMMATRIX2X4FVPROC							glUniformMatrix2x4fv;
+PFNGLUNIFORMMATRIX3X2FVPROC							glUniformMatrix3x2fv;
+PFNGLUNIFORMMATRIX3FVPROC							glUniformMatrix3fv;
 PFNGLUNIFORMMATRIX3X4FVPROC							glUniformMatrix3x4fv;
+PFNGLUNIFORMMATRIX4X2FVPROC							glUniformMatrix4x2fv;
+PFNGLUNIFORMMATRIX4X3FVPROC							glUniformMatrix4x3fv;
 PFNGLUNIFORMMATRIX4FVPROC							glUniformMatrix4fv;
 
 PFNGLDRAWELEMENTSINSTANCEDPROC						glDrawElementsInstanced;
@@ -2478,6 +2695,7 @@ static void GlInitExtensions()
 	glLinkProgram								= (PFNGLLINKPROGRAMPROC)				GetExtension( "glLinkProgram" );
 	glGetProgramiv								= (PFNGLGETPROGRAMIVPROC)				GetExtension( "glGetProgramiv" );
 	glGetProgramInfoLog							= (PFNGLGETPROGRAMINFOLOGPROC)			GetExtension( "glGetProgramInfoLog" );
+	glGetAttribLocation							= (PFNGLGETATTRIBLOCATIONPROC)			GetExtension( "glGetAttribLocation" );
 	glBindAttribLocation						= (PFNGLBINDATTRIBLOCATIONPROC)			GetExtension( "glBindAttribLocation" );
 	glGetUniformLocation						= (PFNGLGETUNIFORMLOCATIONPROC)			GetExtension( "glGetUniformLocation" );
 	glGetUniformBlockIndex						= (PFNGLGETUNIFORMBLOCKINDEXPROC)		GetExtension( "glGetUniformBlockIndex" );
@@ -2492,7 +2710,14 @@ static void GlInitExtensions()
 	glUniform2fv								= (PFNGLUNIFORM2FVPROC)					GetExtension( "glUniform2fv" );
 	glUniform3fv								= (PFNGLUNIFORM3FVPROC)					GetExtension( "glUniform3fv" );
 	glUniform4fv								= (PFNGLUNIFORM4FVPROC)					GetExtension( "glUniform4fv" );
+	glUniformMatrix2fv							= (PFNGLUNIFORMMATRIX2FVPROC)			GetExtension( "glUniformMatrix3fv" );
+	glUniformMatrix2x3fv						= (PFNGLUNIFORMMATRIX2X3FVPROC)			GetExtension( "glUniformMatrix2x3fv" );
+	glUniformMatrix2x4fv						= (PFNGLUNIFORMMATRIX2X4FVPROC)			GetExtension( "glUniformMatrix2x4fv" );
+	glUniformMatrix3x2fv						= (PFNGLUNIFORMMATRIX3X2FVPROC)			GetExtension( "glUniformMatrix3x2fv" );
+	glUniformMatrix3fv							= (PFNGLUNIFORMMATRIX3FVPROC)			GetExtension( "glUniformMatrix3fv" );
 	glUniformMatrix3x4fv						= (PFNGLUNIFORMMATRIX3X4FVPROC)			GetExtension( "glUniformMatrix3x4fv" );
+	glUniformMatrix4x2fv						= (PFNGLUNIFORMMATRIX4X2FVPROC)			GetExtension( "glUniformMatrix4x2fv" );
+	glUniformMatrix4x3fv						= (PFNGLUNIFORMMATRIX4X3FVPROC)			GetExtension( "glUniformMatrix4x3fv" );
 	glUniformMatrix4fv							= (PFNGLUNIFORMMATRIX4FVPROC)			GetExtension( "glUniformMatrix4fv" );
 	glGetProgramResourceIndex					= (PFNGLGETPROGRAMRESOURCEINDEXPROC)	GetExtension( "glGetProgramResourceIndex" );
 	glUniformBlockBinding						= (PFNGLUNIFORMBLOCKBINDINGPROC)		GetExtension( "glUniformBlockBinding" );
@@ -7264,7 +7489,7 @@ GpuVertexAttributeArraysBase_t
 ================================================================================================================================
 */
 
-typedef unsigned int GpuTriangleIndex_t;
+typedef unsigned short GpuTriangleIndex_t;
 
 typedef struct
 {
@@ -7461,15 +7686,17 @@ GpuVertexAttributeArrays_t
 
 typedef enum
 {
-	VERTEX_ATTRIBUTE_FLAG_POSITION	= BIT( 0 ),		// vec3 vertexPosition
-	VERTEX_ATTRIBUTE_FLAG_NORMAL	= BIT( 1 ),		// vec3 vertexNormal
-	VERTEX_ATTRIBUTE_FLAG_TANGENT	= BIT( 2 ),		// vec3 vertexTangent
-	VERTEX_ATTRIBUTE_FLAG_BINORMAL	= BIT( 3 ),		// vec3 vertexBinormal
-	VERTEX_ATTRIBUTE_FLAG_COLOR		= BIT( 4 ),		// vec4 vertexColor
-	VERTEX_ATTRIBUTE_FLAG_UV0		= BIT( 5 ),		// vec2 vertexUv0
-	VERTEX_ATTRIBUTE_FLAG_UV1		= BIT( 6 ),		// vec2 vertexUv1
-	VERTEX_ATTRIBUTE_FLAG_UV2		= BIT( 7 ),		// vec2 vertexUv2
-	VERTEX_ATTRIBUTE_FLAG_TRANSFORM	= BIT( 8 )		// mat4 vertexTransform (NOTE this mat4 takes up 4 attribute locations)
+	VERTEX_ATTRIBUTE_FLAG_POSITION		= BIT( 0 ),		// vec3 vertexPosition
+	VERTEX_ATTRIBUTE_FLAG_NORMAL		= BIT( 1 ),		// vec3 vertexNormal
+	VERTEX_ATTRIBUTE_FLAG_TANGENT		= BIT( 2 ),		// vec3 vertexTangent
+	VERTEX_ATTRIBUTE_FLAG_BINORMAL		= BIT( 3 ),		// vec3 vertexBinormal
+	VERTEX_ATTRIBUTE_FLAG_COLOR			= BIT( 4 ),		// vec4 vertexColor
+	VERTEX_ATTRIBUTE_FLAG_UV0			= BIT( 5 ),		// vec2 vertexUv0
+	VERTEX_ATTRIBUTE_FLAG_UV1			= BIT( 6 ),		// vec2 vertexUv1
+	VERTEX_ATTRIBUTE_FLAG_UV2			= BIT( 7 ),		// vec2 vertexUv2
+	VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES	= BIT( 8 ),		// vec4 jointIndices
+	VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS	= BIT( 9 ),		// vec4 jointWeights
+	VERTEX_ATTRIBUTE_FLAG_TRANSFORM		= BIT( 10 )		// mat4 vertexTransform (NOTE this mat4 takes up 4 attribute locations)
 } GpuVertexAttributeFlags_t;
 
 typedef struct
@@ -7483,20 +7710,24 @@ typedef struct
 	Vector2f_t *					uv0;
 	Vector2f_t *					uv1;
 	Vector2f_t *					uv2;
+	Vector4f_t *					jointIndices;
+	Vector4f_t *					jointWeights;
 	Matrix4x4f_t *					transform;
 } GpuVertexAttributeArrays_t;
 
 static const GpuVertexAttribute_t DefaultVertexAttributeLayout[] =
 {
-	{ VERTEX_ATTRIBUTE_FLAG_POSITION,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, position ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, position[0] ),	GL_FLOAT,	3,	1,	"vertexPosition" },
-	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, normal ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, normal[0] ),		GL_FLOAT,	3,	1,	"vertexNormal" },
-	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, tangent ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, tangent[0] ),	GL_FLOAT,	3,	1,	"vertexTangent" },
-	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, binormal ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, binormal[0] ),	GL_FLOAT,	3,	1,	"vertexBinormal" },
-	{ VERTEX_ATTRIBUTE_FLAG_COLOR,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, color ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, color[0] ),		GL_FLOAT,	4,	1,	"vertexColor" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV0,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv0 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv0[0] ),		GL_FLOAT,	2,	1,	"vertexUv0" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV1,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv1 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv1[0] ),		GL_FLOAT,	2,	1,	"vertexUv1" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV2,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv2 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv2[0] ),		GL_FLOAT,	2,	1,	"vertexUv2" },
-	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, transform ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, transform[0] ),	GL_FLOAT,	4,	4,	"vertexTransform" },
+	{ VERTEX_ATTRIBUTE_FLAG_POSITION,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, position ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, position[0] ),		GL_FLOAT,	3,	1,	"vertexPosition" },
+	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, normal ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, normal[0] ),			GL_FLOAT,	3,	1,	"vertexNormal" },
+	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, tangent ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, tangent[0] ),		GL_FLOAT,	3,	1,	"vertexTangent" },
+	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, binormal ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, binormal[0] ),		GL_FLOAT,	3,	1,	"vertexBinormal" },
+	{ VERTEX_ATTRIBUTE_FLAG_COLOR,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, color ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, color[0] ),			GL_FLOAT,	4,	1,	"vertexColor" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV0,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv0 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv0[0] ),			GL_FLOAT,	2,	1,	"vertexUv0" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV1,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv1 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv1[0] ),			GL_FLOAT,	2,	1,	"vertexUv1" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV2,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv2 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv2[0] ),			GL_FLOAT,	2,	1,	"vertexUv2" },
+	{ VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, jointIndices ),SIZEOF_MEMBER( GpuVertexAttributeArrays_t, jointIndices[0] ),	GL_FLOAT,	4,	1,	"vertexJointIndices" },
+	{ VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, jointWeights ),SIZEOF_MEMBER( GpuVertexAttributeArrays_t, jointWeights[0] ),	GL_FLOAT,	4,	1,	"vertexJointWeights" },
+	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, transform ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, transform[0] ),		GL_FLOAT,	4,	4,	"vertexTransform" },
 	{ 0, 0, 0, 0, 0, 0, "" }
 };
 
@@ -7738,12 +7969,12 @@ static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geo
 		for ( int v = 0; v < minorTesselation; v++ )
 		{
 			const int index = ( u * minorTesselation + v ) * 6;
-			torusIndices[index + 0] = ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 );
-			torusIndices[index + 1] = ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 0 );
-			torusIndices[index + 2] = ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 );
-			torusIndices[index + 3] = ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 );
-			torusIndices[index + 4] = ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 1 );
-			torusIndices[index + 5] = ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 );
+			torusIndices[index + 0] = (GpuTriangleIndex_t)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
+			torusIndices[index + 1] = (GpuTriangleIndex_t)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
+			torusIndices[index + 2] = (GpuTriangleIndex_t)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
+			torusIndices[index + 3] = (GpuTriangleIndex_t)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
+			torusIndices[index + 4] = (GpuTriangleIndex_t)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
+			torusIndices[index + 5] = (GpuTriangleIndex_t)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
 		}
 	}
 
@@ -8348,7 +8579,14 @@ typedef enum
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,		// float[2]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3,		// float[3]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4,		// float[4]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2,	// float[2][2]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3,	// float[2][3]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4,	// float[2][4]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2,	// float[3][2]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3,	// float[3][3]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	// float[3][4]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2,	// float[4][2]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3,	// float[4][3]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	// float[4][4]
 	GPU_PROGRAM_PARM_TYPE_MAX
 } GpuProgramParmType_t;
@@ -8399,9 +8637,17 @@ static int GpuProgramParm_GetPushConstantSize( const GpuProgramParmType_t type )
 		(unsigned int)sizeof( float[2] ),
 		(unsigned int)sizeof( float[3] ),
 		(unsigned int)sizeof( float[4] ),
+		(unsigned int)sizeof( float[2][2] ),
+		(unsigned int)sizeof( float[2][3] ),
+		(unsigned int)sizeof( float[2][4] ),
+		(unsigned int)sizeof( float[3][2] ),
+		(unsigned int)sizeof( float[3][3] ),
 		(unsigned int)sizeof( float[3][4] ),
+		(unsigned int)sizeof( float[4][2] ),
+		(unsigned int)sizeof( float[4][3] ),
 		(unsigned int)sizeof( float[4][4] )
 	};
+	assert( ARRAY_SIZE( parmSize ) == GPU_PROGRAM_PARM_TYPE_MAX );
 	return parmSize[type];
 }
 
@@ -8570,7 +8816,7 @@ static bool GpuGraphicsProgram_Create( GpuContext_t * context, GpuGraphicsProgra
 	GL( glAttachShader( program->program, program->vertexShader ) );
 	GL( glAttachShader( program->program, program->fragmentShader ) );
 
-	// Bind the vertex attribute locations.
+	// Bind the vertex attribute locations before linking.
 	GLuint location = 0;
 	for ( int i = 0; i < vertexLayout[i].attributeFlag != 0; i++ )
 	{
@@ -8589,6 +8835,15 @@ static bool GpuGraphicsProgram_Create( GpuContext_t * context, GpuGraphicsProgra
 		GL( glGetProgramInfoLog( program->program, sizeof( msg ), 0, msg ) );
 		Error( "Linking program failed: %s\n", msg );
 		return false;
+	}
+
+	// Verify the attributes.
+	for ( int i = 0; i < vertexLayout[i].attributeFlag != 0; i++ )
+	{
+		if ( ( vertexLayout[i].attributeFlag & vertexAttribsFlags ) != 0 )
+		{
+			assert( glGetAttribLocation( program->program, vertexLayout[i].name ) != -1 );
+		}
 	}
 
 	GpuProgramParmLayout_Create( context, &program->parmLayout, parms, numParms, program->program );
@@ -9326,7 +9581,14 @@ static void GpuGraphicsCommand_SetParmFloat( GpuGraphicsCommand_t * command, con
 static void GpuGraphicsCommand_SetParmFloatVector2( GpuGraphicsCommand_t * command, const int index, const Vector2f_t * value );
 static void GpuGraphicsCommand_SetParmFloatVector3( GpuGraphicsCommand_t * command, const int index, const Vector3f_t * value );
 static void GpuGraphicsCommand_SetParmFloatVector4( GpuGraphicsCommand_t * command, const int index, const Vector3f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix2x2( GpuGraphicsCommand_t * command, const int index, const Matrix2x2f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix2x3( GpuGraphicsCommand_t * command, const int index, const Matrix2x3f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix2x4( GpuGraphicsCommand_t * command, const int index, const Matrix2x4f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix3x2( GpuGraphicsCommand_t * command, const int index, const Matrix3x2f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix3x3( GpuGraphicsCommand_t * command, const int index, const Matrix3x3f_t * value );
 static void GpuGraphicsCommand_SetParmFloatMatrix3x4( GpuGraphicsCommand_t * command, const int index, const Matrix3x4f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix4x2( GpuGraphicsCommand_t * command, const int index, const Matrix4x2f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix4x3( GpuGraphicsCommand_t * command, const int index, const Matrix4x3f_t * value );
 static void GpuGraphicsCommand_SetParmFloatMatrix4x4( GpuGraphicsCommand_t * command, const int index, const Matrix4x4f_t * value );
 static void GpuGraphicsCommand_SetNumInstances( GpuGraphicsCommand_t * command, const int numInstances );
 
@@ -9426,9 +9688,44 @@ static void GpuGraphicsCommand_SetParmFloatVector4( GpuGraphicsCommand_t * comma
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4, value );
 }
 
+static void GpuGraphicsCommand_SetParmFloatMatrix2x2( GpuGraphicsCommand_t * command, const int index, const Matrix2x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix2x3( GpuGraphicsCommand_t * command, const int index, const Matrix2x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix2x4( GpuGraphicsCommand_t * command, const int index, const Matrix2x4f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix3x2( GpuGraphicsCommand_t * command, const int index, const Matrix3x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix3x3( GpuGraphicsCommand_t * command, const int index, const Matrix3x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3, value );
+}
+
 static void GpuGraphicsCommand_SetParmFloatMatrix3x4( GpuGraphicsCommand_t * command, const int index, const Matrix3x4f_t * value )
 {
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix4x2( GpuGraphicsCommand_t * command, const int index, const Matrix4x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix4x3( GpuGraphicsCommand_t * command, const int index, const Matrix4x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3, value );
 }
 
 static void GpuGraphicsCommand_SetParmFloatMatrix4x4( GpuGraphicsCommand_t * command, const int index, const Matrix4x4f_t * value )
@@ -9468,7 +9765,14 @@ static void GpuComputeCommand_SetParmFloat( GpuComputeCommand_t * command, const
 static void GpuComputeCommand_SetParmFloatVector2( GpuComputeCommand_t * command, const int index, const Vector2f_t * value );
 static void GpuComputeCommand_SetParmFloatVector3( GpuComputeCommand_t * command, const int index, const Vector3f_t * value );
 static void GpuComputeCommand_SetParmFloatVector4( GpuComputeCommand_t * command, const int index, const Vector3f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix2x2( GpuComputeCommand_t * command, const int index, const Matrix2x2f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix2x3( GpuComputeCommand_t * command, const int index, const Matrix2x3f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix2x4( GpuComputeCommand_t * command, const int index, const Matrix2x4f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix3x2( GpuComputeCommand_t * command, const int index, const Matrix3x2f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix3x3( GpuComputeCommand_t * command, const int index, const Matrix3x3f_t * value );
 static void GpuComputeCommand_SetParmFloatMatrix3x4( GpuComputeCommand_t * command, const int index, const Matrix3x4f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix4x2( GpuComputeCommand_t * command, const int index, const Matrix4x2f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix4x3( GpuComputeCommand_t * command, const int index, const Matrix4x3f_t * value );
 static void GpuComputeCommand_SetParmFloatMatrix4x4( GpuComputeCommand_t * command, const int index, const Matrix4x4f_t * value );
 static void GpuComputeCommand_SetDimensions( GpuComputeCommand_t * command, const int x, const int y, const int z );
 
@@ -9558,9 +9862,44 @@ static void GpuComputeCommand_SetParmFloatVector4( GpuComputeCommand_t * command
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4, value );
 }
 
+static void GpuComputeCommand_SetParmFloatMatrix2x2( GpuComputeCommand_t * command, const int index, const Matrix2x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix2x3( GpuComputeCommand_t * command, const int index, const Matrix2x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix2x4( GpuComputeCommand_t * command, const int index, const Matrix2x4f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix3x2( GpuComputeCommand_t * command, const int index, const Matrix3x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix3x3( GpuComputeCommand_t * command, const int index, const Matrix3x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3, value );
+}
+
 static void GpuComputeCommand_SetParmFloatMatrix3x4( GpuComputeCommand_t * command, const int index, const Matrix3x4f_t * value )
 {
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix4x2( GpuComputeCommand_t * command, const int index, const Matrix4x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix4x3( GpuComputeCommand_t * command, const int index, const Matrix4x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3, value );
 }
 
 static void GpuComputeCommand_SetParmFloatMatrix4x4( GpuComputeCommand_t * command, const int index, const Matrix4x4f_t * value )
@@ -10073,7 +10412,14 @@ static void GpuCommandBuffer_UpdateProgramParms( const GpuProgramParmLayout_t * 
 					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		GL( glUniform2fv( binding, 1, (const GLfloat *)newData ) ); break;
 					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		GL( glUniform3fv( binding, 1, (const GLfloat *)newData ) ); break;
 					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		GL( glUniform4fv( binding, 1, (const GLfloat *)newData ) ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2:	GL( glUniformMatrix2fv( binding, 1, GL_FALSE, (const GLfloat *)newData ) ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3:	GL( glUniformMatrix2x3fv( binding, 1, GL_FALSE, (const GLfloat *)newData ) ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4:	GL( glUniformMatrix2x4fv( binding, 1, GL_FALSE, (const GLfloat *)newData ) ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2:	GL( glUniformMatrix3x2fv( binding, 1, GL_FALSE, (const GLfloat *)newData ) ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3:	GL( glUniformMatrix3fv( binding, 1, GL_FALSE, (const GLfloat *)newData ) ); break;
 					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4:	GL( glUniformMatrix3x4fv( binding, 1, GL_FALSE, (const GLfloat *)newData ) ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	GL( glUniformMatrix4x2fv( binding, 1, GL_FALSE, (const GLfloat *)newData ) ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	GL( glUniformMatrix4x3fv( binding, 1, GL_FALSE, (const GLfloat *)newData ) ); break;
 					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	GL( glUniformMatrix4fv( binding, 1, GL_FALSE, (const GLfloat *)newData ) ); break;
 					default: assert( false ); break;
 				}
@@ -10279,84 +10625,1349 @@ static void GpuCommandBuffer_Blit( GpuCommandBuffer_t * commandBuffer, GpuFrameb
 /*
 ================================================================================================================================
 
-GpuMaterial_t
+GltfScene_t
+
+static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scene, const char * fileName, GpuRenderPass_t * renderPass );
+static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene );
+static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeInMicroseconds );
+static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene );
+static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene );
 
 ================================================================================================================================
 */
 
-typedef struct
+typedef struct GltfBuffer_t
 {
-	int pad;
-} GpuMaterial_t;
+	char *						name;
+	char *						type;
+	size_t						byteLength;
+	unsigned char *				bufferData;
+} GltfBuffer_t;
 
-/*
-================================================================================================================================
-
-GpuSurface_t
-
-================================================================================================================================
-*/
-
-typedef struct
+typedef struct GltfBufferView_t
 {
-	GpuMaterial_t	material;
-	GpuGeometry_t	geometry;
-} GpuSurface_t;
+	char *						name;
+	const GltfBuffer_t *		buffer;
+	size_t						byteOffset;
+	size_t						byteLength;
+	int							target;
+} GltfBufferView_t;
 
-/*
-================================================================================================================================
-
-GpuModel_t
-
-================================================================================================================================
-*/
-
-typedef struct
+typedef struct GltfAccessor_t
 {
-	GpuSurface_t *	surfaces;
-	int				surfaceCount;
-} GpuModel_t;
+	char *						name;
+	char *						type;
+	const GltfBufferView_t *	bufferView;
+	size_t						byteOffset;
+	size_t						byteStride;
+	int							componentType;
+	int							count;
+} GltfAccessor_t;
 
-/*
-================================================================================================================================
-
-GpuSceneModel_t
-
-================================================================================================================================
-*/
-
-typedef struct
+typedef struct GltfImage_t
 {
-	GpuModel_t *	model;
-	Matrix4x4f_t	modelMatrix;
-} GpuSceneModel_t;
+	char *						name;
+	char *						uri;
+} GltfImage_t;
 
-/*
-================================================================================================================================
-
-GpuSceneNode_t
-
-================================================================================================================================
-*/
-
-typedef struct
+typedef struct GltfTexture_t
 {
-	Matrix4x4f_t	transform;
-} GpuSceneNode_t;
+	char *						name;
+	GpuTexture_t				texture;
+} GltfTexture_t;
 
-/*
-================================================================================================================================
-
-GpuScene_t
-
-================================================================================================================================
-*/
-
-typedef struct
+typedef struct GltfShader_t
 {
-	GpuSceneModel_t *	models;
-	int					modelCount;
-} GpuScene_t;
+	char *						name;
+	char *						uri;
+	int							type;
+} GltfShader_t;
+
+typedef struct GltfProgram_t
+{
+	char *						name;
+	unsigned char *				vertexSource;
+	unsigned char *				fragmentSource;
+	int							vertexSourceSize;
+	int							fragmentSourceSize;
+} GltfProgram_t;
+
+typedef enum
+{
+	GLTF_UNIFORM_SEMANTIC_NONE,
+	GLTF_UNIFORM_SEMANTIC_LOCAL,
+	GLTF_UNIFORM_SEMANTIC_MODEL,
+	GLTF_UNIFORM_SEMANTIC_VIEW,
+	GLTF_UNIFORM_SEMANTIC_PROJECTION,
+	GLTF_UNIFORM_SEMANTIC_MODELVIEW,
+	GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTION,
+	GLTF_UNIFORM_SEMANTIC_MODELINVERSE,
+	GLTF_UNIFORM_SEMANTIC_VIEWINVERSE,
+	GLTF_UNIFORM_SEMANTIC_PROJECTIONINVERSE,
+	GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSE,
+	GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTIONINVERSE,
+	GLTF_UNIFORM_SEMANTIC_MODELINVERSETRANSPOSE,
+	GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSETRANSPOSE,
+	GLTF_UNIFORM_SEMANTIC_VIEWPORT,
+	GLTF_UNIFORM_SEMANTIC_JOINTMATRIX
+} GltfUniformSemantic_t;
+
+static struct
+{
+	const char *			name;
+	GltfUniformSemantic_t	semantic;
+}
+gltfUniformSemanticNames[] =
+{
+	{ "",								GLTF_UNIFORM_SEMANTIC_NONE },
+	{ "LOCAL",							GLTF_UNIFORM_SEMANTIC_LOCAL },
+	{ "MODEL",							GLTF_UNIFORM_SEMANTIC_MODEL },
+	{ "VIEW",							GLTF_UNIFORM_SEMANTIC_VIEW },
+	{ "PROJECTION",						GLTF_UNIFORM_SEMANTIC_PROJECTION },
+	{ "MODELVIEW",						GLTF_UNIFORM_SEMANTIC_MODELVIEW },
+	{ "MODELVIEWPROJECTION",			GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTION },
+	{ "MODELINVERSE",					GLTF_UNIFORM_SEMANTIC_MODELINVERSE },
+	{ "VIEWINVERSE",					GLTF_UNIFORM_SEMANTIC_VIEWINVERSE },
+	{ "PROJECTIONINVERSE",				GLTF_UNIFORM_SEMANTIC_PROJECTIONINVERSE },
+	{ "MODELVIEWINVERSE",				GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSE },
+	{ "MODELVIEWPROJECTIONINVERSE",		GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTIONINVERSE },
+	{ "MODELINVERSETRANSPOSE",			GLTF_UNIFORM_SEMANTIC_MODELINVERSETRANSPOSE },
+	{ "MODELVIEWINVERSETRANSPOSE",		GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSETRANSPOSE },
+	{ "VIEWPORT",						GLTF_UNIFORM_SEMANTIC_VIEWPORT },
+	{ "JOINTMATRIX",					GLTF_UNIFORM_SEMANTIC_JOINTMATRIX },
+	{ NULL,								0 }
+};
+
+typedef struct GltfUniform_t
+{
+	char *						name;
+	GltfUniformSemantic_t		semantic;
+	GpuProgramParmType_t		type;
+	int							index;
+} GltfUniform_t;
+
+typedef struct GltfTechnique_t
+{
+	char *						name;
+	GpuGraphicsProgram_t		program;
+	GpuProgramParm_t *			parms;
+	GltfUniform_t *				uniforms;
+	int							uniformCount;
+} GltfTechnique_t;
+
+typedef struct GltfMaterialValue_t
+{
+	GltfUniform_t *				uniform;
+	GltfTexture_t *				texture;
+	int							intValue[16];
+	float						floatValue[16];
+} GltfMaterialValue_t;
+
+typedef struct GltfMaterial_t
+{
+	char *						name;
+	const GltfTechnique_t *		technique;
+	GltfMaterialValue_t *		values;
+	int							valueCount;
+} GltfMaterial_t;
+
+typedef struct GltfSurface_t
+{
+	const GltfMaterial_t *		material;
+	GpuGeometry_t				geometry;
+	GpuGraphicsPipeline_t		pipeline;
+} GltfSurface_t;
+
+typedef struct GltfModel_t
+{
+	char *						name;
+	GltfSurface_t *				surfaces;
+	int							surfaceCount;
+} GltfModel_t;
+
+typedef struct GltfAnimation_t
+{
+	char *						name;
+	char *						jointName;
+	struct GltfNode_t *			node;
+	int							sampleCount;
+	float *						time;
+	Quatf_t *					rotation;
+	Vector3f_t *				translation;
+	Vector3f_t *				scale;
+} GltfAnimation_t;
+
+typedef struct GltfJoint_t
+{
+	char *						name;
+	struct GltfNode_t *			node;
+} GltfJoint_t;
+
+typedef struct GltfSkin_t
+{
+	char *						name;
+	Matrix4x4f_t				bindShapeMatrix;
+	Matrix4x4f_t *				inverseBindMatrices;
+	GltfJoint_t *				joints;
+	int							jointCount;
+	GpuBuffer_t					jointBuffer;
+} GltfSkin_t;
+
+typedef struct GltfNode_t
+{
+	const char *				name;
+	const char *				jointName;
+	int							index;
+	Quatf_t						rotation;
+	Vector3f_t					translation;
+	Vector3f_t					scale;
+	Matrix4x4f_t				localTransform;
+	Matrix4x4f_t				globalTransform;
+	char **						children;
+	int							childCount;
+	struct GltfNode_t *			parent;
+	struct GltfModel_t *		model;
+	struct GltfSkin_t *			skin;
+} GltfNode_t;
+
+typedef struct GltfScene_t
+{
+	GltfBuffer_t *				buffers;
+	int							bufferCount;
+	GltfBufferView_t *			bufferViews;
+	int							bufferViewCount;
+	GltfAccessor_t *			accessors;
+	int							accessorCount;
+	GltfImage_t *				images;
+	int							imageCount;
+	GltfTexture_t *				textures;
+	int							textureCount;
+	GltfShader_t *				shaders;
+	int							shaderCount;
+	GltfProgram_t *				programs;
+	int							programCount;
+	GltfTechnique_t *			techniques;
+	int							techniqueCount;
+	GltfMaterial_t *			materials;
+	int							materialCount;
+	GltfSkin_t *				skins;
+	int							skinCount;
+	GltfModel_t *				models;
+	int							modelCount;
+	GltfAnimation_t *			animations;
+	int							animationCount;
+	GltfNode_t *				nodes;
+	int							nodeCount;
+	GltfNode_t **				rootNodes;
+	int							rootNodeCount;
+} GltfScene_t;
+
+char * Gltf_strdup( const char * str )
+{
+	char * out = (char *)malloc( strlen( str ) + 1 );
+	strcpy( out, str );
+	return out;
+}
+
+static unsigned char * Gltf_ReadFile( const char * fileName, int * outSizeInBytes )
+{
+	if ( outSizeInBytes != NULL )
+	{
+		*outSizeInBytes = 0;
+	}
+	FILE * file = fopen( fileName, "rb" );
+	if ( file == NULL )
+	{
+		return NULL;
+	}
+	fseek( file, 0L, SEEK_END );
+	size_t bufferSize = ftell( file );
+	fseek( file, 0L, SEEK_SET );
+	unsigned char * buffer = (unsigned char *) malloc( bufferSize + 1 );
+	if ( fread( buffer, 1, bufferSize, file ) != bufferSize )
+	{
+		fclose( file );
+		free( buffer );
+		return NULL;
+	}
+	buffer[bufferSize] = '\0';
+	fclose( file );
+	if ( outSizeInBytes != NULL )
+	{
+		*outSizeInBytes = (int)bufferSize;
+	}
+	return buffer;
+}
+
+static unsigned char * Gltf_ReadBase64( const char * base64, int * outSizeInBytes )
+{
+	const int base64SizeInBytes = (int)strlen( base64 );
+	const int dataSizeInBytes = Base64_DecodeSizeInBytes( base64, base64SizeInBytes );
+	unsigned char * buffer = (unsigned char *)malloc( dataSizeInBytes );
+	Base64_Decode( buffer, base64, base64SizeInBytes );
+	if ( outSizeInBytes != NULL )
+	{
+		*outSizeInBytes = dataSizeInBytes;
+	}
+	return buffer;
+}
+
+static unsigned char * Gltf_ReadUri( const char * uri, int * outSizeInBytes )
+{
+	if ( strncmp( uri, "data:text/plain;base64,", 23 ) == 0 )
+	{
+		return Gltf_ReadBase64( uri + 23, outSizeInBytes );
+	}
+	else
+	{
+		return Gltf_ReadFile( uri, outSizeInBytes );
+	}
+}
+
+static void Gltf_ParseIntArray( int * data, const int count, const Json_t * arrayNode )
+{
+	int i = 0;
+	for ( ; i < Json_GetMemberCount( arrayNode ) && i < count; i++ )
+	{
+		data[i] = Json_GetInt32( Json_GetMemberByIndex( arrayNode, i ), 0 );
+	}
+	for ( ; i < count; i++ )
+	{
+		data[i] = 0;
+	}
+}
+
+static void Gltf_ParseFloatArray( float * data, const int count, const Json_t * arrayNode )
+{
+	int i = 0;
+	for ( ; i < Json_GetMemberCount( arrayNode ) && i < count; i++ )
+	{
+		data[i] = Json_GetFloat( Json_GetMemberByIndex( arrayNode, i ), 0.0f );
+	}
+	for ( ; i < count; i++ )
+	{
+		data[i] = 0.0f;
+	}
+}
+
+static const char * Gltf_ParseObjectName( const Json_t * node )
+{
+	const char * name = Json_GetString( Json_GetMemberByName( node, "name" ), "" );
+	if ( name[0] == '\0' )
+	{
+		name = Json_GetMemberName( node );
+	}
+	return name;
+}
+
+static GltfBuffer_t * Gltf_GetBufferByName( const GltfScene_t * scene, const char * name )
+{
+	for ( int i = 0; i < scene->bufferCount; i++ )
+	{
+		if ( strcmp( scene->buffers[i].name, name ) == 0 )
+		{
+			return &scene->buffers[i];
+		}
+	}
+	return NULL;
+}
+
+static GltfBufferView_t * Gltf_GetBufferViewByName( const GltfScene_t * scene, const char * name )
+{
+	for ( int i = 0; i < scene->bufferViewCount; i++ )
+	{
+		if ( strcmp( scene->bufferViews[i].name, name ) == 0 )
+		{
+			return &scene->bufferViews[i];
+		}
+	}
+	return NULL;
+}
+
+static GltfAccessor_t * Gltf_GetAccessorByName( const GltfScene_t * scene, const char * name, const char * type, const int componentType )
+{
+	for ( int i = 0; i < scene->accessorCount; i++ )
+	{
+		if ( strcmp( scene->accessors[i].name, name ) == 0 &&
+				strcmp( scene->accessors[i].type, type ) == 0 &&
+					scene->accessors[i].componentType == componentType )
+		{
+			return &scene->accessors[i];
+		}
+	}
+	return NULL;
+}
+
+static const char * Gltf_GetImageUriByName( const GltfScene_t * scene, const char * name )
+{
+	for ( int i = 0; i < scene->imageCount; i++ )
+	{
+		if ( strcmp( scene->images[i].name, name ) == 0 )
+		{
+			return scene->images[i].uri;
+		}
+	}
+	return "";
+}
+
+static GltfTexture_t * Gltf_GetTextureByName( const GltfScene_t * scene, const char * name )
+{
+	for ( int i = 0; i < scene->textureCount; i++ )
+	{
+		if ( strcmp( scene->textures[i].name, name ) == 0 )
+		{
+			return &scene->textures[i];
+		}
+	}
+	return NULL;
+}
+
+static GltfMaterial_t * Gltf_GetMaterialByName( const GltfScene_t * scene, const char * name )
+{
+	for ( int i = 0; i < scene->materialCount; i++ )
+	{
+		if ( strcmp( scene->materials[i].name, name ) == 0 )
+		{
+			return &scene->materials[i];
+		}
+	}
+	return NULL;
+}
+
+static const char * Gltf_GetShaderUriByName( const GltfScene_t * scene, const char * name )
+{
+	for ( int i = 0; i < scene->shaderCount; i++ )
+	{
+		if ( strcmp( scene->shaders[i].name, name ) == 0 )
+		{
+			return scene->shaders[i].uri;
+		}
+	}
+	return "";
+}
+
+static GltfProgram_t * Gltf_GetProgramByName( const GltfScene_t * scene, const char * name )
+{
+	for ( int i = 0; i < scene->programCount; i++ )
+	{
+		if ( strcmp( scene->programs[i].name, name ) == 0 )
+		{
+			return &scene->programs[i];
+		}
+	}
+	return NULL;
+}
+
+static GltfTechnique_t * Gltf_GetTechniqueByName( const GltfScene_t * scene, const char * name )
+{
+	for ( int i = 0; i < scene->techniqueCount; i++ )
+	{
+		if ( strcmp( scene->techniques[i].name, name ) == 0 )
+		{
+			return &scene->techniques[i];
+		}
+	}
+	return NULL;
+}
+
+static GltfNode_t * Gltf_GetNodeByJointName( const GltfScene_t * scene, const char * jointName )
+{
+	for ( int i = 0; i < scene->nodeCount; i++ )
+	{
+		if ( strcmp( scene->nodes[i].jointName, jointName ) == 0 )
+		{
+			return &scene->nodes[i];
+		}
+	}
+	return NULL;
+}
+
+static GltfModel_t * Gltf_GetModelByName( const GltfScene_t * scene, const char * name )
+{
+	for ( int i = 0; i < scene->modelCount; i++ )
+	{
+		if ( strcmp( scene->models[i].name, name ) == 0 )
+		{
+			return &scene->models[i];
+		}
+	}
+	return NULL;
+}
+
+static GltfSkin_t * Gltf_GetSkinByName( const GltfScene_t * scene, const char * name )
+{
+	for ( int i = 0; i < scene->skinCount; i++ )
+	{
+		if ( strcmp( scene->skins[i].name, name ) == 0 )
+		{
+			return &scene->skins[i];
+		}
+	}
+	return NULL;
+}
+
+static void * Gltf_GetBufferData( const GltfAccessor_t * access )
+{
+	if ( access == NULL )
+	{
+		return NULL;
+	}
+	unsigned char * ptr = access->bufferView->buffer->bufferData + access->bufferView->byteOffset + access->byteOffset;
+	return ptr;
+}
+
+// Sort the nodes such that parents come before their children.
+// Note that the node graph must be acyclic.
+static void Gltf_SortNodes( GltfNode_t * nodes, const int nodeCount )
+{
+	for ( int i = 0; i < nodeCount; i++ )
+	{
+		for ( int c = 0; c < nodes[i].childCount; c++ )
+		{
+			for ( int j = 0; j < nodeCount; j++ )
+			{
+				if ( strcmp( nodes[i].children[c], nodes[j].name ) == 0 )
+				{
+					nodes[j].parent = &nodes[i];
+					break;
+				}
+			}
+		}
+	}
+	GltfNode_t * nodeStack[1024];
+	int stackSize = 0;
+	for ( int i = 0; i < nodeCount; i++ )
+	{
+		if ( nodes[i].parent == NULL )
+		{
+			nodeStack[stackSize++] = &nodes[i];
+		}
+	}
+	int index = 0;
+	while ( stackSize > 0 )
+	{
+		GltfNode_t * node = nodeStack[--stackSize];
+		node->index = index++;
+		for ( int c = 0; c < node->childCount; c++ )
+		{
+			for ( int j = 0; j < nodeCount; j++ )
+			{
+				if ( strcmp( node->children[c], nodes[j].name ) == 0 )
+				{
+					nodeStack[stackSize++] = &nodes[j];
+					break;
+				}
+			}
+		}
+	}
+	assert( index == nodeCount );
+	for ( int i = 0; i < nodeCount; )
+	{
+		if ( nodes[i].index != i )
+		{
+			GltfNode_t temp = nodes[nodes[i].index];
+			nodes[nodes[i].index] = nodes[i];
+			nodes[i] = temp;
+		}
+		else
+		{
+			i++;
+		}
+	}
+	for ( int i = 0; i < nodeCount; i++ )
+	{
+		for ( int c = 0; c < nodes[i].childCount; c++ )
+		{
+			for ( int j = 0; j < nodeCount; j++ )
+			{
+				if ( strcmp( nodes[i].children[c], nodes[j].name ) == 0 )
+				{
+					nodes[j].parent = &nodes[i];
+					break;
+				}
+			}
+		}
+	}
+}
+
+static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scene, const char * fileName, GpuRenderPass_t * renderPass )
+{
+	Json_t * rootNode = Json_Create();
+	if ( Json_ReadFromFile( rootNode, fileName, NULL ) )
+	{
+		const Json_t * asset = Json_GetMemberByName( rootNode, "asset" );
+		const char * version = Json_GetString( Json_GetMemberByName( asset, "version" ), "" );
+		if ( strcmp( version, "1.0" ) != 0 )
+		{
+			Json_Destroy( rootNode );
+			return false;
+		}
+
+		//
+		// glTF buffers
+		//
+		{
+			const Json_t * buffers = Json_GetMemberByName( rootNode, "buffers" );
+			scene->bufferCount = Json_GetMemberCount( buffers );
+			scene->buffers = (GltfBuffer_t *) malloc( scene->bufferCount * sizeof( GltfBuffer_t ) );
+			memset( scene->buffers, 0, scene->bufferCount * sizeof( GltfBuffer_t ) );
+			for ( int i = 0; i < scene->bufferCount; i++ )
+			{
+				const Json_t * buffer = Json_GetMemberByIndex( buffers, i );
+				scene->buffers[i].name = Gltf_strdup( Gltf_ParseObjectName( buffer ) );
+				scene->buffers[i].byteLength = Json_GetUint64( Json_GetMemberByName( buffer, "byteLength" ), 0 );
+				scene->buffers[i].type = Gltf_strdup( Json_GetString( Json_GetMemberByName( buffer, "type" ), "" ) );
+				scene->buffers[i].bufferData = Gltf_ReadUri( Json_GetString( Json_GetMemberByName( buffer, "uri" ), "" ), NULL );
+			}
+		}
+
+		//
+		// glTF bufferViews
+		//
+		{
+			const Json_t * bufferViews = Json_GetMemberByName( rootNode, "bufferViews" );
+			scene->bufferViewCount = Json_GetMemberCount( bufferViews );
+			scene->bufferViews = (GltfBufferView_t *) malloc( scene->bufferViewCount * sizeof( GltfBufferView_t ) );
+			memset( scene->bufferViews, 0, scene->bufferViewCount * sizeof( GltfBufferView_t ) );
+			for ( int i = 0; i < scene->bufferViewCount; i++ )
+			{
+				const Json_t * view = Json_GetMemberByIndex( bufferViews, i );
+				scene->bufferViews[i].name = Gltf_strdup( Gltf_ParseObjectName( view ) );
+				scene->bufferViews[i].buffer = Gltf_GetBufferByName( scene, Json_GetString( Json_GetMemberByName( view, "buffer" ), "" ) );
+				scene->bufferViews[i].byteOffset = (size_t) Json_GetUint64( Json_GetMemberByName( view, "byteOffset" ), 0 );
+				scene->bufferViews[i].byteLength = (size_t) Json_GetUint64( Json_GetMemberByName( view, "byteLength" ), 0 );
+				scene->bufferViews[i].target = Json_GetUint16( Json_GetMemberByName( view, "target" ), 0 );
+			}
+		}
+
+		//
+		// glTF accessors
+		//
+		{
+			const Json_t * accessors = Json_GetMemberByName( rootNode, "accessors" );
+			scene->accessorCount = Json_GetMemberCount( accessors );
+			scene->accessors = (GltfAccessor_t *) malloc( scene->accessorCount * sizeof( GltfAccessor_t ) );
+			memset( scene->accessors, 0, scene->accessorCount * sizeof( GltfAccessor_t ) );
+			for ( int i = 0; i < scene->accessorCount; i++ )
+			{
+				const Json_t * access = Json_GetMemberByIndex( accessors, i );
+				scene->accessors[i].name = Gltf_strdup( Gltf_ParseObjectName( access ) );
+				scene->accessors[i].bufferView = Gltf_GetBufferViewByName( scene, Json_GetString( Json_GetMemberByName( access, "bufferView" ), "" ) );
+				scene->accessors[i].byteOffset = (size_t) Json_GetUint64( Json_GetMemberByName( access, "byteOffset" ), 0 );
+				scene->accessors[i].byteStride = (size_t) Json_GetUint64( Json_GetMemberByName( access, "byteStride" ), 0 );
+				scene->accessors[i].componentType = Json_GetUint16( Json_GetMemberByName( access, "componentType" ), 0 );
+				scene->accessors[i].count = Json_GetInt32( Json_GetMemberByName( access, "count" ), 0 );
+				scene->accessors[i].type =  Gltf_strdup( Json_GetString( Json_GetMemberByName( access, "type" ), "" ) );
+			}
+		}
+
+		//
+		// glTF images
+		//
+
+		{
+			const Json_t * images = Json_GetMemberByName( rootNode, "images" );
+			scene->imageCount = Json_GetMemberCount( images );
+			scene->images = (GltfImage_t *) malloc( scene->imageCount * sizeof( GltfImage_t ) );
+			memset( scene->images, 0, scene->imageCount * sizeof( GltfImage_t ) );
+			for ( int i = 0; i < scene->imageCount; i++ )
+			{
+				const Json_t * image = Json_GetMemberByIndex( images, i );
+				scene->images[i].name = Gltf_strdup( Gltf_ParseObjectName( image ) );
+				scene->images[i].uri = Gltf_strdup( Json_GetString( Json_GetMemberByName( image, "uri" ), "" ) );
+			}
+		}
+
+		//
+		// glTF textures
+		//
+		{
+			const Json_t * textures = Json_GetMemberByName( rootNode, "textures" );
+			scene->textureCount = Json_GetMemberCount( textures );
+			scene->textures = (GltfTexture_t *) malloc( scene->textureCount * sizeof( GltfTexture_t ) );
+			for ( int i = 0; i < scene->textureCount; i++ )
+			{
+				const Json_t * texture = Json_GetMemberByIndex( textures, i );
+				const char * uri = Gltf_GetImageUriByName( scene, Json_GetString( Json_GetMemberByName( texture, "source" ), "" ) );
+				scene->textures[i].name = Gltf_strdup( Gltf_ParseObjectName( texture ) );
+				int dataSizeInBytes = 0;
+				unsigned char * data = Gltf_ReadUri( uri, &dataSizeInBytes );
+				GpuTexture_CreateFromKTX( context, &scene->textures[i].texture, scene->textures[i].name, data, dataSizeInBytes );
+				free( data );
+			}
+		}
+
+		//
+		// glTF shaders
+		//
+		{
+			const Json_t * shaders = Json_GetMemberByName( rootNode, "shaders" );
+			scene->shaderCount = Json_GetMemberCount( shaders );
+			scene->shaders = (GltfShader_t *) malloc( scene->shaderCount * sizeof( GltfShader_t ) );
+			memset( scene->shaders, 0, scene->shaderCount * sizeof( GltfShader_t ) );
+			for ( int i = 0; i < scene->shaderCount; i++ )
+			{
+				const Json_t * shader = Json_GetMemberByIndex( shaders, i );
+				scene->shaders[i].name = Gltf_strdup( Gltf_ParseObjectName( shader ) );
+				scene->shaders[i].uri = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uri" ), "" ) );
+				scene->shaders[i].type = Json_GetUint16( Json_GetMemberByName( shader, "type" ), 0 );
+			}
+		}
+
+		//
+		// glTF programs
+		//
+		{
+			const Json_t * programs = Json_GetMemberByName( rootNode, "programs" );
+			scene->programCount = Json_GetMemberCount( programs );
+			scene->programs = (GltfProgram_t *) malloc( scene->programCount * sizeof( GltfProgram_t ) );
+			memset( scene->programs, 0, scene->programCount * sizeof( GltfProgram_t ) );
+			for ( int i = 0; i < scene->programCount; i++ )
+			{
+				const Json_t * program = Json_GetMemberByIndex( programs, i );
+				const char * vertexShader = Json_GetString( Json_GetMemberByName( program, "vertexShader" ), "" );
+				const char * fragmentShader = Json_GetString( Json_GetMemberByName( program, "fragmentShader" ), "" );
+				const char * vertexShaderUri = Gltf_GetShaderUriByName( scene, vertexShader );
+				const char * fragmentShaderUri = Gltf_GetShaderUriByName( scene, fragmentShader );
+				scene->programs[i].name = Gltf_strdup( Gltf_ParseObjectName( program ) );
+				scene->programs[i].vertexSource = Gltf_ReadUri( vertexShaderUri, &scene->programs[i].vertexSourceSize );
+				scene->programs[i].fragmentSource = Gltf_ReadUri( fragmentShaderUri, &scene->programs[i].fragmentSourceSize );
+			}
+		}
+
+		//
+		// glTF techniques
+		//
+		{
+			const Json_t * techniques = Json_GetMemberByName( rootNode, "techniques" );
+			scene->techniqueCount = Json_GetMemberCount( techniques );
+			scene->techniques = (GltfTechnique_t *) malloc( scene->techniqueCount * sizeof( GltfTechnique_t ) );
+			memset( scene->techniques, 0, scene->techniqueCount * sizeof( GltfTechnique_t ) );
+			for ( int i = 0; i < scene->techniqueCount; i++ )
+			{
+				const Json_t * technique = Json_GetMemberByIndex( techniques, i );
+				scene->techniques[i].name = Gltf_strdup( Gltf_ParseObjectName( technique ) );
+				const GltfProgram_t * program = Gltf_GetProgramByName( scene, Json_GetString( Json_GetMemberByName( technique, "program" ), "" ) );
+
+				int vertexAttribsFlags = 0;
+				const Json_t * attributes = Json_GetMemberByName( technique, "attributes" );
+				const int attributeCount = Json_GetMemberCount( attributes );
+				for ( int j = 0; j < attributeCount; j++ )
+				{
+					const char * attrib = Json_GetString( Json_GetMemberByIndex( attributes, j ), "" );
+					if ( strcmp( attrib, "POSITION" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_POSITION; }
+					else if ( strcmp( attrib, "NORMAL" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_NORMAL; }
+					else if ( strcmp( attrib, "TANGENT" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_TANGENT; }
+					else if ( strcmp( attrib, "BINORMAL" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_BINORMAL; }
+					else if ( strcmp( attrib, "COLOR" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_COLOR; }
+					else if ( strcmp( attrib, "TEXCOORD_0" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_UV0; }
+					else if ( strcmp( attrib, "TEXCOORD_1" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_UV1; }
+					else if ( strcmp( attrib, "TEXCOORD_2" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_UV2; }
+					else if ( strcmp( attrib, "JOINT" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES; }
+					else if ( strcmp( attrib, "WEIGHT" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS; }
+				}
+
+				const Json_t * uniforms = Json_GetMemberByName( technique, "uniforms" );
+				const Json_t * parameters = Json_GetMemberByName( technique, "parameters" );
+				const int uniformCount = Json_GetMemberCount( uniforms );
+				scene->techniques[i].parms = (GpuProgramParm_t *) malloc( uniformCount * sizeof( GpuProgramParm_t ) );
+				scene->techniques[i].uniformCount = uniformCount;
+				scene->techniques[i].uniforms = (GltfUniform_t *) malloc( uniformCount * sizeof( GltfUniform_t ) );
+				for ( int j = 0; j < uniformCount; j++ )
+				{
+					const Json_t * uniform = Json_GetMemberByIndex( uniforms, j );
+					const char * parmName = Json_GetString( uniform, "" );
+					const Json_t * parameter = Json_GetMemberByName( parameters, parmName );
+					const char * semantic = Json_GetString( Json_GetMemberByName( parameter, "semantic" ), "" );
+					const int type = Json_GetUint16( Json_GetMemberByName( parameter, "type" ), 0 );
+					GpuProgramParmType_t parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED;
+					switch ( type )
+					{
+						case GL_SAMPLER_2D:		parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED; break;
+						case GL_SAMPLER_3D:		parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED; break;
+						case GL_SAMPLER_CUBE:	parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED; break;
+						case GL_INT:			parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT; break;
+						case GL_INT_VEC2:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2; break;
+						case GL_INT_VEC3:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3; break;
+						case GL_INT_VEC4:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4; break;
+						case GL_FLOAT:			parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT; break;
+						case GL_FLOAT_VEC2:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2; break;
+						case GL_FLOAT_VEC3:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3; break;
+						case GL_FLOAT_VEC4:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4; break;
+						case GL_FLOAT_MAT2:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2; break;
+						case GL_FLOAT_MAT2x3:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3; break;
+						case GL_FLOAT_MAT2x4:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4; break;
+						case GL_FLOAT_MAT3x2:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2; break;
+						case GL_FLOAT_MAT3:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3; break;
+						case GL_FLOAT_MAT3x4:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4; break;
+						case GL_FLOAT_MAT4x2:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2; break;
+						case GL_FLOAT_MAT4x3:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3; break;
+						case GL_FLOAT_MAT4:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4; break;
+					}
+
+					if ( strcmp( semantic, "JOINTMATRIX" ) == 0 )
+					{
+						parmType = GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM;
+					}
+
+					scene->techniques[i].parms[j].stage = GPU_PROGRAM_STAGE_VERTEX;				// FIXME: how do we distinguish between different programs?
+					scene->techniques[i].parms[j].type = parmType;
+					scene->techniques[i].parms[j].access = GPU_PROGRAM_PARM_ACCESS_READ_ONLY;	// assume all parms are read-only
+					scene->techniques[i].parms[j].index = j;
+					scene->techniques[i].parms[j].name = Json_GetMemberName( uniform );
+					scene->techniques[i].parms[j].binding = 0;
+
+					scene->techniques[i].uniforms[j].name = Gltf_strdup( parmName );
+					scene->techniques[i].uniforms[j].semantic = GLTF_UNIFORM_SEMANTIC_NONE;	// default comes from the material
+					scene->techniques[i].uniforms[j].type = parmType;
+					scene->techniques[i].uniforms[j].index = j;
+					for ( int s = 0; s < sizeof( gltfUniformSemanticNames ) / sizeof( gltfUniformSemanticNames[0] ); s++ )
+					{
+						if ( strcmp( gltfUniformSemanticNames[s].name, semantic ) == 0 )
+						{
+							scene->techniques[i].uniforms[j].semantic = gltfUniformSemanticNames[s].semantic;
+							break;
+						}
+					}
+				}
+
+				GpuGraphicsProgram_Create( context, &scene->techniques[i].program,
+											program->vertexSource, program->vertexSourceSize,
+											program->fragmentSource, program->fragmentSourceSize,
+											scene->techniques[i].parms, uniformCount, DefaultVertexAttributeLayout, vertexAttribsFlags );
+			}
+		}
+
+		//
+		// glTF materials
+		//
+		{
+			const Json_t * materials = Json_GetMemberByName( rootNode, "materials" );
+			scene->materialCount = Json_GetMemberCount( materials );
+			scene->materials = (GltfMaterial_t *) malloc( scene->materialCount * sizeof( GltfMaterial_t ) );
+			memset( scene->materials, 0, scene->materialCount * sizeof( GltfMaterial_t ) );
+			for ( int i = 0; i < scene->materialCount; i++ )
+			{
+				const Json_t * material = Json_GetMemberByIndex( materials, i );
+				scene->materials[i].name = Gltf_strdup( Gltf_ParseObjectName( material ) );
+				scene->materials[i].technique = Gltf_GetTechniqueByName( scene, Json_GetString( Json_GetMemberByName( material, "technique" ), "" ) );
+				const Json_t * values = Json_GetMemberByName( material, "values" );
+				scene->materials[i].valueCount = Json_GetMemberCount( values );
+				scene->materials[i].values = (GltfMaterialValue_t *) malloc( scene->materials[i].valueCount * sizeof( GltfMaterialValue_t ) );
+				memset( scene->materials[i].values, 0, scene->materials[i].valueCount * sizeof( GltfMaterialValue_t ) );
+				for ( int j = 0; j < scene->materials[i].valueCount; j++ )
+				{
+					const Json_t * value = Json_GetMemberByIndex( values, j );
+					const char * valueName = Json_GetMemberName( value );
+					GltfUniform_t * uniform = NULL;
+					for ( int u = 0; u < scene->materials[i].technique->uniformCount; u++ )
+					{
+						if ( strcmp( scene->materials[i].technique->uniforms[u].name, valueName ) == 0 )
+						{
+							uniform = &scene->materials[i].technique->uniforms[u];
+							break;
+						}
+					}
+					if ( uniform == NULL )
+					{
+						assert( false );
+						continue;
+					}
+					scene->materials[i].values[j].uniform = uniform;
+					switch ( uniform->type )
+					{
+						case GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED:					scene->materials[i].values[j].texture = Gltf_GetTextureByName( scene, Json_GetString( value, "" ) ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT:				scene->materials[i].values[j].intValue[0] = Json_GetInt32( value, 0 ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2:		Gltf_ParseIntArray( scene->materials[i].values[j].intValue, 16, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3:		Gltf_ParseIntArray( scene->materials[i].values[j].intValue, 16, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4:		Gltf_ParseIntArray( scene->materials[i].values[j].intValue, 16, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT:				scene->materials[i].values[j].floatValue[0] = Json_GetFloat( value, 0.0f ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 2, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 3, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 4, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 2*2, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 2*3, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 2*4, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 3*2, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 3*3, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 3*4, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 4*2, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 4*3, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 4*4, value ); break;
+					}
+				}
+			}
+		}
+
+		//
+		// glTF meshes
+		//
+		{
+			const Json_t * models = Json_GetMemberByName( rootNode, "meshes" );
+			scene->modelCount = Json_GetMemberCount( models );
+			scene->models = (GltfModel_t *) malloc( scene->modelCount * sizeof( GltfModel_t ) );
+			memset( scene->models, 0, scene->modelCount * sizeof( GltfModel_t ) );
+			for ( int i = 0; i < scene->modelCount; i++ )
+			{
+				const Json_t * model = Json_GetMemberByIndex( models, i );
+				scene->models[i].name = Gltf_strdup( Gltf_ParseObjectName( model ) );
+				const Json_t * primitives = Json_GetMemberByName( model, "primitives" );
+				scene->models[i].surfaceCount = Json_GetMemberCount( primitives );
+				scene->models[i].surfaces = (GltfSurface_t *) malloc( scene->models[i].surfaceCount * sizeof( GltfSurface_t ) );
+				memset( scene->models[i].surfaces, 0, scene->models[i].surfaceCount * sizeof( GltfSurface_t ) );
+				for ( int s = 0; s < scene->models[i].surfaceCount; s++ )
+				{
+					GltfSurface_t * surface = &scene->models[i].surfaces[s];
+
+					const Json_t * primitive = Json_GetMemberByIndex( primitives, s );
+					const Json_t * attributes = Json_GetMemberByName( primitive, "attributes" );
+
+					const char * positionAccessor		= Json_GetString( Json_GetMemberByName( attributes, "POSITION" ), "" );
+					const char * normalAccessor			= Json_GetString( Json_GetMemberByName( attributes, "NORMAL" ), "" );
+					const char * tangentAccessor		= Json_GetString( Json_GetMemberByName( attributes, "TANGENT" ), "" );
+					const char * binormalAccessor		= Json_GetString( Json_GetMemberByName( attributes, "BINORMAL" ), "" );
+					const char * colorAccessor			= Json_GetString( Json_GetMemberByName( attributes, "COLOR" ), "" );
+					const char * uv0Accessor			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_0" ), "" );
+					const char * uv1Accessor			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_1" ), "" );
+					const char * uv2Accessor			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_2" ), "" );
+					const char * jointIndicesAccessor	= Json_GetString( Json_GetMemberByName( attributes, "JOINT" ), "" );
+					const char * jointWeightsAccessor	= Json_GetString( Json_GetMemberByName( attributes, "WEIGHT" ), "" );
+					const char * indicesAccessor		= Json_GetString( Json_GetMemberByName( primitive, "indices" ), "" );
+
+					surface->material = Gltf_GetMaterialByName( scene, Json_GetString( Json_GetMemberByName( primitive, "material" ), "" ) );
+
+					const GltfAccessor_t * access_position		= Gltf_GetAccessorByName( scene, positionAccessor,		"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * access_normal		= Gltf_GetAccessorByName( scene, normalAccessor,		"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * access_tangent		= Gltf_GetAccessorByName( scene, tangentAccessor,		"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * access_binormal		= Gltf_GetAccessorByName( scene, binormalAccessor,		"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * access_color			= Gltf_GetAccessorByName( scene, colorAccessor,			"VEC4",		GL_FLOAT );
+					const GltfAccessor_t * access_uv0			= Gltf_GetAccessorByName( scene, uv0Accessor,			"VEC2",		GL_FLOAT );
+					const GltfAccessor_t * access_uv1			= Gltf_GetAccessorByName( scene, uv1Accessor,			"VEC2",		GL_FLOAT );
+					const GltfAccessor_t * access_uv2			= Gltf_GetAccessorByName( scene, uv2Accessor,			"VEC2",		GL_FLOAT );
+					const GltfAccessor_t * access_jointIndices	= Gltf_GetAccessorByName( scene, jointIndicesAccessor,	"VEC4",		GL_FLOAT );
+					const GltfAccessor_t * access_jointWeights	= Gltf_GetAccessorByName( scene, jointWeightsAccessor,	"VEC4",		GL_FLOAT );
+					const GltfAccessor_t * access_indices		= Gltf_GetAccessorByName( scene, indicesAccessor,		"SCALAR",	GL_UNSIGNED_SHORT );
+
+					if ( access_position == NULL || access_indices == NULL )
+					{
+						assert( false );
+						continue;
+					}
+
+					assert( access_normal		== NULL || access_normal->count			== access_position->count );
+					assert( access_tangent		== NULL || access_tangent->count		== access_position->count );
+					assert( access_binormal		== NULL || access_binormal->count		== access_position->count );
+					assert( access_color		== NULL || access_color->count			== access_position->count );
+					assert( access_uv0			== NULL || access_uv0->count			== access_position->count );
+					assert( access_uv1			== NULL || access_uv1->count			== access_position->count );
+					assert( access_uv2			== NULL || access_uv2->count			== access_position->count );
+					assert( access_jointIndices	== NULL || access_jointIndices->count	== access_position->count );
+					assert( access_jointWeights	== NULL || access_jointWeights->count	== access_position->count );
+
+					const int attribFlags = ( access_position != NULL		? VERTEX_ATTRIBUTE_FLAG_POSITION : 0 ) |
+											( access_normal != NULL			? VERTEX_ATTRIBUTE_FLAG_NORMAL : 0 ) |
+											( access_tangent != NULL		? VERTEX_ATTRIBUTE_FLAG_TANGENT : 0 ) |
+											( access_binormal != NULL		? VERTEX_ATTRIBUTE_FLAG_BINORMAL : 0 ) |
+											( access_color != NULL			? VERTEX_ATTRIBUTE_FLAG_COLOR : 0 ) |
+											( access_uv0 != NULL			? VERTEX_ATTRIBUTE_FLAG_UV0 : 0 ) |
+											( access_uv1 != NULL			? VERTEX_ATTRIBUTE_FLAG_UV1 : 0 ) |
+											( access_uv2 != NULL			? VERTEX_ATTRIBUTE_FLAG_UV2 : 0 ) |
+											( access_jointIndices != NULL	? VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES : 0 ) |
+											( access_jointWeights != NULL	? VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS : 0 );
+
+					GpuVertexAttributeArrays_t attribs;
+					GpuVertexAttributeArrays_Alloc( &attribs.base, DefaultVertexAttributeLayout, access_position->count, attribFlags );
+
+					if ( access_position		) memcpy( attribs.position,		Gltf_GetBufferData( access_position ),		access_position->count		* sizeof( attribs.position[0] ) );
+					if ( access_normal			) memcpy( attribs.normal,		Gltf_GetBufferData( access_normal ),		access_normal->count		* sizeof( attribs.normal[0] ) );
+					if ( access_tangent			) memcpy( attribs.tangent,		Gltf_GetBufferData( access_tangent ),		access_tangent->count		* sizeof( attribs.tangent[0] ) );
+					if ( access_binormal		) memcpy( attribs.binormal,		Gltf_GetBufferData( access_binormal ),		access_binormal->count		* sizeof( attribs.binormal[0] ) );
+					if ( access_color			) memcpy( attribs.color,		Gltf_GetBufferData( access_color ),			access_color->count			* sizeof( attribs.color[0] ) );
+					if ( access_uv0				) memcpy( attribs.uv0,			Gltf_GetBufferData( access_uv0 ),			access_uv0->count			* sizeof( attribs.uv0[0] ) );
+					if ( access_uv1				) memcpy( attribs.uv1,			Gltf_GetBufferData( access_uv1 ),			access_uv1->count			* sizeof( attribs.uv1[0] ) );
+					if ( access_uv2				) memcpy( attribs.uv2,			Gltf_GetBufferData( access_uv2 ),			access_uv2->count			* sizeof( attribs.uv2[0] ) );
+					if ( access_jointIndices	) memcpy( attribs.jointIndices,	Gltf_GetBufferData( access_jointIndices ),	access_jointIndices->count	* sizeof( attribs.jointIndices[0] ) );
+					if ( access_jointWeights	) memcpy( attribs.jointWeights,	Gltf_GetBufferData( access_jointWeights ),	access_jointWeights->count	* sizeof( attribs.jointWeights[0] ) );
+
+					GpuTriangleIndex_t * indices = (GpuTriangleIndex_t *)Gltf_GetBufferData( access_indices );
+
+					GpuGeometry_Create( context, &surface->geometry, &attribs.base, access_position->count, indices, access_indices->count );
+
+					GpuVertexAttributeArrays_Free( &attribs.base );
+
+					GpuGraphicsPipelineParms_t pipelineParms;
+					GpuGraphicsPipelineParms_Init( &pipelineParms );
+
+					pipelineParms.rop.depthTestEnable = true;
+					pipelineParms.rop.depthWriteEnable = true;
+					pipelineParms.renderPass = renderPass;
+					pipelineParms.program = &surface->material->technique->program;
+					pipelineParms.geometry = &surface->geometry;
+
+					GpuGraphicsPipeline_Create( context, &surface->pipeline, &pipelineParms );
+				}
+			}
+		}
+
+		//
+		// glTF animations
+		//
+		{
+			const Json_t * animations = Json_GetMemberByName( rootNode, "animations" );
+			scene->animationCount = Json_GetMemberCount( animations );
+			scene->animations = (GltfAnimation_t *) malloc( scene->animationCount * sizeof( GltfAnimation_t ) );
+			memset( scene->animations, 0, scene->animationCount * sizeof( GltfAnimation_t ) );
+			for ( int i = 0; i < scene->animationCount; i++ )
+			{
+				const Json_t * animation = Json_GetMemberByIndex( animations, i );
+				scene->animations[i].name = Gltf_strdup( Gltf_ParseObjectName( animation ) );
+
+				const Json_t * parameters = Json_GetMemberByName( animation, "parameters" );
+
+				const char * timeAccessor = Json_GetString( Json_GetMemberByName( parameters, "TIME" ), "" );
+				const char * translationAccessor = Json_GetString( Json_GetMemberByName( parameters, "translation" ), "" );
+				const char * rotationAccessor = Json_GetString( Json_GetMemberByName( parameters, "rotation" ), "" );
+				const char * scaleAccessor = Json_GetString( Json_GetMemberByName( parameters, "scale" ), "" );
+
+				const GltfAccessor_t * access_time			= Gltf_GetAccessorByName( scene, timeAccessor, "SCALAR", GL_FLOAT );
+				const GltfAccessor_t * access_translation	= Gltf_GetAccessorByName( scene, translationAccessor, "VEC3", GL_FLOAT );
+				const GltfAccessor_t * access_rotation		= Gltf_GetAccessorByName( scene, rotationAccessor, "VEC4", GL_FLOAT );
+				const GltfAccessor_t * access_scale			= Gltf_GetAccessorByName( scene, scaleAccessor, "VEC3", GL_FLOAT );
+
+				if ( access_time == NULL || access_time->count <= 0 )
+				{
+					continue;
+				}
+
+				scene->animations[i].sampleCount = access_time->count;
+				scene->animations[i].time = (float *)Gltf_GetBufferData( access_time );
+
+				const Json_t * channels = Json_GetMemberByName( animation, "channels" );
+				const int channelCount = Json_GetMemberCount( channels );
+				for ( int j = 0; j < channelCount; j++ )
+				{
+					const Json_t * channel = Json_GetMemberByIndex( channels, j );
+					const Json_t * target = Json_GetMemberByName( channel, "target" );
+					const char * jointName = Json_GetString( Json_GetMemberByName( target, "id" ), "" );
+					assert( scene->animations[i].jointName == NULL || strcmp( scene->animations[i].jointName, jointName ) == 0 );
+					scene->animations[i].jointName = Gltf_strdup( jointName );
+					scene->animations[i].node = NULL; // linked up once the nodes are loaded
+					const char * path = Json_GetString( Json_GetMemberByName( target, "path" ), "" );
+					if ( strcmp( path, "rotation" ) == 0 )
+					{
+						scene->animations[i].rotation = (Quatf_t *) Gltf_GetBufferData( access_rotation );
+					}
+					else if ( strcmp( path, "translation" ) == 0 )
+					{
+						scene->animations[i].translation = (Vector3f_t *) Gltf_GetBufferData( access_translation );
+					}
+					else if ( strcmp( path, "scale" ) == 0 )
+					{
+						scene->animations[i].scale = (Vector3f_t *) Gltf_GetBufferData( access_scale );
+					}
+				}
+			}
+		}
+
+		//
+		// glTF skins
+		//
+		{
+			const Json_t * skins = Json_GetMemberByName( rootNode, "skins" );
+			scene->skinCount = Json_GetMemberCount( skins );
+			scene->skins = (GltfSkin_t *) malloc( scene->skinCount * sizeof( GltfSkin_t ) );
+			memset( scene->skins, 0, scene->skinCount * sizeof( GltfSkin_t ) );
+			for ( int i = 0; i < scene->skinCount; i++ )
+			{
+				const Json_t * skin = Json_GetMemberByIndex( skins, i );
+				scene->skins[i].name = Gltf_strdup( Gltf_ParseObjectName( skin ) );
+				Gltf_ParseFloatArray( scene->skins[i].bindShapeMatrix.m[0], 16, Json_GetMemberByName( skin, "bindShapeMatrix" ) );
+				const char * bindAccessorName = Json_GetString( Json_GetMemberByName( skin, "inverseBindMatrices" ), "" );
+				const GltfAccessor_t * bindAccess = Gltf_GetAccessorByName( scene, bindAccessorName, "MAT4", GL_FLOAT );
+				scene->skins[i].inverseBindMatrices = Gltf_GetBufferData( bindAccess );
+
+				const Json_t * jointNames = Json_GetMemberByName( skin, "jointNames" );
+				scene->skins[i].jointCount = Json_GetMemberCount( jointNames );
+				scene->skins[i].joints = (GltfJoint_t *) malloc( scene->skins[i].jointCount * sizeof( GltfJoint_t ) );
+				for ( int j = 0; j < scene->skins[i].jointCount; j++ )
+				{
+					scene->skins[i].joints[j].name = Gltf_strdup( Json_GetString( Json_GetMemberByIndex( jointNames, j ), "" ) );
+					scene->skins[i].joints[j].node = NULL; // linked up once the nodes are loaded
+				}
+				GpuBuffer_Create( context, &scene->skins[i].jointBuffer, GPU_BUFFER_TYPE_UNIFORM, scene->skins[i].jointCount * sizeof( Matrix4x4f_t ), NULL, false );
+			}
+		}
+
+		//
+		// glTF nodes
+		//
+		{
+			const Json_t * nodes = Json_GetMemberByName( rootNode, "nodes" );
+			scene->nodeCount = Json_GetMemberCount( nodes );
+			scene->nodes = (GltfNode_t *) malloc( scene->nodeCount * sizeof( GltfNode_t ) );
+			memset( scene->nodes, 0, scene->nodeCount * sizeof( GltfNode_t ) );
+			for ( int i = 0; i < scene->nodeCount; i++ )
+			{
+				const Json_t * node = Json_GetMemberByIndex( nodes, i );
+				scene->nodes[i].name = Gltf_strdup( Gltf_ParseObjectName( node ) );
+				scene->nodes[i].jointName = Gltf_strdup( Json_GetString( Json_GetMemberByName( node, "jointName" ), "" ) );
+				const Json_t * matrix = Json_GetMemberByName( node, "matrix" );
+				if ( Json_IsArray( matrix ) )
+				{
+					Gltf_ParseFloatArray( scene->nodes[i].localTransform.m[0], 16, matrix );
+				}
+				else
+				{
+					Gltf_ParseFloatArray( &scene->nodes[i].rotation.x, 4, Json_GetMemberByName( node, "rotation" ) );
+					Gltf_ParseFloatArray( &scene->nodes[i].scale.x, 3, Json_GetMemberByName( node, "scale" ) );
+					Gltf_ParseFloatArray( &scene->nodes[i].translation.x, 3, Json_GetMemberByName( node, "translation" ) );
+					Matrix4x4f_CreateScaleRotationTranslation( &scene->nodes[i].localTransform, &scene->nodes[i].scale, &scene->nodes[i].rotation, &scene->nodes[i].translation );
+				}
+				scene->nodes[i].globalTransform = scene->nodes[i].localTransform;	// transformed to global space later
+				const Json_t * children = Json_GetMemberByName( node, "children" );
+				scene->nodes[i].childCount = Json_GetMemberCount( children );
+				scene->nodes[i].children = (char **) malloc( scene->nodes[i].childCount * sizeof( char * ) );
+				for ( int c = 0; c < scene->nodes[i].childCount; c++ )
+				{
+					scene->nodes[i].children[c] = Gltf_strdup( Json_GetString( Json_GetMemberByIndex( children, c ), "" ) );
+				}
+				scene->nodes[i].model = Gltf_GetModelByName( scene, Json_GetString( Json_GetMemberByIndex( Json_GetMemberByName( node, "meshes" ), 0 ), "" ) );
+				scene->nodes[i].skin = Gltf_GetSkinByName( scene, Json_GetString( Json_GetMemberByName( node, "skin" ), "" ) );
+			}
+			Gltf_SortNodes( scene->nodes, scene->nodeCount );
+			for ( int i = 0; i < scene->animationCount; i++ )
+			{
+				scene->animations[i].node = Gltf_GetNodeByJointName( scene, scene->animations[i].jointName );
+				assert( scene->animations[i].node != NULL );
+			}
+			for ( int i = 0; i < scene->skinCount; i++ )
+			{
+				for ( int j = 0; j < scene->skins[i].jointCount; j++ )
+				{
+					scene->skins[i].joints[j].node = Gltf_GetNodeByJointName( scene, scene->skins[i].joints[j].name );
+					assert( scene->skins[i].joints[j].node != NULL );
+				}
+			}
+		}
+
+		//
+		// glTF scene
+		//
+		{
+			const Json_t * scenes = Json_GetMemberByName( rootNode, "scenes" );
+			const char * defaultSceneName = Json_GetString( scenes, "" );
+			const Json_t * defaultScene = Json_GetMemberByName( scenes, defaultSceneName );
+
+			UNUSED_PARM( defaultScene );
+			UNUSED_PARM( scenes );
+		}
+	}
+	Json_Destroy( rootNode );
+
+	return true;
+}
+
+static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
+{
+	UNUSED_PARM( context );
+	UNUSED_PARM( scene );
+}
+
+static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeInMicroseconds )
+{
+	// Apply animations.
+	for ( int i = 0; i < scene->animationCount; i++ )
+	{
+		const GltfAnimation_t * animation = &scene->animations[i];
+		if ( animation->time == NULL || animation->sampleCount < 2 )
+		{
+			continue;
+		}
+
+		const float timeInSeconds = fmodf( timeInMicroseconds * 1e-6f, animation->time[animation->sampleCount - 1] - animation->time[0] );
+		int frame = 0;
+		for ( ; frame < animation->sampleCount - 1; frame++ )
+		{
+			if ( timeInSeconds >= animation->time[frame] && timeInSeconds < animation->time[frame + 1] )
+			{
+				break;
+			}
+		}
+		const float fraction = ( timeInSeconds - animation->time[frame] ) / ( animation->time[frame + 1] - animation->time[frame] );
+
+		Quatf_t rotation = animation->node->rotation;
+		if ( animation->rotation != NULL )
+		{
+			Quatf_Lerp( &rotation, &animation->rotation[frame], &animation->rotation[frame + 1], fraction );
+		}
+		Vector3f_t translation = animation->node->translation;
+		if ( animation->translation != NULL )
+		{
+			Vector3f_Lerp( &translation, &animation->translation[frame], &animation->translation[frame + 1], fraction );
+		}
+		Vector3f_t scale = animation->node->scale;
+		if ( animation->scale != NULL )
+		{
+			Vector3f_Lerp( &scale, &animation->scale[frame], &animation->scale[frame + 1], fraction );
+		}
+		Matrix4x4f_CreateScaleRotationTranslation( &animation->node->localTransform, &scale, &rotation, &translation );
+	}
+
+	// Transform the node hierarchy into global space.
+	for ( int i = 0; i < scene->nodeCount; i++ )
+	{
+		GltfNode_t * node = &scene->nodes[i];
+		if ( node->parent != NULL )
+		{
+			assert( node->parent < node );
+			Matrix4x4f_Multiply( &node->globalTransform, &node->parent->globalTransform, &node->localTransform );
+		}
+		else
+		{
+			node->globalTransform = node->localTransform;
+		}
+	}
+}
+
+static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene )
+{
+	// Update the skin joint buffers.
+	for ( int i = 0; i < scene->skinCount; i++ )
+	{
+		GltfSkin_t * skin = &scene->skins[i];
+
+		Matrix4x4f_t * joints = NULL;
+		GpuBuffer_t * mappedJointBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &skin->jointBuffer, &joints );
+
+		for ( int j = 0; j < skin->jointCount; j++ )
+		{
+			Matrix4x4f_t inverseBindMatrix;
+			Matrix4x4f_Multiply( &inverseBindMatrix, &skin->inverseBindMatrices[j], &skin->bindShapeMatrix );
+			Matrix4x4f_Multiply( &joints[j], &skin->joints[j].node->globalTransform, &inverseBindMatrix );
+		}
+		GpuCommandBuffer_UnmapBuffer( commandBuffer, &scene->skins[i].jointBuffer, mappedJointBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
+	}
+}
+
+static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene )
+{
+	const Vector4f_t viewport = { 0, 0, 1, 1 };
+
+	Matrix4x4f_t viewMatrix;
+	Matrix4x4f_CreateIdentity( &viewMatrix );
+
+	Matrix4x4f_t projectionMatrix;
+	Matrix4x4f_CreateProjectionFov( &projectionMatrix, 90.0f, 72.0f, 0.0f, 0.0f, 0.1f, 0.0f );
+
+	Matrix4x4f_t viewInverseMatrix;
+	Matrix4x4f_Invert( &viewInverseMatrix, &viewMatrix );
+
+	Matrix4x4f_t projectionInverseMatrix;
+	Matrix4x4f_Invert( &projectionInverseMatrix, &projectionMatrix );
+
+	for ( int i = 0; i < scene->nodeCount; i++ )
+	{
+		const GltfNode_t * node = &scene->nodes[i];
+		if ( node->model == NULL )
+		{
+			continue;
+		}
+
+		const Matrix4x4f_t localMatrix = node->localTransform;
+		Matrix4x4f_t modelMatrix = node->globalTransform;
+
+		Matrix4x4f_CreateTranslation( &modelMatrix, 0.0f, 0.0f, -100.0f );
+
+		Matrix4x4f_t modelViewMatrix;
+		Matrix4x4f_Multiply( &modelViewMatrix, &viewMatrix, &modelMatrix );
+
+		Matrix4x4f_t modelViewProjectionMatrix;
+		Matrix4x4f_Multiply( &modelViewProjectionMatrix, &projectionMatrix, &modelViewMatrix );
+
+		Matrix4x4f_t modelInverseMatrix;
+		Matrix4x4f_Invert( &modelInverseMatrix, &modelMatrix );
+
+		Matrix4x4f_t modelViewInverseMatrix;
+		Matrix4x4f_Invert( &modelViewInverseMatrix, &modelViewMatrix );
+
+		Matrix4x4f_t modelViewProjectionInverseMatrix;
+		Matrix4x4f_Invert( &modelViewProjectionInverseMatrix, &modelViewProjectionMatrix );
+
+		Matrix3x3f_t modelInverseTransposeMatrix;
+		Matrix3x3f_TransposeFromMatrix4x4f( &modelInverseTransposeMatrix, &modelInverseMatrix );
+
+		Matrix3x3f_t modelViewInverseTransposeMatrix;
+		Matrix3x3f_TransposeFromMatrix4x4f( &modelViewInverseTransposeMatrix, &modelViewInverseMatrix );
+
+		const GltfSkin_t * skin = scene->nodes[i].skin;
+		for ( int s = 0; s < node->model->surfaceCount; s++ )
+		{
+			const GltfSurface_t * surface = &node->model->surfaces[s];
+
+			GpuGraphicsCommand_t command;
+			GpuGraphicsCommand_Init( &command );
+
+			command.pipeline = &surface->pipeline;
+
+			const GltfTechnique_t * technique = surface->material->technique;
+			for ( int u = 0; u < technique->uniformCount; u++ )
+			{
+				const int index = technique->uniforms[u].index;
+				switch ( technique->uniforms[u].semantic )
+				{
+					case GLTF_UNIFORM_SEMANTIC_LOCAL:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &localMatrix ); break;
+					case GLTF_UNIFORM_SEMANTIC_MODEL:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &modelMatrix ); break;
+					case GLTF_UNIFORM_SEMANTIC_VIEW:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &viewMatrix ); break;
+					case GLTF_UNIFORM_SEMANTIC_PROJECTION:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &projectionMatrix ); break;
+					case GLTF_UNIFORM_SEMANTIC_MODELVIEW:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &modelViewMatrix ); break;
+					case GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTION:			GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &modelViewProjectionMatrix ); break;
+					case GLTF_UNIFORM_SEMANTIC_MODELINVERSE:				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &modelInverseMatrix ); break;
+					case GLTF_UNIFORM_SEMANTIC_VIEWINVERSE:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &viewInverseMatrix ); break;
+					case GLTF_UNIFORM_SEMANTIC_PROJECTIONINVERSE:			GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &projectionInverseMatrix ); break;
+					case GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSE:			GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &modelViewInverseMatrix ); break;
+					case GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTIONINVERSE:	GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &modelViewProjectionInverseMatrix ); break;
+					case GLTF_UNIFORM_SEMANTIC_MODELINVERSETRANSPOSE:		GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, index, &modelInverseTransposeMatrix ); break;
+					case GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSETRANSPOSE:	GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, index, &modelViewInverseTransposeMatrix ); break;
+					case GLTF_UNIFORM_SEMANTIC_VIEWPORT:					GpuGraphicsCommand_SetParmFloatVector4( &command, index, &viewport );
+					case GLTF_UNIFORM_SEMANTIC_JOINTMATRIX:					GpuGraphicsCommand_SetParmBufferUniform( &command, index, &skin->jointBuffer );
+				}
+			}
+
+			for ( int v = 0; v < surface->material->valueCount; v++ )
+			{
+				const GltfMaterialValue_t * value = &surface->material->values[v];
+				if ( value->uniform == NULL )
+				{
+					continue;
+				}
+				const int index = value->uniform->index;
+				switch ( value->uniform->type )
+				{
+					case GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED:					GpuGraphicsCommand_SetParmTextureSampled( &command, index, &value->texture->texture ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT:				GpuGraphicsCommand_SetParmInt( &command, index, value->intValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2:		GpuGraphicsCommand_SetParmIntVector2( &command, index, (const Vector2i_t *)value->intValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3:		GpuGraphicsCommand_SetParmIntVector3( &command, index, (const Vector3i_t *)value->intValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4:		GpuGraphicsCommand_SetParmIntVector4( &command, index, (const Vector4i_t *)value->intValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT:				GpuGraphicsCommand_SetParmFloat( &command, index, value->floatValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		GpuGraphicsCommand_SetParmFloatVector2( &command, index, (const Vector2f_t *)value->floatValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		GpuGraphicsCommand_SetParmFloatVector3( &command, index, (const Vector3f_t *)value->floatValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		GpuGraphicsCommand_SetParmFloatVector4( &command, index, (const Vector4f_t *)value->floatValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2:	GpuGraphicsCommand_SetParmFloatMatrix2x2( &command, index, (const Matrix2x2f_t *)value->floatValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3:	GpuGraphicsCommand_SetParmFloatMatrix2x3( &command, index, (const Matrix2x3f_t *)value->floatValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4:	GpuGraphicsCommand_SetParmFloatMatrix2x4( &command, index, (const Matrix2x4f_t *)value->floatValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2:	GpuGraphicsCommand_SetParmFloatMatrix3x2( &command, index, (const Matrix3x2f_t *)value->floatValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3:	GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, index, (const Matrix3x3f_t *)value->floatValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4:	GpuGraphicsCommand_SetParmFloatMatrix3x4( &command, index, (const Matrix3x4f_t *)value->floatValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	GpuGraphicsCommand_SetParmFloatMatrix4x2( &command, index, (const Matrix4x2f_t *)value->floatValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	GpuGraphicsCommand_SetParmFloatMatrix4x3( &command, index, (const Matrix4x3f_t *)value->floatValue ); break;
+					case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, (const Matrix4x4f_t *)value->floatValue ); break;
+				}
+			}
+
+			GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
+		}
+	}
+}
 
 /*
 ================================================================================================================================
@@ -11421,13 +13032,13 @@ static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t 
 		{
 			const int offset = ( y * EYE_TILES_WIDE + x ) * 6;
 
-			indices[offset + 0] = ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 );
-			indices[offset + 1] = ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 );
-			indices[offset + 2] = ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 );
+			indices[offset + 0] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
+			indices[offset + 1] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
+			indices[offset + 2] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
 
-			indices[offset + 3] = ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 );
-			indices[offset + 4] = ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 );
-			indices[offset + 5] = ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 );
+			indices[offset + 3] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
+			indices[offset + 4] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
+			indices[offset + 5] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
 		}
 	}
 
@@ -13913,6 +15524,9 @@ bool RenderScene( StartupSettings_t * startupSettings )
 	Scene_t scene;
 	Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
 
+	GltfScene_t sceneGltf;
+	GltfScene_CreateFromFile( &window.context, &sceneGltf, "monster.gltf", &renderPass );
+
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
 
 	Microseconds_t startupTimeMicroseconds = startupSettings->startupTimeMicroseconds;
@@ -14025,9 +15639,12 @@ bool RenderScene( StartupSettings_t * startupSettings )
 
 		if ( window.windowActive )
 		{
+#if 1
+			GltfScene_Simulate( &sceneGltf, GpuWindow_GetNextSwapTime( &window ) );
+#else
 			Scene_UpdateSettings( &scene );
-
 			Scene_Simulate( &scene, GpuWindow_GetNextSwapTime( &window ) );
+#endif
 
 			Matrix4x4f_t viewMatrix;
 			Matrix4x4f_CreateIdentity( &viewMatrix );
@@ -14044,7 +15661,11 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			GpuCommandBuffer_BeginPrimary( &commandBuffer );
 			GpuCommandBuffer_BeginFramebuffer( &commandBuffer, &framebuffer, 0, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
 
+#if 1
+			GltfScene_UpdateBuffers( &commandBuffer, &sceneGltf );
+#else
 			Scene_UpdateMatrices( &commandBuffer, &scene, &viewMatrix, &projectionMatrix );
+#endif
 
 			BarGraph_UpdateGraphics( &commandBuffer, &frameCpuTimeBarGraph );
 			BarGraph_UpdateGraphics( &commandBuffer, &frameGpuTimeBarGraph );
@@ -14054,7 +15675,11 @@ bool RenderScene( StartupSettings_t * startupSettings )
 
 			GpuCommandBuffer_SetViewport( &commandBuffer, &screenRect );
 			GpuCommandBuffer_SetScissor( &commandBuffer, &screenRect );
+#if 1
+			GltfScene_Render( &commandBuffer, &sceneGltf );
+#else
 			Scene_Render( &commandBuffer, &scene );
+#endif
 
 			BarGraph_RenderGraphics( &commandBuffer, &frameCpuTimeBarGraph );
 			BarGraph_RenderGraphics( &commandBuffer, &frameGpuTimeBarGraph );
@@ -14158,7 +15783,7 @@ static int StartApplication( int argc, char * argv[] )
 	//startupSettings.samplesLevel = 0;
 	//startupSettings.useMultiView = true;
 	//startupSettings.correctChromaticAberration = true;
-	//startupSettings.renderMode = RENDER_MODE_SCENE;
+	startupSettings.renderMode = RENDER_MODE_SCENE;
 	//startupSettings.timeWarpImplementation = TIMEWARP_IMPLEMENTATION_COMPUTE;
 
 	Print( "    fullscreen = %d\n",					startupSettings.fullscreen );

@@ -32,7 +32,7 @@ BASE64
 Base64 is a binary-to-text encoding scheme that represents binary
 data in an ASCII string format by translating it into a radix-64
 representation. Every three bytes (3 x 8 = 24 bits) are converted
-to four radix-64 numbers (4 x 6 = 24 bits) and stored in the base64
+to four radix-64 numbers (4 x 6 = 24 bits) and stored in the Base64
 alphabet as four ASCII characters. Base64 encoding of data is used
 in many situations to store or to transfer data in environments that
 are restricted to ASCII data.
