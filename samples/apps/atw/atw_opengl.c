@@ -10822,7 +10822,7 @@ typedef struct GltfSkin_t
 
 typedef enum
 {
-	GLTF_CAMERA_TYPE_PERSPECIVE,
+	GLTF_CAMERA_TYPE_PERSPECTIVE,
 	GLTF_CAMERA_TYPE_ORTHOGRAPHIC
 } GltfCameraType_t;
 
@@ -11030,14 +11030,25 @@ static unsigned char * Gltf_ReadBase64( const char * base64, int * outSizeInByte
 
 static unsigned char * Gltf_ReadUri( const char * uri, int * outSizeInBytes )
 {
-	if ( strncmp( uri, "data:text/plain;base64,", 23 ) == 0 )
+	if ( strncmp( uri, "data:", 5 ) == 0 )
 	{
-		return Gltf_ReadBase64( uri + 23, outSizeInBytes );
+		// binary "buffer"
+		if ( strncmp( uri, "data:application/octet-stream;base64,", 37 ) == 0 )
+		{
+			return Gltf_ReadBase64( uri + 37, outSizeInBytes );
+		}
+		// text "shader"
+		else if ( strncmp( uri, "data:text/plain;base64,", 23 ) == 0 )
+		{
+			return Gltf_ReadBase64( uri + 23, outSizeInBytes );
+		}
+		// KTX "image"
+		else if ( strncmp( uri, "data:image/ktx;base64,", 22 ) == 0 )
+		{
+			return Gltf_ReadBase64( uri + 22, outSizeInBytes );
+		}
 	}
-	else
-	{
-		return Gltf_ReadFile( uri, outSizeInBytes );
-	}
+	return Gltf_ReadFile( uri, outSizeInBytes );
 }
 
 static void Gltf_ParseIntArray( int * elements, const int count, const Json_t * arrayNode )
@@ -11165,7 +11176,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 	if ( Json_ReadFromFile( rootNode, fileName, NULL ) )
 	{
 		const Json_t * asset = Json_GetMemberByName( rootNode, "asset" );
-		const char * version = Json_GetString( Json_GetMemberByName( asset, "version" ), "" );
+		const char * version = Json_GetString( Json_GetMemberByName( asset, "version" ), "1.0" );
 		if ( strcmp( version, "1.0" ) != 0 )
 		{
 			Json_Destroy( rootNode );
@@ -11187,6 +11198,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				scene->buffers[i].byteLength = Json_GetUint64( Json_GetMemberByName( buffer, "byteLength" ), 0 );
 				scene->buffers[i].type = Gltf_strdup( Json_GetString( Json_GetMemberByName( buffer, "type" ), "" ) );
 				scene->buffers[i].bufferData = Gltf_ReadUri( Json_GetString( Json_GetMemberByName( buffer, "uri" ), "" ), NULL );
+				assert( scene->buffers[i].name[0] != '\0' );
+				assert( scene->buffers[i].byteLength != 0 );
+				assert( scene->buffers[i].bufferData != NULL );
 			}
 		}
 
@@ -11206,6 +11220,10 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				scene->bufferViews[i].byteOffset = (size_t) Json_GetUint64( Json_GetMemberByName( view, "byteOffset" ), 0 );
 				scene->bufferViews[i].byteLength = (size_t) Json_GetUint64( Json_GetMemberByName( view, "byteLength" ), 0 );
 				scene->bufferViews[i].target = Json_GetUint16( Json_GetMemberByName( view, "target" ), 0 );
+				assert( scene->bufferViews[i].name[0] != '\0' );
+				assert( scene->bufferViews[i].buffer != NULL );
+				assert( scene->bufferViews[i].byteLength != 0 );
+				assert( scene->bufferViews[i].byteOffset + scene->bufferViews[i].byteLength <= scene->bufferViews[i].buffer->byteLength );
 			}
 		}
 
@@ -11227,6 +11245,13 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				scene->accessors[i].componentType = Json_GetUint16( Json_GetMemberByName( access, "componentType" ), 0 );
 				scene->accessors[i].count = Json_GetInt32( Json_GetMemberByName( access, "count" ), 0 );
 				scene->accessors[i].type =  Gltf_strdup( Json_GetString( Json_GetMemberByName( access, "type" ), "" ) );
+				assert( scene->accessors[i].name[0] != '\0' );
+				assert( scene->accessors[i].bufferView != NULL );
+				assert( scene->accessors[i].byteStride != 0 );
+				assert( scene->accessors[i].componentType != 0 );
+				assert( scene->accessors[i].count != 0 );
+				assert( scene->accessors[i].type[0] != '\0' );
+				assert( scene->accessors[i].byteOffset + scene->accessors[i].count * scene->accessors[i].byteStride <= scene->accessors[i].bufferView->byteLength );
 			}
 		}
 
@@ -11243,6 +11268,8 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				const Json_t * image = Json_GetMemberByIndex( images, i );
 				scene->images[i].name = Gltf_strdup( Json_GetMemberName( image ) );
 				scene->images[i].uri = Gltf_strdup( Json_GetString( Json_GetMemberByName( image, "uri" ), "" ) );
+				assert( scene->images[i].name[0] != '\0' );
+				assert( scene->images[i].uri[0] != '\0' );
 			}
 		}
 
@@ -11256,8 +11283,12 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 			for ( int i = 0; i < scene->textureCount; i++ )
 			{
 				const Json_t * texture = Json_GetMemberByIndex( textures, i );
-				const char * uri = Gltf_GetImageUriByName( scene, Json_GetString( Json_GetMemberByName( texture, "source" ), "" ) );
 				scene->textures[i].name = Gltf_strdup( Json_GetMemberName( texture ) );
+				const char * uri = Gltf_GetImageUriByName( scene, Json_GetString( Json_GetMemberByName( texture, "source" ), "" ) );
+
+				assert( scene->textures[i].name[0] != '\0' );
+				assert( uri[0] != '\0' );
+
 				int dataSizeInBytes = 0;
 				unsigned char * data = Gltf_ReadUri( uri, &dataSizeInBytes );
 				GpuTexture_CreateFromKTX( context, &scene->textures[i].texture, scene->textures[i].name, data, dataSizeInBytes );
@@ -11279,6 +11310,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				scene->shaders[i].name = Gltf_strdup( Json_GetMemberName( shader ) );
 				scene->shaders[i].uri = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uri" ), "" ) );
 				scene->shaders[i].type = Json_GetUint16( Json_GetMemberByName( shader, "type" ), 0 );
+				assert( scene->shaders[i].name[0] != '\0' );
+				assert( scene->shaders[i].uri[0] != '\0' );
+				assert( scene->shaders[i].type != 0 );
 			}
 		}
 
@@ -11300,6 +11334,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				scene->programs[i].name = Gltf_strdup( Json_GetMemberName( program ) );
 				scene->programs[i].vertexSource = Gltf_ReadUri( vertexShaderUri, &scene->programs[i].vertexSourceSize );
 				scene->programs[i].fragmentSource = Gltf_ReadUri( fragmentShaderUri, &scene->programs[i].fragmentSourceSize );
+				assert( scene->programs[i].name[0] != '\0' );
+				assert( scene->programs[i].vertexSource[0] != '\0' );
+				assert( scene->programs[i].fragmentSource[0] != '\0' );
 			}
 		}
 
@@ -11316,6 +11353,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				const Json_t * technique = Json_GetMemberByIndex( techniques, i );
 				scene->techniques[i].name = Gltf_strdup( Json_GetMemberName( technique ) );
 				const GltfProgram_t * program = Gltf_GetProgramByName( scene, Json_GetString( Json_GetMemberByName( technique, "program" ), "" ) );
+
+				assert( scene->techniques[i].name[0] != '\0' );
+				assert( program != NULL );
 
 				int vertexAttribsFlags = 0;
 				const Json_t * attributes = Json_GetMemberByName( technique, "attributes" );
@@ -11335,6 +11375,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					else if ( strcmp( attrib, "WEIGHT" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS; }
 				}
 
+				// Must have at least positions.
+				assert( ( vertexAttribsFlags & VERTEX_ATTRIBUTE_FLAG_POSITION ) != 0 );
+
 				const Json_t * uniforms = Json_GetMemberByName( technique, "uniforms" );
 				const Json_t * parameters = Json_GetMemberByName( technique, "parameters" );
 				const int uniformCount = Json_GetMemberCount( uniforms );
@@ -11349,6 +11392,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					const Json_t * parameter = Json_GetMemberByName( parameters, parmName );
 					const char * semantic = Json_GetString( Json_GetMemberByName( parameter, "semantic" ), "" );
 					const int type = Json_GetUint16( Json_GetMemberByName( parameter, "type" ), 0 );
+
 					GpuProgramParmType_t parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED;
 					switch ( type )
 					{
@@ -11418,22 +11462,27 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 			for ( int i = 0; i < scene->materialCount; i++ )
 			{
 				const Json_t * material = Json_GetMemberByIndex( materials, i );
+				const GltfTechnique_t * technique = Gltf_GetTechniqueByName( scene, Json_GetString( Json_GetMemberByName( material, "technique" ), "" ) );
 				scene->materials[i].name = Gltf_strdup( Json_GetMemberName( material ) );
-				scene->materials[i].technique = Gltf_GetTechniqueByName( scene, Json_GetString( Json_GetMemberByName( material, "technique" ), "" ) );
+				scene->materials[i].technique = technique;
+
+				assert( scene->materials[i].name[0] != '\0' );
+				assert( scene->materials[i].technique != NULL );
+
 				const Json_t * values = Json_GetMemberByName( material, "values" );
 				scene->materials[i].valueCount = Json_GetMemberCount( values );
 				scene->materials[i].values = (GltfMaterialValue_t *) malloc( scene->materials[i].valueCount * sizeof( GltfMaterialValue_t ) );
 				memset( scene->materials[i].values, 0, scene->materials[i].valueCount * sizeof( GltfMaterialValue_t ) );
-				for ( int j = 0; j < scene->materials[i].valueCount; j++ )
+				for ( int v = 0; v < scene->materials[i].valueCount; v++ )
 				{
-					const Json_t * value = Json_GetMemberByIndex( values, j );
+					const Json_t * value = Json_GetMemberByIndex( values, v );
 					const char * valueName = Json_GetMemberName( value );
 					GltfUniform_t * uniform = NULL;
-					for ( int u = 0; u < scene->materials[i].technique->uniformCount; u++ )
+					for ( int u = 0; u < technique->uniformCount; u++ )
 					{
-						if ( strcmp( scene->materials[i].technique->uniforms[u].name, valueName ) == 0 )
+						if ( strcmp( technique->uniforms[u].name, valueName ) == 0 )
 						{
-							uniform = &scene->materials[i].technique->uniforms[u];
+							uniform = &technique->uniforms[u];
 							break;
 						}
 					}
@@ -11442,27 +11491,46 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 						assert( false );
 						continue;
 					}
-					scene->materials[i].values[j].uniform = uniform;
+					assert( uniform->semantic == GLTF_UNIFORM_SEMANTIC_NONE );
+					scene->materials[i].values[v].uniform = uniform;
 					switch ( uniform->type )
 					{
-						case GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED:					scene->materials[i].values[j].texture = Gltf_GetTextureByName( scene, Json_GetString( value, "" ) ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT:				scene->materials[i].values[j].intValue[0] = Json_GetInt32( value, 0 ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2:		Gltf_ParseIntArray( scene->materials[i].values[j].intValue, 16, value ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3:		Gltf_ParseIntArray( scene->materials[i].values[j].intValue, 16, value ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4:		Gltf_ParseIntArray( scene->materials[i].values[j].intValue, 16, value ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT:				scene->materials[i].values[j].floatValue[0] = Json_GetFloat( value, 0.0f ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 2, value ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 3, value ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 4, value ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 2*2, value ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 2*3, value ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 2*4, value ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 3*2, value ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 3*3, value ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 3*4, value ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 4*2, value ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 4*3, value ); break;
-						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	Gltf_ParseFloatArray( scene->materials[i].values[j].floatValue, 4*4, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED:					scene->materials[i].values[v].texture = Gltf_GetTextureByName( scene, Json_GetString( value, "" ) ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT:				scene->materials[i].values[v].intValue[0] = Json_GetInt32( value, 0 ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2:		Gltf_ParseIntArray( scene->materials[i].values[v].intValue, 16, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3:		Gltf_ParseIntArray( scene->materials[i].values[v].intValue, 16, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4:		Gltf_ParseIntArray( scene->materials[i].values[v].intValue, 16, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT:				scene->materials[i].values[v].floatValue[0] = Json_GetFloat( value, 0.0f ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 2, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 3, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 4, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 2*2, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 2*3, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 2*4, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 3*2, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 3*3, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 3*4, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 4*2, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 4*3, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 4*4, value ); break;
+					}
+				}
+				// Make sure that the material sets any uniforms that do not have a special semantic.
+				for ( int u = 0; u < technique->uniformCount; u++ )
+				{
+					if ( technique->uniforms[u].semantic == GLTF_UNIFORM_SEMANTIC_NONE )
+					{
+						bool found = false;
+						for ( int v = 0; v < scene->materials[i].valueCount; v++ )
+						{
+							const Json_t * value = Json_GetMemberByIndex( values, v );
+							const char * valueName = Json_GetMemberName( value );
+							if ( strcmp( technique->uniforms[u].name, valueName ) == 0 )
+							{
+								found = true;
+							}
+						}
+						assert( found );
 					}
 				}
 			}
@@ -11480,6 +11548,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 			{
 				const Json_t * model = Json_GetMemberByIndex( models, i );
 				scene->models[i].name = Gltf_strdup( Json_GetMemberName( model ) );
+
+				assert( scene->models[i].name[0] != '\0' );
+
 				const Json_t * primitives = Json_GetMemberByName( model, "primitives" );
 				scene->models[i].surfaceCount = Json_GetMemberCount( primitives );
 				scene->models[i].surfaces = (GltfSurface_t *) malloc( scene->models[i].surfaceCount * sizeof( GltfSurface_t ) );
@@ -11504,9 +11575,10 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					const char * indicesAccessor		= Json_GetString( Json_GetMemberByName( primitive, "indices" ), "" );
 
 					surface->material = Gltf_GetMaterialByName( scene, Json_GetString( Json_GetMemberByName( primitive, "material" ), "" ) );
+					assert( surface->material != NULL );
 
 					const GltfAccessor_t * access_position		= Gltf_GetAccessorByNameAndType( scene, positionAccessor,		"VEC3",		GL_FLOAT );
-					const GltfAccessor_t * access_normal		= Gltf_GetAccessorByNameAndType( scene, normalAccessor,		"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * access_normal		= Gltf_GetAccessorByNameAndType( scene, normalAccessor,			"VEC3",		GL_FLOAT );
 					const GltfAccessor_t * access_tangent		= Gltf_GetAccessorByNameAndType( scene, tangentAccessor,		"VEC3",		GL_FLOAT );
 					const GltfAccessor_t * access_binormal		= Gltf_GetAccessorByNameAndType( scene, binormalAccessor,		"VEC3",		GL_FLOAT );
 					const GltfAccessor_t * access_color			= Gltf_GetAccessorByNameAndType( scene, colorAccessor,			"VEC4",		GL_FLOAT );
@@ -11547,7 +11619,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					GpuVertexAttributeArrays_t attribs;
 					GpuVertexAttributeArrays_Alloc( &attribs.base, DefaultVertexAttributeLayout, access_position->count, attribFlags );
 
-					if ( access_position!= NULL )		memcpy( attribs.position,		Gltf_GetBufferData( access_position ),		access_position->count		* sizeof( attribs.position[0] ) );
+					if ( access_position != NULL )		memcpy( attribs.position,		Gltf_GetBufferData( access_position ),		access_position->count		* sizeof( attribs.position[0] ) );
 					if ( access_normal != NULL )		memcpy( attribs.normal,			Gltf_GetBufferData( access_normal ),		access_normal->count		* sizeof( attribs.normal[0] ) );
 					if ( access_tangent != NULL )		memcpy( attribs.tangent,		Gltf_GetBufferData( access_tangent ),		access_tangent->count		* sizeof( attribs.tangent[0] ) );
 					if ( access_binormal != NULL )		memcpy( attribs.binormal,		Gltf_GetBufferData( access_binormal ),		access_binormal->count		* sizeof( attribs.binormal[0] ) );
@@ -11658,6 +11730,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				const GltfAccessor_t * bindAccess = Gltf_GetAccessorByNameAndType( scene, bindAccessorName, "MAT4", GL_FLOAT );
 				scene->skins[i].inverseBindMatrices = Gltf_GetBufferData( bindAccess );
 
+				assert( scene->skins[i].name[0] != '\0' );
+				assert( scene->skins[i].inverseBindMatrices != NULL );
+
 				const Json_t * jointNames = Json_GetMemberByName( skin, "jointNames" );
 				scene->skins[i].jointCount = Json_GetMemberCount( jointNames );
 				scene->skins[i].joints = (GltfJoint_t *) malloc( scene->skins[i].jointCount * sizeof( GltfJoint_t ) );
@@ -11666,6 +11741,8 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					scene->skins[i].joints[j].name = Gltf_strdup( Json_GetString( Json_GetMemberByIndex( jointNames, j ), "" ) );
 					scene->skins[i].joints[j].node = NULL; // linked up once the nodes are loaded
 				}
+				assert( bindAccess->count == scene->skins[i].jointCount );
+
 				GpuBuffer_Create( context, &scene->skins[i].jointBuffer, GPU_BUFFER_TYPE_UNIFORM, scene->skins[i].jointCount * sizeof( Matrix4x4f_t ), NULL, false );
 			}
 		}
@@ -11683,14 +11760,14 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				const Json_t * camera = Json_GetMemberByIndex( cameras, i );
 				const char * type = Json_GetString( Json_GetMemberByName( camera, "type" ), "" );
 				scene->cameras[i].name = Gltf_strdup( Json_GetMemberName( camera ) );
-				scene->cameras[i].type = ( strcmp( type, "perspective" ) == 0 ) ? GLTF_CAMERA_TYPE_PERSPECIVE : GLTF_CAMERA_TYPE_ORTHOGRAPHIC;
-				if ( scene->cameras[i].type == GLTF_CAMERA_TYPE_PERSPECIVE )
+				scene->cameras[i].type = ( strcmp( type, "perspective" ) == 0 ) ? GLTF_CAMERA_TYPE_PERSPECTIVE : GLTF_CAMERA_TYPE_ORTHOGRAPHIC;
+				if ( scene->cameras[i].type == GLTF_CAMERA_TYPE_PERSPECTIVE )
 				{
 					const Json_t * perspective = Json_GetMemberByName( camera, "perspective" );
 					const float aspectRatio = Json_GetFloat( Json_GetMemberByName( perspective, "aspectRatio" ), 0.0f );
 					const float yfov = Json_GetFloat( Json_GetMemberByName( perspective, "yfov" ), 0.0f );
+					scene->cameras[i].perspective.fovDegreesX = ( 180.0f / MATH_PI ) * 2.0f * atanf( tanf( yfov * 0.5f ) * aspectRatio );
 					scene->cameras[i].perspective.fovDegreesY = ( 180.0f / MATH_PI ) * yfov;
-					scene->cameras[i].perspective.fovDegreesX = ( 180.0f / MATH_PI ) * yfov * aspectRatio;
 					scene->cameras[i].perspective.nearZ = Json_GetFloat( Json_GetMemberByName( perspective, "znear" ), 0.0f );
 					scene->cameras[i].perspective.farZ = Json_GetFloat( Json_GetMemberByName( perspective, "zfar" ), 0.0f );
 				}
@@ -11731,6 +11808,11 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					Matrix4x4f_CreateScaleRotationTranslation( &scene->nodes[i].localTransform, &scene->nodes[i].scale, &scene->nodes[i].rotation, &scene->nodes[i].translation );
 				}
 				scene->nodes[i].globalTransform = scene->nodes[i].localTransform;	// transformed to global space later
+
+				assert( scene->nodes[i].name[0] != '\0' );
+				//assert( Matrix4x4f_IsAffine( scene->nodes[i].localTransform ) );
+				//assert( Matrix4x4f_IsAffine( scene->nodes[i].globalTransform ) );
+
 				const Json_t * children = Json_GetMemberByName( node, "children" );
 				scene->nodes[i].childCount = Json_GetMemberCount( children );
 				scene->nodes[i].children = (char **) malloc( scene->nodes[i].childCount * sizeof( char * ) );
@@ -11923,6 +12005,8 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 
 static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeInMicroseconds )
 {
+	UNUSED_PARM( timeInMicroseconds );
+
 	// Apply animations.
 	for ( int i = 0; i < scene->animationCount; i++ )
 	{
@@ -11992,6 +12076,7 @@ static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const G
 			Matrix4x4f_t inverseBindMatrix;
 			Matrix4x4f_Multiply( &inverseBindMatrix, &skin->inverseBindMatrices[j], &skin->bindShapeMatrix );
 			Matrix4x4f_Multiply( &joints[j], &skin->joints[j].node->globalTransform, &inverseBindMatrix );
+			//Matrix4x4f_CreateIdentity( &joints[j] );
 		}
 		GpuCommandBuffer_UnmapBuffer( commandBuffer, &scene->skins[i].jointBuffer, mappedJointBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
 	}
@@ -12042,7 +12127,7 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 	else
 	{
 		Matrix4x4f_t viewRotation;
-		Matrix4x4f_CreateRotation( &viewRotation, 90.0f, 0.0f, 0.0f );
+		Matrix4x4f_CreateRotation( &viewRotation, -90.0f, 0.0f, 0.0f );
 
 		Matrix4x4f_t viewTranslation;
 		Matrix4x4f_CreateTranslation( &viewTranslation, 0.0f, 0.0f, -100.0f );
@@ -12051,10 +12136,10 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 		Matrix4x4f_CreateProjectionFov( &builtin.projectionMatrix, 90.0f, 60.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 	}
 
-	builtin.viewport.x = 0;
-	builtin.viewport.y = 0;
-	builtin.viewport.z = 0;
-	builtin.viewport.w = 0;
+	builtin.viewport.x = 0.0f;
+	builtin.viewport.y = 0.0f;
+	builtin.viewport.z = 1.0f;
+	builtin.viewport.w = 1.0f;
 
 	Matrix4x4f_Invert( &builtin.viewInverseMatrix, &builtin.viewMatrix );
 	Matrix4x4f_Invert( &builtin.projectionInverseMatrix, &builtin.projectionMatrix );
@@ -12143,6 +12228,12 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	GpuGraphicsCommand_SetParmFloatMatrix4x3( &command, index, (const Matrix4x3f_t *)value->floatValue ); break;
 						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, (const Matrix4x4f_t *)value->floatValue ); break;
 					}
+				}
+
+				// Make sure all uniforms are set.
+				for ( int u = 0; u < technique->uniformCount; u++ )
+				{
+					assert( command.parmState.parms[i] != NULL );
 				}
 
 				GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
@@ -15972,7 +16063,7 @@ static int StartApplication( int argc, char * argv[] )
 	//startupSettings.samplesLevel = 0;
 	//startupSettings.useMultiView = true;
 	//startupSettings.correctChromaticAberration = true;
-	//startupSettings.renderMode = RENDER_MODE_SCENE;
+	startupSettings.renderMode = RENDER_MODE_SCENE;
 	//startupSettings.timeWarpImplementation = TIMEWARP_IMPLEMENTATION_COMPUTE;
 
 	Print( "    fullscreen = %d\n",					startupSettings.fullscreen );
