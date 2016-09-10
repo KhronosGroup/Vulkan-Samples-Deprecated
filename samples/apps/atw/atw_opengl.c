@@ -1701,23 +1701,36 @@ Matrix4x4f_t
 static void Vector3f_Zero( Vector3f_t * v );
 static void Vector3f_Normalize( Vector3f_t * v );
 
-static void Matrix3x3f_TransposeFromMatrix4x4f( Matrix3x3f_t * dest, const Matrix4x4f_t * source );
-static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * dest, const Matrix4x4f_t * source );
+static void Matrix3x3f_TransposeFromMatrix4x4f( Matrix3x3f_t * result, const Matrix4x4f_t * src );
+static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * result, const Matrix4x4f_t * src );
 
-static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * matrix );
-static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * matrix, const float x, const float y, const float z );
-static void Matrix4x4f_CreateRotation( Matrix4x4f_t * matrix, const float degreesX, const float degreesY, const float degreesZ );
-static void Matrix4x4f_CreateScale( Matrix4x4f_t * matrix, const float x, const float y, const float z );
-static void Matrix4x4f_CreateScaleRotationTranslation( Matrix4x4f_t * matrix, const Vector3f_t * scale, const Quatf_t * rotation, const Vector3f_t * translation );
-static void Matrix4x4f_CreateProjection( Matrix4x4f_t * matrix, const float minX, const float maxX,
+static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * result );
+static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * result, const float x, const float y, const float z );
+static void Matrix4x4f_CreateRotation( Matrix4x4f_t * result, const float degreesX, const float degreesY, const float degreesZ );
+static void Matrix4x4f_CreateScale( Matrix4x4f_t * result, const float x, const float y, const float z );
+static void Matrix4x4f_CreateScaleRotationTranslation( Matrix4x4f_t * result, const Vector3f_t * scale, const Quatf_t * rotation, const Vector3f_t * translation );
+static void Matrix4x4f_CreateProjection( Matrix4x4f_t * result, const float minX, const float maxX,
 											float const minY, const float maxY, const float nearZ, const float farZ );
-static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float fovDegreesX, const float fovDegreesY,
+static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * result, const float fovDegreesX, const float fovDegreesY,
 											const float offsetX, const float offsetY, const float nearZ, const float farZ );
-static void Matrix4x4f_CreateFromQuaternion( Matrix3x4f_t * dest, const Quatf_t * source );
-static void Matrix4x4f_Multiply( Matrix4x4f_t * out, const Matrix4x4f_t * a, const Matrix4x4f_t * b );
+static void Matrix4x4f_CreateFromQuaternion( Matrix3x4f_t * result, const Quatf_t * src );
+
+static bool Matrix4x4f_IsAffine( const Matrix4x4f_t * matrix, const float epsilon );
+static bool Matrix4x4f_IsOrthogonal( const Matrix4x4f_t * matrix, const float epsilon );
+static bool Matrix4x4f_IsOrthonormal( const Matrix4x4f_t * matrix, const float epsilon );
+static bool Matrix4x4f_IsHomogeneous( const Matrix4x4f_t * matrix, const float epsilon );
+
+static void Matrix4x4f_GetTranslation( Vector3f_t * result, const Matrix4x4f_t * src );
+static void Matrix4x4f_GetRotation( Quatf_t * result, const Matrix4x4f_t * src );
+static void Matrix4x4f_GetScale( Vector3f_t * result, const Matrix4x4f_t * src );
+
+static void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, const Matrix4x4f_t * b );
 static void Matrix4x4f_Transpose( Matrix4x4f_t * result, const Matrix4x4f_t * src );
 static void Matrix4x4f_Invert( Matrix4x4f_t * result, const Matrix4x4f_t * src );
 static void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4f_t * src );
+
+static void Matrix4x4f_TransformVector3f( Vector3f_t * result, const Matrix4x4f_t * m, const Vector3f_t * v );
+static void Matrix4x4f_TransformVector4f( Vector4f_t * result, const Matrix4x4f_t * m, const Vector4f_t * v );
 
 ================================================================================================================================
 */
@@ -1842,6 +1855,13 @@ static const Vector4f_t colorCyan		= { 0.0f, 1.0f, 1.0f, 1.0f };
 static const Vector4f_t colorLightGrey	= { 0.7f, 0.7f, 0.7f, 1.0f };
 static const Vector4f_t colorDarkGrey	= { 0.3f, 0.3f, 0.3f, 1.0f };
 
+static float RcpSqrt( const float x )
+{
+	const float SMALLEST_NON_DENORMAL = 1.1754943508222875e-038f;	// ( 1U << 23 )
+	const float rcp = ( x >= SMALLEST_NON_DENORMAL ) ? 1.0f / sqrtf( x ) : 1.0f;
+	return rcp;
+}
+
 static void Vector3f_Zero( Vector3f_t * v )
 {
 	v->x = 0.0f;
@@ -1849,24 +1869,22 @@ static void Vector3f_Zero( Vector3f_t * v )
 	v->z = 0.0f;
 }
 
-static void Vector3f_Lerp( Vector3f_t * dest, const Vector3f_t * a, const Vector3f_t * b, const float fraction )
+static void Vector3f_Lerp( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b, const float fraction )
 {
-	dest->x = a->x + fraction * ( b->x - a->x );
-	dest->y = a->y + fraction * ( b->y - a->y );
-	dest->z = a->z + fraction * ( b->z - a->z );
+	result->x = a->x + fraction * ( b->x - a->x );
+	result->y = a->y + fraction * ( b->y - a->y );
+	result->z = a->z + fraction * ( b->z - a->z );
 }
 
 static void Vector3f_Normalize( Vector3f_t * v )
 {
-	const float SMALLEST_NON_DENORMAL = 1.1754943508222875e-038f;	// ( 1U << 23 )
-	const float lengthSqr = v->x * v->x + v->y * v->y + v->z * v->z;
-	const float lengthRcp = ( lengthSqr >= SMALLEST_NON_DENORMAL ) ? 1.0f / sqrtf( lengthSqr ) : 1.0f;
+	const float lengthRcp = RcpSqrt( v->x * v->x + v->y * v->y + v->z * v->z );
 	v->x *= lengthRcp;
 	v->y *= lengthRcp;
 	v->z *= lengthRcp;
 }
 
-static void Quatf_Lerp( Quatf_t * dest, const Quatf_t * a, const Quatf_t * b, const float fraction )
+static void Quatf_Lerp( Quatf_t * result, const Quatf_t * a, const Quatf_t * b, const float fraction )
 {
 	const float s = a->x * b->x + a->y * b->y + a->z * b->z + a->w * b->w;
 	const float fa = 1.0f - fraction;
@@ -1875,68 +1893,66 @@ static void Quatf_Lerp( Quatf_t * dest, const Quatf_t * a, const Quatf_t * b, co
 	const float y = a->y * fa + b->y * fb;
 	const float z = a->z * fa + b->z * fb;
 	const float w = a->w * fa + b->w * fb;
-	const float SMALLEST_NON_DENORMAL = 1.1754943508222875e-038f;	// ( 1U << 23 )
-	const float lengthSqr = x * x + y * y + z * z + w * w;
-	const float lengthRcp = ( lengthSqr >= SMALLEST_NON_DENORMAL ) ? 1.0f / sqrtf( lengthSqr ) : 1.0f;
-	dest->x = x * lengthRcp;
-	dest->y = y * lengthRcp;
-	dest->z = z * lengthRcp;
-	dest->w = w * lengthRcp;
+	const float lengthRcp = RcpSqrt( x * x + y * y + z * z + w * w );
+	result->x = x * lengthRcp;
+	result->y = y * lengthRcp;
+	result->z = z * lengthRcp;
+	result->w = w * lengthRcp;
 }
 
-static void Matrix3x3f_TransposeFromMatrix4x4f( Matrix3x3f_t * dest, const Matrix4x4f_t * source )
+static void Matrix3x3f_TransposeFromMatrix4x4f( Matrix3x3f_t * result, const Matrix4x4f_t * src )
 {
-	dest->m[0][0] = source->m[0][0];
-	dest->m[0][1] = source->m[1][0];
-	dest->m[0][2] = source->m[2][0];
+	result->m[0][0] = src->m[0][0];
+	result->m[0][1] = src->m[1][0];
+	result->m[0][2] = src->m[2][0];
 
-	dest->m[1][0] = source->m[0][1];
-	dest->m[1][1] = source->m[1][1];
-	dest->m[1][2] = source->m[2][1];
+	result->m[1][0] = src->m[0][1];
+	result->m[1][1] = src->m[1][1];
+	result->m[1][2] = src->m[2][1];
 
-	dest->m[2][0] = source->m[0][2];
-	dest->m[2][1] = source->m[1][2];
-	dest->m[2][2] = source->m[2][2];
+	result->m[2][0] = src->m[0][2];
+	result->m[2][1] = src->m[1][2];
+	result->m[2][2] = src->m[2][2];
 }
 
-static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * dest, const Matrix4x4f_t * source )
+static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * result, const Matrix4x4f_t * src )
 {
-	dest->m[0][0] = source->m[0][0];
-	dest->m[0][1] = source->m[1][0];
-	dest->m[0][2] = source->m[2][0];
-	dest->m[0][3] = source->m[3][0];
-	dest->m[1][0] = source->m[0][1];
-	dest->m[1][1] = source->m[1][1];
-	dest->m[1][2] = source->m[2][1];
-	dest->m[1][3] = source->m[3][1];
-	dest->m[2][0] = source->m[0][2];
-	dest->m[2][1] = source->m[1][2];
-	dest->m[2][2] = source->m[2][2];
-	dest->m[2][3] = source->m[3][2];
+	result->m[0][0] = src->m[0][0];
+	result->m[0][1] = src->m[1][0];
+	result->m[0][2] = src->m[2][0];
+	result->m[0][3] = src->m[3][0];
+	result->m[1][0] = src->m[0][1];
+	result->m[1][1] = src->m[1][1];
+	result->m[1][2] = src->m[2][1];
+	result->m[1][3] = src->m[3][1];
+	result->m[2][0] = src->m[0][2];
+	result->m[2][1] = src->m[1][2];
+	result->m[2][2] = src->m[2][2];
+	result->m[2][3] = src->m[3][2];
 }
 
 // Use left-multiplication to accumulate transformations.
-static void Matrix4x4f_Multiply( Matrix4x4f_t * out, const Matrix4x4f_t * a, const Matrix4x4f_t * b )
+static void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, const Matrix4x4f_t * b )
 {
-	out->m[0][0] = a->m[0][0] * b->m[0][0] + a->m[1][0] * b->m[0][1] + a->m[2][0] * b->m[0][2] + a->m[3][0] * b->m[0][3];
-	out->m[0][1] = a->m[0][1] * b->m[0][0] + a->m[1][1] * b->m[0][1] + a->m[2][1] * b->m[0][2] + a->m[3][1] * b->m[0][3];
-	out->m[0][2] = a->m[0][2] * b->m[0][0] + a->m[1][2] * b->m[0][1] + a->m[2][2] * b->m[0][2] + a->m[3][2] * b->m[0][3];
-	out->m[0][3] = a->m[0][3] * b->m[0][0] + a->m[1][3] * b->m[0][1] + a->m[2][3] * b->m[0][2] + a->m[3][3] * b->m[0][3];
+	result->m[0][0] = a->m[0][0] * b->m[0][0] + a->m[1][0] * b->m[0][1] + a->m[2][0] * b->m[0][2] + a->m[3][0] * b->m[0][3];
+	result->m[0][1] = a->m[0][1] * b->m[0][0] + a->m[1][1] * b->m[0][1] + a->m[2][1] * b->m[0][2] + a->m[3][1] * b->m[0][3];
+	result->m[0][2] = a->m[0][2] * b->m[0][0] + a->m[1][2] * b->m[0][1] + a->m[2][2] * b->m[0][2] + a->m[3][2] * b->m[0][3];
+	result->m[0][3] = a->m[0][3] * b->m[0][0] + a->m[1][3] * b->m[0][1] + a->m[2][3] * b->m[0][2] + a->m[3][3] * b->m[0][3];
 
-	out->m[1][0] = a->m[0][0] * b->m[1][0] + a->m[1][0] * b->m[1][1] + a->m[2][0] * b->m[1][2] + a->m[3][0] * b->m[1][3];
-	out->m[1][1] = a->m[0][1] * b->m[1][0] + a->m[1][1] * b->m[1][1] + a->m[2][1] * b->m[1][2] + a->m[3][1] * b->m[1][3];
-	out->m[1][2] = a->m[0][2] * b->m[1][0] + a->m[1][2] * b->m[1][1] + a->m[2][2] * b->m[1][2] + a->m[3][2] * b->m[1][3];
-	out->m[1][3] = a->m[0][3] * b->m[1][0] + a->m[1][3] * b->m[1][1] + a->m[2][3] * b->m[1][2] + a->m[3][3] * b->m[1][3];
+	result->m[1][0] = a->m[0][0] * b->m[1][0] + a->m[1][0] * b->m[1][1] + a->m[2][0] * b->m[1][2] + a->m[3][0] * b->m[1][3];
+	result->m[1][1] = a->m[0][1] * b->m[1][0] + a->m[1][1] * b->m[1][1] + a->m[2][1] * b->m[1][2] + a->m[3][1] * b->m[1][3];
+	result->m[1][2] = a->m[0][2] * b->m[1][0] + a->m[1][2] * b->m[1][1] + a->m[2][2] * b->m[1][2] + a->m[3][2] * b->m[1][3];
+	result->m[1][3] = a->m[0][3] * b->m[1][0] + a->m[1][3] * b->m[1][1] + a->m[2][3] * b->m[1][2] + a->m[3][3] * b->m[1][3];
 
-	out->m[2][0] = a->m[0][0] * b->m[2][0] + a->m[1][0] * b->m[2][1] + a->m[2][0] * b->m[2][2] + a->m[3][0] * b->m[2][3];
-	out->m[2][1] = a->m[0][1] * b->m[2][0] + a->m[1][1] * b->m[2][1] + a->m[2][1] * b->m[2][2] + a->m[3][1] * b->m[2][3];
-	out->m[2][2] = a->m[0][2] * b->m[2][0] + a->m[1][2] * b->m[2][1] + a->m[2][2] * b->m[2][2] + a->m[3][2] * b->m[2][3];
-	out->m[2][3] = a->m[0][3] * b->m[2][0] + a->m[1][3] * b->m[2][1] + a->m[2][3] * b->m[2][2] + a->m[3][3] * b->m[2][3];
+	result->m[2][0] = a->m[0][0] * b->m[2][0] + a->m[1][0] * b->m[2][1] + a->m[2][0] * b->m[2][2] + a->m[3][0] * b->m[2][3];
+	result->m[2][1] = a->m[0][1] * b->m[2][0] + a->m[1][1] * b->m[2][1] + a->m[2][1] * b->m[2][2] + a->m[3][1] * b->m[2][3];
+	result->m[2][2] = a->m[0][2] * b->m[2][0] + a->m[1][2] * b->m[2][1] + a->m[2][2] * b->m[2][2] + a->m[3][2] * b->m[2][3];
+	result->m[2][3] = a->m[0][3] * b->m[2][0] + a->m[1][3] * b->m[2][1] + a->m[2][3] * b->m[2][2] + a->m[3][3] * b->m[2][3];
 
-	out->m[3][0] = a->m[0][0] * b->m[3][0] + a->m[1][0] * b->m[3][1] + a->m[2][0] * b->m[3][2] + a->m[3][0] * b->m[3][3];
-	out->m[3][1] = a->m[0][1] * b->m[3][0] + a->m[1][1] * b->m[3][1] + a->m[2][1] * b->m[3][2] + a->m[3][1] * b->m[3][3];
-	out->m[3][2] = a->m[0][2] * b->m[3][0] + a->m[1][2] * b->m[3][1] + a->m[2][2] * b->m[3][2] + a->m[3][2] * b->m[3][3];
-	out->m[3][3] = a->m[0][3] * b->m[3][0] + a->m[1][3] * b->m[3][1] + a->m[2][3] * b->m[3][2] + a->m[3][3] * b->m[3][3];
+	result->m[3][0] = a->m[0][0] * b->m[3][0] + a->m[1][0] * b->m[3][1] + a->m[2][0] * b->m[3][2] + a->m[3][0] * b->m[3][3];
+	result->m[3][1] = a->m[0][1] * b->m[3][0] + a->m[1][1] * b->m[3][1] + a->m[2][1] * b->m[3][2] + a->m[3][1] * b->m[3][3];
+	result->m[3][2] = a->m[0][2] * b->m[3][0] + a->m[1][2] * b->m[3][1] + a->m[2][2] * b->m[3][2] + a->m[3][2] * b->m[3][3];
+	result->m[3][3] = a->m[0][3] * b->m[3][0] + a->m[1][3] * b->m[3][1] + a->m[2][3] * b->m[3][2] + a->m[3][3] * b->m[3][3];
 }
 
 static void Matrix4x4f_Transpose( Matrix4x4f_t * result, const Matrix4x4f_t * src )
@@ -1963,11 +1979,11 @@ static void Matrix4x4f_Transpose( Matrix4x4f_t * result, const Matrix4x4f_t * sr
 }
 
 // Returns a 3x3 minor of a 4x4 matrix.
-static float Matrix4x4f_Minor( const Matrix4x4f_t * src, int r0, int r1, int r2, int c0, int c1, int c2 )
+static float Matrix4x4f_Minor( const Matrix4x4f_t * matrix, int r0, int r1, int r2, int c0, int c1, int c2 )
 {
-	return	src->m[r0][c0] * ( src->m[r1][c1] * src->m[r2][c2] - src->m[r2][c1] * src->m[r1][c2] ) -
-			src->m[r0][c1] * ( src->m[r1][c0] * src->m[r2][c2] - src->m[r2][c0] * src->m[r1][c2] ) +
-			src->m[r0][c2] * ( src->m[r1][c0] * src->m[r2][c1] - src->m[r2][c0] * src->m[r1][c1] );
+	return	matrix->m[r0][c0] * ( matrix->m[r1][c1] * matrix->m[r2][c2] - matrix->m[r2][c1] * matrix->m[r1][c2] ) -
+			matrix->m[r0][c1] * ( matrix->m[r1][c0] * matrix->m[r2][c2] - matrix->m[r2][c0] * matrix->m[r1][c2] ) +
+			matrix->m[r0][c2] * ( matrix->m[r1][c0] * matrix->m[r2][c1] - matrix->m[r2][c0] * matrix->m[r1][c1] );
 }
  
 // Calculates the inverse of a 4x4 matrix.
@@ -2017,27 +2033,27 @@ static void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4
 	result->m[3][3] = 1.0f;
 }
 
-// Creates an identity matrix.
-static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * matrix )
+// Creates an identity result.
+static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * result )
 {
-	matrix->m[0][0] = 1.0f; matrix->m[0][1] = 0.0f; matrix->m[0][2] = 0.0f; matrix->m[0][3] = 0.0f;
-	matrix->m[1][0] = 0.0f; matrix->m[1][1] = 1.0f; matrix->m[1][2] = 0.0f; matrix->m[1][3] = 0.0f;
-	matrix->m[2][0] = 0.0f; matrix->m[2][1] = 0.0f; matrix->m[2][2] = 1.0f; matrix->m[2][3] = 0.0f;
-	matrix->m[3][0] = 0.0f; matrix->m[3][1] = 0.0f; matrix->m[3][2] = 0.0f; matrix->m[3][3] = 1.0f;
+	result->m[0][0] = 1.0f; result->m[0][1] = 0.0f; result->m[0][2] = 0.0f; result->m[0][3] = 0.0f;
+	result->m[1][0] = 0.0f; result->m[1][1] = 1.0f; result->m[1][2] = 0.0f; result->m[1][3] = 0.0f;
+	result->m[2][0] = 0.0f; result->m[2][1] = 0.0f; result->m[2][2] = 1.0f; result->m[2][3] = 0.0f;
+	result->m[3][0] = 0.0f; result->m[3][1] = 0.0f; result->m[3][2] = 0.0f; result->m[3][3] = 1.0f;
 }
 
-// Creates a translation matrix.
-static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * matrix, const float x, const float y, const float z )
+// Creates a translation result.
+static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * result, const float x, const float y, const float z )
 {
-	matrix->m[0][0] = 1.0f; matrix->m[0][1] = 0.0f; matrix->m[0][2] = 0.0f; matrix->m[0][3] = 0.0f;
-	matrix->m[1][0] = 0.0f; matrix->m[1][1] = 1.0f; matrix->m[1][2] = 0.0f; matrix->m[1][3] = 0.0f;
-	matrix->m[2][0] = 0.0f; matrix->m[2][1] = 0.0f; matrix->m[2][2] = 1.0f; matrix->m[2][3] = 0.0f;
-	matrix->m[3][0] =    x; matrix->m[3][1] =    y; matrix->m[3][2] =    z; matrix->m[3][3] = 1.0f;
+	result->m[0][0] = 1.0f; result->m[0][1] = 0.0f; result->m[0][2] = 0.0f; result->m[0][3] = 0.0f;
+	result->m[1][0] = 0.0f; result->m[1][1] = 1.0f; result->m[1][2] = 0.0f; result->m[1][3] = 0.0f;
+	result->m[2][0] = 0.0f; result->m[2][1] = 0.0f; result->m[2][2] = 1.0f; result->m[2][3] = 0.0f;
+	result->m[3][0] =    x; result->m[3][1] =    y; result->m[3][2] =    z; result->m[3][3] = 1.0f;
 }
 
-// Creates a rotation matrix.
+// Creates a rotation result.
 // If -Z=forward, +Y=up, +X=right, then degreesX=pitch, degreesY=yaw, degreesZ=roll.
-static void Matrix4x4f_CreateRotation( Matrix4x4f_t * matrix, const float degreesX, const float degreesY, const float degreesZ )
+static void Matrix4x4f_CreateRotation( Matrix4x4f_t * result, const float degreesX, const float degreesY, const float degreesZ )
 {
 	const float sinX = sinf( degreesX * ( MATH_PI / 180.0f ) );
 	const float cosX = cosf( degreesX * ( MATH_PI / 180.0f ) );
@@ -2068,34 +2084,34 @@ static void Matrix4x4f_CreateRotation( Matrix4x4f_t * matrix, const float degree
 	} };
 	Matrix4x4f_t rotationXY;
 	Matrix4x4f_Multiply( &rotationXY, &rotationY, &rotationX );
-	Matrix4x4f_Multiply( matrix, &rotationZ, &rotationXY );
+	Matrix4x4f_Multiply( result, &rotationZ, &rotationXY );
 }
 
-// Creates a scale matrix.
-static void Matrix4x4f_CreateScale( Matrix4x4f_t * matrix, const float x, const float y, const float z )
+// Creates a scale result.
+static void Matrix4x4f_CreateScale( Matrix4x4f_t * result, const float x, const float y, const float z )
 {
-	matrix->m[0][0] = x;
-	matrix->m[0][1] = 0.0f;
-	matrix->m[0][2] = 0.0f;
-	matrix->m[0][3] = 0.0f;
+	result->m[0][0] = x;
+	result->m[0][1] = 0.0f;
+	result->m[0][2] = 0.0f;
+	result->m[0][3] = 0.0f;
 
-	matrix->m[1][0] = 0.0f;
-	matrix->m[1][1] = y;
-	matrix->m[1][2] = 0.0f;
-	matrix->m[1][3] = 0.0f;
+	result->m[1][0] = 0.0f;
+	result->m[1][1] = y;
+	result->m[1][2] = 0.0f;
+	result->m[1][3] = 0.0f;
 
-	matrix->m[2][0] = 0.0f;
-	matrix->m[2][1] = 0.0f;
-	matrix->m[2][2] = z;
-	matrix->m[2][3] = 0.0f;
+	result->m[2][0] = 0.0f;
+	result->m[2][1] = 0.0f;
+	result->m[2][2] = z;
+	result->m[2][3] = 0.0f;
 
-	matrix->m[3][0] = 0.0f;
-	matrix->m[3][1] = 0.0f;
-	matrix->m[3][2] = 0.0f;
-	matrix->m[3][3] = 1.0f;
+	result->m[3][0] = 0.0f;
+	result->m[3][1] = 0.0f;
+	result->m[3][2] = 0.0f;
+	result->m[3][3] = 1.0f;
 }
 
-static void Matrix4x4f_CreateFromQuaternion( Matrix4x4f_t * dest, const Quatf_t * quat )
+static void Matrix4x4f_CreateFromQuaternion( Matrix4x4f_t * result, const Quatf_t * quat )
 {
 	const float x2 = quat->x + quat->x;
 	const float y2 = quat->y + quat->y;
@@ -2112,51 +2128,53 @@ static void Matrix4x4f_CreateFromQuaternion( Matrix4x4f_t * dest, const Quatf_t 
 	const float xz2 = quat->x * z2;
 	const float wy2 = quat->w * y2;
 
-	dest->m[0][0] = 1.0f - yy2 - zz2;
-	dest->m[0][1] = xy2 + wz2;
-	dest->m[0][2] = xz2 - wy2;
-	dest->m[0][3] = 0.0f;
+	result->m[0][0] = 1.0f - yy2 - zz2;
+	result->m[0][1] = xy2 + wz2;
+	result->m[0][2] = xz2 - wy2;
+	result->m[0][3] = 0.0f;
 
-	dest->m[1][0] = xy2 - wz2;
-	dest->m[1][1] = 1.0f - xx2 - zz2;
-	dest->m[1][2] = yz2 + wx2;
-	dest->m[1][3] = 0.0f;
+	result->m[1][0] = xy2 - wz2;
+	result->m[1][1] = 1.0f - xx2 - zz2;
+	result->m[1][2] = yz2 + wx2;
+	result->m[1][3] = 0.0f;
 
-	dest->m[2][0] = xz2 + wy2;
-	dest->m[2][1] = yz2 - wx2;
-	dest->m[2][2] = 1.0f - xx2 - yy2;
-	dest->m[2][3] = 0.0f;
+	result->m[2][0] = xz2 + wy2;
+	result->m[2][1] = yz2 - wx2;
+	result->m[2][2] = 1.0f - xx2 - yy2;
+	result->m[2][3] = 0.0f;
 
-	dest->m[3][0] = 0.0f;
-	dest->m[3][1] = 0.0f;
-	dest->m[3][2] = 0.0f;
-	dest->m[3][3] = 1.0f;
+	result->m[3][0] = 0.0f;
+	result->m[3][1] = 0.0f;
+	result->m[3][2] = 0.0f;
+	result->m[3][3] = 1.0f;
 }
 
-// Creates a combined scale-rotation-translation matrix.
-static void Matrix4x4f_CreateScaleRotationTranslation( Matrix4x4f_t * matrix, const Vector3f_t * scale, const Quatf_t * rotation, const Vector3f_t * translation )
+// Creates a combined translation(rotation(scale(object))) matrix.
+static void Matrix4x4f_CreateScaleRotationTranslation( Matrix4x4f_t * result, const Vector3f_t * scale, const Quatf_t * rotation, const Vector3f_t * translation )
 {
 	Matrix4x4f_t rotationMatrix;
 	Matrix4x4f_CreateFromQuaternion( &rotationMatrix, rotation );
+
 	Matrix4x4f_t scaleMatrix;
 	Matrix4x4f_CreateScale( &scaleMatrix, scale->x, scale->y, scale->z );
+
 	Matrix4x4f_t translationMatrix;
 	Matrix4x4f_CreateTranslation( &translationMatrix, translation->x, translation->y, translation->z );
 
 	Matrix4x4f_t combinedMatrix;
 	Matrix4x4f_Multiply( &combinedMatrix, &rotationMatrix, &scaleMatrix );
-	Matrix4x4f_Multiply( matrix, &translationMatrix, &combinedMatrix );
+	Matrix4x4f_Multiply( result, &translationMatrix, &combinedMatrix );
 }
 
-// Creates a projection matrix based on the specified dimensions.
-// The projection matrix transforms -Z=forward, +Y=up, +X=right to the appropriate clip space for the graphics API.
+// Creates a projection result based on the specified dimensions.
+// The projection result transforms -Z=forward, +Y=up, +X=right to the appropriate clip space for the graphics API.
 // The far plane is placed at infinity if farZ <= nearZ.
-// An infinite projection matrix is preferred for rasterization because, except for
+// An infinite projection result is preferred for rasterization because, except for
 // things *right* up against the near plane, it always provides better precision:
 //		"Tightening the Precision of Perspective Rendering"
 //		Paul Upchurch, Mathieu Desbrun
 //		Journal of Graphics Tools, Volume 16, Issue 1, 2012
-static void Matrix4x4f_CreateProjection( Matrix4x4f_t * matrix, const float minX, const float maxX,
+static void Matrix4x4f_CreateProjection( Matrix4x4f_t * result, const float minX, const float maxX,
 											float const minY, const float maxY, const float nearZ, const float farZ )
 {
 	const float width = maxX - minX;
@@ -2180,53 +2198,53 @@ static void Matrix4x4f_CreateProjection( Matrix4x4f_t * matrix, const float minX
 	if ( farZ <= nearZ )
 	{
 		// place the far plane at infinity
-		matrix->m[0][0] = 2 * nearZ / width;
-		matrix->m[1][0] = 0;
-		matrix->m[2][0] = ( maxX + minX ) / width;
-		matrix->m[3][0] = 0;
+		result->m[0][0] = 2 * nearZ / width;
+		result->m[1][0] = 0;
+		result->m[2][0] = ( maxX + minX ) / width;
+		result->m[3][0] = 0;
 
-		matrix->m[0][1] = 0;
-		matrix->m[1][1] = 2 * nearZ / height;
-		matrix->m[2][1] = ( maxY + minY ) / height;
-		matrix->m[3][1] = 0;
+		result->m[0][1] = 0;
+		result->m[1][1] = 2 * nearZ / height;
+		result->m[2][1] = ( maxY + minY ) / height;
+		result->m[3][1] = 0;
 
-		matrix->m[0][2] = 0;
-		matrix->m[1][2] = 0;
-		matrix->m[2][2] = -1;
-		matrix->m[3][2] = -( nearZ + offsetZ );
+		result->m[0][2] = 0;
+		result->m[1][2] = 0;
+		result->m[2][2] = -1;
+		result->m[3][2] = -( nearZ + offsetZ );
 
-		matrix->m[0][3] = 0;
-		matrix->m[1][3] = 0;
-		matrix->m[2][3] = -1;
-		matrix->m[3][3] = 0;
+		result->m[0][3] = 0;
+		result->m[1][3] = 0;
+		result->m[2][3] = -1;
+		result->m[3][3] = 0;
 	}
 	else
 	{
 		// normal projection
-		matrix->m[0][0] = 2 * nearZ / width;
-		matrix->m[1][0] = 0;
-		matrix->m[2][0] = ( maxX + minX ) / width;
-		matrix->m[3][0] = 0;
+		result->m[0][0] = 2 * nearZ / width;
+		result->m[1][0] = 0;
+		result->m[2][0] = ( maxX + minX ) / width;
+		result->m[3][0] = 0;
 
-		matrix->m[0][1] = 0;
-		matrix->m[1][1] = 2 * nearZ / height;
-		matrix->m[2][1] = ( maxY + minY ) / height;
-		matrix->m[3][1] = 0;
+		result->m[0][1] = 0;
+		result->m[1][1] = 2 * nearZ / height;
+		result->m[2][1] = ( maxY + minY ) / height;
+		result->m[3][1] = 0;
 
-		matrix->m[0][2] = 0;
-		matrix->m[1][2] = 0;
-		matrix->m[2][2] = -( farZ + offsetZ ) / ( farZ - nearZ );
-		matrix->m[3][2] = -( farZ * ( nearZ + offsetZ ) ) / ( farZ - nearZ );
+		result->m[0][2] = 0;
+		result->m[1][2] = 0;
+		result->m[2][2] = -( farZ + offsetZ ) / ( farZ - nearZ );
+		result->m[3][2] = -( farZ * ( nearZ + offsetZ ) ) / ( farZ - nearZ );
 
-		matrix->m[0][3] = 0;
-		matrix->m[1][3] = 0;
-		matrix->m[2][3] = -1;
-		matrix->m[3][3] = 0;
+		result->m[0][3] = 0;
+		result->m[1][3] = 0;
+		result->m[2][3] = -1;
+		result->m[3][3] = 0;
 	}
 }
 
-// Creates a projection matrix based on the specified FOV.
-static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float fovDegreesX, const float fovDegreesY,
+// Creates a projection result based on the specified FOV.
+static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * result, const float fovDegreesX, const float fovDegreesY,
 												const float offsetX, const float offsetY, const float nearZ, const float farZ )
 {
 	const float halfWidth = nearZ * tanf( fovDegreesX * ( 0.5f * MATH_PI / 180.0f ) );
@@ -2238,7 +2256,160 @@ static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float f
 	const float minY = offsetY - halfHeight;
 	const float maxY = offsetY + halfHeight;
 
-	Matrix4x4f_CreateProjection( matrix, minX, maxX, minY, maxY, nearZ, farZ );
+	Matrix4x4f_CreateProjection( result, minX, maxX, minY, maxY, nearZ, farZ );
+}
+
+// Returns true if the given matrix is affine.
+static bool Matrix4x4f_IsAffine( const Matrix4x4f_t * matrix, const float epsilon )
+{
+	return	fabsf( matrix->m[0][3] ) <= epsilon &&
+			fabsf( matrix->m[1][3] ) <= epsilon &&
+			fabsf( matrix->m[2][3] ) <= epsilon &&
+			fabsf( matrix->m[3][3] - 1.0f ) <= epsilon;
+}
+
+// Returns true if the given matrix is orthogonal.
+static bool Matrix4x4f_IsOrthogonal( const Matrix4x4f_t * matrix, const float epsilon )
+{
+	for ( int i = 0; i < 3; i++ )
+	{
+		for ( int j = 0; j < 3; j++ )
+		{
+			if ( i != j )
+			{
+				if ( fabsf( matrix->m[i][0] * matrix->m[j][0] + matrix->m[i][1] * matrix->m[j][1] + matrix->m[i][2] * matrix->m[j][2] ) > epsilon )
+				{
+					return false;
+				}
+				if ( fabsf( matrix->m[0][i] * matrix->m[0][j] + matrix->m[1][i] * matrix->m[1][j] + matrix->m[2][i] * matrix->m[2][j] ) > epsilon )
+				{
+					return false;
+				}
+			}
+		}
+	}
+	return true;
+}
+
+// Returns true if the given matrix is orthonormal.
+static bool Matrix4x4f_IsOrthonormal( const Matrix4x4f_t * matrix, const float epsilon )
+{
+	for ( int i = 0; i < 3; i++ )
+	{
+		for ( int j = 0; j < 3; j++ )
+		{
+			const float kd = ( i == j ) ? 1.0f : 0.0f;	// Kronecker delta
+			if ( fabsf( kd - ( matrix->m[i][0] * matrix->m[j][0] + matrix->m[i][1] * matrix->m[j][1] + matrix->m[i][2] * matrix->m[j][2] ) ) > epsilon )
+			{
+				return false;
+			}
+			if ( fabsf( kd - ( matrix->m[0][i] * matrix->m[0][j] + matrix->m[1][i] * matrix->m[1][j] + matrix->m[2][i] * matrix->m[2][j] ) ) > epsilon )
+			{
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+// Returns true if the given matrix is homogeneous.
+static bool Matrix4x4f_IsHomogeneous( const Matrix4x4f_t * matrix, const float epsilon )
+{
+	return Matrix4x4f_IsAffine( matrix, epsilon ) && Matrix4x4f_IsOrthonormal( matrix, epsilon );
+}
+
+// Get the translation from a combined translation(rotation(scale(object))) matrix.
+static void Matrix4x4f_GetTranslation( Vector3f_t * result, const Matrix4x4f_t * src )
+{
+	assert( Matrix4x4f_IsAffine( src, 1e-4f ) );
+	assert( Matrix4x4f_IsOrthogonal( src, 1e-4f ) );
+
+	result->x = src->m[3][0];
+	result->y = src->m[3][1];
+	result->z = src->m[3][2];
+}
+
+// Get the rotation from a combined translation(rotation(scale(object))) matrix.
+static void Matrix4x4f_GetRotation( Quatf_t * result, const Matrix4x4f_t * src )
+{
+	assert( Matrix4x4f_IsAffine( src, 1e-4f ) );
+	assert( Matrix4x4f_IsOrthogonal( src, 1e-4f ) );
+
+	const float scaleX = RcpSqrt( src->m[0][0] * src->m[0][0] + src->m[0][1] * src->m[0][1] + src->m[0][2] * src->m[0][2] );
+	const float scaleY = RcpSqrt( src->m[1][0] * src->m[1][0] + src->m[1][1] * src->m[1][1] + src->m[1][2] * src->m[1][2] );
+	const float scaleZ = RcpSqrt( src->m[2][0] * src->m[2][0] + src->m[2][1] * src->m[2][1] + src->m[2][2] * src->m[2][2] );
+	const float m[9] =
+	{
+		src->m[0][0] * scaleX, src->m[0][1] * scaleX, src->m[0][2] * scaleX,
+		src->m[1][0] * scaleY, src->m[1][1] * scaleY, src->m[1][2] * scaleY,
+		src->m[2][0] * scaleZ, src->m[2][1] * scaleZ, src->m[2][2] * scaleZ
+	};
+	if ( m[0 * 3 + 0] + m[1 * 3 + 1] + m[2 * 3 + 2] > 0.0f )
+	{
+		float t = + m[0 * 3 + 0] + m[1 * 3 + 1] + m[2 * 3 + 2] + 1.0f;
+		float s = RcpSqrt( t ) * 0.5f;
+		result->w = s * t;
+		result->z = ( m[0 * 3 + 1] - m[1 * 3 + 0] ) * s;
+		result->y = ( m[2 * 3 + 0] - m[0 * 3 + 2] ) * s;
+		result->x = ( m[1 * 3 + 2] - m[2 * 3 + 1] ) * s;
+	}
+	else if ( m[0 * 3 + 0] > m[1 * 3 + 1] && m[0 * 3 + 0] > m[2 * 3 + 2] )
+	{
+		float t = + m[0 * 3 + 0] - m[1 * 3 + 1] - m[2 * 3 + 2] + 1.0f;
+		float s = RcpSqrt( t ) * 0.5f;
+		result->x = s * t;
+		result->y = ( m[0 * 3 + 1] + m[1 * 3 + 0] ) * s; 
+		result->z = ( m[2 * 3 + 0] + m[0 * 3 + 2] ) * s;
+		result->w = ( m[1 * 3 + 2] - m[2 * 3 + 1] ) * s;
+	}
+	else if ( m[1 * 3 + 1] > m[2 * 3 + 2] )
+	{
+		float t = - m[0 * 3 + 0] + m[1 * 3 + 1] - m[2 * 3 + 2] + 1.0f;
+		float s = RcpSqrt( t ) * 0.5f;
+		result->y = s * t;
+		result->x = ( m[0 * 3 + 1] + m[1 * 3 + 0] ) * s;
+		result->w = ( m[2 * 3 + 0] - m[0 * 3 + 2] ) * s;
+		result->z = ( m[1 * 3 + 2] + m[2 * 3 + 1] ) * s;
+	}
+	else
+	{
+		float t = - m[0 * 3 + 0] - m[1 * 3 + 1] + m[2 * 3 + 2] + 1.0f;
+		float s = RcpSqrt( t ) * 0.5f;
+		result->z = s * t;
+		result->w = ( m[0 * 3 + 1] - m[1 * 3 + 0] ) * s;
+		result->x = ( m[2 * 3 + 0] + m[0 * 3 + 2] ) * s;
+		result->y = ( m[1 * 3 + 2] + m[2 * 3 + 1] ) * s;
+	}
+}
+
+// Get the scale from a combined translation(rotation(scale(object))) matrix.
+static void Matrix4x4f_GetScale( Vector3f_t * result, const Matrix4x4f_t * src )
+{
+	assert( Matrix4x4f_IsAffine( src, 1e-4f ) );
+	assert( Matrix4x4f_IsOrthogonal( src, 1e-4f ) );
+
+	result->x = sqrtf( src->m[0][0] * src->m[0][0] + src->m[0][1] * src->m[0][1] + src->m[0][2] * src->m[0][2] );
+	result->y = sqrtf( src->m[1][0] * src->m[1][0] + src->m[1][1] * src->m[1][1] + src->m[1][2] * src->m[1][2] );
+	result->z = sqrtf( src->m[2][0] * src->m[2][0] + src->m[2][1] * src->m[2][1] + src->m[2][2] * src->m[2][2] );
+}
+
+// Transforms a 3D vector.
+static void Matrix4x4f_TransformVector3f( Vector3f_t * result, const Matrix4x4f_t * m, const Vector3f_t * v )
+{
+	const float w = m->m[0][3] * v->x + m->m[1][3] * v->y + m->m[2][3] * v->z + m->m[3][3];
+	const float rcpW = 1.0f / w;
+	result->x = ( m->m[0][0] * v->x + m->m[1][0] * v->y + m->m[2][0] * v->z + m->m[3][0] ) * rcpW;
+	result->y = ( m->m[0][1] * v->x + m->m[1][1] * v->y + m->m[2][1] * v->z + m->m[3][1] ) * rcpW;
+	result->z = ( m->m[0][2] * v->x + m->m[1][2] * v->y + m->m[2][2] * v->z + m->m[3][2] ) * rcpW;
+}
+
+// Transforms a 4D vector.
+static void Matrix4x4f_TransformVector4f( Vector4f_t * result, const Matrix4x4f_t * m, const Vector4f_t * v )
+{
+	result->x = m->m[0][0] * v->x + m->m[1][0] * v->y + m->m[2][0] * v->z + m->m[3][0];
+	result->y = m->m[0][1] * v->x + m->m[1][1] * v->y + m->m[2][1] * v->z + m->m[3][1];
+	result->z = m->m[0][2] * v->x + m->m[1][2] * v->y + m->m[2][2] * v->z + m->m[3][2];
+	result->w = m->m[0][3] * v->x + m->m[1][3] * v->y + m->m[2][3] * v->z + m->m[3][3];
 }
 
 /*
@@ -4015,6 +4186,7 @@ static void GpuWindow_SwapBuffers( GpuWindow_t * window );
 static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window );
 static bool GpuWindow_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
 static bool GpuWindow_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button );
+static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
 
 ================================================================================================================================
 */
@@ -4097,33 +4269,42 @@ typedef struct
 
 typedef enum
 {
-	KEY_ESCAPE		= 0x1B,
-	KEY_A			= 0x61,
-	KEY_B			= 0x62,
-	KEY_C			= 0x63,
-	KEY_D			= 0x64,
-	KEY_E			= 0x65,
-	KEY_F			= 0x66,
-	KEY_G			= 0x67,
-	KEY_H			= 0x68,
-	KEY_I			= 0x69,
-	KEY_J			= 0x6A,
-	KEY_K			= 0x6B,
-	KEY_L			= 0x6C,
-	KEY_M			= 0x6D,
-	KEY_N			= 0x6E,
-	KEY_O			= 0x6F,
-	KEY_P			= 0x70,
-	KEY_Q			= 0x71,
-	KEY_R			= 0x72,
-	KEY_S			= 0x73,
-	KEY_T			= 0x74,
-	KEY_U			= 0x75,
-	KEY_V			= 0x76,
-	KEY_W			= 0x77,
-	KEY_X			= 0x78,
-	KEY_Y			= 0x79,
-	KEY_Z			= 0x7A
+	KEY_A				= 0x41,
+	KEY_B				= 0x42,
+	KEY_C				= 0x43,
+	KEY_D				= 0x44,
+	KEY_E				= 0x45,
+	KEY_F				= 0x46,
+	KEY_G				= 0x47,
+	KEY_H				= 0x48,
+	KEY_I				= 0x49,
+	KEY_J				= 0x4A,
+	KEY_K				= 0x4B,
+	KEY_L				= 0x4C,
+	KEY_M				= 0x4D,
+	KEY_N				= 0x4E,
+	KEY_O				= 0x4F,
+	KEY_P				= 0x50,
+	KEY_Q				= 0x51,
+	KEY_R				= 0x52,
+	KEY_S				= 0x53,
+	KEY_T				= 0x54,
+	KEY_U				= 0x55,
+	KEY_V				= 0x56,
+	KEY_W				= 0x57,
+	KEY_X				= 0x58,
+	KEY_Y				= 0x59,
+	KEY_Z				= 0x5A,
+	KEY_RETURN			= VK_RETURN,
+	KEY_TAB				= VK_TAB,
+	KEY_ESCAPE			= VK_ESCAPE,
+	KEY_SHIFT_LEFT		= VK_SHIFT,
+	KEY_CTRL_LEFT		= VK_CONTROL,
+	KEY_ALT_LEFT		= 0x00,
+	KEY_CURSOR_UP		= VK_UP,
+	KEY_CURSOR_DOWN		= VK_DOWN,
+	KEY_CURSOR_LEFT		= VK_LEFT,
+	KEY_CURSOR_RIGHT	= VK_RIGHT
 } KeyboardKey_t;
 
 typedef enum
@@ -4164,13 +4345,24 @@ LRESULT APIENTRY WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 			PostQuitMessage( 0 );
 			return 0;
 		}
-		case WM_CHAR:
+		case WM_KEYDOWN:
 		{
 			if ( window != NULL )
 			{
 				if ( (int)wParam >= 0 && (int)wParam < 256 )
 				{
 					window->keyInput[(int)wParam] = true;
+				}
+			}
+			break;
+		}
+		case WM_KEYUP:
+		{
+			if ( window != NULL )
+			{
+				if ( (int)wParam == VK_SHIFT || (int)wParam == VK_CONTROL )
+				{
+					window->keyInput[(int)wParam] = false;
 				}
 			}
 			break;
@@ -4396,6 +4588,11 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 		}
 		else
 		{
+			if ( msg.message != 15 && msg.message != 274 && msg.message != 275 )
+			{
+				int i = 0;
+				i++;
+			}
 			TranslateMessage( &msg );
 			DispatchMessage( &msg );
 		}
@@ -4417,7 +4614,6 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 typedef enum
 {
-	KEY_ESCAPE			= 0x35,
 	KEY_A				= 0x00,
 	KEY_B				= 0x0B,
 	KEY_C				= 0x08,
@@ -4444,6 +4640,16 @@ typedef enum
 	KEY_X				= 0x07,
 	KEY_Y				= 0x10,
 	KEY_Z				= 0x06,
+	KEY_RETURN			= 0x24,
+	KEY_TAB				= 0x30,
+	KEY_ESCAPE			= 0x35,
+	KEY_SHIFT_LEFT		= 0x38,
+	KEY_CTRL_LEFT		= 0x3B,
+	KEY_ALT_LEFT		= 0x3A,
+	KEY_CURSOR_UP		= 0x7E,
+	KEY_CURSOR_DOWN		= 0x7D,
+	KEY_CURSOR_LEFT		= 0x7B,
+	KEY_CURSOR_RIGHT	= 0x7C
 } KeyboardKey_t;
 
 typedef enum
@@ -4557,7 +4763,6 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 typedef enum
 {
-	KEY_ESCAPE			= 0x35,
 	KEY_A				= 0x00,
 	KEY_B				= 0x0B,
 	KEY_C				= 0x08,
@@ -4584,6 +4789,16 @@ typedef enum
 	KEY_X				= 0x07,
 	KEY_Y				= 0x10,
 	KEY_Z				= 0x06,
+	KEY_RETURN			= 0x24,
+	KEY_TAB				= 0x30,
+	KEY_ESCAPE			= 0x35,
+	KEY_SHIFT_LEFT		= 0x38,
+	KEY_CTRL_LEFT		= 0x3B,
+	KEY_ALT_LEFT		= 0x3A,
+	KEY_CURSOR_UP		= 0x7E,
+	KEY_CURSOR_DOWN		= 0x7D,
+	KEY_CURSOR_LEFT		= 0x7B,
+	KEY_CURSOR_RIGHT	= 0x7C
 } KeyboardKey_t;
 
 typedef enum
@@ -4851,33 +5066,42 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 typedef enum	// keysym.h
 {
-	KEY_ESCAPE		= ( XK_Escape & 255 ),
-	KEY_A			= XK_a,
-	KEY_B			= XK_b,
-	KEY_C			= XK_c,
-	KEY_D			= XK_d,
-	KEY_E			= XK_e,
-	KEY_F			= XK_f,
-	KEY_G			= XK_g,
-	KEY_H			= XK_h,
-	KEY_I			= XK_i,
-	KEY_J			= XK_j,
-	KEY_K			= XK_k,
-	KEY_L			= XK_l,
-	KEY_M			= XK_m,
-	KEY_N			= XK_n,
-	KEY_O			= XK_o,
-	KEY_P			= XK_p,
-	KEY_Q			= XK_q,
-	KEY_R			= XK_r,
-	KEY_S			= XK_s,
-	KEY_T			= XK_t,
-	KEY_U			= XK_u,
-	KEY_V			= XK_v,
-	KEY_W			= XK_w,
-	KEY_X			= XK_x,
-	KEY_Y			= XK_y,
-	KEY_Z			= XK_z
+	KEY_A				= XK_a,
+	KEY_B				= XK_b,
+	KEY_C				= XK_c,
+	KEY_D				= XK_d,
+	KEY_E				= XK_e,
+	KEY_F				= XK_f,
+	KEY_G				= XK_g,
+	KEY_H				= XK_h,
+	KEY_I				= XK_i,
+	KEY_J				= XK_j,
+	KEY_K				= XK_k,
+	KEY_L				= XK_l,
+	KEY_M				= XK_m,
+	KEY_N				= XK_n,
+	KEY_O				= XK_o,
+	KEY_P				= XK_p,
+	KEY_Q				= XK_q,
+	KEY_R				= XK_r,
+	KEY_S				= XK_s,
+	KEY_T				= XK_t,
+	KEY_U				= XK_u,
+	KEY_V				= XK_v,
+	KEY_W				= XK_w,
+	KEY_X				= XK_x,
+	KEY_Y				= XK_y,
+	KEY_Z				= XK_z,
+	KEY_RETURN			= ( XK_Return & 0xFF ),
+	KEY_TAB				= ( XK_Tab & 0xFF ),
+	KEY_ESCAPE			= ( XK_Escape & 0xFF ),
+	KEY_SHIFT_LEFT		= ( XK_Shift_L & 0xFF ),
+	KEY_CTRL_LEFT		= ( XK_Control_L & 0xFF ),
+	KEY_ALT_LEFT		= ( XK_Alt_L & 0xFF ),
+	KEY_CURSOR_UP		= ( XK_Up & 0xFF ),
+	KEY_CURSOR_DOWN		= ( XK_Down & 0xFF ),
+	KEY_CURSOR_LEFT		= ( XK_Left & 0xFF ),
+	KEY_CURSOR_RIGHT	= ( XK_Right & 0xFF )
 } KeyboardKey_t;
 
 typedef enum
@@ -5490,33 +5714,42 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 typedef enum	// keysym.h
 {
-	KEY_ESCAPE		= ( XK_Escape & 255 ),
-	KEY_A			= XK_a,
-	KEY_B			= XK_b,
-	KEY_C			= XK_c,
-	KEY_D			= XK_d,
-	KEY_E			= XK_e,
-	KEY_F			= XK_f,
-	KEY_G			= XK_g,
-	KEY_H			= XK_h,
-	KEY_I			= XK_i,
-	KEY_J			= XK_j,
-	KEY_K			= XK_k,
-	KEY_L			= XK_l,
-	KEY_M			= XK_m,
-	KEY_N			= XK_n,
-	KEY_O			= XK_o,
-	KEY_P			= XK_p,
-	KEY_Q			= XK_q,
-	KEY_R			= XK_r,
-	KEY_S			= XK_s,
-	KEY_T			= XK_t,
-	KEY_U			= XK_u,
-	KEY_V			= XK_v,
-	KEY_W			= XK_w,
-	KEY_X			= XK_x,
-	KEY_Y			= XK_y,
-	KEY_Z			= XK_z
+	KEY_A				= XK_a,
+	KEY_B				= XK_b,
+	KEY_C				= XK_c,
+	KEY_D				= XK_d,
+	KEY_E				= XK_e,
+	KEY_F				= XK_f,
+	KEY_G				= XK_g,
+	KEY_H				= XK_h,
+	KEY_I				= XK_i,
+	KEY_J				= XK_j,
+	KEY_K				= XK_k,
+	KEY_L				= XK_l,
+	KEY_M				= XK_m,
+	KEY_N				= XK_n,
+	KEY_O				= XK_o,
+	KEY_P				= XK_p,
+	KEY_Q				= XK_q,
+	KEY_R				= XK_r,
+	KEY_S				= XK_s,
+	KEY_T				= XK_t,
+	KEY_U				= XK_u,
+	KEY_V				= XK_v,
+	KEY_W				= XK_w,
+	KEY_X				= XK_x,
+	KEY_Y				= XK_y,
+	KEY_Z				= XK_z,
+	KEY_RETURN			= ( XK_Return & 0xFF ),
+	KEY_TAB				= ( XK_Tab & 0xFF ),
+	KEY_ESCAPE			= ( XK_Escape & 0xFF ),
+	KEY_SHIFT_LEFT		= ( XK_Shift_L & 0xFF ),
+	KEY_CTRL_LEFT		= ( XK_Control_L & 0xFF ),
+	KEY_ALT_LEFT		= ( XK_Alt_L & 0xFF ),
+	KEY_CURSOR_UP		= ( XK_Up & 0xFF ),
+	KEY_CURSOR_DOWN		= ( XK_Down & 0xFF ),
+	KEY_CURSOR_LEFT		= ( XK_Left & 0xFF ),
+	KEY_CURSOR_RIGHT	= ( XK_Right & 0xFF )
 } KeyboardKey_t;
 
 typedef enum
@@ -5968,35 +6201,44 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 #elif defined( OS_ANDROID )
 
-typedef enum
+typedef enum	// https://developer.android.com/ndk/reference/group___input.html
 {
-	KEY_ESCAPE		= AKEYCODE_ESCAPE,
-	KEY_A			= AKEYCODE_A,
-	KEY_B			= AKEYCODE_B,
-	KEY_C			= AKEYCODE_C,
-	KEY_D			= AKEYCODE_D,
-	KEY_E			= AKEYCODE_E,
-	KEY_F			= AKEYCODE_F,
-	KEY_G			= AKEYCODE_G,
-	KEY_H			= AKEYCODE_H,
-	KEY_I			= AKEYCODE_I,
-	KEY_J			= AKEYCODE_J,
-	KEY_K			= AKEYCODE_K,
-	KEY_L			= AKEYCODE_L,
-	KEY_M			= AKEYCODE_M,
-	KEY_N			= AKEYCODE_N,
-	KEY_O			= AKEYCODE_O,
-	KEY_P			= AKEYCODE_P,
-	KEY_Q			= AKEYCODE_Q,
-	KEY_R			= AKEYCODE_R,
-	KEY_S			= AKEYCODE_S,
-	KEY_T			= AKEYCODE_T,
-	KEY_U			= AKEYCODE_U,
-	KEY_V			= AKEYCODE_V,
-	KEY_W			= AKEYCODE_W,
-	KEY_X			= AKEYCODE_X,
-	KEY_Y			= AKEYCODE_Y,
-	KEY_Z			= AKEYCODE_Z
+	KEY_A				= AKEYCODE_A,
+	KEY_B				= AKEYCODE_B,
+	KEY_C				= AKEYCODE_C,
+	KEY_D				= AKEYCODE_D,
+	KEY_E				= AKEYCODE_E,
+	KEY_F				= AKEYCODE_F,
+	KEY_G				= AKEYCODE_G,
+	KEY_H				= AKEYCODE_H,
+	KEY_I				= AKEYCODE_I,
+	KEY_J				= AKEYCODE_J,
+	KEY_K				= AKEYCODE_K,
+	KEY_L				= AKEYCODE_L,
+	KEY_M				= AKEYCODE_M,
+	KEY_N				= AKEYCODE_N,
+	KEY_O				= AKEYCODE_O,
+	KEY_P				= AKEYCODE_P,
+	KEY_Q				= AKEYCODE_Q,
+	KEY_R				= AKEYCODE_R,
+	KEY_S				= AKEYCODE_S,
+	KEY_T				= AKEYCODE_T,
+	KEY_U				= AKEYCODE_U,
+	KEY_V				= AKEYCODE_V,
+	KEY_W				= AKEYCODE_W,
+	KEY_X				= AKEYCODE_X,
+	KEY_Y				= AKEYCODE_Y,
+	KEY_Z				= AKEYCODE_Z,
+	KEY_RETURN			= AKEYCODE_ENTER,
+	KEY_TAB				= AKEYCODE_TAB,
+	KEY_ESCAPE			= AKEYCODE_ESCAPE,
+	KEY_SHIFT_LEFT		= AKEYCODE_SHIFT_LEFT,
+	KEY_CTRL_LEFT		= AKEYCODE_CTRL_LEFT,
+	KEY_ALT_LEFT		= AKEYCODE_ALT_LEFT
+	KEY_CURSOR_UP		= AKEYCODE_DPAD_UP,
+	KEY_CURSOR_DOWN		= AKEYCODE_DPAD_DOWN,
+	KEY_CURSOR_LEFT		= AKEYCODE_DPAD_LEFT,
+	KEY_CURSOR_RIGHT	= AKEYCODE_DPAD_RIGHT
 } KeyboardKey_t;
 
 typedef enum
@@ -6380,6 +6622,11 @@ static bool GpuWindow_ConsumeMouseButton( GpuWindow_t * window, const MouseButto
 		return true;
 	}
 	return false;
+}
+
+static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key )
+{
+	return ( window->keyInput[key] != false );
 }
 
 /*
@@ -10638,7 +10885,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene );
 static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeInMicroseconds );
 static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene );
-static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene );
+static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, GpuWindow_t * window );
 
 ================================================================================================================================
 */
@@ -10792,16 +11039,22 @@ typedef struct GltfModel_t
 	int							surfaceCount;
 } GltfModel_t;
 
-typedef struct GltfAnimation_t
+typedef struct GltfAnimationChannel_t
 {
-	char *						name;
 	char *						nodeName;
 	struct GltfNode_t *			node;
-	int							sampleCount;
-	float *						time;
 	Quatf_t *					rotation;
 	Vector3f_t *				translation;
 	Vector3f_t *				scale;
+} GltfAnimationChannel_t;
+
+typedef struct GltfAnimation_t
+{
+	char *						name;
+	float *						sampleTimes;
+	int							sampleCount;
+	GltfAnimationChannel_t *	channels;
+	int							channelCount;
 } GltfAnimation_t;
 
 typedef struct GltfJoint_t
@@ -10898,6 +11151,8 @@ typedef struct GltfScene_t
 	int							nodeCount;
 	GltfNode_t **				rootNodes;
 	int							rootNodeCount;
+
+	GpuBuffer_t					defaultJointBuffer;
 } GltfScene_t;
 
 #define GLTF_GET_BY_NAME( type, typeCapitalized ) \
@@ -11172,6 +11427,8 @@ static void Gltf_SortNodes( GltfNode_t * nodes, const int nodeCount )
 
 static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scene, const char * fileName, GpuRenderPass_t * renderPass )
 {
+	memset( scene, 0, sizeof( GltfScene_t ) );
+
 	Json_t * rootNode = Json_Create();
 	if ( Json_ReadFromFile( rootNode, fileName, NULL ) )
 	{
@@ -11664,50 +11921,58 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				scene->animations[i].name = Gltf_strdup( Json_GetMemberName( animation ) );
 
 				const Json_t * parameters = Json_GetMemberByName( animation, "parameters" );
+				const Json_t * samplers = Json_GetMemberByName( animation, "samplers" );
 
 				const char * timeAccessor = Json_GetString( Json_GetMemberByName( parameters, "TIME" ), "" );
-				const char * translationAccessor = Json_GetString( Json_GetMemberByName( parameters, "translation" ), "" );
-				const char * rotationAccessor = Json_GetString( Json_GetMemberByName( parameters, "rotation" ), "" );
-				const char * scaleAccessor = Json_GetString( Json_GetMemberByName( parameters, "scale" ), "" );
-
-				const GltfAccessor_t * access_time			= Gltf_GetAccessorByNameAndType( scene, timeAccessor, "SCALAR", GL_FLOAT );
-				const GltfAccessor_t * access_translation	= Gltf_GetAccessorByNameAndType( scene, translationAccessor, "VEC3", GL_FLOAT );
-				const GltfAccessor_t * access_rotation		= Gltf_GetAccessorByNameAndType( scene, rotationAccessor, "VEC4", GL_FLOAT );
-				const GltfAccessor_t * access_scale			= Gltf_GetAccessorByNameAndType( scene, scaleAccessor, "VEC3", GL_FLOAT );
+				const GltfAccessor_t * access_time = Gltf_GetAccessorByNameAndType( scene, timeAccessor, "SCALAR", GL_FLOAT );
 
 				if ( access_time == NULL || access_time->count <= 0 )
 				{
+					assert( false );
 					continue;
 				}
 
 				scene->animations[i].sampleCount = access_time->count;
-				scene->animations[i].time = (float *)Gltf_GetBufferData( access_time );
+				scene->animations[i].sampleTimes = (float *)Gltf_GetBufferData( access_time );
 
 				const Json_t * channels = Json_GetMemberByName( animation, "channels" );
-				const int channelCount = Json_GetMemberCount( channels );
-				for ( int j = 0; j < channelCount; j++ )
+				scene->animations[i].channelCount = Json_GetMemberCount( channels );
+				scene->animations[i].channels = (GltfAnimationChannel_t *) malloc( scene->animations[i].channelCount * sizeof( GltfAnimationChannel_t ) );
+				memset( scene->animations[i].channels, 0, scene->animations[i].channelCount * sizeof( GltfAnimationChannel_t ) );
+				for ( int j = 0; j < scene->animations[i].channelCount; j++ )
 				{
 					const Json_t * channel = Json_GetMemberByIndex( channels, j );
+					const char * samplerName = Json_GetString( Json_GetMemberByName( channel, "sampler" ), "" );
+					const Json_t * sampler = Json_GetMemberByName( samplers, samplerName );
+					const char * outputName = Json_GetString( Json_GetMemberByName( sampler, "output" ), "" );
+
 					const Json_t * target = Json_GetMemberByName( channel, "target" );
 					const char * nodeName = Json_GetString( Json_GetMemberByName( target, "id" ), "" );
-					assert( scene->animations[i].nodeName == NULL || strcmp( scene->animations[i].nodeName, nodeName ) == 0 );
-					if ( scene->animations[i].nodeName == NULL )
+					const char * pathName = Json_GetString( Json_GetMemberByName( target, "path" ), "" );
+
+					scene->animations[i].channels[j].nodeName = Gltf_strdup( nodeName );
+					scene->animations[i].channels[j].node = NULL; // linked up once the nodes are loaded
+
+					if ( strcmp( pathName, "translation" ) == 0 )
 					{
-						scene->animations[i].nodeName = Gltf_strdup( nodeName );
-						scene->animations[i].node = NULL; // linked up once the nodes are loaded
+						const char * accessorName = Json_GetString( Json_GetMemberByName( parameters, outputName ), "" );
+						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC3", GL_FLOAT );
+						assert( accessor != NULL );
+						scene->animations[i].channels[j].translation = (Vector3f_t *) Gltf_GetBufferData( accessor );
 					}
-					const char * path = Json_GetString( Json_GetMemberByName( target, "path" ), "" );
-					if ( strcmp( path, "rotation" ) == 0 )
+					else if ( strcmp( pathName, "rotation" ) == 0 )
 					{
-						scene->animations[i].rotation = (Quatf_t *) Gltf_GetBufferData( access_rotation );
+						const char * accessorName = Json_GetString( Json_GetMemberByName( parameters, outputName ), "" );
+						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC4", GL_FLOAT );
+						assert( accessor != NULL );
+						scene->animations[i].channels[j].rotation = (Quatf_t *) Gltf_GetBufferData( accessor );
 					}
-					else if ( strcmp( path, "translation" ) == 0 )
+					else if ( strcmp( pathName, "scale" ) == 0 )
 					{
-						scene->animations[i].translation = (Vector3f_t *) Gltf_GetBufferData( access_translation );
-					}
-					else if ( strcmp( path, "scale" ) == 0 )
-					{
-						scene->animations[i].scale = (Vector3f_t *) Gltf_GetBufferData( access_scale );
+						const char * accessorName = Json_GetString( Json_GetMemberByName( parameters, outputName ), "" );
+						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC3", GL_FLOAT );
+						assert( accessor != NULL );
+						scene->animations[i].channels[j].scale = (Vector3f_t *) Gltf_GetBufferData( accessor );
 					}
 				}
 			}
@@ -11770,6 +12035,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					scene->cameras[i].perspective.fovDegreesY = ( 180.0f / MATH_PI ) * yfov;
 					scene->cameras[i].perspective.nearZ = Json_GetFloat( Json_GetMemberByName( perspective, "znear" ), 0.0f );
 					scene->cameras[i].perspective.farZ = Json_GetFloat( Json_GetMemberByName( perspective, "zfar" ), 0.0f );
+					assert( scene->cameras[i].perspective.fovDegreesX > 0.0f );
+					assert( scene->cameras[i].perspective.fovDegreesY > 0.0f );
+					assert( scene->cameras[i].perspective.nearZ > 0.0f );
 				}
 				else
 				{
@@ -11778,6 +12046,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					scene->cameras[i].orthographic.magY = Json_GetFloat( Json_GetMemberByName( orthographic, "ymag" ), 0.0f );
 					scene->cameras[i].orthographic.nearZ = Json_GetFloat( Json_GetMemberByName( orthographic, "znear" ), 0.0f );
 					scene->cameras[i].orthographic.farZ = Json_GetFloat( Json_GetMemberByName( orthographic, "zfar" ), 0.0f );
+					assert( scene->cameras[i].orthographic.magX > 0.0f );
+					assert( scene->cameras[i].orthographic.magY > 0.0f );
+					assert( scene->cameras[i].orthographic.nearZ > 0.0f );
 				}
 			}
 		}
@@ -11799,6 +12070,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				if ( Json_IsArray( matrix ) )
 				{
 					Gltf_ParseFloatArray( scene->nodes[i].localTransform.m[0], 16, matrix );
+					Matrix4x4f_GetTranslation( &scene->nodes[i].translation, &scene->nodes[i].localTransform );
+					Matrix4x4f_GetRotation( &scene->nodes[i].rotation, &scene->nodes[i].localTransform );
+					Matrix4x4f_GetScale( &scene->nodes[i].scale, &scene->nodes[i].localTransform );
 				}
 				else
 				{
@@ -11810,8 +12084,8 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				scene->nodes[i].globalTransform = scene->nodes[i].localTransform;	// transformed to global space later
 
 				assert( scene->nodes[i].name[0] != '\0' );
-				//assert( Matrix4x4f_IsAffine( scene->nodes[i].localTransform ) );
-				//assert( Matrix4x4f_IsAffine( scene->nodes[i].globalTransform ) );
+				assert( Matrix4x4f_IsAffine( &scene->nodes[i].localTransform, 1e-4f ) );
+				assert( Matrix4x4f_IsAffine( &scene->nodes[i].globalTransform, 1e-4f ) );
 
 				const Json_t * children = Json_GetMemberByName( node, "children" );
 				scene->nodes[i].childCount = Json_GetMemberCount( children );
@@ -11828,13 +12102,17 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				for ( int m = 0; m < scene->nodes[i].modelCount; m++ )
 				{
 					scene->nodes[i].models[m] = Gltf_GetModelByName( scene, Json_GetString( Json_GetMemberByIndex( meshes, m ), "" ) );
+					assert( scene->nodes[i].models[m] != NULL );
 				}
 			}
 			Gltf_SortNodes( scene->nodes, scene->nodeCount );
 			for ( int i = 0; i < scene->animationCount; i++ )
 			{
-				scene->animations[i].node = Gltf_GetNodeByName( scene, scene->animations[i].nodeName );
-				assert( scene->animations[i].node != NULL );
+				for ( int j = 0; j < scene->animations[i].channelCount; j++ )
+				{
+					scene->animations[i].channels[j].node = Gltf_GetNodeByName( scene, scene->animations[i].channels[j].nodeName );
+					assert( scene->animations[i].channels[j].node != NULL );
+				}
 			}
 			for ( int i = 0; i < scene->skinCount; i++ )
 			{
@@ -11859,6 +12137,15 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		}
 	}
 	Json_Destroy( rootNode );
+
+	const int MAX_JOINTS = 256;
+	Matrix4x4f_t * data = malloc( MAX_JOINTS * sizeof( Matrix4x4f_t ) );
+	for ( int i = 0; i < MAX_JOINTS; i++ )
+	{
+		Matrix4x4f_CreateIdentity( &data[i] );
+	}
+	GpuBuffer_Create( context, &scene->defaultJointBuffer, GPU_BUFFER_TYPE_UNIFORM, MAX_JOINTS * sizeof( Matrix4x4f_t ), data, false );
+	free( data );
 
 	return true;
 }
@@ -11961,8 +12248,12 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 	{
 		for ( int i = 0; i < scene->animationCount; i++ )
 		{
+			for ( int j = 0; j < scene->animations[i].channelCount; j++ )
+			{
+				free( scene->animations[i].channels[j].nodeName );
+			}
 			free( scene->animations[i].name );
-			free( scene->animations[i].nodeName );
+			free( scene->animations[i].channels );
 		}
 		free( scene->animations );
 	}
@@ -12011,44 +12302,45 @@ static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeIn
 	for ( int i = 0; i < scene->animationCount; i++ )
 	{
 		const GltfAnimation_t * animation = &scene->animations[i];
-		if ( animation->time == NULL || animation->sampleCount < 2 )
+		if ( animation->sampleTimes == NULL || animation->sampleCount < 2 )
 		{
 			continue;
 		}
 
-		const float timeInSeconds = fmodf( timeInMicroseconds * 1e-6f, animation->time[animation->sampleCount - 1] - animation->time[0] );
+		const float timeInSeconds = fmodf( timeInMicroseconds * 1e-6f, animation->sampleTimes[animation->sampleCount - 1] - animation->sampleTimes[0] );
 		int frame = 0;
 		for ( ; frame < animation->sampleCount - 1; frame++ )
 		{
-			if ( timeInSeconds >= animation->time[frame] && timeInSeconds < animation->time[frame + 1] )
+			if ( timeInSeconds >= animation->sampleTimes[frame] && timeInSeconds < animation->sampleTimes[frame + 1] )
 			{
 				break;
 			}
 		}
-		const float fraction = ( timeInSeconds - animation->time[frame] ) / ( animation->time[frame + 1] - animation->time[frame] );
+		const float fraction = ( timeInSeconds - animation->sampleTimes[frame] ) / ( animation->sampleTimes[frame + 1] - animation->sampleTimes[frame] );
 
-		Quatf_t rotation = animation->node->rotation;
-		if ( animation->rotation != NULL )
+		for ( int j = 0; j < animation->channelCount; j++ )
 		{
-			Quatf_Lerp( &rotation, &animation->rotation[frame], &animation->rotation[frame + 1], fraction );
+			const GltfAnimationChannel_t * channel = &animation->channels[j];
+			if ( channel->translation != NULL )
+			{
+				Vector3f_Lerp( &channel->node->translation, &channel->translation[frame], &channel->translation[frame + 1], fraction );
+			}
+			if ( channel->rotation != NULL )
+			{
+				Quatf_Lerp( &channel->node->rotation, &channel->rotation[frame], &channel->rotation[frame + 1], fraction );
+			}
+			if ( channel->scale != NULL )
+			{
+				Vector3f_Lerp( &channel->node->scale, &channel->scale[frame], &channel->scale[frame + 1], fraction );
+			}
 		}
-		Vector3f_t translation = animation->node->translation;
-		if ( animation->translation != NULL )
-		{
-			Vector3f_Lerp( &translation, &animation->translation[frame], &animation->translation[frame + 1], fraction );
-		}
-		Vector3f_t scale = animation->node->scale;
-		if ( animation->scale != NULL )
-		{
-			Vector3f_Lerp( &scale, &animation->scale[frame], &animation->scale[frame + 1], fraction );
-		}
-		Matrix4x4f_CreateScaleRotationTranslation( &animation->node->localTransform, &scale, &rotation, &translation );
 	}
 
 	// Transform the node hierarchy into global space.
 	for ( int i = 0; i < scene->nodeCount; i++ )
 	{
 		GltfNode_t * node = &scene->nodes[i];
+		Matrix4x4f_CreateScaleRotationTranslation( &node->localTransform, &node->scale, &node->rotation, &node->translation );
 		if ( node->parent != NULL )
 		{
 			assert( node->parent < node );
@@ -12082,6 +12374,59 @@ static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const G
 	}
 }
 
+static void GltfScene_HandleInput( Matrix4x4f_t * viewMatrix, GpuWindow_t * window )
+{
+	static const float DEGREES_PER_TAP = 15.0f;
+	static const float UNITS_PER_TAP = 0.125f;
+
+	static Vector3f_t viewAngles = { 0.0f, 0.0f, 0.0f };
+	static Vector3f_t viewOffset = { 0.0f, 150.0f, 0.25f };
+	Vector3f_t moveDelta = { 0.0f, 0.0f, 0.0f };
+
+	if ( GpuWindow_CheckKeyboardKey( window, KEY_CTRL_LEFT ) )
+	{
+		if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_UP ) )			{ viewAngles.x += DEGREES_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_DOWN ) )		{ viewAngles.x -= DEGREES_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_LEFT ) )		{ viewAngles.y += DEGREES_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_RIGHT ) )	{ viewAngles.y -= DEGREES_PER_TAP; }
+	}
+	else if ( GpuWindow_CheckKeyboardKey( window, KEY_SHIFT_LEFT ) )
+	{
+		if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_UP ) )			{ moveDelta.y += UNITS_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_DOWN ) )		{ moveDelta.y -= UNITS_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_LEFT ) )		{ moveDelta.x -= UNITS_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_RIGHT ) )	{ moveDelta.x += UNITS_PER_TAP; }
+	}
+	else
+	{
+		if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_UP ) )			{ moveDelta.z -= UNITS_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_DOWN ) )		{ moveDelta.z += UNITS_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_LEFT ) )		{ viewAngles.y += DEGREES_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_RIGHT ) )	{ viewAngles.y -= DEGREES_PER_TAP; }
+	}
+
+	Matrix4x4f_t yawRotation;
+	Matrix4x4f_CreateRotation( &yawRotation, 0.0f, viewAngles.y, 0.0f );
+
+	Vector3f_t rotatedMoveDelta;
+	Matrix4x4f_TransformVector3f( &rotatedMoveDelta, &yawRotation, &moveDelta );
+
+	viewOffset.x += rotatedMoveDelta.x;
+	viewOffset.y += rotatedMoveDelta.y;
+	viewOffset.z += rotatedMoveDelta.z;
+
+	Matrix4x4f_t viewRotation;
+	Matrix4x4f_CreateRotation( &viewRotation, viewAngles.x, viewAngles.y, viewAngles.z );
+
+	Matrix4x4f_t viewRotationTranspose;
+	Matrix4x4f_Transpose( &viewRotationTranspose, &viewRotation );
+
+	Matrix4x4f_t viewTranslation;
+	Matrix4x4f_CreateTranslation( &viewTranslation, -viewOffset.x, -viewOffset.y, -viewOffset.z );
+
+	Matrix4x4f_Multiply( viewMatrix, &viewRotationTranspose, &viewTranslation );
+}
+
 typedef struct
 {
 	Vector4f_t		viewport;
@@ -12100,8 +12445,9 @@ typedef struct
 	Matrix3x3f_t	modelViewInverseTransposeMatrix;
 } GltfBuiltinUniforms_t;
 
-static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene )
+static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, GpuWindow_t * window )
 {
+
 	const GltfNode_t * cameraNode = NULL;
 	const GltfCamera_t * camera = NULL;
 	for ( int i = 0; i < scene->nodeCount; i++ )
@@ -12116,9 +12462,9 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 
 	GltfBuiltinUniforms_t builtin;
 
-	if ( cameraNode != NULL )
+	if ( 0 )//cameraNode != NULL )
 	{
-		builtin.viewMatrix = cameraNode->globalTransform;
+		Matrix4x4f_Invert( &builtin.viewMatrix, &cameraNode->globalTransform );
 		Matrix4x4f_CreateProjectionFov( &builtin.projectionMatrix,
 										camera->perspective.fovDegreesX, camera->perspective.fovDegreesY,
 										0.0f, 0.0f,
@@ -12126,14 +12472,8 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 	}
 	else
 	{
-		Matrix4x4f_t viewRotation;
-		Matrix4x4f_CreateRotation( &viewRotation, -90.0f, 0.0f, 0.0f );
-
-		Matrix4x4f_t viewTranslation;
-		Matrix4x4f_CreateTranslation( &viewTranslation, 0.0f, 0.0f, -100.0f );
-
-		Matrix4x4f_Multiply( &builtin.viewMatrix, &viewTranslation, &viewRotation );
-		Matrix4x4f_CreateProjectionFov( &builtin.projectionMatrix, 90.0f, 60.0f, 0.0f, 0.0f, 0.1f, 0.0f );
+		GltfScene_HandleInput( &builtin.viewMatrix, window );
+		Matrix4x4f_CreateProjectionFov( &builtin.projectionMatrix, 90.0f, 60.0f, 0.0f, 0.0f, 0.01f, 0.0f );
 	}
 
 	builtin.viewport.x = 0.0f;
@@ -12163,6 +12503,7 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 		Matrix3x3f_TransposeFromMatrix4x4f( &builtin.modelViewInverseTransposeMatrix, &builtin.modelViewInverseMatrix );
 
 		const GltfSkin_t * skin = scene->nodes[i].skin;
+		const GpuBuffer_t * jointBuffer = ( skin != NULL ) ? &skin->jointBuffer : &scene->defaultJointBuffer;
 		for ( int m = 0; m < node->modelCount; m++ )
 		{
 			const GltfModel_t * model = node->models[m];
@@ -12195,7 +12536,7 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 						case GLTF_UNIFORM_SEMANTIC_MODELINVERSETRANSPOSE:		GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, index, &builtin.modelInverseTransposeMatrix ); break;
 						case GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSETRANSPOSE:	GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, index, &builtin.modelViewInverseTransposeMatrix ); break;
 						case GLTF_UNIFORM_SEMANTIC_VIEWPORT:					GpuGraphicsCommand_SetParmFloatVector4( &command, index, &builtin.viewport );
-						case GLTF_UNIFORM_SEMANTIC_JOINTMATRIX:					GpuGraphicsCommand_SetParmBufferUniform( &command, index, &skin->jointBuffer );
+						case GLTF_UNIFORM_SEMANTIC_JOINTMATRIX:					GpuGraphicsCommand_SetParmBufferUniform( &command, index, jointBuffer );
 					}
 				}
 
@@ -12233,7 +12574,7 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 				// Make sure all uniforms are set.
 				for ( int u = 0; u < technique->uniformCount; u++ )
 				{
-					assert( command.parmState.parms[i] != NULL );
+					assert( command.parmState.parms[u] != NULL );
 				}
 
 				GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
@@ -15801,7 +16142,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 
 #if USE_GLTF == 1
 	GltfScene_t sceneGltf;
-	GltfScene_CreateFromFile( &window.context, &sceneGltf, "monster.gltf", &renderPass );
+	GltfScene_CreateFromFile( &window.context, &sceneGltf, "models.gltf", &renderPass );
 #endif
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
@@ -15953,7 +16294,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			GpuCommandBuffer_SetViewport( &commandBuffer, &screenRect );
 			GpuCommandBuffer_SetScissor( &commandBuffer, &screenRect );
 #if USE_GLTF == 1
-			GltfScene_Render( &commandBuffer, &sceneGltf );
+			GltfScene_Render( &commandBuffer, &sceneGltf, &window );
 #else
 			Scene_Render( &commandBuffer, &scene );
 #endif
