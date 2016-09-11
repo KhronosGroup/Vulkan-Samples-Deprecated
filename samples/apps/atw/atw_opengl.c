@@ -11066,6 +11066,7 @@ typedef struct GltfJoint_t
 typedef struct GltfSkin_t
 {
 	char *						name;
+	struct GltfNode_t *			parent;
 	Matrix4x4f_t				bindShapeMatrix;
 	Matrix4x4f_t *				inverseBindMatrices;
 	GltfJoint_t *				joints;
@@ -12105,6 +12106,12 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					assert( scene->nodes[i].models[m] != NULL );
 				}
 			}
+		}
+
+		//
+		// Sort the nodes and assign node pointers
+		//
+		{
 			Gltf_SortNodes( scene->nodes, scene->nodeCount );
 			for ( int i = 0; i < scene->animationCount; i++ )
 			{
@@ -12120,6 +12127,13 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				{
 					scene->skins[i].joints[j].node = Gltf_GetNodeByJointName( scene, scene->skins[i].joints[j].name );
 					assert( scene->skins[i].joints[j].node != NULL );
+				}
+			}
+			for ( int i = 0; i < scene->nodeCount; i++ )
+			{
+				if ( scene->nodes[i].skin != NULL )
+				{
+					scene->nodes[i].skin->parent = &scene->nodes[i];
 				}
 			}
 		}
@@ -12138,14 +12152,17 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 	}
 	Json_Destroy( rootNode );
 
-	const int MAX_JOINTS = 256;
-	Matrix4x4f_t * data = malloc( MAX_JOINTS * sizeof( Matrix4x4f_t ) );
-	for ( int i = 0; i < MAX_JOINTS; i++ )
+	// Create a default joint buffer.
 	{
-		Matrix4x4f_CreateIdentity( &data[i] );
+		const int MAX_JOINTS = 256;
+		Matrix4x4f_t * data = malloc( MAX_JOINTS * sizeof( Matrix4x4f_t ) );
+		for ( int i = 0; i < MAX_JOINTS; i++ )
+		{
+			Matrix4x4f_CreateIdentity( &data[i] );
+		}
+		GpuBuffer_Create( context, &scene->defaultJointBuffer, GPU_BUFFER_TYPE_UNIFORM, MAX_JOINTS * sizeof( Matrix4x4f_t ), data, false );
+		free( data );
 	}
-	GpuBuffer_Create( context, &scene->defaultJointBuffer, GPU_BUFFER_TYPE_UNIFORM, MAX_JOINTS * sizeof( Matrix4x4f_t ), data, false );
-	free( data );
 
 	return true;
 }
@@ -12298,7 +12315,7 @@ static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeIn
 {
 	UNUSED_PARM( timeInMicroseconds );
 
-	// Apply animations.
+	// Apply animations to the nodes in the hierarchy.
 	for ( int i = 0; i < scene->animationCount; i++ )
 	{
 		const GltfAnimation_t * animation = &scene->animations[i];
@@ -12360,6 +12377,9 @@ static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const G
 	{
 		GltfSkin_t * skin = &scene->skins[i];
 
+		Matrix4x4f_t inverseGlobalParentTransfom;
+		Matrix4x4f_Invert( &inverseGlobalParentTransfom, &skin->parent->globalTransform );
+
 		Matrix4x4f_t * joints = NULL;
 		GpuBuffer_t * mappedJointBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &skin->jointBuffer, &joints );
 
@@ -12367,7 +12387,11 @@ static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const G
 		{
 			Matrix4x4f_t inverseBindMatrix;
 			Matrix4x4f_Multiply( &inverseBindMatrix, &skin->inverseBindMatrices[j], &skin->bindShapeMatrix );
-			Matrix4x4f_Multiply( &joints[j], &skin->joints[j].node->globalTransform, &inverseBindMatrix );
+
+			Matrix4x4f_t localJointTransform;
+			Matrix4x4f_Multiply( &localJointTransform, &inverseGlobalParentTransfom, &skin->joints[j].node->globalTransform );
+
+			Matrix4x4f_Multiply( &joints[j], &localJointTransform, &inverseBindMatrix );
 			//Matrix4x4f_CreateIdentity( &joints[j] );
 		}
 		GpuCommandBuffer_UnmapBuffer( commandBuffer, &scene->skins[i].jointBuffer, mappedJointBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
@@ -12380,17 +12404,17 @@ static void GltfScene_HandleInput( Matrix4x4f_t * viewMatrix, GpuWindow_t * wind
 	static const float UNITS_PER_TAP = 0.125f;
 
 	static Vector3f_t viewAngles = { 0.0f, 0.0f, 0.0f };
-	static Vector3f_t viewOffset = { 0.0f, 150.0f, 0.25f };
+	static Vector3f_t viewOffset = { 0.0f, 1.5f, 0.25f };
 	Vector3f_t moveDelta = { 0.0f, 0.0f, 0.0f };
 
-	if ( GpuWindow_CheckKeyboardKey( window, KEY_CTRL_LEFT ) )
+	if ( GpuWindow_CheckKeyboardKey( window, KEY_SHIFT_LEFT ) )
 	{
 		if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_UP ) )			{ viewAngles.x += DEGREES_PER_TAP; }
 		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_DOWN ) )		{ viewAngles.x -= DEGREES_PER_TAP; }
 		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_LEFT ) )		{ viewAngles.y += DEGREES_PER_TAP; }
 		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_RIGHT ) )	{ viewAngles.y -= DEGREES_PER_TAP; }
 	}
-	else if ( GpuWindow_CheckKeyboardKey( window, KEY_SHIFT_LEFT ) )
+	else if ( GpuWindow_CheckKeyboardKey( window, KEY_CTRL_LEFT ) )
 	{
 		if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_UP ) )			{ moveDelta.y += UNITS_PER_TAP; }
 		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_DOWN ) )		{ moveDelta.y -= UNITS_PER_TAP; }
