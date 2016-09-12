@@ -1955,6 +1955,7 @@ static void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, 
 	result->m[3][3] = a->m[0][3] * b->m[3][0] + a->m[1][3] * b->m[3][1] + a->m[2][3] * b->m[3][2] + a->m[3][3] * b->m[3][3];
 }
 
+// Creates the transpose of the given matrix.
 static void Matrix4x4f_Transpose( Matrix4x4f_t * result, const Matrix4x4f_t * src )
 {
 	result->m[0][0] = src->m[0][0];
@@ -2033,7 +2034,7 @@ static void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4
 	result->m[3][3] = 1.0f;
 }
 
-// Creates an identity result.
+// Creates an identity matrix.
 static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * result )
 {
 	result->m[0][0] = 1.0f; result->m[0][1] = 0.0f; result->m[0][2] = 0.0f; result->m[0][3] = 0.0f;
@@ -2042,7 +2043,7 @@ static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * result )
 	result->m[3][0] = 0.0f; result->m[3][1] = 0.0f; result->m[3][2] = 0.0f; result->m[3][3] = 1.0f;
 }
 
-// Creates a translation result.
+// Creates a translation matrix.
 static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * result, const float x, const float y, const float z )
 {
 	result->m[0][0] = 1.0f; result->m[0][1] = 0.0f; result->m[0][2] = 0.0f; result->m[0][3] = 0.0f;
@@ -2051,7 +2052,7 @@ static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * result, const float x, 
 	result->m[3][0] =    x; result->m[3][1] =    y; result->m[3][2] =    z; result->m[3][3] = 1.0f;
 }
 
-// Creates a rotation result.
+// Creates a rotation matrix.
 // If -Z=forward, +Y=up, +X=right, then degreesX=pitch, degreesY=yaw, degreesZ=roll.
 static void Matrix4x4f_CreateRotation( Matrix4x4f_t * result, const float degreesX, const float degreesY, const float degreesZ )
 {
@@ -2087,7 +2088,7 @@ static void Matrix4x4f_CreateRotation( Matrix4x4f_t * result, const float degree
 	Matrix4x4f_Multiply( result, &rotationZ, &rotationXY );
 }
 
-// Creates a scale result.
+// Creates a scale matrix.
 static void Matrix4x4f_CreateScale( Matrix4x4f_t * result, const float x, const float y, const float z )
 {
 	result->m[0][0] = x;
@@ -2111,6 +2112,7 @@ static void Matrix4x4f_CreateScale( Matrix4x4f_t * result, const float x, const 
 	result->m[3][3] = 1.0f;
 }
 
+// Creates a matrix from a quaternion.
 static void Matrix4x4f_CreateFromQuaternion( Matrix4x4f_t * result, const Quatf_t * quat )
 {
 	const float x2 = quat->x + quat->x;
@@ -2166,10 +2168,10 @@ static void Matrix4x4f_CreateScaleRotationTranslation( Matrix4x4f_t * result, co
 	Matrix4x4f_Multiply( result, &translationMatrix, &combinedMatrix );
 }
 
-// Creates a projection result based on the specified dimensions.
-// The projection result transforms -Z=forward, +Y=up, +X=right to the appropriate clip space for the graphics API.
+// Creates a projection matrix based on the specified dimensions.
+// The projection matrix transforms -Z=forward, +Y=up, +X=right to the appropriate clip space for the graphics API.
 // The far plane is placed at infinity if farZ <= nearZ.
-// An infinite projection result is preferred for rasterization because, except for
+// An infinite projection matrix is preferred for rasterization because, except for
 // things *right* up against the near plane, it always provides better precision:
 //		"Tightening the Precision of Perspective Rendering"
 //		Paul Upchurch, Mathieu Desbrun
@@ -2243,7 +2245,7 @@ static void Matrix4x4f_CreateProjection( Matrix4x4f_t * result, const float minX
 	}
 }
 
-// Creates a projection result based on the specified FOV.
+// Creates a projection matrix based on the specified FOV.
 static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * result, const float fovDegreesX, const float fovDegreesY,
 												const float offsetX, const float offsetY, const float nearZ, const float farZ )
 {
@@ -4588,11 +4590,6 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 		}
 		else
 		{
-			if ( msg.message != 15 && msg.message != 274 && msg.message != 275 )
-			{
-				int i = 0;
-				i++;
-			}
 			TranslateMessage( &msg );
 			DispatchMessage( &msg );
 		}
@@ -7516,6 +7513,30 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 	return success;
 }
 
+static bool GpuTexture_CreateFromSwapChain( GpuContext_t * context, GpuTexture_t * texture, const GpuWindow_t * window, int index )
+{
+	UNUSED_PARM( context );
+	UNUSED_PARM( index );
+
+	memset( texture, 0, sizeof( GpuTexture_t ) );
+
+	texture->width = window->windowWidth;
+	texture->height = window->windowHeight;
+	texture->depth = 1;
+	texture->layerCount = 1;
+	texture->mipCount = 1;
+	texture->sampleCount = GPU_SAMPLE_COUNT_1;
+	texture->usage = GPU_TEXTURE_USAGE_UNDEFINED;
+	texture->wrapMode = GPU_TEXTURE_WRAP_MODE_REPEAT;
+	texture->filter = GPU_TEXTURE_FILTER_LINEAR;
+	texture->maxAnisotropy = 1.0f;
+	texture->format = GpuContext_InternalSurfaceColorFormat( window->colorFormat );
+	texture->target = 0;
+	texture->texture = 0;
+
+	return true;
+}
+
 // This KTX loader does not do any conversions. In other words, the format
 // stored in the KTX file must be the same as the glInternaltFormat.
 static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * texture, const char * fileName,
@@ -7638,30 +7659,6 @@ static bool GpuTexture_CreateFromFile( GpuContext_t * context, GpuTexture_t * te
 	free( buffer );
 
 	return success;
-}
-
-static bool GpuTexture_CreateFromSwapChain( GpuContext_t * context, GpuTexture_t * texture, const GpuWindow_t * window, int index )
-{
-	UNUSED_PARM( context );
-	UNUSED_PARM( index );
-
-	memset( texture, 0, sizeof( GpuTexture_t ) );
-
-	texture->width = window->windowWidth;
-	texture->height = window->windowHeight;
-	texture->depth = 1;
-	texture->layerCount = 1;
-	texture->mipCount = 1;
-	texture->sampleCount = GPU_SAMPLE_COUNT_1;
-	texture->usage = GPU_TEXTURE_USAGE_UNDEFINED;
-	texture->wrapMode = GPU_TEXTURE_WRAP_MODE_REPEAT;
-	texture->filter = GPU_TEXTURE_FILTER_LINEAR;
-	texture->maxAnisotropy = 1.0f;
-	texture->format = GpuContext_InternalSurfaceColorFormat( window->colorFormat );
-	texture->target = 0;
-	texture->texture = 0;
-
-	return true;
 }
 
 static void GpuTexture_Destroy( GpuContext_t * context, GpuTexture_t * texture )
@@ -7926,7 +7923,7 @@ static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays
 /*
 ================================================================================================================================
 
-GPU default vertex layout.
+GPU default vertex attribute layout.
 
 GpuVertexAttributeFlags_t
 GpuVertexAttributeArrays_t
@@ -11123,32 +11120,46 @@ typedef struct GltfNode_t
 typedef struct GltfScene_t
 {
 	GltfBuffer_t *				buffers;
+	int *						bufferHash;
 	int							bufferCount;
 	GltfBufferView_t *			bufferViews;
+	int *						bufferViewHash;
 	int							bufferViewCount;
 	GltfAccessor_t *			accessors;
+	int *						accessorHash;
 	int							accessorCount;
 	GltfImage_t *				images;
+	int *						imageHash;
 	int							imageCount;
 	GltfTexture_t *				textures;
+	int *						textureHash;
 	int							textureCount;
 	GltfShader_t *				shaders;
+	int *						shaderHash;
 	int							shaderCount;
 	GltfProgram_t *				programs;
+	int *						programHash;
 	int							programCount;
 	GltfTechnique_t *			techniques;
+	int *						techniqueHash;
 	int							techniqueCount;
 	GltfMaterial_t *			materials;
+	int *						materialHash;
 	int							materialCount;
 	GltfSkin_t *				skins;
+	int *						skinHash;
 	int							skinCount;
 	GltfModel_t *				models;
+	int *						modelHash;
 	int							modelCount;
 	GltfAnimation_t *			animations;
+	int *						animationHash;
 	int							animationCount;
 	GltfCamera_t *				cameras;
+	int *						cameraHash;
 	int							cameraCount;
 	GltfNode_t *				nodes;
+	int *						nodeHash;
 	int							nodeCount;
 	GltfNode_t **				rootNodes;
 	int							rootNodeCount;
@@ -11156,10 +11167,35 @@ typedef struct GltfScene_t
 	GpuBuffer_t					defaultJointBuffer;
 } GltfScene_t;
 
-#define GLTF_GET_BY_NAME( type, typeCapitalized ) \
+#define HASH_TABLE_SIZE		256
+
+static unsigned int StringHash( const char * string )
+{
+	unsigned int hash = 5381;
+	for ( int i = 0; string[i] != '\0'; i++ )
+	{
+		hash = ( ( hash << 5 ) - hash ) + string[i];
+	}
+	return ( hash & ( HASH_TABLE_SIZE - 1 ) );
+}
+
+#define GLTF_HASH( type, typeCapitalized ) \
+	static void Gltf_Create##typeCapitalized##Hash( GltfScene_t * scene ) \
+	{ \
+		scene->type##Hash = (int *) malloc( ( HASH_TABLE_SIZE + scene->type##Count ) * sizeof( scene->type##Hash[0] ) ); \
+		memset( scene->type##Hash, -1, ( HASH_TABLE_SIZE + scene->type##Count ) * sizeof( scene->type##Hash[0] ) ); \
+		for ( int i = 0; i < scene->type##Count; i++ ) \
+		{ \
+			const unsigned int hash = StringHash( scene->type##s[i].name ); \
+			scene->type##Hash[HASH_TABLE_SIZE + i] = scene->type##Hash[hash]; \
+			scene->type##Hash[hash] = i; \
+		} \
+	} \
+	\
 	static Gltf##typeCapitalized##_t * Gltf_Get##typeCapitalized##ByName( const GltfScene_t * scene, const char * name ) \
 	{ \
-		for ( int i = 0; i < scene->type##Count; i++ ) \
+		const unsigned int hash = StringHash( name ); \
+		for ( int i = scene->type##Hash[hash]; i >= 0; i = scene->type##Hash[HASH_TABLE_SIZE + i] ) \
 		{ \
 			if ( strcmp( scene->type##s[i].name, name ) == 0 ) \
 			{ \
@@ -11169,31 +11205,29 @@ typedef struct GltfScene_t
 		return NULL; \
 	}
 
-GLTF_GET_BY_NAME( buffer,		Buffer );
-GLTF_GET_BY_NAME( bufferView,	BufferView );
-GLTF_GET_BY_NAME( accessor,		Accessor );
-GLTF_GET_BY_NAME( image,		Image );
-GLTF_GET_BY_NAME( texture,		Texture );
-GLTF_GET_BY_NAME( shader,		Shader );
-GLTF_GET_BY_NAME( program,		Program );
-GLTF_GET_BY_NAME( technique,	Technique );
-GLTF_GET_BY_NAME( material,		Material );
-GLTF_GET_BY_NAME( skin,			Skin );
-GLTF_GET_BY_NAME( model,		Model );
-GLTF_GET_BY_NAME( animation,	Animation );
-GLTF_GET_BY_NAME( camera,		Camera );
-GLTF_GET_BY_NAME( node,			Node );
+GLTF_HASH( buffer,		Buffer );
+GLTF_HASH( bufferView,	BufferView );
+GLTF_HASH( accessor,	Accessor );
+GLTF_HASH( image,		Image );
+GLTF_HASH( texture,		Texture );
+GLTF_HASH( shader,		Shader );
+GLTF_HASH( program,		Program );
+GLTF_HASH( technique,	Technique );
+GLTF_HASH( material,	Material );
+GLTF_HASH( skin,		Skin );
+GLTF_HASH( model,		Model );
+GLTF_HASH( animation,	Animation );
+GLTF_HASH( camera,		Camera );
+GLTF_HASH( node,		Node );
 
 static GltfAccessor_t * Gltf_GetAccessorByNameAndType( const GltfScene_t * scene, const char * name, const char * type, const int componentType )
 {
-	for ( int i = 0; i < scene->accessorCount; i++ )
+	GltfAccessor_t * accessor = Gltf_GetAccessorByName( scene, name );
+	if ( accessor != NULL &&
+			accessor->componentType == componentType &&
+				strcmp( accessor->type, type ) == 0 )
 	{
-		if ( strcmp( scene->accessors[i].name, name ) == 0 &&
-				strcmp( scene->accessors[i].type, type ) == 0 &&
-					scene->accessors[i].componentType == componentType )
-		{
-			return &scene->accessors[i];
-		}
+		return accessor;
 	}
 	return NULL;
 }
@@ -11210,31 +11244,7 @@ static GltfNode_t * Gltf_GetNodeByJointName( const GltfScene_t * scene, const ch
 	return NULL;
 }
 
-static const char * Gltf_GetImageUriByName( const GltfScene_t * scene, const char * name )
-{
-	for ( int i = 0; i < scene->imageCount; i++ )
-	{
-		if ( strcmp( scene->images[i].name, name ) == 0 )
-		{
-			return scene->images[i].uri;
-		}
-	}
-	return "";
-}
-
-static const char * Gltf_GetShaderUriByName( const GltfScene_t * scene, const char * name )
-{
-	for ( int i = 0; i < scene->shaderCount; i++ )
-	{
-		if ( strcmp( scene->shaders[i].name, name ) == 0 )
-		{
-			return scene->shaders[i].uri;
-		}
-	}
-	return "";
-}
-
-char * Gltf_strdup( const char * str )
+static char * Gltf_strdup( const char * str )
 {
 	char * out = (char *)malloc( strlen( str ) + 1 );
 	strcpy( out, str );
@@ -11428,7 +11438,12 @@ static void Gltf_SortNodes( GltfNode_t * nodes, const int nodeCount )
 
 static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scene, const char * fileName, GpuRenderPass_t * renderPass )
 {
+	const Microseconds_t t0 = GetTimeMicroseconds();
+
 	memset( scene, 0, sizeof( GltfScene_t ) );
+
+	// Based on a GL_MAX_UNIFORM_BLOCK_SIZE of 16384 on the ARM Mali.
+	const int MAX_JOINTS = 16384 / sizeof( Matrix4x4f_t );
 
 	Json_t * rootNode = Json_Create();
 	if ( Json_ReadFromFile( rootNode, fileName, NULL ) )
@@ -11445,6 +11460,8 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF buffers
 		//
 		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
 			const Json_t * buffers = Json_GetMemberByName( rootNode, "buffers" );
 			scene->bufferCount = Json_GetMemberCount( buffers );
 			scene->buffers = (GltfBuffer_t *) malloc( scene->bufferCount * sizeof( GltfBuffer_t ) );
@@ -11460,12 +11477,18 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				assert( scene->buffers[i].byteLength != 0 );
 				assert( scene->buffers[i].bufferData != NULL );
 			}
+			Gltf_CreateBufferHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load buffers\n", ( endTime - startTime ) * 1e-6f );
 		}
 
 		//
 		// glTF bufferViews
 		//
 		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
 			const Json_t * bufferViews = Json_GetMemberByName( rootNode, "bufferViews" );
 			scene->bufferViewCount = Json_GetMemberCount( bufferViews );
 			scene->bufferViews = (GltfBufferView_t *) malloc( scene->bufferViewCount * sizeof( GltfBufferView_t ) );
@@ -11483,12 +11506,18 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				assert( scene->bufferViews[i].byteLength != 0 );
 				assert( scene->bufferViews[i].byteOffset + scene->bufferViews[i].byteLength <= scene->bufferViews[i].buffer->byteLength );
 			}
+			Gltf_CreateBufferViewHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load buffer views\n", ( endTime - startTime ) * 1e-6f );
 		}
 
 		//
 		// glTF accessors
 		//
 		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
 			const Json_t * accessors = Json_GetMemberByName( rootNode, "accessors" );
 			scene->accessorCount = Json_GetMemberCount( accessors );
 			scene->accessors = (GltfAccessor_t *) malloc( scene->accessorCount * sizeof( GltfAccessor_t ) );
@@ -11511,12 +11540,18 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				assert( scene->accessors[i].type[0] != '\0' );
 				assert( scene->accessors[i].byteOffset + scene->accessors[i].count * scene->accessors[i].byteStride <= scene->accessors[i].bufferView->byteLength );
 			}
+			Gltf_CreateAccessorHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load accessors\n", ( endTime - startTime ) * 1e-6f );
 		}
 
 		//
 		// glTF images
 		//
 		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
 			const Json_t * images = Json_GetMemberByName( rootNode, "images" );
 			scene->imageCount = Json_GetMemberCount( images );
 			scene->images = (GltfImage_t *) malloc( scene->imageCount * sizeof( GltfImage_t ) );
@@ -11529,12 +11564,18 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				assert( scene->images[i].name[0] != '\0' );
 				assert( scene->images[i].uri[0] != '\0' );
 			}
+			Gltf_CreateImageHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load images\n", ( endTime - startTime ) * 1e-6f );
 		}
 
 		//
 		// glTF textures
 		//
 		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
 			const Json_t * textures = Json_GetMemberByName( rootNode, "textures" );
 			scene->textureCount = Json_GetMemberCount( textures );
 			scene->textures = (GltfTexture_t *) malloc( scene->textureCount * sizeof( GltfTexture_t ) );
@@ -11542,22 +11583,28 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 			{
 				const Json_t * texture = Json_GetMemberByIndex( textures, i );
 				scene->textures[i].name = Gltf_strdup( Json_GetMemberName( texture ) );
-				const char * uri = Gltf_GetImageUriByName( scene, Json_GetString( Json_GetMemberByName( texture, "source" ), "" ) );
+				const GltfImage_t * image = Gltf_GetImageByName( scene, Json_GetString( Json_GetMemberByName( texture, "source" ), "" ) );
 
 				assert( scene->textures[i].name[0] != '\0' );
-				assert( uri[0] != '\0' );
+				assert( image != NULL );
 
 				int dataSizeInBytes = 0;
-				unsigned char * data = Gltf_ReadUri( uri, &dataSizeInBytes );
+				unsigned char * data = Gltf_ReadUri( image->uri, &dataSizeInBytes );
 				GpuTexture_CreateFromKTX( context, &scene->textures[i].texture, scene->textures[i].name, data, dataSizeInBytes );
 				free( data );
 			}
+			Gltf_CreateTextureHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load textures\n", ( endTime - startTime ) * 1e-6f );
 		}
 
 		//
 		// glTF shaders
 		//
 		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
 			const Json_t * shaders = Json_GetMemberByName( rootNode, "shaders" );
 			scene->shaderCount = Json_GetMemberCount( shaders );
 			scene->shaders = (GltfShader_t *) malloc( scene->shaderCount * sizeof( GltfShader_t ) );
@@ -11572,12 +11619,18 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				assert( scene->shaders[i].uri[0] != '\0' );
 				assert( scene->shaders[i].type != 0 );
 			}
+			Gltf_CreateShaderHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load shaders\n", ( endTime - startTime ) * 1e-6f );
 		}
 
 		//
 		// glTF programs
 		//
 		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
 			const Json_t * programs = Json_GetMemberByName( rootNode, "programs" );
 			scene->programCount = Json_GetMemberCount( programs );
 			scene->programs = (GltfProgram_t *) malloc( scene->programCount * sizeof( GltfProgram_t ) );
@@ -11585,23 +11638,33 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 			for ( int i = 0; i < scene->programCount; i++ )
 			{
 				const Json_t * program = Json_GetMemberByIndex( programs, i );
-				const char * vertexShader = Json_GetString( Json_GetMemberByName( program, "vertexShader" ), "" );
-				const char * fragmentShader = Json_GetString( Json_GetMemberByName( program, "fragmentShader" ), "" );
-				const char * vertexShaderUri = Gltf_GetShaderUriByName( scene, vertexShader );
-				const char * fragmentShaderUri = Gltf_GetShaderUriByName( scene, fragmentShader );
+				const char * vertexShaderName = Json_GetString( Json_GetMemberByName( program, "vertexShader" ), "" );
+				const char * fragmentShaderName = Json_GetString( Json_GetMemberByName( program, "fragmentShader" ), "" );
+				const GltfShader_t * vertexShader = Gltf_GetShaderByName( scene, vertexShaderName );
+				const GltfShader_t * fragmentShader = Gltf_GetShaderByName( scene, fragmentShaderName );
+
+				assert( vertexShader != NULL );
+				assert( fragmentShader != NULL );
+
 				scene->programs[i].name = Gltf_strdup( Json_GetMemberName( program ) );
-				scene->programs[i].vertexSource = Gltf_ReadUri( vertexShaderUri, &scene->programs[i].vertexSourceSize );
-				scene->programs[i].fragmentSource = Gltf_ReadUri( fragmentShaderUri, &scene->programs[i].fragmentSourceSize );
+				scene->programs[i].vertexSource = Gltf_ReadUri( vertexShader->uri, &scene->programs[i].vertexSourceSize );
+				scene->programs[i].fragmentSource = Gltf_ReadUri( fragmentShader->uri, &scene->programs[i].fragmentSourceSize );
 				assert( scene->programs[i].name[0] != '\0' );
 				assert( scene->programs[i].vertexSource[0] != '\0' );
 				assert( scene->programs[i].fragmentSource[0] != '\0' );
 			}
+			Gltf_CreateProgramHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load programs\n", ( endTime - startTime ) * 1e-6f );
 		}
 
 		//
 		// glTF techniques
 		//
 		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
 			const Json_t * techniques = Json_GetMemberByName( rootNode, "techniques" );
 			scene->techniqueCount = Json_GetMemberCount( techniques );
 			scene->techniques = (GltfTechnique_t *) malloc( scene->techniqueCount * sizeof( GltfTechnique_t ) );
@@ -11650,6 +11713,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					const Json_t * parameter = Json_GetMemberByName( parameters, parmName );
 					const char * semantic = Json_GetString( Json_GetMemberByName( parameter, "semantic" ), "" );
 					const int type = Json_GetUint16( Json_GetMemberByName( parameter, "type" ), 0 );
+					const int binding = Json_GetUint32( Json_GetMemberByName( parameters, "binding" ), 0 );
 
 					GpuProgramParmType_t parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED;
 					switch ( type )
@@ -11686,7 +11750,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					scene->techniques[i].parms[j].access = GPU_PROGRAM_PARM_ACCESS_READ_ONLY;	// assume all parms are read-only
 					scene->techniques[i].parms[j].index = j;
 					scene->techniques[i].parms[j].name = Gltf_strdup( uniformName );
-					scene->techniques[i].parms[j].binding = 0;
+					scene->techniques[i].parms[j].binding = binding;
 
 					scene->techniques[i].uniforms[j].name = Gltf_strdup( parmName );
 					scene->techniques[i].uniforms[j].semantic = GLTF_UNIFORM_SEMANTIC_NONE;		// default to the material setting the uniform
@@ -11707,12 +11771,18 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 											program->fragmentSource, program->fragmentSourceSize,
 											scene->techniques[i].parms, uniformCount, DefaultVertexAttributeLayout, vertexAttribsFlags );
 			}
+			Gltf_CreateTechniqueHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load techniques\n", ( endTime - startTime ) * 1e-6f );
 		}
 
 		//
 		// glTF materials
 		//
 		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
 			const Json_t * materials = Json_GetMemberByName( rootNode, "materials" );
 			scene->materialCount = Json_GetMemberCount( materials );
 			scene->materials = (GltfMaterial_t *) malloc( scene->materialCount * sizeof( GltfMaterial_t ) );
@@ -11792,12 +11862,18 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					}
 				}
 			}
+			Gltf_CreateMaterialHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load materials\n", ( endTime - startTime ) * 1e-6f );
 		}
 
 		//
 		// glTF meshes
 		//
 		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
 			const Json_t * models = Json_GetMemberByName( rootNode, "meshes" );
 			scene->modelCount = Json_GetMemberCount( models );
 			scene->models = (GltfModel_t *) malloc( scene->modelCount * sizeof( GltfModel_t ) );
@@ -11906,12 +11982,18 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					GpuGraphicsPipeline_Create( context, &surface->pipeline, &pipelineParms );
 				}
 			}
+			Gltf_CreateModelHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load models\n", ( endTime - startTime ) * 1e-6f );
 		}
 
 		//
 		// glTF animations
 		//
 		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
 			const Json_t * animations = Json_GetMemberByName( rootNode, "animations" );
 			scene->animationCount = Json_GetMemberCount( animations );
 			scene->animations = (GltfAnimation_t *) malloc( scene->animationCount * sizeof( GltfAnimation_t ) );
@@ -11977,12 +12059,18 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					}
 				}
 			}
+			Gltf_CreateAnimationHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load animations\n", ( endTime - startTime ) * 1e-6f );
 		}
 
 		//
 		// glTF skins
 		//
 		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
 			const Json_t * skins = Json_GetMemberByName( rootNode, "skins" );
 			scene->skinCount = Json_GetMemberCount( skins );
 			scene->skins = (GltfSkin_t *) malloc( scene->skinCount * sizeof( GltfSkin_t ) );
@@ -12002,6 +12090,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				const Json_t * jointNames = Json_GetMemberByName( skin, "jointNames" );
 				scene->skins[i].jointCount = Json_GetMemberCount( jointNames );
 				scene->skins[i].joints = (GltfJoint_t *) malloc( scene->skins[i].jointCount * sizeof( GltfJoint_t ) );
+				assert( scene->skins[i].jointCount <= MAX_JOINTS );
 				for ( int j = 0; j < scene->skins[i].jointCount; j++ )
 				{
 					scene->skins[i].joints[j].name = Gltf_strdup( Json_GetString( Json_GetMemberByIndex( jointNames, j ), "" ) );
@@ -12011,12 +12100,18 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 
 				GpuBuffer_Create( context, &scene->skins[i].jointBuffer, GPU_BUFFER_TYPE_UNIFORM, scene->skins[i].jointCount * sizeof( Matrix4x4f_t ), NULL, false );
 			}
+			Gltf_CreateSkinHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load skins\n", ( endTime - startTime ) * 1e-6f );
 		}
 
 		//
 		// glTF cameras
 		//
 		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
 			const Json_t * cameras = Json_GetMemberByName( rootNode, "cameras" );
 			scene->cameraCount = Json_GetMemberCount( cameras );
 			scene->cameras = (GltfCamera_t *) malloc( scene->cameraCount * sizeof( GltfCamera_t ) );
@@ -12052,12 +12147,18 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					assert( scene->cameras[i].orthographic.nearZ > 0.0f );
 				}
 			}
+			Gltf_CreateCameraHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load cameras\n", ( endTime - startTime ) * 1e-6f );
 		}
 
 		//
 		// glTF nodes
 		//
 		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
 			const Json_t * nodes = Json_GetMemberByName( rootNode, "nodes" );
 			scene->nodeCount = Json_GetMemberCount( nodes );
 			scene->nodes = (GltfNode_t *) malloc( scene->nodeCount * sizeof( GltfNode_t ) );
@@ -12106,13 +12207,17 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					assert( scene->nodes[i].models[m] != NULL );
 				}
 			}
+			Gltf_SortNodes( scene->nodes, scene->nodeCount );
+			Gltf_CreateNodeHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load nodes\n", ( endTime - startTime ) * 1e-6f );
 		}
 
 		//
-		// Sort the nodes and assign node pointers
+		// Assign node pointers now that the nodes are sorted and the hash is setup.
 		//
 		{
-			Gltf_SortNodes( scene->nodes, scene->nodeCount );
 			for ( int i = 0; i < scene->animationCount; i++ )
 			{
 				for ( int j = 0; j < scene->animations[i].channelCount; j++ )
@@ -12154,7 +12259,6 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 
 	// Create a default joint buffer.
 	{
-		const int MAX_JOINTS = 256;
 		Matrix4x4f_t * data = malloc( MAX_JOINTS * sizeof( Matrix4x4f_t ) );
 		for ( int i = 0; i < MAX_JOINTS; i++ )
 		{
@@ -12163,6 +12267,10 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		GpuBuffer_Create( context, &scene->defaultJointBuffer, GPU_BUFFER_TYPE_UNIFORM, MAX_JOINTS * sizeof( Matrix4x4f_t ), data, false );
 		free( data );
 	}
+
+	const Microseconds_t t1 = GetTimeMicroseconds();
+
+	Print( "%1.3f seconds to load %s\n", ( t1 - t0 ) * 1e-6f, fileName );
 
 	return true;
 }
@@ -12177,6 +12285,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			free( scene->buffers[i].bufferData );
 		}
 		free( scene->buffers );
+		free( scene->bufferHash );
 	}
 	{
 		for ( int i = 0; i < scene->bufferViewCount; i++ )
@@ -12184,6 +12293,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			free( scene->bufferViews[i].name );
 		}
 		free( scene->bufferViews );
+		free( scene->bufferViewHash );
 	}
 	{
 		for ( int i = 0; i < scene->accessorCount; i++ )
@@ -12192,6 +12302,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			free( scene->accessors[i].type );
 		}
 		free( scene->accessors );
+		free( scene->accessorHash );
 	}
 	{
 		for ( int i = 0; i < scene->imageCount; i++ )
@@ -12200,6 +12311,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			free( scene->images[i].uri );
 		}
 		free( scene->images );
+		free( scene->imageHash );
 	}
 	{
 		for ( int i = 0; i < scene->textureCount; i++ )
@@ -12208,6 +12320,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			GpuTexture_Destroy( context, &scene->textures[i].texture );
 		}
 		free( scene->textures );
+		free( scene->textureHash );
 	}
 	{
 		for ( int i = 0; i < scene->shaderCount; i++ )
@@ -12216,6 +12329,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			free( scene->shaders[i].uri );
 		}
 		free( scene->shaders );
+		free( scene->shaderHash );
 	}
 	{
 		for ( int i = 0; i < scene->programCount; i++ )
@@ -12225,6 +12339,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			free( scene->programs[i].fragmentSource );
 		}
 		free( scene->programs );
+		free( scene->programHash );
 	}
 	{
 		for ( int i = 0; i < scene->techniqueCount; i++ )
@@ -12240,6 +12355,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			GpuGraphicsProgram_Destroy( context, &scene->techniques[i].program );
 		}
 		free( scene->techniques );
+		free( scene->techniqueHash );
 	}
 	{
 		for ( int i = 0; i < scene->materialCount; i++ )
@@ -12248,6 +12364,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			free( scene->materials[i].values );
 		}
 		free( scene->materials );
+		free( scene->materialHash );
 	}
 	{
 		for ( int i = 0; i < scene->modelCount; i++ )
@@ -12261,6 +12378,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			free( scene->models[i].surfaces );
 		}
 		free( scene->models );
+		free( scene->modelHash );
 	}
 	{
 		for ( int i = 0; i < scene->animationCount; i++ )
@@ -12273,6 +12391,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			free( scene->animations[i].channels );
 		}
 		free( scene->animations );
+		free( scene->animationHash );
 	}
 	{
 		for ( int i = 0; i < scene->skinCount; i++ )
@@ -12286,6 +12405,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			GpuBuffer_Destroy( context, &scene->skins[i].jointBuffer );
 		}
 		free( scene->skins );
+		free( scene->skinHash );
 	}
 	{
 		for ( int i = 0; i < scene->cameraCount; i++ )
@@ -12293,6 +12413,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			free( scene->cameras[i].name );
 		}
 		free( scene->cameras );
+		free( scene->cameraHash );
 	}
 	{
 		for ( int i = 0; i < scene->nodeCount; i++ )
@@ -12307,6 +12428,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			free( scene->nodes[i].models );
 		}
 		free( scene->nodes );
+		free( scene->nodeHash );
 	}
 	memset( scene, 0, sizeof( GltfScene_t ) );
 }
@@ -12326,13 +12448,16 @@ static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeIn
 
 		const float timeInSeconds = fmodf( timeInMicroseconds * 1e-6f, animation->sampleTimes[animation->sampleCount - 1] - animation->sampleTimes[0] );
 		int frame = 0;
-		for ( ; frame < animation->sampleCount - 1; frame++ )
+		for ( int sampleCount = animation->sampleCount; sampleCount > 1; sampleCount >>= 1 )
 		{
-			if ( timeInSeconds >= animation->sampleTimes[frame] && timeInSeconds < animation->sampleTimes[frame + 1] )
+			const int mid = sampleCount >> 1;
+			if ( timeInSeconds >= animation->sampleTimes[frame + mid] )
 			{
-				break;
+				frame += mid;
+				sampleCount = ( sampleCount - mid ) * 2;
 			}
 		}
+		assert( timeInSeconds >= animation->sampleTimes[frame] && timeInSeconds < animation->sampleTimes[frame + 1] );
 		const float fraction = ( timeInSeconds - animation->sampleTimes[frame] ) / ( animation->sampleTimes[frame + 1] - animation->sampleTimes[frame] );
 
 		for ( int j = 0; j < animation->channelCount; j++ )
@@ -12377,8 +12502,10 @@ static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const G
 	{
 		GltfSkin_t * skin = &scene->skins[i];
 
-		Matrix4x4f_t inverseGlobalParentTransfom;
-		Matrix4x4f_Invert( &inverseGlobalParentTransfom, &skin->parent->globalTransform );
+		// Exclude the transform of the whole skeleton because that transform will be
+		// passed down the vertex shader as the model matrix.
+		Matrix4x4f_t inverseGlobalSkeletonTransfom;
+		Matrix4x4f_Invert( &inverseGlobalSkeletonTransfom, &skin->parent->globalTransform );
 
 		Matrix4x4f_t * joints = NULL;
 		GpuBuffer_t * mappedJointBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &skin->jointBuffer, &joints );
@@ -12389,11 +12516,12 @@ static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const G
 			Matrix4x4f_Multiply( &inverseBindMatrix, &skin->inverseBindMatrices[j], &skin->bindShapeMatrix );
 
 			Matrix4x4f_t localJointTransform;
-			Matrix4x4f_Multiply( &localJointTransform, &inverseGlobalParentTransfom, &skin->joints[j].node->globalTransform );
+			Matrix4x4f_Multiply( &localJointTransform, &inverseGlobalSkeletonTransfom, &skin->joints[j].node->globalTransform );
 
 			Matrix4x4f_Multiply( &joints[j], &localJointTransform, &inverseBindMatrix );
 			//Matrix4x4f_CreateIdentity( &joints[j] );
 		}
+
 		GpuCommandBuffer_UnmapBuffer( commandBuffer, &scene->skins[i].jointBuffer, mappedJointBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
 	}
 }
@@ -16161,12 +16289,12 @@ bool RenderScene( StartupSettings_t * startupSettings )
 	SceneSettings_SetFragmentLevel( &sceneSettings, startupSettings->fragmentLevel );
 	SceneSettings_SetSamplesLevel( &sceneSettings, startupSettings->samplesLevel );
 
-	Scene_t scene;
-	Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
-
 #if USE_GLTF == 1
 	GltfScene_t sceneGltf;
 	GltfScene_CreateFromFile( &window.context, &sceneGltf, "models.gltf", &renderPass );
+#else
+	Scene_t scene;
+	Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
 #endif
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
@@ -16253,7 +16381,11 @@ bool RenderScene( StartupSettings_t * startupSettings )
 		if ( recreate )
 		{
 			const GpuSampleCount_t newSampleCount = sampleCountTable[SceneSettings_GetSamplesLevel( &sceneSettings )];
+#if USE_GLTF == 1
+			GltfScene_Destroy( &window.context, &sceneGltf );
+#else
 			Scene_Destroy( &window.context, &scene );
+#endif
 			BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
 			BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
 			GpuTimer_Destroy( &window.context, &timer );
@@ -16275,7 +16407,11 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			GpuTimer_Create( &window.context, &timer );
 			BarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
 			BarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
+#if USE_GLTF == 1
+			GltfScene_CreateFromFile( &window.context, &sceneGltf, "models.gltf", &renderPass );
+#else
 			Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
+#endif
 			recreate = false;
 		}
 
@@ -16350,8 +16486,9 @@ bool RenderScene( StartupSettings_t * startupSettings )
 
 #if USE_GLTF == 1
 	GltfScene_Destroy( &window.context, &sceneGltf );
-#endif
+#else
 	Scene_Destroy( &window.context, &scene );
+#endif
 	BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
 	BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
 	GpuTimer_Destroy( &window.context, &timer );

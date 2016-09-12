@@ -60,12 +60,14 @@ int Base64_Decode( unsigned char * data, const char * base64, const int base64Si
 #if !defined( BASE64_H )
 #define BASE64_H
 
+// alphabet character for a radix-64 number
 static const char base64_alphabet[] =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZ"	// [ 0, 25]
 	"abcdefghijklmnopqrstuvwxyz"	// [26, 51]
 	"0123456789"					// [52, 61]
 	"+/";							// [62, 63]
 
+// radix-64 number for an alphabet character
 static const char base64_radix64[] =
 {
 	 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,

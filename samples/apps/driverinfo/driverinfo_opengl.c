@@ -1968,6 +1968,9 @@ limits[] =
 	//
 	// General Shaders
 	//
+#if defined( GL_MAX_UNIFORM_BLOCK_SIZE )
+	LIMIT_ENUM_STRING( GL_MAX_UNIFORM_BLOCK_SIZE,							1, "" ),
+#endif
 #if defined( GL_MAX_TEXTURE_UNITS )
 	LIMIT_ENUM_STRING( GL_MAX_TEXTURE_UNITS,								1, "" ),
 #endif

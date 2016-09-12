@@ -151,7 +151,6 @@ bool			Json_WriteToFile( const Json_t * rootNode, const char * fileName );
 int				Json_GetMemberCount( const Json_t * node );							// Get the number of object members or array elements.
 Json_t *		Json_GetMemberByIndex( const Json_t * node, const int index );		// Get an object member or array element by index.
 Json_t *		Json_GetMemberByName( const Json_t * node, const char * name );		// Case-sensitive lookup of an object member by name.
-const int		Json_GetMemberIndexByName( const Json_t * node, const char * name );// Returns the index of a named member.
 const char *	Json_GetMemberName( const Json_t * node );							// Returns the name of this member.
 
 bool			Json_IsNull( const Json_t * node );									// Returns true if the node != NULL and the value is 'null'.
@@ -1222,25 +1221,6 @@ const char * Json_GetMemberName( const Json_t * node )
 		return node->name;
 	}
 	return "";
-}
-
-static const int Json_GetMemberIndexByName( const Json_t * node, const char * name )
-{
-	if ( node != NULL && node->type == JSON_OBJECT )
-	{
-		assert( name != NULL );
-		for ( int i = 0; i < node->memberCount; i++ )
-		{
-			Json_t * member = &node->members[( node->memberIndex + i ) % node->memberCount];
-			if ( strcmp( member->name, name ) == 0 )
-			{
-				*(int *)&node->memberIndex = ( node->memberIndex + i + 1 ) % node->memberCount;	// mutable
-				return i;
-			}
-			// Set a breakpoint here to find cases where the JSON is not parsed in order.
-		}
-	}
-	return -1;
 }
 
 static inline bool Json_IsNull( const Json_t * node )

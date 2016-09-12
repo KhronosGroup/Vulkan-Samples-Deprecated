@@ -519,6 +519,34 @@ Common headers
 #include <errno.h>			// for EBUSY, ETIMEDOUT etc.
 #include <ctype.h>			// for isspace, isdigit
 
+#define USE_GLTF	1
+#if USE_GLTF == 1
+#include <utils/json.h>
+#include <utils/base64.h>
+
+#define GL_INT				0x1404
+#define GL_INT_VEC2			0x8B53
+#define GL_INT_VEC3			0x8B54
+#define GL_INT_VEC4			0x8B55
+#define GL_FLOAT			0x1406
+#define GL_FLOAT_VEC2		0x8B50
+#define GL_FLOAT_VEC3		0x8B51
+#define GL_FLOAT_VEC4		0x8B52
+#define GL_FLOAT_MAT2		0x8B5A
+#define GL_FLOAT_MAT2x3		0x8B65
+#define GL_FLOAT_MAT2x4		0x8B66
+#define GL_FLOAT_MAT3x2		0x8B67
+#define GL_FLOAT_MAT3		0x8B5B
+#define GL_FLOAT_MAT3x4		0x8B68
+#define GL_FLOAT_MAT4x2		0x8B69
+#define GL_FLOAT_MAT4x3		0x8B6A
+#define GL_FLOAT_MAT4		0x8B5C
+#define GL_SAMPLER_1D		0x8B5D
+#define GL_SAMPLER_2D		0x8B5E
+#define GL_SAMPLER_3D		0x8B5F
+#define GL_SAMPLER_CUBE		0x8B60
+#endif
+
 /*
 ================================
 Common defines
@@ -1713,7 +1741,7 @@ static void FrameLog_EndFrame( const float cpuTimeMilliseconds, const float gpuT
 /*
 ================================================================================================================================
 
-Vectors and matrices.
+Vectors and matrices. All matrices are column-major.
 
 Vector2i_t
 Vector3i_t
@@ -1721,22 +1749,50 @@ Vector4i_t
 Vector2f_t
 Vector3f_t
 Vector4f_t
-Matrix3x4f_t		// This is a column-major matrix.
-Matrix4x4f_t		// This is a column-major matrix.
+Quatf_t
+Matrix2x2f_t
+Matrix2x3f_t
+Matrix2x4f_t
+Matrix3x2f_t
+Matrix3x3f_t
+Matrix3x4f_t
+Matrix4x2f_t
+Matrix4x3f_t
+Matrix4x4f_t
 
 static void Vector3f_Zero( Vector3f_t * v );
 static void Vector3f_Normalize( Vector3f_t * v );
 
-static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * matrix );
-static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * matrix, const float x, const float y, const float z );
-static void Matrix4x4f_CreateRotation( Matrix4x4f_t * matrix, const float degreesX, const float degreesY, const float degreesZ );
-static void Matrix4x4f_CreateProjection( Matrix4x4f_t * matrix, const float minX, const float maxX,
+static void Matrix3x3f_TransposeFromMatrix4x4f( Matrix3x3f_t * result, const Matrix4x4f_t * src );
+static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * result, const Matrix4x4f_t * src );
+
+static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * result );
+static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * result, const float x, const float y, const float z );
+static void Matrix4x4f_CreateRotation( Matrix4x4f_t * result, const float degreesX, const float degreesY, const float degreesZ );
+static void Matrix4x4f_CreateScale( Matrix4x4f_t * result, const float x, const float y, const float z );
+static void Matrix4x4f_CreateScaleRotationTranslation( Matrix4x4f_t * result, const Vector3f_t * scale, const Quatf_t * rotation, const Vector3f_t * translation );
+static void Matrix4x4f_CreateProjection( Matrix4x4f_t * result, const float minX, const float maxX,
 											float const minY, const float maxY, const float nearZ, const float farZ );
-static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float fovDegreesX, const float fovDegreesY,
+static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * result, const float fovDegreesX, const float fovDegreesY,
 											const float offsetX, const float offsetY, const float nearZ, const float farZ );
-static void Matrix4x4f_Multiply( Matrix4x4f_t * out, const Matrix4x4f_t * a, const Matrix4x4f_t * b );
+static void Matrix4x4f_CreateFromQuaternion( Matrix3x4f_t * result, const Quatf_t * src );
+
+static bool Matrix4x4f_IsAffine( const Matrix4x4f_t * matrix, const float epsilon );
+static bool Matrix4x4f_IsOrthogonal( const Matrix4x4f_t * matrix, const float epsilon );
+static bool Matrix4x4f_IsOrthonormal( const Matrix4x4f_t * matrix, const float epsilon );
+static bool Matrix4x4f_IsHomogeneous( const Matrix4x4f_t * matrix, const float epsilon );
+
+static void Matrix4x4f_GetTranslation( Vector3f_t * result, const Matrix4x4f_t * src );
+static void Matrix4x4f_GetRotation( Quatf_t * result, const Matrix4x4f_t * src );
+static void Matrix4x4f_GetScale( Vector3f_t * result, const Matrix4x4f_t * src );
+
+static void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, const Matrix4x4f_t * b );
+static void Matrix4x4f_Transpose( Matrix4x4f_t * result, const Matrix4x4f_t * src );
 static void Matrix4x4f_Invert( Matrix4x4f_t * result, const Matrix4x4f_t * src );
 static void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4f_t * src );
+
+static void Matrix4x4f_TransformVector3f( Vector3f_t * result, const Matrix4x4f_t * m, const Vector3f_t * v );
+static void Matrix4x4f_TransformVector4f( Vector4f_t * result, const Matrix4x4f_t * m, const Vector4f_t * v );
 
 ================================================================================================================================
 */
@@ -1789,11 +1845,62 @@ typedef struct
 	float w;
 } Vector4f_t;
 
+// Quaternion
+typedef struct
+{
+	float x;
+	float y;
+	float z;
+	float w;
+} Quatf_t;
+
+// Column-major 2x2 matrix
+typedef struct
+{
+	float m[2][2];
+} Matrix2x2f_t;
+
+// Column-major 2x3 matrix
+typedef struct
+{
+	float m[2][3];
+} Matrix2x3f_t;
+
+// Column-major 2x4 matrix
+typedef struct
+{
+	float m[2][4];
+} Matrix2x4f_t;
+
+// Column-major 3x2 matrix
+typedef struct
+{
+	float m[3][2];
+} Matrix3x2f_t;
+
+// Column-major 3x3 matrix
+typedef struct
+{
+	float m[3][3];
+} Matrix3x3f_t;
+
 // Column-major 3x4 matrix
 typedef struct
 {
 	float m[3][4];
 } Matrix3x4f_t;
+
+// Column-major 4x2 matrix
+typedef struct
+{
+	float m[4][2];
+} Matrix4x2f_t;
+
+// Column-major 4x3 matrix
+typedef struct
+{
+	float m[4][3];
+} Matrix4x3f_t;
 
 // Column-major 4x4 matrix
 typedef struct
@@ -1810,6 +1917,13 @@ static const Vector4f_t colorCyan		= { 0.0f, 1.0f, 1.0f, 1.0f };
 static const Vector4f_t colorLightGrey	= { 0.7f, 0.7f, 0.7f, 1.0f };
 static const Vector4f_t colorDarkGrey	= { 0.3f, 0.3f, 0.3f, 1.0f };
 
+static float RcpSqrt( const float x )
+{
+	const float SMALLEST_NON_DENORMAL = 1.1754943508222875e-038f;	// ( 1U << 23 )
+	const float rcp = ( x >= SMALLEST_NON_DENORMAL ) ? 1.0f / sqrtf( x ) : 1.0f;
+	return rcp;
+}
+
 static void Vector3f_Zero( Vector3f_t * v )
 {
 	v->x = 0.0f;
@@ -1817,62 +1931,122 @@ static void Vector3f_Zero( Vector3f_t * v )
 	v->z = 0.0f;
 }
 
+static void Vector3f_Lerp( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b, const float fraction )
+{
+	result->x = a->x + fraction * ( b->x - a->x );
+	result->y = a->y + fraction * ( b->y - a->y );
+	result->z = a->z + fraction * ( b->z - a->z );
+}
+
 static void Vector3f_Normalize( Vector3f_t * v )
 {
-	const float SMALLEST_NON_DENORMAL = 1.1754943508222875e-038f;	// ( 1U << 23 )
-	const float lengthSqr = v->x * v->x + v->y * v->y + v->z * v->z;
-	const float lengthRcp = ( lengthSqr >= SMALLEST_NON_DENORMAL ) ? 1.0f / sqrtf( lengthSqr ) : 1.0f;
+	const float lengthRcp = RcpSqrt( v->x * v->x + v->y * v->y + v->z * v->z );
 	v->x *= lengthRcp;
 	v->y *= lengthRcp;
 	v->z *= lengthRcp;
 }
 
-static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * dest, const Matrix4x4f_t * source )
+static void Quatf_Lerp( Quatf_t * result, const Quatf_t * a, const Quatf_t * b, const float fraction )
 {
-	dest->m[0][0] = source->m[0][0];
-	dest->m[0][1] = source->m[1][0];
-	dest->m[0][2] = source->m[2][0];
-	dest->m[0][3] = source->m[3][0];
-	dest->m[1][0] = source->m[0][1];
-	dest->m[1][1] = source->m[1][1];
-	dest->m[1][2] = source->m[2][1];
-	dest->m[1][3] = source->m[3][1];
-	dest->m[2][0] = source->m[0][2];
-	dest->m[2][1] = source->m[1][2];
-	dest->m[2][2] = source->m[2][2];
-	dest->m[2][3] = source->m[3][2];
+	const float s = a->x * b->x + a->y * b->y + a->z * b->z + a->w * b->w;
+	const float fa = 1.0f - fraction;
+	const float fb = ( s < 0.0f ) ? -fraction : fraction;
+	const float x = a->x * fa + b->x * fb;
+	const float y = a->y * fa + b->y * fb;
+	const float z = a->z * fa + b->z * fb;
+	const float w = a->w * fa + b->w * fb;
+	const float lengthRcp = RcpSqrt( x * x + y * y + z * z + w * w );
+	result->x = x * lengthRcp;
+	result->y = y * lengthRcp;
+	result->z = z * lengthRcp;
+	result->w = w * lengthRcp;
+}
+
+static void Matrix3x3f_TransposeFromMatrix4x4f( Matrix3x3f_t * result, const Matrix4x4f_t * src )
+{
+	result->m[0][0] = src->m[0][0];
+	result->m[0][1] = src->m[1][0];
+	result->m[0][2] = src->m[2][0];
+
+	result->m[1][0] = src->m[0][1];
+	result->m[1][1] = src->m[1][1];
+	result->m[1][2] = src->m[2][1];
+
+	result->m[2][0] = src->m[0][2];
+	result->m[2][1] = src->m[1][2];
+	result->m[2][2] = src->m[2][2];
+}
+
+static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * result, const Matrix4x4f_t * src )
+{
+	result->m[0][0] = src->m[0][0];
+	result->m[0][1] = src->m[1][0];
+	result->m[0][2] = src->m[2][0];
+	result->m[0][3] = src->m[3][0];
+	result->m[1][0] = src->m[0][1];
+	result->m[1][1] = src->m[1][1];
+	result->m[1][2] = src->m[2][1];
+	result->m[1][3] = src->m[3][1];
+	result->m[2][0] = src->m[0][2];
+	result->m[2][1] = src->m[1][2];
+	result->m[2][2] = src->m[2][2];
+	result->m[2][3] = src->m[3][2];
 }
 
 // Use left-multiplication to accumulate transformations.
-static void Matrix4x4f_Multiply( Matrix4x4f_t * out, const Matrix4x4f_t * a, const Matrix4x4f_t * b )
+static void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, const Matrix4x4f_t * b )
 {
-	out->m[0][0] = a->m[0][0] * b->m[0][0] + a->m[1][0] * b->m[0][1] + a->m[2][0] * b->m[0][2] + a->m[3][0] * b->m[0][3];
-	out->m[0][1] = a->m[0][1] * b->m[0][0] + a->m[1][1] * b->m[0][1] + a->m[2][1] * b->m[0][2] + a->m[3][1] * b->m[0][3];
-	out->m[0][2] = a->m[0][2] * b->m[0][0] + a->m[1][2] * b->m[0][1] + a->m[2][2] * b->m[0][2] + a->m[3][2] * b->m[0][3];
-	out->m[0][3] = a->m[0][3] * b->m[0][0] + a->m[1][3] * b->m[0][1] + a->m[2][3] * b->m[0][2] + a->m[3][3] * b->m[0][3];
+	result->m[0][0] = a->m[0][0] * b->m[0][0] + a->m[1][0] * b->m[0][1] + a->m[2][0] * b->m[0][2] + a->m[3][0] * b->m[0][3];
+	result->m[0][1] = a->m[0][1] * b->m[0][0] + a->m[1][1] * b->m[0][1] + a->m[2][1] * b->m[0][2] + a->m[3][1] * b->m[0][3];
+	result->m[0][2] = a->m[0][2] * b->m[0][0] + a->m[1][2] * b->m[0][1] + a->m[2][2] * b->m[0][2] + a->m[3][2] * b->m[0][3];
+	result->m[0][3] = a->m[0][3] * b->m[0][0] + a->m[1][3] * b->m[0][1] + a->m[2][3] * b->m[0][2] + a->m[3][3] * b->m[0][3];
 
-	out->m[1][0] = a->m[0][0] * b->m[1][0] + a->m[1][0] * b->m[1][1] + a->m[2][0] * b->m[1][2] + a->m[3][0] * b->m[1][3];
-	out->m[1][1] = a->m[0][1] * b->m[1][0] + a->m[1][1] * b->m[1][1] + a->m[2][1] * b->m[1][2] + a->m[3][1] * b->m[1][3];
-	out->m[1][2] = a->m[0][2] * b->m[1][0] + a->m[1][2] * b->m[1][1] + a->m[2][2] * b->m[1][2] + a->m[3][2] * b->m[1][3];
-	out->m[1][3] = a->m[0][3] * b->m[1][0] + a->m[1][3] * b->m[1][1] + a->m[2][3] * b->m[1][2] + a->m[3][3] * b->m[1][3];
+	result->m[1][0] = a->m[0][0] * b->m[1][0] + a->m[1][0] * b->m[1][1] + a->m[2][0] * b->m[1][2] + a->m[3][0] * b->m[1][3];
+	result->m[1][1] = a->m[0][1] * b->m[1][0] + a->m[1][1] * b->m[1][1] + a->m[2][1] * b->m[1][2] + a->m[3][1] * b->m[1][3];
+	result->m[1][2] = a->m[0][2] * b->m[1][0] + a->m[1][2] * b->m[1][1] + a->m[2][2] * b->m[1][2] + a->m[3][2] * b->m[1][3];
+	result->m[1][3] = a->m[0][3] * b->m[1][0] + a->m[1][3] * b->m[1][1] + a->m[2][3] * b->m[1][2] + a->m[3][3] * b->m[1][3];
 
-	out->m[2][0] = a->m[0][0] * b->m[2][0] + a->m[1][0] * b->m[2][1] + a->m[2][0] * b->m[2][2] + a->m[3][0] * b->m[2][3];
-	out->m[2][1] = a->m[0][1] * b->m[2][0] + a->m[1][1] * b->m[2][1] + a->m[2][1] * b->m[2][2] + a->m[3][1] * b->m[2][3];
-	out->m[2][2] = a->m[0][2] * b->m[2][0] + a->m[1][2] * b->m[2][1] + a->m[2][2] * b->m[2][2] + a->m[3][2] * b->m[2][3];
-	out->m[2][3] = a->m[0][3] * b->m[2][0] + a->m[1][3] * b->m[2][1] + a->m[2][3] * b->m[2][2] + a->m[3][3] * b->m[2][3];
+	result->m[2][0] = a->m[0][0] * b->m[2][0] + a->m[1][0] * b->m[2][1] + a->m[2][0] * b->m[2][2] + a->m[3][0] * b->m[2][3];
+	result->m[2][1] = a->m[0][1] * b->m[2][0] + a->m[1][1] * b->m[2][1] + a->m[2][1] * b->m[2][2] + a->m[3][1] * b->m[2][3];
+	result->m[2][2] = a->m[0][2] * b->m[2][0] + a->m[1][2] * b->m[2][1] + a->m[2][2] * b->m[2][2] + a->m[3][2] * b->m[2][3];
+	result->m[2][3] = a->m[0][3] * b->m[2][0] + a->m[1][3] * b->m[2][1] + a->m[2][3] * b->m[2][2] + a->m[3][3] * b->m[2][3];
 
-	out->m[3][0] = a->m[0][0] * b->m[3][0] + a->m[1][0] * b->m[3][1] + a->m[2][0] * b->m[3][2] + a->m[3][0] * b->m[3][3];
-	out->m[3][1] = a->m[0][1] * b->m[3][0] + a->m[1][1] * b->m[3][1] + a->m[2][1] * b->m[3][2] + a->m[3][1] * b->m[3][3];
-	out->m[3][2] = a->m[0][2] * b->m[3][0] + a->m[1][2] * b->m[3][1] + a->m[2][2] * b->m[3][2] + a->m[3][2] * b->m[3][3];
-	out->m[3][3] = a->m[0][3] * b->m[3][0] + a->m[1][3] * b->m[3][1] + a->m[2][3] * b->m[3][2] + a->m[3][3] * b->m[3][3];
+	result->m[3][0] = a->m[0][0] * b->m[3][0] + a->m[1][0] * b->m[3][1] + a->m[2][0] * b->m[3][2] + a->m[3][0] * b->m[3][3];
+	result->m[3][1] = a->m[0][1] * b->m[3][0] + a->m[1][1] * b->m[3][1] + a->m[2][1] * b->m[3][2] + a->m[3][1] * b->m[3][3];
+	result->m[3][2] = a->m[0][2] * b->m[3][0] + a->m[1][2] * b->m[3][1] + a->m[2][2] * b->m[3][2] + a->m[3][2] * b->m[3][3];
+	result->m[3][3] = a->m[0][3] * b->m[3][0] + a->m[1][3] * b->m[3][1] + a->m[2][3] * b->m[3][2] + a->m[3][3] * b->m[3][3];
+}
+
+// Creates the transpose of the given matrix.
+static void Matrix4x4f_Transpose( Matrix4x4f_t * result, const Matrix4x4f_t * src )
+{
+	result->m[0][0] = src->m[0][0];
+	result->m[0][1] = src->m[1][0];
+	result->m[0][2] = src->m[2][0];
+	result->m[0][3] = src->m[3][0];
+
+	result->m[1][0] = src->m[0][1];
+	result->m[1][1] = src->m[1][1];
+	result->m[1][2] = src->m[2][1];
+	result->m[1][3] = src->m[3][1];
+
+	result->m[2][0] = src->m[0][2];
+	result->m[2][1] = src->m[1][2];
+	result->m[2][2] = src->m[2][2];
+	result->m[2][3] = src->m[3][2];
+
+	result->m[3][0] = src->m[0][3];
+	result->m[3][1] = src->m[1][3];
+	result->m[3][2] = src->m[2][3];
+	result->m[3][3] = src->m[3][3];
 }
 
 // Returns a 3x3 minor of a 4x4 matrix.
-static float Matrix4x4f_Minor( const Matrix4x4f_t * src, int r0, int r1, int r2, int c0, int c1, int c2 )
+static float Matrix4x4f_Minor( const Matrix4x4f_t * matrix, int r0, int r1, int r2, int c0, int c1, int c2 )
 {
-	return	src->m[r0][c0] * ( src->m[r1][c1] * src->m[r2][c2] - src->m[r2][c1] * src->m[r1][c2] ) -
-			src->m[r0][c1] * ( src->m[r1][c0] * src->m[r2][c2] - src->m[r2][c0] * src->m[r1][c2] ) +
-			src->m[r0][c2] * ( src->m[r1][c0] * src->m[r2][c1] - src->m[r2][c0] * src->m[r1][c1] );
+	return	matrix->m[r0][c0] * ( matrix->m[r1][c1] * matrix->m[r2][c2] - matrix->m[r2][c1] * matrix->m[r1][c2] ) -
+			matrix->m[r0][c1] * ( matrix->m[r1][c0] * matrix->m[r2][c2] - matrix->m[r2][c0] * matrix->m[r1][c2] ) +
+			matrix->m[r0][c2] * ( matrix->m[r1][c0] * matrix->m[r2][c1] - matrix->m[r2][c0] * matrix->m[r1][c1] );
 }
  
 // Calculates the inverse of a 4x4 matrix.
@@ -1923,26 +2097,26 @@ static void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4
 }
 
 // Creates an identity matrix.
-static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * matrix )
+static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * result )
 {
-	matrix->m[0][0] = 1.0f; matrix->m[0][1] = 0.0f; matrix->m[0][2] = 0.0f; matrix->m[0][3] = 0.0f;
-	matrix->m[1][0] = 0.0f; matrix->m[1][1] = 1.0f; matrix->m[1][2] = 0.0f; matrix->m[1][3] = 0.0f;
-	matrix->m[2][0] = 0.0f; matrix->m[2][1] = 0.0f; matrix->m[2][2] = 1.0f; matrix->m[2][3] = 0.0f;
-	matrix->m[3][0] = 0.0f; matrix->m[3][1] = 0.0f; matrix->m[3][2] = 0.0f; matrix->m[3][3] = 1.0f;
+	result->m[0][0] = 1.0f; result->m[0][1] = 0.0f; result->m[0][2] = 0.0f; result->m[0][3] = 0.0f;
+	result->m[1][0] = 0.0f; result->m[1][1] = 1.0f; result->m[1][2] = 0.0f; result->m[1][3] = 0.0f;
+	result->m[2][0] = 0.0f; result->m[2][1] = 0.0f; result->m[2][2] = 1.0f; result->m[2][3] = 0.0f;
+	result->m[3][0] = 0.0f; result->m[3][1] = 0.0f; result->m[3][2] = 0.0f; result->m[3][3] = 1.0f;
 }
 
 // Creates a translation matrix.
-static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * matrix, const float x, const float y, const float z )
+static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * result, const float x, const float y, const float z )
 {
-	matrix->m[0][0] = 1.0f; matrix->m[0][1] = 0.0f; matrix->m[0][2] = 0.0f; matrix->m[0][3] = 0.0f;
-	matrix->m[1][0] = 0.0f; matrix->m[1][1] = 1.0f; matrix->m[1][2] = 0.0f; matrix->m[1][3] = 0.0f;
-	matrix->m[2][0] = 0.0f; matrix->m[2][1] = 0.0f; matrix->m[2][2] = 1.0f; matrix->m[2][3] = 0.0f;
-	matrix->m[3][0] =    x; matrix->m[3][1] =    y; matrix->m[3][2] =    z; matrix->m[3][3] = 1.0f;
+	result->m[0][0] = 1.0f; result->m[0][1] = 0.0f; result->m[0][2] = 0.0f; result->m[0][3] = 0.0f;
+	result->m[1][0] = 0.0f; result->m[1][1] = 1.0f; result->m[1][2] = 0.0f; result->m[1][3] = 0.0f;
+	result->m[2][0] = 0.0f; result->m[2][1] = 0.0f; result->m[2][2] = 1.0f; result->m[2][3] = 0.0f;
+	result->m[3][0] =    x; result->m[3][1] =    y; result->m[3][2] =    z; result->m[3][3] = 1.0f;
 }
 
 // Creates a rotation matrix.
 // If -Z=forward, +Y=up, +X=right, then degreesX=pitch, degreesY=yaw, degreesZ=roll.
-static void Matrix4x4f_CreateRotation( Matrix4x4f_t * matrix, const float degreesX, const float degreesY, const float degreesZ )
+static void Matrix4x4f_CreateRotation( Matrix4x4f_t * result, const float degreesX, const float degreesY, const float degreesZ )
 {
 	const float sinX = sinf( degreesX * ( MATH_PI / 180.0f ) );
 	const float cosX = cosf( degreesX * ( MATH_PI / 180.0f ) );
@@ -1973,7 +2147,87 @@ static void Matrix4x4f_CreateRotation( Matrix4x4f_t * matrix, const float degree
 	} };
 	Matrix4x4f_t rotationXY;
 	Matrix4x4f_Multiply( &rotationXY, &rotationY, &rotationX );
-	Matrix4x4f_Multiply( matrix, &rotationZ, &rotationXY );
+	Matrix4x4f_Multiply( result, &rotationZ, &rotationXY );
+}
+
+// Creates a scale matrix.
+static void Matrix4x4f_CreateScale( Matrix4x4f_t * result, const float x, const float y, const float z )
+{
+	result->m[0][0] = x;
+	result->m[0][1] = 0.0f;
+	result->m[0][2] = 0.0f;
+	result->m[0][3] = 0.0f;
+
+	result->m[1][0] = 0.0f;
+	result->m[1][1] = y;
+	result->m[1][2] = 0.0f;
+	result->m[1][3] = 0.0f;
+
+	result->m[2][0] = 0.0f;
+	result->m[2][1] = 0.0f;
+	result->m[2][2] = z;
+	result->m[2][3] = 0.0f;
+
+	result->m[3][0] = 0.0f;
+	result->m[3][1] = 0.0f;
+	result->m[3][2] = 0.0f;
+	result->m[3][3] = 1.0f;
+}
+
+// Creates a matrix from a quaternion.
+static void Matrix4x4f_CreateFromQuaternion( Matrix4x4f_t * result, const Quatf_t * quat )
+{
+	const float x2 = quat->x + quat->x;
+	const float y2 = quat->y + quat->y;
+	const float z2 = quat->z + quat->z;
+
+	const float xx2 = quat->x * x2;
+	const float yy2 = quat->y * y2;
+	const float zz2 = quat->z * z2;
+
+	const float yz2 = quat->y * z2;
+	const float wx2 = quat->w * x2;
+	const float xy2 = quat->x * y2;
+	const float wz2 = quat->w * z2;
+	const float xz2 = quat->x * z2;
+	const float wy2 = quat->w * y2;
+
+	result->m[0][0] = 1.0f - yy2 - zz2;
+	result->m[0][1] = xy2 + wz2;
+	result->m[0][2] = xz2 - wy2;
+	result->m[0][3] = 0.0f;
+
+	result->m[1][0] = xy2 - wz2;
+	result->m[1][1] = 1.0f - xx2 - zz2;
+	result->m[1][2] = yz2 + wx2;
+	result->m[1][3] = 0.0f;
+
+	result->m[2][0] = xz2 + wy2;
+	result->m[2][1] = yz2 - wx2;
+	result->m[2][2] = 1.0f - xx2 - yy2;
+	result->m[2][3] = 0.0f;
+
+	result->m[3][0] = 0.0f;
+	result->m[3][1] = 0.0f;
+	result->m[3][2] = 0.0f;
+	result->m[3][3] = 1.0f;
+}
+
+// Creates a combined translation(rotation(scale(object))) matrix.
+static void Matrix4x4f_CreateScaleRotationTranslation( Matrix4x4f_t * result, const Vector3f_t * scale, const Quatf_t * rotation, const Vector3f_t * translation )
+{
+	Matrix4x4f_t rotationMatrix;
+	Matrix4x4f_CreateFromQuaternion( &rotationMatrix, rotation );
+
+	Matrix4x4f_t scaleMatrix;
+	Matrix4x4f_CreateScale( &scaleMatrix, scale->x, scale->y, scale->z );
+
+	Matrix4x4f_t translationMatrix;
+	Matrix4x4f_CreateTranslation( &translationMatrix, translation->x, translation->y, translation->z );
+
+	Matrix4x4f_t combinedMatrix;
+	Matrix4x4f_Multiply( &combinedMatrix, &rotationMatrix, &scaleMatrix );
+	Matrix4x4f_Multiply( result, &translationMatrix, &combinedMatrix );
 }
 
 // Creates a projection matrix based on the specified dimensions.
@@ -1984,7 +2238,7 @@ static void Matrix4x4f_CreateRotation( Matrix4x4f_t * matrix, const float degree
 //		"Tightening the Precision of Perspective Rendering"
 //		Paul Upchurch, Mathieu Desbrun
 //		Journal of Graphics Tools, Volume 16, Issue 1, 2012
-static void Matrix4x4f_CreateProjection( Matrix4x4f_t * matrix, const float minX, const float maxX,
+static void Matrix4x4f_CreateProjection( Matrix4x4f_t * result, const float minX, const float maxX,
 											float const minY, const float maxY, const float nearZ, const float farZ )
 {
 	const float width = maxX - minX;
@@ -2008,53 +2262,53 @@ static void Matrix4x4f_CreateProjection( Matrix4x4f_t * matrix, const float minX
 	if ( farZ <= nearZ )
 	{
 		// place the far plane at infinity
-		matrix->m[0][0] = 2 * nearZ / width;
-		matrix->m[1][0] = 0;
-		matrix->m[2][0] = ( maxX + minX ) / width;
-		matrix->m[3][0] = 0;
+		result->m[0][0] = 2 * nearZ / width;
+		result->m[1][0] = 0;
+		result->m[2][0] = ( maxX + minX ) / width;
+		result->m[3][0] = 0;
 
-		matrix->m[0][1] = 0;
-		matrix->m[1][1] = 2 * nearZ / height;
-		matrix->m[2][1] = ( maxY + minY ) / height;
-		matrix->m[3][1] = 0;
+		result->m[0][1] = 0;
+		result->m[1][1] = 2 * nearZ / height;
+		result->m[2][1] = ( maxY + minY ) / height;
+		result->m[3][1] = 0;
 
-		matrix->m[0][2] = 0;
-		matrix->m[1][2] = 0;
-		matrix->m[2][2] = -1;
-		matrix->m[3][2] = -( nearZ + offsetZ );
+		result->m[0][2] = 0;
+		result->m[1][2] = 0;
+		result->m[2][2] = -1;
+		result->m[3][2] = -( nearZ + offsetZ );
 
-		matrix->m[0][3] = 0;
-		matrix->m[1][3] = 0;
-		matrix->m[2][3] = -1;
-		matrix->m[3][3] = 0;
+		result->m[0][3] = 0;
+		result->m[1][3] = 0;
+		result->m[2][3] = -1;
+		result->m[3][3] = 0;
 	}
 	else
 	{
 		// normal projection
-		matrix->m[0][0] = 2 * nearZ / width;
-		matrix->m[1][0] = 0;
-		matrix->m[2][0] = ( maxX + minX ) / width;
-		matrix->m[3][0] = 0;
+		result->m[0][0] = 2 * nearZ / width;
+		result->m[1][0] = 0;
+		result->m[2][0] = ( maxX + minX ) / width;
+		result->m[3][0] = 0;
 
-		matrix->m[0][1] = 0;
-		matrix->m[1][1] = 2 * nearZ / height;
-		matrix->m[2][1] = ( maxY + minY ) / height;
-		matrix->m[3][1] = 0;
+		result->m[0][1] = 0;
+		result->m[1][1] = 2 * nearZ / height;
+		result->m[2][1] = ( maxY + minY ) / height;
+		result->m[3][1] = 0;
 
-		matrix->m[0][2] = 0;
-		matrix->m[1][2] = 0;
-		matrix->m[2][2] = -( farZ + offsetZ ) / ( farZ - nearZ );
-		matrix->m[3][2] = -( farZ * ( nearZ + offsetZ ) ) / ( farZ - nearZ );
+		result->m[0][2] = 0;
+		result->m[1][2] = 0;
+		result->m[2][2] = -( farZ + offsetZ ) / ( farZ - nearZ );
+		result->m[3][2] = -( farZ * ( nearZ + offsetZ ) ) / ( farZ - nearZ );
 
-		matrix->m[0][3] = 0;
-		matrix->m[1][3] = 0;
-		matrix->m[2][3] = -1;
-		matrix->m[3][3] = 0;
+		result->m[0][3] = 0;
+		result->m[1][3] = 0;
+		result->m[2][3] = -1;
+		result->m[3][3] = 0;
 	}
 }
 
 // Creates a projection matrix based on the specified FOV.
-static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float fovDegreesX, const float fovDegreesY,
+static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * result, const float fovDegreesX, const float fovDegreesY,
 												const float offsetX, const float offsetY, const float nearZ, const float farZ )
 {
 	const float halfWidth = nearZ * tanf( fovDegreesX * ( 0.5f * MATH_PI / 180.0f ) );
@@ -2066,7 +2320,160 @@ static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float f
 	const float minY = offsetY - halfHeight;
 	const float maxY = offsetY + halfHeight;
 
-	Matrix4x4f_CreateProjection( matrix, minX, maxX, minY, maxY, nearZ, farZ );
+	Matrix4x4f_CreateProjection( result, minX, maxX, minY, maxY, nearZ, farZ );
+}
+
+// Returns true if the given matrix is affine.
+static bool Matrix4x4f_IsAffine( const Matrix4x4f_t * matrix, const float epsilon )
+{
+	return	fabsf( matrix->m[0][3] ) <= epsilon &&
+			fabsf( matrix->m[1][3] ) <= epsilon &&
+			fabsf( matrix->m[2][3] ) <= epsilon &&
+			fabsf( matrix->m[3][3] - 1.0f ) <= epsilon;
+}
+
+// Returns true if the given matrix is orthogonal.
+static bool Matrix4x4f_IsOrthogonal( const Matrix4x4f_t * matrix, const float epsilon )
+{
+	for ( int i = 0; i < 3; i++ )
+	{
+		for ( int j = 0; j < 3; j++ )
+		{
+			if ( i != j )
+			{
+				if ( fabsf( matrix->m[i][0] * matrix->m[j][0] + matrix->m[i][1] * matrix->m[j][1] + matrix->m[i][2] * matrix->m[j][2] ) > epsilon )
+				{
+					return false;
+				}
+				if ( fabsf( matrix->m[0][i] * matrix->m[0][j] + matrix->m[1][i] * matrix->m[1][j] + matrix->m[2][i] * matrix->m[2][j] ) > epsilon )
+				{
+					return false;
+				}
+			}
+		}
+	}
+	return true;
+}
+
+// Returns true if the given matrix is orthonormal.
+static bool Matrix4x4f_IsOrthonormal( const Matrix4x4f_t * matrix, const float epsilon )
+{
+	for ( int i = 0; i < 3; i++ )
+	{
+		for ( int j = 0; j < 3; j++ )
+		{
+			const float kd = ( i == j ) ? 1.0f : 0.0f;	// Kronecker delta
+			if ( fabsf( kd - ( matrix->m[i][0] * matrix->m[j][0] + matrix->m[i][1] * matrix->m[j][1] + matrix->m[i][2] * matrix->m[j][2] ) ) > epsilon )
+			{
+				return false;
+			}
+			if ( fabsf( kd - ( matrix->m[0][i] * matrix->m[0][j] + matrix->m[1][i] * matrix->m[1][j] + matrix->m[2][i] * matrix->m[2][j] ) ) > epsilon )
+			{
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+// Returns true if the given matrix is homogeneous.
+static bool Matrix4x4f_IsHomogeneous( const Matrix4x4f_t * matrix, const float epsilon )
+{
+	return Matrix4x4f_IsAffine( matrix, epsilon ) && Matrix4x4f_IsOrthonormal( matrix, epsilon );
+}
+
+// Get the translation from a combined translation(rotation(scale(object))) matrix.
+static void Matrix4x4f_GetTranslation( Vector3f_t * result, const Matrix4x4f_t * src )
+{
+	assert( Matrix4x4f_IsAffine( src, 1e-4f ) );
+	assert( Matrix4x4f_IsOrthogonal( src, 1e-4f ) );
+
+	result->x = src->m[3][0];
+	result->y = src->m[3][1];
+	result->z = src->m[3][2];
+}
+
+// Get the rotation from a combined translation(rotation(scale(object))) matrix.
+static void Matrix4x4f_GetRotation( Quatf_t * result, const Matrix4x4f_t * src )
+{
+	assert( Matrix4x4f_IsAffine( src, 1e-4f ) );
+	assert( Matrix4x4f_IsOrthogonal( src, 1e-4f ) );
+
+	const float scaleX = RcpSqrt( src->m[0][0] * src->m[0][0] + src->m[0][1] * src->m[0][1] + src->m[0][2] * src->m[0][2] );
+	const float scaleY = RcpSqrt( src->m[1][0] * src->m[1][0] + src->m[1][1] * src->m[1][1] + src->m[1][2] * src->m[1][2] );
+	const float scaleZ = RcpSqrt( src->m[2][0] * src->m[2][0] + src->m[2][1] * src->m[2][1] + src->m[2][2] * src->m[2][2] );
+	const float m[9] =
+	{
+		src->m[0][0] * scaleX, src->m[0][1] * scaleX, src->m[0][2] * scaleX,
+		src->m[1][0] * scaleY, src->m[1][1] * scaleY, src->m[1][2] * scaleY,
+		src->m[2][0] * scaleZ, src->m[2][1] * scaleZ, src->m[2][2] * scaleZ
+	};
+	if ( m[0 * 3 + 0] + m[1 * 3 + 1] + m[2 * 3 + 2] > 0.0f )
+	{
+		float t = + m[0 * 3 + 0] + m[1 * 3 + 1] + m[2 * 3 + 2] + 1.0f;
+		float s = RcpSqrt( t ) * 0.5f;
+		result->w = s * t;
+		result->z = ( m[0 * 3 + 1] - m[1 * 3 + 0] ) * s;
+		result->y = ( m[2 * 3 + 0] - m[0 * 3 + 2] ) * s;
+		result->x = ( m[1 * 3 + 2] - m[2 * 3 + 1] ) * s;
+	}
+	else if ( m[0 * 3 + 0] > m[1 * 3 + 1] && m[0 * 3 + 0] > m[2 * 3 + 2] )
+	{
+		float t = + m[0 * 3 + 0] - m[1 * 3 + 1] - m[2 * 3 + 2] + 1.0f;
+		float s = RcpSqrt( t ) * 0.5f;
+		result->x = s * t;
+		result->y = ( m[0 * 3 + 1] + m[1 * 3 + 0] ) * s; 
+		result->z = ( m[2 * 3 + 0] + m[0 * 3 + 2] ) * s;
+		result->w = ( m[1 * 3 + 2] - m[2 * 3 + 1] ) * s;
+	}
+	else if ( m[1 * 3 + 1] > m[2 * 3 + 2] )
+	{
+		float t = - m[0 * 3 + 0] + m[1 * 3 + 1] - m[2 * 3 + 2] + 1.0f;
+		float s = RcpSqrt( t ) * 0.5f;
+		result->y = s * t;
+		result->x = ( m[0 * 3 + 1] + m[1 * 3 + 0] ) * s;
+		result->w = ( m[2 * 3 + 0] - m[0 * 3 + 2] ) * s;
+		result->z = ( m[1 * 3 + 2] + m[2 * 3 + 1] ) * s;
+	}
+	else
+	{
+		float t = - m[0 * 3 + 0] - m[1 * 3 + 1] + m[2 * 3 + 2] + 1.0f;
+		float s = RcpSqrt( t ) * 0.5f;
+		result->z = s * t;
+		result->w = ( m[0 * 3 + 1] - m[1 * 3 + 0] ) * s;
+		result->x = ( m[2 * 3 + 0] + m[0 * 3 + 2] ) * s;
+		result->y = ( m[1 * 3 + 2] + m[2 * 3 + 1] ) * s;
+	}
+}
+
+// Get the scale from a combined translation(rotation(scale(object))) matrix.
+static void Matrix4x4f_GetScale( Vector3f_t * result, const Matrix4x4f_t * src )
+{
+	assert( Matrix4x4f_IsAffine( src, 1e-4f ) );
+	assert( Matrix4x4f_IsOrthogonal( src, 1e-4f ) );
+
+	result->x = sqrtf( src->m[0][0] * src->m[0][0] + src->m[0][1] * src->m[0][1] + src->m[0][2] * src->m[0][2] );
+	result->y = sqrtf( src->m[1][0] * src->m[1][0] + src->m[1][1] * src->m[1][1] + src->m[1][2] * src->m[1][2] );
+	result->z = sqrtf( src->m[2][0] * src->m[2][0] + src->m[2][1] * src->m[2][1] + src->m[2][2] * src->m[2][2] );
+}
+
+// Transforms a 3D vector.
+static void Matrix4x4f_TransformVector3f( Vector3f_t * result, const Matrix4x4f_t * m, const Vector3f_t * v )
+{
+	const float w = m->m[0][3] * v->x + m->m[1][3] * v->y + m->m[2][3] * v->z + m->m[3][3];
+	const float rcpW = 1.0f / w;
+	result->x = ( m->m[0][0] * v->x + m->m[1][0] * v->y + m->m[2][0] * v->z + m->m[3][0] ) * rcpW;
+	result->y = ( m->m[0][1] * v->x + m->m[1][1] * v->y + m->m[2][1] * v->z + m->m[3][1] ) * rcpW;
+	result->z = ( m->m[0][2] * v->x + m->m[1][2] * v->y + m->m[2][2] * v->z + m->m[3][2] ) * rcpW;
+}
+
+// Transforms a 4D vector.
+static void Matrix4x4f_TransformVector4f( Vector4f_t * result, const Matrix4x4f_t * m, const Vector4f_t * v )
+{
+	result->x = m->m[0][0] * v->x + m->m[1][0] * v->y + m->m[2][0] * v->z + m->m[3][0];
+	result->y = m->m[0][1] * v->x + m->m[1][1] * v->y + m->m[2][1] * v->z + m->m[3][1];
+	result->z = m->m[0][2] * v->x + m->m[1][2] * v->y + m->m[2][2] * v->z + m->m[3][2];
+	result->w = m->m[0][3] * v->x + m->m[1][3] * v->y + m->m[2][3] * v->z + m->m[3][3];
 }
 
 /*
@@ -3983,6 +4390,7 @@ static void GpuWindow_SwapBuffers( GpuWindow_t * window );
 static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window );
 static bool GpuWindow_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
 static bool GpuWindow_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button );
+static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
 
 ================================================================================================================================
 */
@@ -4087,33 +4495,42 @@ static void GpuWindow_DestroySurface( GpuWindow_t * window )
 
 typedef enum
 {
-	KEY_ESCAPE		= 0x1B,
-	KEY_A			= 0x61,
-	KEY_B			= 0x62,
-	KEY_C			= 0x63,
-	KEY_D			= 0x64,
-	KEY_E			= 0x65,
-	KEY_F			= 0x66,
-	KEY_G			= 0x67,
-	KEY_H			= 0x68,
-	KEY_I			= 0x69,
-	KEY_J			= 0x6A,
-	KEY_K			= 0x6B,
-	KEY_L			= 0x6C,
-	KEY_M			= 0x6D,
-	KEY_N			= 0x6E,
-	KEY_O			= 0x6F,
-	KEY_P			= 0x70,
-	KEY_Q			= 0x71,
-	KEY_R			= 0x72,
-	KEY_S			= 0x73,
-	KEY_T			= 0x74,
-	KEY_U			= 0x75,
-	KEY_V			= 0x76,
-	KEY_W			= 0x77,
-	KEY_X			= 0x78,
-	KEY_Y			= 0x79,
-	KEY_Z			= 0x7A
+	KEY_A				= 0x41,
+	KEY_B				= 0x42,
+	KEY_C				= 0x43,
+	KEY_D				= 0x44,
+	KEY_E				= 0x45,
+	KEY_F				= 0x46,
+	KEY_G				= 0x47,
+	KEY_H				= 0x48,
+	KEY_I				= 0x49,
+	KEY_J				= 0x4A,
+	KEY_K				= 0x4B,
+	KEY_L				= 0x4C,
+	KEY_M				= 0x4D,
+	KEY_N				= 0x4E,
+	KEY_O				= 0x4F,
+	KEY_P				= 0x50,
+	KEY_Q				= 0x51,
+	KEY_R				= 0x52,
+	KEY_S				= 0x53,
+	KEY_T				= 0x54,
+	KEY_U				= 0x55,
+	KEY_V				= 0x56,
+	KEY_W				= 0x57,
+	KEY_X				= 0x58,
+	KEY_Y				= 0x59,
+	KEY_Z				= 0x5A,
+	KEY_RETURN			= VK_RETURN,
+	KEY_TAB				= VK_TAB,
+	KEY_ESCAPE			= VK_ESCAPE,
+	KEY_SHIFT_LEFT		= VK_SHIFT,
+	KEY_CTRL_LEFT		= VK_CONTROL,
+	KEY_ALT_LEFT		= 0x00,
+	KEY_CURSOR_UP		= VK_UP,
+	KEY_CURSOR_DOWN		= VK_DOWN,
+	KEY_CURSOR_LEFT		= VK_LEFT,
+	KEY_CURSOR_RIGHT	= VK_RIGHT
 } KeyboardKey_t;
 
 typedef enum
@@ -4154,13 +4571,24 @@ LRESULT APIENTRY WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 			PostQuitMessage( 0 );
 			return 0;
 		}
-		case WM_CHAR:
+		case WM_KEYDOWN:
 		{
 			if ( window != NULL )
 			{
 				if ( (int)wParam >= 0 && (int)wParam < 256 )
 				{
 					window->keyInput[(int)wParam] = true;
+				}
+			}
+			break;
+		}
+		case WM_KEYUP:
+		{
+			if ( window != NULL )
+			{
+				if ( (int)wParam == VK_SHIFT || (int)wParam == VK_CONTROL )
+				{
+					window->keyInput[(int)wParam] = false;
 				}
 			}
 			break;
@@ -4401,7 +4829,6 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 typedef enum
 {
-	KEY_ESCAPE			= 0x35,
 	KEY_A				= 0x00,
 	KEY_B				= 0x0B,
 	KEY_C				= 0x08,
@@ -4428,6 +4855,16 @@ typedef enum
 	KEY_X				= 0x07,
 	KEY_Y				= 0x10,
 	KEY_Z				= 0x06,
+	KEY_RETURN			= 0x24,
+	KEY_TAB				= 0x30,
+	KEY_ESCAPE			= 0x35,
+	KEY_SHIFT_LEFT		= 0x38,
+	KEY_CTRL_LEFT		= 0x3B,
+	KEY_ALT_LEFT		= 0x3A,
+	KEY_CURSOR_UP		= 0x7E,
+	KEY_CURSOR_DOWN		= 0x7D,
+	KEY_CURSOR_LEFT		= 0x7B,
+	KEY_CURSOR_RIGHT	= 0x7C
 } KeyboardKey_t;
 
 typedef enum
@@ -4551,7 +4988,6 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 typedef enum
 {
-	KEY_ESCAPE			= 0x35,
 	KEY_A				= 0x00,
 	KEY_B				= 0x0B,
 	KEY_C				= 0x08,
@@ -4578,6 +5014,16 @@ typedef enum
 	KEY_X				= 0x07,
 	KEY_Y				= 0x10,
 	KEY_Z				= 0x06,
+	KEY_RETURN			= 0x24,
+	KEY_TAB				= 0x30,
+	KEY_ESCAPE			= 0x35,
+	KEY_SHIFT_LEFT		= 0x38,
+	KEY_CTRL_LEFT		= 0x3B,
+	KEY_ALT_LEFT		= 0x3A,
+	KEY_CURSOR_UP		= 0x7E,
+	KEY_CURSOR_DOWN		= 0x7D,
+	KEY_CURSOR_LEFT		= 0x7B,
+	KEY_CURSOR_RIGHT	= 0x7C
 } KeyboardKey_t;
 
 typedef enum
@@ -4868,33 +5314,42 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 typedef enum	// keysym.h
 {
-	KEY_ESCAPE		= ( XK_Escape & 255 ),
-	KEY_A			= XK_a,
-	KEY_B			= XK_b,
-	KEY_C			= XK_c,
-	KEY_D			= XK_d,
-	KEY_E			= XK_e,
-	KEY_F			= XK_f,
-	KEY_G			= XK_g,
-	KEY_H			= XK_h,
-	KEY_I			= XK_i,
-	KEY_J			= XK_j,
-	KEY_K			= XK_k,
-	KEY_L			= XK_l,
-	KEY_M			= XK_m,
-	KEY_N			= XK_n,
-	KEY_O			= XK_o,
-	KEY_P			= XK_p,
-	KEY_Q			= XK_q,
-	KEY_R			= XK_r,
-	KEY_S			= XK_s,
-	KEY_T			= XK_t,
-	KEY_U			= XK_u,
-	KEY_V			= XK_v,
-	KEY_W			= XK_w,
-	KEY_X			= XK_x,
-	KEY_Y			= XK_y,
-	KEY_Z			= XK_z
+	KEY_A				= XK_a,
+	KEY_B				= XK_b,
+	KEY_C				= XK_c,
+	KEY_D				= XK_d,
+	KEY_E				= XK_e,
+	KEY_F				= XK_f,
+	KEY_G				= XK_g,
+	KEY_H				= XK_h,
+	KEY_I				= XK_i,
+	KEY_J				= XK_j,
+	KEY_K				= XK_k,
+	KEY_L				= XK_l,
+	KEY_M				= XK_m,
+	KEY_N				= XK_n,
+	KEY_O				= XK_o,
+	KEY_P				= XK_p,
+	KEY_Q				= XK_q,
+	KEY_R				= XK_r,
+	KEY_S				= XK_s,
+	KEY_T				= XK_t,
+	KEY_U				= XK_u,
+	KEY_V				= XK_v,
+	KEY_W				= XK_w,
+	KEY_X				= XK_x,
+	KEY_Y				= XK_y,
+	KEY_Z				= XK_z,
+	KEY_RETURN			= ( XK_Return & 0xFF ),
+	KEY_TAB				= ( XK_Tab & 0xFF ),
+	KEY_ESCAPE			= ( XK_Escape & 0xFF ),
+	KEY_SHIFT_LEFT		= ( XK_Shift_L & 0xFF ),
+	KEY_CTRL_LEFT		= ( XK_Control_L & 0xFF ),
+	KEY_ALT_LEFT		= ( XK_Alt_L & 0xFF ),
+	KEY_CURSOR_UP		= ( XK_Up & 0xFF ),
+	KEY_CURSOR_DOWN		= ( XK_Down & 0xFF ),
+	KEY_CURSOR_LEFT		= ( XK_Left & 0xFF ),
+	KEY_CURSOR_RIGHT	= ( XK_Right & 0xFF )
 } KeyboardKey_t;
 
 typedef enum
@@ -5495,33 +5950,42 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 typedef enum	// keysym.h
 {
-	KEY_ESCAPE		= ( XK_Escape & 255 ),
-	KEY_A			= XK_a,
-	KEY_B			= XK_b,
-	KEY_C			= XK_c,
-	KEY_D			= XK_d,
-	KEY_E			= XK_e,
-	KEY_F			= XK_f,
-	KEY_G			= XK_g,
-	KEY_H			= XK_h,
-	KEY_I			= XK_i,
-	KEY_J			= XK_j,
-	KEY_K			= XK_k,
-	KEY_L			= XK_l,
-	KEY_M			= XK_m,
-	KEY_N			= XK_n,
-	KEY_O			= XK_o,
-	KEY_P			= XK_p,
-	KEY_Q			= XK_q,
-	KEY_R			= XK_r,
-	KEY_S			= XK_s,
-	KEY_T			= XK_t,
-	KEY_U			= XK_u,
-	KEY_V			= XK_v,
-	KEY_W			= XK_w,
-	KEY_X			= XK_x,
-	KEY_Y			= XK_y,
-	KEY_Z			= XK_z
+	KEY_A				= XK_a,
+	KEY_B				= XK_b,
+	KEY_C				= XK_c,
+	KEY_D				= XK_d,
+	KEY_E				= XK_e,
+	KEY_F				= XK_f,
+	KEY_G				= XK_g,
+	KEY_H				= XK_h,
+	KEY_I				= XK_i,
+	KEY_J				= XK_j,
+	KEY_K				= XK_k,
+	KEY_L				= XK_l,
+	KEY_M				= XK_m,
+	KEY_N				= XK_n,
+	KEY_O				= XK_o,
+	KEY_P				= XK_p,
+	KEY_Q				= XK_q,
+	KEY_R				= XK_r,
+	KEY_S				= XK_s,
+	KEY_T				= XK_t,
+	KEY_U				= XK_u,
+	KEY_V				= XK_v,
+	KEY_W				= XK_w,
+	KEY_X				= XK_x,
+	KEY_Y				= XK_y,
+	KEY_Z				= XK_z,
+	KEY_RETURN			= ( XK_Return & 0xFF ),
+	KEY_TAB				= ( XK_Tab & 0xFF ),
+	KEY_ESCAPE			= ( XK_Escape & 0xFF ),
+	KEY_SHIFT_LEFT		= ( XK_Shift_L & 0xFF ),
+	KEY_CTRL_LEFT		= ( XK_Control_L & 0xFF ),
+	KEY_ALT_LEFT		= ( XK_Alt_L & 0xFF ),
+	KEY_CURSOR_UP		= ( XK_Up & 0xFF ),
+	KEY_CURSOR_DOWN		= ( XK_Down & 0xFF ),
+	KEY_CURSOR_LEFT		= ( XK_Left & 0xFF ),
+	KEY_CURSOR_RIGHT	= ( XK_Right & 0xFF )
 } KeyboardKey_t;
 
 typedef enum
@@ -5953,35 +6417,44 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 #elif defined( OS_ANDROID )
 
-typedef enum
+typedef enum	// https://developer.android.com/ndk/reference/group___input.html
 {
-	KEY_ESCAPE		= AKEYCODE_ESCAPE,
-	KEY_A			= AKEYCODE_A,
-	KEY_B			= AKEYCODE_B,
-	KEY_C			= AKEYCODE_C,
-	KEY_D			= AKEYCODE_D,
-	KEY_E			= AKEYCODE_E,
-	KEY_F			= AKEYCODE_F,
-	KEY_G			= AKEYCODE_G,
-	KEY_H			= AKEYCODE_H,
-	KEY_I			= AKEYCODE_I,
-	KEY_J			= AKEYCODE_J,
-	KEY_K			= AKEYCODE_K,
-	KEY_L			= AKEYCODE_L,
-	KEY_M			= AKEYCODE_M,
-	KEY_N			= AKEYCODE_N,
-	KEY_O			= AKEYCODE_O,
-	KEY_P			= AKEYCODE_P,
-	KEY_Q			= AKEYCODE_Q,
-	KEY_R			= AKEYCODE_R,
-	KEY_S			= AKEYCODE_S,
-	KEY_T			= AKEYCODE_T,
-	KEY_U			= AKEYCODE_U,
-	KEY_V			= AKEYCODE_V,
-	KEY_W			= AKEYCODE_W,
-	KEY_X			= AKEYCODE_X,
-	KEY_Y			= AKEYCODE_Y,
-	KEY_Z			= AKEYCODE_Z
+	KEY_A				= AKEYCODE_A,
+	KEY_B				= AKEYCODE_B,
+	KEY_C				= AKEYCODE_C,
+	KEY_D				= AKEYCODE_D,
+	KEY_E				= AKEYCODE_E,
+	KEY_F				= AKEYCODE_F,
+	KEY_G				= AKEYCODE_G,
+	KEY_H				= AKEYCODE_H,
+	KEY_I				= AKEYCODE_I,
+	KEY_J				= AKEYCODE_J,
+	KEY_K				= AKEYCODE_K,
+	KEY_L				= AKEYCODE_L,
+	KEY_M				= AKEYCODE_M,
+	KEY_N				= AKEYCODE_N,
+	KEY_O				= AKEYCODE_O,
+	KEY_P				= AKEYCODE_P,
+	KEY_Q				= AKEYCODE_Q,
+	KEY_R				= AKEYCODE_R,
+	KEY_S				= AKEYCODE_S,
+	KEY_T				= AKEYCODE_T,
+	KEY_U				= AKEYCODE_U,
+	KEY_V				= AKEYCODE_V,
+	KEY_W				= AKEYCODE_W,
+	KEY_X				= AKEYCODE_X,
+	KEY_Y				= AKEYCODE_Y,
+	KEY_Z				= AKEYCODE_Z,
+	KEY_RETURN			= AKEYCODE_ENTER,
+	KEY_TAB				= AKEYCODE_TAB,
+	KEY_ESCAPE			= AKEYCODE_ESCAPE,
+	KEY_SHIFT_LEFT		= AKEYCODE_SHIFT_LEFT,
+	KEY_CTRL_LEFT		= AKEYCODE_CTRL_LEFT,
+	KEY_ALT_LEFT		= AKEYCODE_ALT_LEFT
+	KEY_CURSOR_UP		= AKEYCODE_DPAD_UP,
+	KEY_CURSOR_DOWN		= AKEYCODE_DPAD_DOWN,
+	KEY_CURSOR_LEFT		= AKEYCODE_DPAD_LEFT,
+	KEY_CURSOR_RIGHT	= AKEYCODE_DPAD_RIGHT
 } KeyboardKey_t;
 
 typedef enum
@@ -6323,6 +6796,11 @@ static bool GpuWindow_ConsumeMouseButton( GpuWindow_t * window, const MouseButto
 		return true;
 	}
 	return false;
+}
+
+static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key )
+{
+	return ( window->keyInput[key] != false );
 }
 
 /*
@@ -7813,37 +8291,16 @@ static void GpuTexture_SetAniso( GpuContext_t * context, GpuTexture_t * texture,
 /*
 ================================================================================================================================
 
-GPU geometry.
+GPU vertex attributes.
 
-For optimal performance geometry should only be created at load time, not at runtime.
-The vertex, index and instance buffers are placed in device memory for optimal performance.
-The vertex attributes are not packed. Each attribute is stored in a separate array for
-optimal binning on tiling GPUs that only transform the vertex position for the binning pass.
-Storing each attribute in a saparate array is preferred even on immediate-mode GPUs to avoid
-wasting cache space for attributes that are not used by a particular vertex shader.
-
-GpuVertexAttributeFlags_t
-GpuVertexAttributeArrays_t
 GpuTriangleIndex_t
-GpuGeometry_t
-
-static void GpuVertexAttributeArrays_Alloc( GpuVertexAttributeArrays_t * attribs, const int numVertices, const int attribsFlags );
-static void GpuVertexAttributeArrays_Free( GpuVertexAttributeArrays_t * attribs );
-static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays_t * attribs, const int numVertices,
-														const GpuTriangleIndex_t * indices, const int numIndices );
-
-static void GpuGeometry_Create( GpuContext_t * context, GpuGeometry_t * geometry,
-								const GpuVertexAttributeArrays_t * attribs, const int numVertices,
-								const GpuTriangleIndex_t * indices, const int numIndices );
-static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale );
-static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale );
-static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geometry, const int tesselation, const float offset, const float scale );
-static void GpuGeometry_Destroy( GpuContext_t * context, GpuGeometry_t * geometry );
-
-static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeometry_t * geometry, const int numInstances, const int instanceAttribsFlags );
+GpuVertexAttribute_t
+GpuVertexAttributeArraysBase_t
 
 ================================================================================================================================
 */
+
+typedef unsigned short GpuTriangleIndex_t;
 
 typedef struct
 {
@@ -7851,68 +8308,23 @@ typedef struct
 	size_t			attributeOffset;	// Offset in bytes to the pointer in GpuVertexAttributeArrays_t
 	size_t			attributeSize;		// Size in bytes of a single attribute
 	int				attributeFormat;	// VkFormat of the attribute
+	int				componentType;		// OpenGL type of a single component
+	int				componentCount;		// Number of components per location
 	int				locationCount;		// Number of attribute locations
+	const char *	name;				// Name in vertex program
 } GpuVertexAttribute_t;
 
-typedef enum
-{
-	VERTEX_ATTRIBUTE_FLAG_POSITION	= BIT( 0 ),		// vec3 vertexPosition
-	VERTEX_ATTRIBUTE_FLAG_NORMAL	= BIT( 1 ),		// vec3 vertexNormal
-	VERTEX_ATTRIBUTE_FLAG_TANGENT	= BIT( 2 ),		// vec3 vertexTangent
-	VERTEX_ATTRIBUTE_FLAG_BINORMAL	= BIT( 3 ),		// vec3 vertexBinormal
-	VERTEX_ATTRIBUTE_FLAG_COLOR		= BIT( 4 ),		// vec4 vertexColor
-	VERTEX_ATTRIBUTE_FLAG_UV0		= BIT( 5 ),		// vec2 vertexUv0
-	VERTEX_ATTRIBUTE_FLAG_UV1		= BIT( 6 ),		// vec2 vertexUv1
-	VERTEX_ATTRIBUTE_FLAG_UV2		= BIT( 7 ),		// vec2 vertexUv2
-	VERTEX_ATTRIBUTE_FLAG_TRANSFORM	= BIT( 8 )		// mat4 vertexTransform (NOTE this mat4 takes up 4 attribute locations)
-} GpuVertexAttributeFlags_t;
-
 typedef struct
 {
-	Vector3f_t *	position;
-	Vector3f_t *	normal;
-	Vector3f_t *	tangent;
-	Vector3f_t *	binormal;
-	Vector4f_t *	color;
-	Vector2f_t *	uv0;
-	Vector2f_t *	uv1;
-	Vector2f_t *	uv2;
-	Matrix4x4f_t *	transform;
-} GpuVertexAttributeArrays_t;
+	const GpuVertexAttribute_t *	layout;
+} GpuVertexAttributeArraysBase_t;
 
-static const GpuVertexAttribute_t VertexAttributeLayout[] =
-{
-	{ VERTEX_ATTRIBUTE_FLAG_POSITION,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, position ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, position[0] ),	VK_FORMAT_R32G32B32_SFLOAT,		1 },
-	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, normal ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, normal[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1 },
-	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, tangent ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, tangent[0] ),	VK_FORMAT_R32G32B32_SFLOAT,		1 },
-	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, binormal ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, binormal[0] ),	VK_FORMAT_R32G32B32_SFLOAT,		1 },
-	{ VERTEX_ATTRIBUTE_FLAG_COLOR,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, color ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, color[0] ),		VK_FORMAT_R32G32B32A32_SFLOAT,	1 },
-	{ VERTEX_ATTRIBUTE_FLAG_UV0,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv0 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv0[0] ),		VK_FORMAT_R32G32_SFLOAT,		1 },
-	{ VERTEX_ATTRIBUTE_FLAG_UV1,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv1 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv1[0] ),		VK_FORMAT_R32G32_SFLOAT,		1 },
-	{ VERTEX_ATTRIBUTE_FLAG_UV2,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv2 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv2[0] ),		VK_FORMAT_R32G32_SFLOAT,		1 },
-	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, transform ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, transform[0] ),	VK_FORMAT_R32G32B32A32_SFLOAT,	4 }
-};
-
-typedef unsigned int GpuTriangleIndex_t;
-
-typedef struct
-{
-	int			vertexCount;
-	int			instanceCount;
-	int 		indexCount;
-	int			vertexAttribsFlags;
-	int			instanceAttribsFlags;
-	GpuBuffer_t	vertexBuffer;
-	GpuBuffer_t	instanceBuffer;
-	GpuBuffer_t	indexBuffer;
-} GpuGeometry_t;
-
-static size_t GpuVertexAttributeArrays_GetDataSize( const int numVertices, const int attribsFlags )
+static size_t GpuVertexAttributeArrays_GetDataSize( const GpuVertexAttribute_t * layout, const int numVertices, const int attribsFlags )
 {
 	size_t totalSize = 0;
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &layout[i];
 		if ( ( v->attributeFlag & attribsFlags ) != 0 )
 		{
 			totalSize += v->attributeSize;
@@ -7921,11 +8333,11 @@ static size_t GpuVertexAttributeArrays_GetDataSize( const int numVertices, const
 	return numVertices * totalSize;
 }
 
-static void * GpuVertexAttributeArrays_GetDataPointer( const GpuVertexAttributeArrays_t * attribs )
+static void * GpuVertexAttributeArrays_GetDataPointer( const GpuVertexAttributeArraysBase_t * attribs )
 {
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &attribs->layout[i];
 		void * attribPtr = *(void **) ( ((char *)attribs) + v->attributeOffset );
 		if ( attribPtr != NULL )
 		{
@@ -7935,12 +8347,12 @@ static void * GpuVertexAttributeArrays_GetDataPointer( const GpuVertexAttributeA
 	return NULL;
 }
 
-static int GpuVertexAttributeArrays_GetAttribsFlags( const GpuVertexAttributeArrays_t * attribs )
+static int GpuVertexAttributeArrays_GetAttribsFlags( const GpuVertexAttributeArraysBase_t * attribs )
 {
 	int attribsFlags = 0;
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &attribs->layout[i];
 		void * attribPtr = *(void **) ( ((char *)attribs) + v->attributeOffset );
 		if ( attribPtr != NULL )
 		{
@@ -7950,21 +8362,23 @@ static int GpuVertexAttributeArrays_GetAttribsFlags( const GpuVertexAttributeArr
 	return attribsFlags;
 }
 
-static void GpuVertexAttributeArrays_Map( GpuVertexAttributeArrays_t * attribs, void * data, const size_t dataSize, const int numVertices, const int attribsFlags )
+static void GpuVertexAttributeArrays_Map( GpuVertexAttributeArraysBase_t * attribs, void * data, const size_t dataSize, const int numVertices, const int attribsFlags )
 {
-	memset( attribs, 0, sizeof( GpuVertexAttributeArrays_t ) );
-
 	unsigned char * dataBytePtr = (unsigned char *) data;
 	size_t offset = 0;
 
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &attribs->layout[i];
+		void ** attribPtr = (void **) ( ((char *)attribs) + v->attributeOffset );
 		if ( ( v->attributeFlag & attribsFlags ) != 0 )
 		{
-			void ** attribPtr = (void **) ( ((char *)attribs) + v->attributeOffset );
 			*attribPtr = ( dataBytePtr + offset );
 			offset += numVertices * v->attributeSize;
+		}
+		else
+		{
+			*attribPtr = NULL;
 		}
 	}
 
@@ -7972,41 +8386,59 @@ static void GpuVertexAttributeArrays_Map( GpuVertexAttributeArrays_t * attribs, 
 	UNUSED_PARM( dataSize );
 }
 
-static void GpuVertexAttributeArrays_Alloc( GpuVertexAttributeArrays_t * attribs, const int numVertices, const int attribsFlags )
+static void GpuVertexAttributeArrays_Alloc( GpuVertexAttributeArraysBase_t * attribs, const GpuVertexAttribute_t * layout, const int numVertices, const int attribsFlags )
 {
-	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( numVertices, attribsFlags );
+	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( layout, numVertices, attribsFlags );
 	void * data = malloc( dataSize );
-
+	attribs->layout = layout;
 	GpuVertexAttributeArrays_Map( attribs, data, dataSize, numVertices, attribsFlags );
 }
 
-static void GpuVertexAttributeArrays_Free( GpuVertexAttributeArrays_t * attribs )
+static void GpuVertexAttributeArrays_Free( GpuVertexAttributeArraysBase_t * attribs )
 {
 	void * data = GpuVertexAttributeArrays_GetDataPointer( attribs );
 	free( data );
-	memset( attribs, 0, sizeof( GpuVertexAttributeArrays_t ) );
 }
 
-static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays_t * attribs, const int numVertices,
-												const GpuTriangleIndex_t * indices, const int numIndices )
+static void * GpuVertexAttributeArrays_FindAtribute( GpuVertexAttributeArraysBase_t * attribs, const char * name )
 {
-	assert( attribs->position != NULL );
-	assert( attribs->normal != NULL );
-	assert( attribs->tangent != NULL );
-	assert( attribs->binormal != NULL );
-	assert( attribs->uv0 != NULL );
+	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
+	{
+		const GpuVertexAttribute_t * v = &attribs->layout[i];
+		if ( strcmp( v->name, name ) == 0 ) 
+		{
+			void ** attribPtr = (void **) ( ((char *)attribs) + v->attributeOffset );
+			return *attribPtr;
+		}
+	}
+	return NULL;
+}
+
+static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArraysBase_t * attribs, const int numVertices,
+														const GpuTriangleIndex_t * indices, const int numIndices )
+{
+	Vector3f_t * vertexPosition	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexPosition" );
+	Vector3f_t * vertexNormal	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexNormal" );
+	Vector3f_t * vertexTangent	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexTangent" );
+	Vector3f_t * vertexBinormal	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexBinormal" );
+	Vector2f_t * vertexUv0		= (Vector2f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexUv0" );
+
+	if ( vertexPosition == NULL || vertexNormal == NULL || vertexTangent == NULL || vertexBinormal == NULL || vertexUv0 == NULL )
+	{
+		return;
+	}
 
 	for ( int i = 0; i < numVertices; i++ )
 	{
-		Vector3f_Zero( &attribs->tangent[i] );
-		Vector3f_Zero( &attribs->binormal[i] );
+		Vector3f_Zero( &vertexTangent[i] );
+		Vector3f_Zero( &vertexBinormal[i] );
 	}
 
 	for ( int i = 0; i < numIndices; i += 3 )
 	{
 		const GpuTriangleIndex_t * v = indices + i;
-		const Vector3f_t * pos = attribs->position;
-		const Vector2f_t * uv0 = attribs->uv0;
+		const Vector3f_t * pos = vertexPosition;
+		const Vector2f_t * uv0 = vertexUv0;
 
 		const Vector3f_t delta0 = { pos[v[1]].x - pos[v[0]].x, pos[v[1]].y - pos[v[0]].y, pos[v[1]].z - pos[v[0]].z };
 		const Vector3f_t delta1 = { pos[v[2]].x - pos[v[1]].x, pos[v[2]].y - pos[v[1]].y, pos[v[2]].z - pos[v[1]].z };
@@ -8036,35 +8468,133 @@ static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays
 
 		for ( int j = 0; j < 3; j++ )
 		{
-			attribs->tangent[v[j]].x += tangent.x;
-			attribs->tangent[v[j]].y += tangent.y;
-			attribs->tangent[v[j]].z += tangent.z;
+			vertexTangent[v[j]].x += tangent.x;
+			vertexTangent[v[j]].y += tangent.y;
+			vertexTangent[v[j]].z += tangent.z;
 
-			attribs->binormal[v[j]].x += binormal.x;
-			attribs->binormal[v[j]].y += binormal.y;
-			attribs->binormal[v[j]].z += binormal.z;
+			vertexBinormal[v[j]].x += binormal.x;
+			vertexBinormal[v[j]].y += binormal.y;
+			vertexBinormal[v[j]].z += binormal.z;
 		}
 	}
 
 	for ( int i = 0; i < numVertices; i++ )
 	{
-		Vector3f_Normalize( &attribs->tangent[i] );
-		Vector3f_Normalize( &attribs->binormal[i] );
+		Vector3f_Normalize( &vertexTangent[i] );
+		Vector3f_Normalize( &vertexBinormal[i] );
 	}
 }
 
+/*
+================================================================================================================================
+
+GPU default vertex attribute layout.
+
+GpuVertexAttributeFlags_t
+GpuVertexAttributeArrays_t
+
+================================================================================================================================
+*/
+
+typedef enum
+{
+	VERTEX_ATTRIBUTE_FLAG_POSITION		= BIT( 0 ),		// vec3 vertexPosition
+	VERTEX_ATTRIBUTE_FLAG_NORMAL		= BIT( 1 ),		// vec3 vertexNormal
+	VERTEX_ATTRIBUTE_FLAG_TANGENT		= BIT( 2 ),		// vec3 vertexTangent
+	VERTEX_ATTRIBUTE_FLAG_BINORMAL		= BIT( 3 ),		// vec3 vertexBinormal
+	VERTEX_ATTRIBUTE_FLAG_COLOR			= BIT( 4 ),		// vec4 vertexColor
+	VERTEX_ATTRIBUTE_FLAG_UV0			= BIT( 5 ),		// vec2 vertexUv0
+	VERTEX_ATTRIBUTE_FLAG_UV1			= BIT( 6 ),		// vec2 vertexUv1
+	VERTEX_ATTRIBUTE_FLAG_UV2			= BIT( 7 ),		// vec2 vertexUv2
+	VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES	= BIT( 8 ),		// vec4 jointIndices
+	VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS	= BIT( 9 ),		// vec4 jointWeights
+	VERTEX_ATTRIBUTE_FLAG_TRANSFORM		= BIT( 10 )		// mat4 vertexTransform (NOTE this mat4 takes up 4 attribute locations)
+} GpuVertexAttributeFlags_t;
+
+typedef struct
+{
+	GpuVertexAttributeArraysBase_t	base;
+	Vector3f_t *					position;
+	Vector3f_t *					normal;
+	Vector3f_t *					tangent;
+	Vector3f_t *					binormal;
+	Vector4f_t *					color;
+	Vector2f_t *					uv0;
+	Vector2f_t *					uv1;
+	Vector2f_t *					uv2;
+	Vector4f_t *					jointIndices;
+	Vector4f_t *					jointWeights;
+	Matrix4x4f_t *					transform;
+} GpuVertexAttributeArrays_t;
+
+static const GpuVertexAttribute_t DefaultVertexAttributeLayout[] =
+{
+	{ VERTEX_ATTRIBUTE_FLAG_POSITION,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, position ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, position[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1 },
+	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, normal ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, normal[0] ),			VK_FORMAT_R32G32B32_SFLOAT,		1 },
+	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, tangent ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, tangent[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1 },
+	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, binormal ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, binormal[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1 },
+	{ VERTEX_ATTRIBUTE_FLAG_COLOR,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, color ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, color[0] ),			VK_FORMAT_R32G32B32A32_SFLOAT,	1 },
+	{ VERTEX_ATTRIBUTE_FLAG_UV0,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv0 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv0[0] ),			VK_FORMAT_R32G32_SFLOAT,		1 },
+	{ VERTEX_ATTRIBUTE_FLAG_UV1,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv1 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv1[0] ),			VK_FORMAT_R32G32_SFLOAT,		1 },
+	{ VERTEX_ATTRIBUTE_FLAG_UV2,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv2 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv2[0] ),			VK_FORMAT_R32G32_SFLOAT,		1 },
+	{ VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, jointIndices ),SIZEOF_MEMBER( GpuVertexAttributeArrays_t, jointIndices[0] ),	VK_FORMAT_R32G32B32A32_SFLOAT,	1 },
+	{ VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, jointWeights ),SIZEOF_MEMBER( GpuVertexAttributeArrays_t, jointWeights[0] ),	VK_FORMAT_R32G32B32A32_SFLOAT,	1 },
+	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, transform ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, transform[0] ),		VK_FORMAT_R32G32B32A32_SFLOAT,	4 }
+};
+
+/*
+================================================================================================================================
+
+GPU geometry.
+
+For optimal performance geometry should only be created at load time, not at runtime.
+The vertex, index and instance buffers are placed in device memory for optimal performance.
+The vertex attributes are not packed. Each attribute is stored in a separate array for
+optimal binning on tiling GPUs that only transform the vertex position for the binning pass.
+Storing each attribute in a saparate array is preferred even on immediate-mode GPUs to avoid
+wasting cache space for attributes that are not used by a particular vertex shader.
+
+GpuGeometry_t
+
 static void GpuGeometry_Create( GpuContext_t * context, GpuGeometry_t * geometry,
-								const GpuVertexAttributeArrays_t * attribs, const int numVertices,
+								const GpuVertexAttributeArraysBase_t * attribs, const int numVertices,
+								const GpuTriangleIndex_t * indices, const int numIndices );
+static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale );
+static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale );
+static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geometry, const int tesselation, const float offset, const float scale );
+static void GpuGeometry_Destroy( GpuContext_t * context, GpuGeometry_t * geometry );
+
+static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeometry_t * geometry, const int numInstances, const int instanceAttribsFlags );
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+	const GpuVertexAttribute_t *	layout;
+	int								vertexCount;
+	int								instanceCount;
+	int 							indexCount;
+	int								vertexAttribsFlags;
+	int								instanceAttribsFlags;
+	GpuBuffer_t						vertexBuffer;
+	GpuBuffer_t						instanceBuffer;
+	GpuBuffer_t						indexBuffer;
+} GpuGeometry_t;
+
+static void GpuGeometry_Create( GpuContext_t * context, GpuGeometry_t * geometry,
+								const GpuVertexAttributeArraysBase_t * attribs, const int numVertices,
 								const GpuTriangleIndex_t * indices, const int numIndices )
 {
 	memset( geometry, 0, sizeof( GpuGeometry_t ) );
 
+	geometry->layout = attribs->layout;
 	geometry->vertexCount = numVertices;
 	geometry->indexCount = numIndices;
 	geometry->vertexAttribsFlags = GpuVertexAttributeArrays_GetAttribsFlags( attribs );
 
 	const void * data = GpuVertexAttributeArrays_GetDataPointer( attribs );
-	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( geometry->vertexCount, geometry->vertexAttribsFlags );
+	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( attribs->layout, geometry->vertexCount, geometry->vertexAttribsFlags );
 
 	GpuBuffer_Create( context, &geometry->vertexBuffer, GPU_BUFFER_TYPE_VERTEX, dataSize, data, false );
 	GpuBuffer_Create( context, &geometry->indexBuffer, GPU_BUFFER_TYPE_INDEX, numIndices * sizeof( indices[0] ), indices, false );
@@ -8094,7 +8624,8 @@ static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geom
 	};
 
 	GpuVertexAttributeArrays_t quadAttribs;
-	GpuVertexAttributeArrays_Alloc( &quadAttribs, 4,
+	GpuVertexAttributeArrays_Alloc( &quadAttribs.base,
+									DefaultVertexAttributeLayout, 4,
 									VERTEX_ATTRIBUTE_FLAG_POSITION |
 									VERTEX_ATTRIBUTE_FLAG_NORMAL |
 									VERTEX_ATTRIBUTE_FLAG_TANGENT |
@@ -8113,11 +8644,11 @@ static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geom
 		quadAttribs.uv0[i].y = quadUvs[i].y;
 	}
 
-	GpuVertexAttributeArrays_CalculateTangents( &quadAttribs, 4, quadIndices, 6 );
+	GpuVertexAttributeArrays_CalculateTangents( &quadAttribs.base, 4, quadIndices, 6 );
 
-	GpuGeometry_Create( context, geometry, &quadAttribs, 4, quadIndices, 6 );
+	GpuGeometry_Create( context, geometry, &quadAttribs.base, 4, quadIndices, 6 );
 
-	GpuVertexAttributeArrays_Free( &quadAttribs );
+	GpuVertexAttributeArrays_Free( &quadAttribs.base );
 }
 
 // The cube is centered about the origin and without offset/scale spans the [-1, 1] X-Y-Z range.
@@ -8170,7 +8701,8 @@ static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geom
 	};
 
 	GpuVertexAttributeArrays_t cubeAttribs;
-	GpuVertexAttributeArrays_Alloc( &cubeAttribs, 24,
+	GpuVertexAttributeArrays_Alloc( &cubeAttribs.base,
+									DefaultVertexAttributeLayout, 24,
 									VERTEX_ATTRIBUTE_FLAG_POSITION |
 									VERTEX_ATTRIBUTE_FLAG_NORMAL |
 									VERTEX_ATTRIBUTE_FLAG_TANGENT |
@@ -8189,11 +8721,11 @@ static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geom
 		cubeAttribs.uv0[i].y = cubeUvs[i].y;
 	}
 
-	GpuVertexAttributeArrays_CalculateTangents( &cubeAttribs, 24, cubeIndices, 36 );
+	GpuVertexAttributeArrays_CalculateTangents( &cubeAttribs.base, 24, cubeIndices, 36 );
 
-	GpuGeometry_Create( context, geometry, &cubeAttribs, 24, cubeIndices, 36 );
+	GpuGeometry_Create( context, geometry, &cubeAttribs.base, 24, cubeIndices, 36 );
 
-	GpuVertexAttributeArrays_Free( &cubeAttribs );
+	GpuVertexAttributeArrays_Free( &cubeAttribs.base );
 }
 
 // The torus is centered about the origin and without offset/scale spans the [-1, 1] X-Y range and the [-0.3, 0.3] Z range.
@@ -8207,7 +8739,8 @@ static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geo
 	const int numIndices = majorTesselation * minorTesselation * 6;
 
 	GpuVertexAttributeArrays_t torusAttribs;
-	GpuVertexAttributeArrays_Alloc( &torusAttribs, numVertices,
+	GpuVertexAttributeArrays_Alloc( &torusAttribs.base,
+									DefaultVertexAttributeLayout, numVertices,
 									VERTEX_ATTRIBUTE_FLAG_POSITION |
 									VERTEX_ATTRIBUTE_FLAG_NORMAL |
 									VERTEX_ATTRIBUTE_FLAG_TANGENT |
@@ -8248,20 +8781,20 @@ static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geo
 		for ( int v = 0; v < minorTesselation; v++ )
 		{
 			const int index = ( u * minorTesselation + v ) * 6;
-			torusIndices[index + 0] = ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 );
-			torusIndices[index + 1] = ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 0 );
-			torusIndices[index + 2] = ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 );
-			torusIndices[index + 3] = ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 );
-			torusIndices[index + 4] = ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 1 );
-			torusIndices[index + 5] = ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 );
+			torusIndices[index + 0] = (GpuTriangleIndex_t)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
+			torusIndices[index + 1] = (GpuTriangleIndex_t)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
+			torusIndices[index + 2] = (GpuTriangleIndex_t)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
+			torusIndices[index + 3] = (GpuTriangleIndex_t)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
+			torusIndices[index + 4] = (GpuTriangleIndex_t)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
+			torusIndices[index + 5] = (GpuTriangleIndex_t)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
 		}
 	}
 
-	GpuVertexAttributeArrays_CalculateTangents( &torusAttribs, numVertices, torusIndices, numIndices );
+	GpuVertexAttributeArrays_CalculateTangents( &torusAttribs.base, numVertices, torusIndices, numIndices );
 
-	GpuGeometry_Create( context, geometry, &torusAttribs, numVertices, torusIndices, numIndices );
+	GpuGeometry_Create( context, geometry, &torusAttribs.base, numVertices, torusIndices, numIndices );
 
-	GpuVertexAttributeArrays_Free( &torusAttribs );
+	GpuVertexAttributeArrays_Free( &torusAttribs.base );
 	free( torusIndices );
 }
 
@@ -8279,12 +8812,13 @@ static void GpuGeometry_Destroy( GpuContext_t * context, GpuGeometry_t * geometr
 
 static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeometry_t * geometry, const int numInstances, const int instanceAttribsFlags )
 {
+	assert( geometry->layout != NULL );
 	assert( ( geometry->vertexAttribsFlags & instanceAttribsFlags ) == 0 );
 
 	geometry->instanceCount = numInstances;
 	geometry->instanceAttribsFlags = instanceAttribsFlags;
 
-	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( numInstances, geometry->instanceAttribsFlags );
+	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( geometry->layout, numInstances, geometry->instanceAttribsFlags );
 
 	GpuBuffer_Create( context, &geometry->instanceBuffer, GPU_BUFFER_TYPE_VERTEX, dataSize, NULL, false );
 }
@@ -8899,7 +9433,14 @@ typedef enum
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,		// float[2]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3,		// float[3]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4,		// float[4]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2,	// float[2][2]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3,	// float[2][3]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4,	// float[2][4]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2,	// float[3][2]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3,	// float[3][3]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	// float[3][4]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2,	// float[4][2]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3,	// float[4][3]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	// float[4][4]
 	GPU_PROGRAM_PARM_TYPE_MAX
 } GpuProgramParmType_t;
@@ -8971,9 +9512,17 @@ static int GpuProgramParm_GetPushConstantSize( GpuProgramParmType_t type )
 		(unsigned int)sizeof( float[2] ),
 		(unsigned int)sizeof( float[3] ),
 		(unsigned int)sizeof( float[4] ),
+		(unsigned int)sizeof( float[2][2] ),
+		(unsigned int)sizeof( float[2][3] ),
+		(unsigned int)sizeof( float[2][4] ),
+		(unsigned int)sizeof( float[3][2] ),
+		(unsigned int)sizeof( float[3][3] ),
 		(unsigned int)sizeof( float[3][4] ),
+		(unsigned int)sizeof( float[4][2] ),
+		(unsigned int)sizeof( float[4][3] ),
 		(unsigned int)sizeof( float[4][4] )
 	};
+	assert( ARRAY_SIZE( parmSize ) == GPU_PROGRAM_PARM_TYPE_MAX );
 	return parmSize[type];
 }
 
@@ -9156,7 +9705,7 @@ static bool GpuGraphicsProgram_Create( GpuContext_t * context, GpuGraphicsProgra
 										const void * vertexSourceData, const size_t vertexSourceSize,
 										const void * fragmentSourceData, const size_t fragmentSourceSize,
 										const GpuProgramParm_t * parms, const int numParms,
-										const int vertexAttribsFlags );
+										const GpuVertexAttribute_t * vertexLayout, const int vertexAttribsFlags );
 static void GpuGraphicsProgram_Destroy( GpuContext_t * context, GpuGraphicsProgram_t * program );
 
 ================================================================================================================================
@@ -9175,8 +9724,10 @@ static bool GpuGraphicsProgram_Create( GpuContext_t * context, GpuGraphicsProgra
 										const void * vertexSourceData, const size_t vertexSourceSize,
 										const void * fragmentSourceData, const size_t fragmentSourceSize,
 										const GpuProgramParm_t * parms, const int numParms,
-										const int vertexAttribsFlags )
+										const GpuVertexAttribute_t * vertexLayout, const int vertexAttribsFlags )
 {
+	UNUSED_PARM( vertexLayout );
+
 	program->vertexAttribsFlags = vertexAttribsFlags;
 
 	GpuDevice_CreateShader( context->device, &program->vertexShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertexSourceData, vertexSourceSize );
@@ -9379,16 +9930,17 @@ static void GpuGraphicsPipelineParms_Init( GpuGraphicsPipelineParms_t * parms )
 	parms->geometry = NULL;
 }
 
-static void InitVertexAttributes( const bool instance, const int numAttribs,
+static void InitVertexAttributes( const bool instance,
+								const GpuVertexAttribute_t * vertexLayout, const int numAttribs,
 								const int storedAttribsFlags, const int usedAttribsFlags,
 								VkVertexInputAttributeDescription * attributes, int * attributeCount,
 								VkVertexInputBindingDescription * bindings, int * bindingCount,
 								VkDeviceSize * bindingOffsets )
 {
 	size_t offset = 0;
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < vertexLayout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &vertexLayout[i];
 		if ( ( v->attributeFlag & storedAttribsFlags ) != 0 )
 		{
 			if ( ( v->attributeFlag & usedAttribsFlags ) != 0 )
@@ -9423,16 +9975,16 @@ static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipel
 	pipeline->vertexAttributeCount = 0;
 	pipeline->vertexBindingCount = 0;
 
-	InitVertexAttributes( false, parms->geometry->vertexCount, parms->geometry->vertexAttribsFlags,
-							parms->program->vertexAttribsFlags,
+	InitVertexAttributes( false, parms->geometry->layout, parms->geometry->vertexCount,
+							parms->geometry->vertexAttribsFlags, parms->program->vertexAttribsFlags,
 							pipeline->vertexAttributes, &pipeline->vertexAttributeCount,
 							pipeline->vertexBindings, &pipeline->vertexBindingCount,
 							pipeline->vertexBindingOffsets );
 
 	pipeline->firstInstanceBinding = pipeline->vertexBindingCount;
 
-	InitVertexAttributes( true, parms->geometry->instanceCount, parms->geometry->instanceAttribsFlags,
-							parms->program->vertexAttribsFlags,
+	InitVertexAttributes( true, parms->geometry->layout, parms->geometry->instanceCount,
+							parms->geometry->instanceAttribsFlags, parms->program->vertexAttribsFlags,
 							pipeline->vertexAttributes, &pipeline->vertexAttributeCount,
 							pipeline->vertexBindings, &pipeline->vertexBindingCount,
 							pipeline->vertexBindingOffsets );
@@ -9803,6 +10355,7 @@ static void GpuProgramParmState_SetParm( GpuProgramParmState_t * parmState, cons
 	const int pushConstantSize = GpuProgramParm_GetPushConstantSize( parmType );
 	if ( pushConstantSize > 0 )
 	{
+		assert( parmLayout->offsetForIndex[index] >= 0 );
 		assert( parmLayout->offsetForIndex[index] + pushConstantSize <= MAX_PROGRAM_PARMS * sizeof( float[4] ) );
 		memcpy( &parmState->data[parmLayout->offsetForIndex[index]], pointer, pushConstantSize );
 	}
@@ -9894,7 +10447,14 @@ static void GpuGraphicsCommand_SetParmFloat( GpuGraphicsCommand_t * command, con
 static void GpuGraphicsCommand_SetParmFloatVector2( GpuGraphicsCommand_t * command, const int index, const Vector2f_t * value );
 static void GpuGraphicsCommand_SetParmFloatVector3( GpuGraphicsCommand_t * command, const int index, const Vector3f_t * value );
 static void GpuGraphicsCommand_SetParmFloatVector4( GpuGraphicsCommand_t * command, const int index, const Vector3f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix2x2( GpuGraphicsCommand_t * command, const int index, const Matrix2x2f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix2x3( GpuGraphicsCommand_t * command, const int index, const Matrix2x3f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix2x4( GpuGraphicsCommand_t * command, const int index, const Matrix2x4f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix3x2( GpuGraphicsCommand_t * command, const int index, const Matrix3x2f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix3x3( GpuGraphicsCommand_t * command, const int index, const Matrix3x3f_t * value );
 static void GpuGraphicsCommand_SetParmFloatMatrix3x4( GpuGraphicsCommand_t * command, const int index, const Matrix3x4f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix4x2( GpuGraphicsCommand_t * command, const int index, const Matrix4x2f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix4x3( GpuGraphicsCommand_t * command, const int index, const Matrix4x3f_t * value );
 static void GpuGraphicsCommand_SetParmFloatMatrix4x4( GpuGraphicsCommand_t * command, const int index, const Matrix4x4f_t * value );
 static void GpuGraphicsCommand_SetNumInstances( GpuGraphicsCommand_t * command, const int numInstances );
 
@@ -9994,9 +10554,44 @@ static void GpuGraphicsCommand_SetParmFloatVector4( GpuGraphicsCommand_t * comma
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4, value );
 }
 
+static void GpuGraphicsCommand_SetParmFloatMatrix2x2( GpuGraphicsCommand_t * command, const int index, const Matrix2x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix2x3( GpuGraphicsCommand_t * command, const int index, const Matrix2x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix2x4( GpuGraphicsCommand_t * command, const int index, const Matrix2x4f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix3x2( GpuGraphicsCommand_t * command, const int index, const Matrix3x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix3x3( GpuGraphicsCommand_t * command, const int index, const Matrix3x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3, value );
+}
+
 static void GpuGraphicsCommand_SetParmFloatMatrix3x4( GpuGraphicsCommand_t * command, const int index, const Matrix3x4f_t * value )
 {
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix4x2( GpuGraphicsCommand_t * command, const int index, const Matrix4x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix4x3( GpuGraphicsCommand_t * command, const int index, const Matrix4x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3, value );
 }
 
 static void GpuGraphicsCommand_SetParmFloatMatrix4x4( GpuGraphicsCommand_t * command, const int index, const Matrix4x4f_t * value )
@@ -10036,7 +10631,14 @@ static void GpuComputeCommand_SetParmFloat( GpuComputeCommand_t * command, const
 static void GpuComputeCommand_SetParmFloatVector2( GpuComputeCommand_t * command, const int index, const Vector2f_t * value );
 static void GpuComputeCommand_SetParmFloatVector3( GpuComputeCommand_t * command, const int index, const Vector3f_t * value );
 static void GpuComputeCommand_SetParmFloatVector4( GpuComputeCommand_t * command, const int index, const Vector3f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix2x2( GpuComputeCommand_t * command, const int index, const Matrix2x2f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix2x3( GpuComputeCommand_t * command, const int index, const Matrix2x3f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix2x4( GpuComputeCommand_t * command, const int index, const Matrix2x4f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix3x2( GpuComputeCommand_t * command, const int index, const Matrix3x2f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix3x3( GpuComputeCommand_t * command, const int index, const Matrix3x3f_t * value );
 static void GpuComputeCommand_SetParmFloatMatrix3x4( GpuComputeCommand_t * command, const int index, const Matrix3x4f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix4x2( GpuComputeCommand_t * command, const int index, const Matrix4x2f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix4x3( GpuComputeCommand_t * command, const int index, const Matrix4x3f_t * value );
 static void GpuComputeCommand_SetParmFloatMatrix4x4( GpuComputeCommand_t * command, const int index, const Matrix4x4f_t * value );
 static void GpuComputeCommand_SetDimensions( GpuComputeCommand_t * command, const int x, const int y, const int z );
 
@@ -10126,9 +10728,44 @@ static void GpuComputeCommand_SetParmFloatVector4( GpuComputeCommand_t * command
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4, value );
 }
 
+static void GpuComputeCommand_SetParmFloatMatrix2x2( GpuComputeCommand_t * command, const int index, const Matrix2x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix2x3( GpuComputeCommand_t * command, const int index, const Matrix2x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix2x4( GpuComputeCommand_t * command, const int index, const Matrix2x4f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix3x2( GpuComputeCommand_t * command, const int index, const Matrix3x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix3x3( GpuComputeCommand_t * command, const int index, const Matrix3x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3, value );
+}
+
 static void GpuComputeCommand_SetParmFloatMatrix3x4( GpuComputeCommand_t * command, const int index, const Matrix3x4f_t * value )
 {
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix4x2( GpuComputeCommand_t * command, const int index, const Matrix4x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix4x3( GpuComputeCommand_t * command, const int index, const Matrix4x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3, value );
 }
 
 static void GpuComputeCommand_SetParmFloatMatrix4x4( GpuComputeCommand_t * command, const int index, const Matrix4x4f_t * value )
@@ -10360,10 +10997,10 @@ static void GpuCommandBuffer_SubmitComputeCommand( GpuCommandBuffer_t * commandB
 static GpuBuffer_t * GpuCommandBuffer_MapBuffer( GpuCommandBuffer_t * commandBuffer, GpuBuffer_t * buffer, void ** data );
 static void GpuCommandBuffer_UnmapBuffer( GpuCommandBuffer_t * commandBuffer, GpuBuffer_t * buffer, GpuBuffer_t * mappedBuffer, const GpuBufferUnmapType_t type );
 
-static GpuBuffer_t * GpuCommandBuffer_MapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArrays_t * attribs );
+static GpuBuffer_t * GpuCommandBuffer_MapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs );
 static void GpuCommandBuffer_UnmapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuBuffer_t * mappedVertexBuffer, const GpuBufferUnmapType_t type );
 
-static GpuBuffer_t * GpuCommandBuffer_MapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArrays_t * attribs );
+static GpuBuffer_t * GpuCommandBuffer_MapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs );
 static void GpuCommandBuffer_UnmapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuBuffer_t * mappedInstanceBuffer, const GpuBufferUnmapType_t type );
 
 ================================================================================================================================
@@ -11189,11 +11826,12 @@ static void GpuCommandBuffer_UnmapBuffer( GpuCommandBuffer_t * commandBuffer, Gp
 	}
 }
 
-static GpuBuffer_t * GpuCommandBuffer_MapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArrays_t * attribs )
+static GpuBuffer_t * GpuCommandBuffer_MapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs )
 {
 	void * data = NULL;
 	GpuBuffer_t * buffer = GpuCommandBuffer_MapBuffer( commandBuffer, &geometry->vertexBuffer, &data );
 
+	attribs->layout = geometry->layout;
 	GpuVertexAttributeArrays_Map( attribs, data, buffer->size, geometry->vertexCount, geometry->vertexAttribsFlags );
 
 	return buffer;
@@ -11204,11 +11842,12 @@ static void GpuCommandBuffer_UnmapVertexAttributes( GpuCommandBuffer_t * command
 	GpuCommandBuffer_UnmapBuffer( commandBuffer, &geometry->vertexBuffer, mappedVertexBuffer, type );
 }
 
-static GpuBuffer_t * GpuCommandBuffer_MapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArrays_t * attribs )
+static GpuBuffer_t * GpuCommandBuffer_MapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs )
 {
 	void * data = NULL;
 	GpuBuffer_t * buffer = GpuCommandBuffer_MapBuffer( commandBuffer, &geometry->instanceBuffer, &data );
 
+	attribs->layout = geometry->layout;
 	GpuVertexAttributeArrays_Map( attribs, data, buffer->size, geometry->instanceCount, geometry->instanceAttribsFlags );
 
 	return buffer;
@@ -11218,6 +11857,1872 @@ static void GpuCommandBuffer_UnmapInstanceAttributes( GpuCommandBuffer_t * comma
 {
 	GpuCommandBuffer_UnmapBuffer( commandBuffer, &geometry->instanceBuffer, mappedInstanceBuffer, type );
 }
+
+#if USE_GLTF == 1
+
+/*
+================================================================================================================================
+
+GltfScene_t
+
+static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scene, const char * fileName, GpuRenderPass_t * renderPass );
+static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene );
+static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeInMicroseconds );
+static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene );
+static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, GpuWindow_t * window );
+
+================================================================================================================================
+*/
+
+typedef struct GltfBuffer_t
+{
+	char *						name;
+	char *						type;
+	size_t						byteLength;
+	unsigned char *				bufferData;
+} GltfBuffer_t;
+
+typedef struct GltfBufferView_t
+{
+	char *						name;
+	const GltfBuffer_t *		buffer;
+	size_t						byteOffset;
+	size_t						byteLength;
+	int							target;
+} GltfBufferView_t;
+
+typedef struct GltfAccessor_t
+{
+	char *						name;
+	char *						type;
+	const GltfBufferView_t *	bufferView;
+	size_t						byteOffset;
+	size_t						byteStride;
+	int							componentType;
+	int							count;
+} GltfAccessor_t;
+
+typedef struct GltfImage_t
+{
+	char *						name;
+	char *						uri;
+} GltfImage_t;
+
+typedef struct GltfTexture_t
+{
+	char *						name;
+	GpuTexture_t				texture;
+} GltfTexture_t;
+
+typedef struct GltfShader_t
+{
+	char *						name;
+	char *						uri;
+	int							type;
+} GltfShader_t;
+
+typedef struct GltfProgram_t
+{
+	char *						name;
+	unsigned char *				vertexSource;
+	unsigned char *				fragmentSource;
+	int							vertexSourceSize;
+	int							fragmentSourceSize;
+} GltfProgram_t;
+
+typedef enum
+{
+	GLTF_UNIFORM_SEMANTIC_NONE,
+	GLTF_UNIFORM_SEMANTIC_LOCAL,
+	GLTF_UNIFORM_SEMANTIC_MODEL,
+	GLTF_UNIFORM_SEMANTIC_VIEW,
+	GLTF_UNIFORM_SEMANTIC_PROJECTION,
+	GLTF_UNIFORM_SEMANTIC_MODELVIEW,
+	GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTION,
+	GLTF_UNIFORM_SEMANTIC_MODELINVERSE,
+	GLTF_UNIFORM_SEMANTIC_VIEWINVERSE,
+	GLTF_UNIFORM_SEMANTIC_PROJECTIONINVERSE,
+	GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSE,
+	GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTIONINVERSE,
+	GLTF_UNIFORM_SEMANTIC_MODELINVERSETRANSPOSE,
+	GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSETRANSPOSE,
+	GLTF_UNIFORM_SEMANTIC_VIEWPORT,
+	GLTF_UNIFORM_SEMANTIC_JOINTMATRIX
+} GltfUniformSemantic_t;
+
+static struct
+{
+	const char *			name;
+	GltfUniformSemantic_t	semantic;
+}
+gltfUniformSemanticNames[] =
+{
+	{ "",								GLTF_UNIFORM_SEMANTIC_NONE },
+	{ "LOCAL",							GLTF_UNIFORM_SEMANTIC_LOCAL },
+	{ "MODEL",							GLTF_UNIFORM_SEMANTIC_MODEL },
+	{ "VIEW",							GLTF_UNIFORM_SEMANTIC_VIEW },
+	{ "PROJECTION",						GLTF_UNIFORM_SEMANTIC_PROJECTION },
+	{ "MODELVIEW",						GLTF_UNIFORM_SEMANTIC_MODELVIEW },
+	{ "MODELVIEWPROJECTION",			GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTION },
+	{ "MODELINVERSE",					GLTF_UNIFORM_SEMANTIC_MODELINVERSE },
+	{ "VIEWINVERSE",					GLTF_UNIFORM_SEMANTIC_VIEWINVERSE },
+	{ "PROJECTIONINVERSE",				GLTF_UNIFORM_SEMANTIC_PROJECTIONINVERSE },
+	{ "MODELVIEWINVERSE",				GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSE },
+	{ "MODELVIEWPROJECTIONINVERSE",		GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTIONINVERSE },
+	{ "MODELINVERSETRANSPOSE",			GLTF_UNIFORM_SEMANTIC_MODELINVERSETRANSPOSE },
+	{ "MODELVIEWINVERSETRANSPOSE",		GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSETRANSPOSE },
+	{ "VIEWPORT",						GLTF_UNIFORM_SEMANTIC_VIEWPORT },
+	{ "JOINTMATRIX",					GLTF_UNIFORM_SEMANTIC_JOINTMATRIX },
+	{ NULL,								0 }
+};
+
+typedef struct GltfUniform_t
+{
+	char *						name;
+	GltfUniformSemantic_t		semantic;
+	GpuProgramParmType_t		type;
+	int							index;
+} GltfUniform_t;
+
+typedef struct GltfTechnique_t
+{
+	char *						name;
+	GpuGraphicsProgram_t		program;
+	GpuProgramParm_t *			parms;
+	GltfUniform_t *				uniforms;
+	int							uniformCount;
+} GltfTechnique_t;
+
+typedef struct GltfMaterialValue_t
+{
+	GltfUniform_t *				uniform;
+	GltfTexture_t *				texture;
+	int							intValue[16];
+	float						floatValue[16];
+} GltfMaterialValue_t;
+
+typedef struct GltfMaterial_t
+{
+	char *						name;
+	const GltfTechnique_t *		technique;
+	GltfMaterialValue_t *		values;
+	int							valueCount;
+} GltfMaterial_t;
+
+typedef struct GltfSurface_t
+{
+	const GltfMaterial_t *		material;
+	GpuGeometry_t				geometry;
+	GpuGraphicsPipeline_t		pipeline;
+} GltfSurface_t;
+
+typedef struct GltfModel_t
+{
+	char *						name;
+	GltfSurface_t *				surfaces;
+	int							surfaceCount;
+} GltfModel_t;
+
+typedef struct GltfAnimationChannel_t
+{
+	char *						nodeName;
+	struct GltfNode_t *			node;
+	Quatf_t *					rotation;
+	Vector3f_t *				translation;
+	Vector3f_t *				scale;
+} GltfAnimationChannel_t;
+
+typedef struct GltfAnimation_t
+{
+	char *						name;
+	float *						sampleTimes;
+	int							sampleCount;
+	GltfAnimationChannel_t *	channels;
+	int							channelCount;
+} GltfAnimation_t;
+
+typedef struct GltfJoint_t
+{
+	char *						name;
+	struct GltfNode_t *			node;
+} GltfJoint_t;
+
+typedef struct GltfSkin_t
+{
+	char *						name;
+	struct GltfNode_t *			parent;
+	Matrix4x4f_t				bindShapeMatrix;
+	Matrix4x4f_t *				inverseBindMatrices;
+	GltfJoint_t *				joints;
+	int							jointCount;
+	GpuBuffer_t					jointBuffer;
+} GltfSkin_t;
+
+typedef enum
+{
+	GLTF_CAMERA_TYPE_PERSPECTIVE,
+	GLTF_CAMERA_TYPE_ORTHOGRAPHIC
+} GltfCameraType_t;
+
+typedef struct GltfCamera_t
+{
+	char *						name;
+	GltfCameraType_t			type;
+	struct
+	{
+		float					aspectRatio;
+		float					fovDegreesX;
+		float					fovDegreesY;
+		float					nearZ;
+		float					farZ;
+	}							perspective;
+	struct
+	{
+		float					magX;
+		float					magY;
+		float					nearZ;
+		float					farZ;
+	}							orthographic;
+} GltfCamera_t;
+
+typedef struct GltfNode_t
+{
+	char *						name;
+	char *						jointName;
+	int							index;
+	Quatf_t						rotation;
+	Vector3f_t					translation;
+	Vector3f_t					scale;
+	Matrix4x4f_t				localTransform;
+	Matrix4x4f_t				globalTransform;
+	char **						children;
+	int							childCount;
+	struct GltfNode_t *			parent;
+	struct GltfCamera_t *		camera;
+	struct GltfSkin_t *			skin;
+	struct GltfModel_t **		models;
+	int							modelCount;
+} GltfNode_t;
+
+typedef struct GltfScene_t
+{
+	GltfBuffer_t *				buffers;
+	int *						bufferHash;
+	int							bufferCount;
+	GltfBufferView_t *			bufferViews;
+	int *						bufferViewHash;
+	int							bufferViewCount;
+	GltfAccessor_t *			accessors;
+	int *						accessorHash;
+	int							accessorCount;
+	GltfImage_t *				images;
+	int *						imageHash;
+	int							imageCount;
+	GltfTexture_t *				textures;
+	int *						textureHash;
+	int							textureCount;
+	GltfShader_t *				shaders;
+	int *						shaderHash;
+	int							shaderCount;
+	GltfProgram_t *				programs;
+	int *						programHash;
+	int							programCount;
+	GltfTechnique_t *			techniques;
+	int *						techniqueHash;
+	int							techniqueCount;
+	GltfMaterial_t *			materials;
+	int *						materialHash;
+	int							materialCount;
+	GltfSkin_t *				skins;
+	int *						skinHash;
+	int							skinCount;
+	GltfModel_t *				models;
+	int *						modelHash;
+	int							modelCount;
+	GltfAnimation_t *			animations;
+	int *						animationHash;
+	int							animationCount;
+	GltfCamera_t *				cameras;
+	int *						cameraHash;
+	int							cameraCount;
+	GltfNode_t *				nodes;
+	int *						nodeHash;
+	int							nodeCount;
+	GltfNode_t **				rootNodes;
+	int							rootNodeCount;
+
+	GpuBuffer_t					defaultJointBuffer;
+} GltfScene_t;
+
+#define HASH_TABLE_SIZE		256
+
+static unsigned int StringHash( const char * string )
+{
+	unsigned int hash = 5381;
+	for ( int i = 0; string[i] != '\0'; i++ )
+	{
+		hash = ( ( hash << 5 ) - hash ) + string[i];
+	}
+	return ( hash & ( HASH_TABLE_SIZE - 1 ) );
+}
+
+#define GLTF_HASH( type, typeCapitalized ) \
+	static void Gltf_Create##typeCapitalized##Hash( GltfScene_t * scene ) \
+	{ \
+		scene->type##Hash = (int *) malloc( ( HASH_TABLE_SIZE + scene->type##Count ) * sizeof( scene->type##Hash[0] ) ); \
+		memset( scene->type##Hash, -1, ( HASH_TABLE_SIZE + scene->type##Count ) * sizeof( scene->type##Hash[0] ) ); \
+		for ( int i = 0; i < scene->type##Count; i++ ) \
+		{ \
+			const unsigned int hash = StringHash( scene->type##s[i].name ); \
+			scene->type##Hash[HASH_TABLE_SIZE + i] = scene->type##Hash[hash]; \
+			scene->type##Hash[hash] = i; \
+		} \
+	} \
+	\
+	static Gltf##typeCapitalized##_t * Gltf_Get##typeCapitalized##ByName( const GltfScene_t * scene, const char * name ) \
+	{ \
+		const unsigned int hash = StringHash( name ); \
+		for ( int i = scene->type##Hash[hash]; i >= 0; i = scene->type##Hash[HASH_TABLE_SIZE + i] ) \
+		{ \
+			if ( strcmp( scene->type##s[i].name, name ) == 0 ) \
+			{ \
+				return &scene->type##s[i]; \
+			} \
+		} \
+		return NULL; \
+	}
+
+GLTF_HASH( buffer,		Buffer );
+GLTF_HASH( bufferView,	BufferView );
+GLTF_HASH( accessor,	Accessor );
+GLTF_HASH( image,		Image );
+GLTF_HASH( texture,		Texture );
+GLTF_HASH( shader,		Shader );
+GLTF_HASH( program,		Program );
+GLTF_HASH( technique,	Technique );
+GLTF_HASH( material,	Material );
+GLTF_HASH( skin,		Skin );
+GLTF_HASH( model,		Model );
+GLTF_HASH( animation,	Animation );
+GLTF_HASH( camera,		Camera );
+GLTF_HASH( node,		Node );
+
+static GltfAccessor_t * Gltf_GetAccessorByNameAndType( const GltfScene_t * scene, const char * name, const char * type, const int componentType )
+{
+	GltfAccessor_t * accessor = Gltf_GetAccessorByName( scene, name );
+	if ( accessor != NULL &&
+			accessor->componentType == componentType &&
+				strcmp( accessor->type, type ) == 0 )
+	{
+		return accessor;
+	}
+	return NULL;
+}
+
+static GltfNode_t * Gltf_GetNodeByJointName( const GltfScene_t * scene, const char * jointName )
+{
+	for ( int i = 0; i < scene->nodeCount; i++ )
+	{
+		if ( strcmp( scene->nodes[i].jointName, jointName ) == 0 )
+		{
+			return &scene->nodes[i];
+		}
+	}
+	return NULL;
+}
+
+static char * Gltf_strdup( const char * str )
+{
+	char * out = (char *)malloc( strlen( str ) + 1 );
+	strcpy( out, str );
+	return out;
+}
+
+static unsigned char * Gltf_ReadFile( const char * fileName, int * outSizeInBytes )
+{
+	if ( outSizeInBytes != NULL )
+	{
+		*outSizeInBytes = 0;
+	}
+	FILE * file = fopen( fileName, "rb" );
+	if ( file == NULL )
+	{
+		return NULL;
+	}
+	fseek( file, 0L, SEEK_END );
+	size_t bufferSize = ftell( file );
+	fseek( file, 0L, SEEK_SET );
+	unsigned char * buffer = (unsigned char *) malloc( bufferSize + 1 );
+	if ( fread( buffer, 1, bufferSize, file ) != bufferSize )
+	{
+		fclose( file );
+		free( buffer );
+		return NULL;
+	}
+	buffer[bufferSize] = '\0';
+	fclose( file );
+	if ( outSizeInBytes != NULL )
+	{
+		*outSizeInBytes = (int)bufferSize;
+	}
+	return buffer;
+}
+
+static unsigned char * Gltf_ReadBase64( const char * base64, int * outSizeInBytes )
+{
+	const int base64SizeInBytes = (int)strlen( base64 );
+	const int dataSizeInBytes = Base64_DecodeSizeInBytes( base64, base64SizeInBytes );
+	unsigned char * buffer = (unsigned char *)malloc( dataSizeInBytes );
+	Base64_Decode( buffer, base64, base64SizeInBytes );
+	if ( outSizeInBytes != NULL )
+	{
+		*outSizeInBytes = dataSizeInBytes;
+	}
+	return buffer;
+}
+
+static unsigned char * Gltf_ReadUri( const char * uri, int * outSizeInBytes )
+{
+	if ( strncmp( uri, "data:", 5 ) == 0 )
+	{
+		// binary "buffer"
+		if ( strncmp( uri, "data:application/octet-stream;base64,", 37 ) == 0 )
+		{
+			return Gltf_ReadBase64( uri + 37, outSizeInBytes );
+		}
+		// text "shader"
+		else if ( strncmp( uri, "data:text/plain;base64,", 23 ) == 0 )
+		{
+			return Gltf_ReadBase64( uri + 23, outSizeInBytes );
+		}
+		// KTX "image"
+		else if ( strncmp( uri, "data:image/ktx;base64,", 22 ) == 0 )
+		{
+			return Gltf_ReadBase64( uri + 22, outSizeInBytes );
+		}
+	}
+	return Gltf_ReadFile( uri, outSizeInBytes );
+}
+
+static void Gltf_ParseIntArray( int * elements, const int count, const Json_t * arrayNode )
+{
+	int i = 0;
+	for ( ; i < Json_GetMemberCount( arrayNode ) && i < count; i++ )
+	{
+		elements[i] = Json_GetInt32( Json_GetMemberByIndex( arrayNode, i ), 0 );
+	}
+	for ( ; i < count; i++ )
+	{
+		elements[i] = 0;
+	}
+}
+
+static void Gltf_ParseFloatArray( float * elements, const int count, const Json_t * arrayNode )
+{
+	int i = 0;
+	for ( ; i < Json_GetMemberCount( arrayNode ) && i < count; i++ )
+	{
+		elements[i] = Json_GetFloat( Json_GetMemberByIndex( arrayNode, i ), 0.0f );
+	}
+	for ( ; i < count; i++ )
+	{
+		elements[i] = 0.0f;
+	}
+}
+
+static void * Gltf_GetBufferData( const GltfAccessor_t * access )
+{
+	if ( access == NULL )
+	{
+		return NULL;
+	}
+	unsigned char * ptr = access->bufferView->buffer->bufferData + access->bufferView->byteOffset + access->byteOffset;
+	return ptr;
+}
+
+static GpuProgramStage_t Gltf_GetUniformProgramStage( const GltfProgram_t * program, const char * uniformName )
+{
+	if ( strstr( (char *)program->fragmentSource, uniformName ) )
+	{
+		return GPU_PROGRAM_STAGE_FRAGMENT;
+	}
+	return GPU_PROGRAM_STAGE_VERTEX;
+}
+
+// Sort the nodes such that parents come before their children.
+// Note that the node graph must be acyclic.
+static void Gltf_SortNodes( GltfNode_t * nodes, const int nodeCount )
+{
+	for ( int i = 0; i < nodeCount; i++ )
+	{
+		for ( int c = 0; c < nodes[i].childCount; c++ )
+		{
+			for ( int j = 0; j < nodeCount; j++ )
+			{
+				if ( strcmp( nodes[i].children[c], nodes[j].name ) == 0 )
+				{
+					nodes[j].parent = &nodes[i];
+					break;
+				}
+			}
+		}
+	}
+	GltfNode_t * nodeStack[1024];
+	int stackSize = 0;
+	for ( int i = 0; i < nodeCount; i++ )
+	{
+		if ( nodes[i].parent == NULL )
+		{
+			nodeStack[stackSize++] = &nodes[i];
+		}
+	}
+	int index = 0;
+	while ( stackSize > 0 )
+	{
+		GltfNode_t * node = nodeStack[--stackSize];
+		node->index = index++;
+		for ( int c = 0; c < node->childCount; c++ )
+		{
+			for ( int j = 0; j < nodeCount; j++ )
+			{
+				if ( strcmp( node->children[c], nodes[j].name ) == 0 )
+				{
+					nodeStack[stackSize++] = &nodes[j];
+					break;
+				}
+			}
+		}
+	}
+	assert( index == nodeCount );
+	for ( int i = 0; i < nodeCount; )
+	{
+		if ( nodes[i].index != i )
+		{
+			GltfNode_t temp = nodes[nodes[i].index];
+			nodes[nodes[i].index] = nodes[i];
+			nodes[i] = temp;
+		}
+		else
+		{
+			i++;
+		}
+	}
+	for ( int i = 0; i < nodeCount; i++ )
+	{
+		for ( int c = 0; c < nodes[i].childCount; c++ )
+		{
+			for ( int j = 0; j < nodeCount; j++ )
+			{
+				if ( strcmp( nodes[i].children[c], nodes[j].name ) == 0 )
+				{
+					nodes[j].parent = &nodes[i];
+					break;
+				}
+			}
+		}
+	}
+}
+
+static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scene, const char * fileName, GpuRenderPass_t * renderPass )
+{
+	const Microseconds_t t0 = GetTimeMicroseconds();
+
+	memset( scene, 0, sizeof( GltfScene_t ) );
+
+	// Based on a GL_MAX_UNIFORM_BLOCK_SIZE of 16384 on the ARM Mali.
+	const int MAX_JOINTS = 16384 / sizeof( Matrix4x4f_t );
+
+	Json_t * rootNode = Json_Create();
+	if ( Json_ReadFromFile( rootNode, fileName, NULL ) )
+	{
+		const Json_t * asset = Json_GetMemberByName( rootNode, "asset" );
+		const char * version = Json_GetString( Json_GetMemberByName( asset, "version" ), "1.0" );
+		if ( strcmp( version, "1.0" ) != 0 )
+		{
+			Json_Destroy( rootNode );
+			return false;
+		}
+
+		//
+		// glTF buffers
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * buffers = Json_GetMemberByName( rootNode, "buffers" );
+			scene->bufferCount = Json_GetMemberCount( buffers );
+			scene->buffers = (GltfBuffer_t *) malloc( scene->bufferCount * sizeof( GltfBuffer_t ) );
+			memset( scene->buffers, 0, scene->bufferCount * sizeof( GltfBuffer_t ) );
+			for ( int i = 0; i < scene->bufferCount; i++ )
+			{
+				const Json_t * buffer = Json_GetMemberByIndex( buffers, i );
+				scene->buffers[i].name = Gltf_strdup( Json_GetMemberName( buffer ) );
+				scene->buffers[i].byteLength = Json_GetUint64( Json_GetMemberByName( buffer, "byteLength" ), 0 );
+				scene->buffers[i].type = Gltf_strdup( Json_GetString( Json_GetMemberByName( buffer, "type" ), "" ) );
+				scene->buffers[i].bufferData = Gltf_ReadUri( Json_GetString( Json_GetMemberByName( buffer, "uri" ), "" ), NULL );
+				assert( scene->buffers[i].name[0] != '\0' );
+				assert( scene->buffers[i].byteLength != 0 );
+				assert( scene->buffers[i].bufferData != NULL );
+			}
+			Gltf_CreateBufferHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load buffers\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF bufferViews
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * bufferViews = Json_GetMemberByName( rootNode, "bufferViews" );
+			scene->bufferViewCount = Json_GetMemberCount( bufferViews );
+			scene->bufferViews = (GltfBufferView_t *) malloc( scene->bufferViewCount * sizeof( GltfBufferView_t ) );
+			memset( scene->bufferViews, 0, scene->bufferViewCount * sizeof( GltfBufferView_t ) );
+			for ( int i = 0; i < scene->bufferViewCount; i++ )
+			{
+				const Json_t * view = Json_GetMemberByIndex( bufferViews, i );
+				scene->bufferViews[i].name = Gltf_strdup( Json_GetMemberName( view ) );
+				scene->bufferViews[i].buffer = Gltf_GetBufferByName( scene, Json_GetString( Json_GetMemberByName( view, "buffer" ), "" ) );
+				scene->bufferViews[i].byteOffset = (size_t) Json_GetUint64( Json_GetMemberByName( view, "byteOffset" ), 0 );
+				scene->bufferViews[i].byteLength = (size_t) Json_GetUint64( Json_GetMemberByName( view, "byteLength" ), 0 );
+				scene->bufferViews[i].target = Json_GetUint16( Json_GetMemberByName( view, "target" ), 0 );
+				assert( scene->bufferViews[i].name[0] != '\0' );
+				assert( scene->bufferViews[i].buffer != NULL );
+				assert( scene->bufferViews[i].byteLength != 0 );
+				assert( scene->bufferViews[i].byteOffset + scene->bufferViews[i].byteLength <= scene->bufferViews[i].buffer->byteLength );
+			}
+			Gltf_CreateBufferViewHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load buffer views\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF accessors
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * accessors = Json_GetMemberByName( rootNode, "accessors" );
+			scene->accessorCount = Json_GetMemberCount( accessors );
+			scene->accessors = (GltfAccessor_t *) malloc( scene->accessorCount * sizeof( GltfAccessor_t ) );
+			memset( scene->accessors, 0, scene->accessorCount * sizeof( GltfAccessor_t ) );
+			for ( int i = 0; i < scene->accessorCount; i++ )
+			{
+				const Json_t * access = Json_GetMemberByIndex( accessors, i );
+				scene->accessors[i].name = Gltf_strdup( Json_GetMemberName( access ) );
+				scene->accessors[i].bufferView = Gltf_GetBufferViewByName( scene, Json_GetString( Json_GetMemberByName( access, "bufferView" ), "" ) );
+				scene->accessors[i].byteOffset = (size_t) Json_GetUint64( Json_GetMemberByName( access, "byteOffset" ), 0 );
+				scene->accessors[i].byteStride = (size_t) Json_GetUint64( Json_GetMemberByName( access, "byteStride" ), 0 );
+				scene->accessors[i].componentType = Json_GetUint16( Json_GetMemberByName( access, "componentType" ), 0 );
+				scene->accessors[i].count = Json_GetInt32( Json_GetMemberByName( access, "count" ), 0 );
+				scene->accessors[i].type =  Gltf_strdup( Json_GetString( Json_GetMemberByName( access, "type" ), "" ) );
+				assert( scene->accessors[i].name[0] != '\0' );
+				assert( scene->accessors[i].bufferView != NULL );
+				assert( scene->accessors[i].byteStride != 0 );
+				assert( scene->accessors[i].componentType != 0 );
+				assert( scene->accessors[i].count != 0 );
+				assert( scene->accessors[i].type[0] != '\0' );
+				assert( scene->accessors[i].byteOffset + scene->accessors[i].count * scene->accessors[i].byteStride <= scene->accessors[i].bufferView->byteLength );
+			}
+			Gltf_CreateAccessorHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load accessors\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF images
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * images = Json_GetMemberByName( rootNode, "images" );
+			scene->imageCount = Json_GetMemberCount( images );
+			scene->images = (GltfImage_t *) malloc( scene->imageCount * sizeof( GltfImage_t ) );
+			memset( scene->images, 0, scene->imageCount * sizeof( GltfImage_t ) );
+			for ( int i = 0; i < scene->imageCount; i++ )
+			{
+				const Json_t * image = Json_GetMemberByIndex( images, i );
+				scene->images[i].name = Gltf_strdup( Json_GetMemberName( image ) );
+				scene->images[i].uri = Gltf_strdup( Json_GetString( Json_GetMemberByName( image, "uri" ), "" ) );
+				assert( scene->images[i].name[0] != '\0' );
+				assert( scene->images[i].uri[0] != '\0' );
+			}
+			Gltf_CreateImageHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load images\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF textures
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * textures = Json_GetMemberByName( rootNode, "textures" );
+			scene->textureCount = Json_GetMemberCount( textures );
+			scene->textures = (GltfTexture_t *) malloc( scene->textureCount * sizeof( GltfTexture_t ) );
+			for ( int i = 0; i < scene->textureCount; i++ )
+			{
+				const Json_t * texture = Json_GetMemberByIndex( textures, i );
+				scene->textures[i].name = Gltf_strdup( Json_GetMemberName( texture ) );
+				const GltfImage_t * image = Gltf_GetImageByName( scene, Json_GetString( Json_GetMemberByName( texture, "source" ), "" ) );
+
+				assert( scene->textures[i].name[0] != '\0' );
+				assert( image != NULL );
+
+				int dataSizeInBytes = 0;
+				unsigned char * data = Gltf_ReadUri( image->uri, &dataSizeInBytes );
+				GpuTexture_CreateFromKTX( context, &scene->textures[i].texture, scene->textures[i].name, data, dataSizeInBytes );
+				free( data );
+			}
+			Gltf_CreateTextureHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load textures\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF shaders
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * shaders = Json_GetMemberByName( rootNode, "shaders" );
+			scene->shaderCount = Json_GetMemberCount( shaders );
+			scene->shaders = (GltfShader_t *) malloc( scene->shaderCount * sizeof( GltfShader_t ) );
+			memset( scene->shaders, 0, scene->shaderCount * sizeof( GltfShader_t ) );
+			for ( int i = 0; i < scene->shaderCount; i++ )
+			{
+				const Json_t * shader = Json_GetMemberByIndex( shaders, i );
+				scene->shaders[i].name = Gltf_strdup( Json_GetMemberName( shader ) );
+				scene->shaders[i].uri = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uri" ), "" ) );
+				scene->shaders[i].type = Json_GetUint16( Json_GetMemberByName( shader, "type" ), 0 );
+				assert( scene->shaders[i].name[0] != '\0' );
+				assert( scene->shaders[i].uri[0] != '\0' );
+				assert( scene->shaders[i].type != 0 );
+			}
+			Gltf_CreateShaderHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load shaders\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF programs
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * programs = Json_GetMemberByName( rootNode, "programs" );
+			scene->programCount = Json_GetMemberCount( programs );
+			scene->programs = (GltfProgram_t *) malloc( scene->programCount * sizeof( GltfProgram_t ) );
+			memset( scene->programs, 0, scene->programCount * sizeof( GltfProgram_t ) );
+			for ( int i = 0; i < scene->programCount; i++ )
+			{
+				const Json_t * program = Json_GetMemberByIndex( programs, i );
+				const char * vertexShaderName = Json_GetString( Json_GetMemberByName( program, "vertexShader" ), "" );
+				const char * fragmentShaderName = Json_GetString( Json_GetMemberByName( program, "fragmentShader" ), "" );
+				const GltfShader_t * vertexShader = Gltf_GetShaderByName( scene, vertexShaderName );
+				const GltfShader_t * fragmentShader = Gltf_GetShaderByName( scene, fragmentShaderName );
+
+				assert( vertexShader != NULL );
+				assert( fragmentShader != NULL );
+
+				scene->programs[i].name = Gltf_strdup( Json_GetMemberName( program ) );
+				scene->programs[i].vertexSource = Gltf_ReadUri( vertexShader->uri, &scene->programs[i].vertexSourceSize );
+				scene->programs[i].fragmentSource = Gltf_ReadUri( fragmentShader->uri, &scene->programs[i].fragmentSourceSize );
+				assert( scene->programs[i].name[0] != '\0' );
+				assert( scene->programs[i].vertexSource[0] != '\0' );
+				assert( scene->programs[i].fragmentSource[0] != '\0' );
+			}
+			Gltf_CreateProgramHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load programs\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF techniques
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * techniques = Json_GetMemberByName( rootNode, "techniques" );
+			scene->techniqueCount = Json_GetMemberCount( techniques );
+			scene->techniques = (GltfTechnique_t *) malloc( scene->techniqueCount * sizeof( GltfTechnique_t ) );
+			memset( scene->techniques, 0, scene->techniqueCount * sizeof( GltfTechnique_t ) );
+			for ( int i = 0; i < scene->techniqueCount; i++ )
+			{
+				const Json_t * technique = Json_GetMemberByIndex( techniques, i );
+				scene->techniques[i].name = Gltf_strdup( Json_GetMemberName( technique ) );
+				const GltfProgram_t * program = Gltf_GetProgramByName( scene, Json_GetString( Json_GetMemberByName( technique, "program" ), "" ) );
+
+				assert( scene->techniques[i].name[0] != '\0' );
+				assert( program != NULL );
+
+				int vertexAttribsFlags = 0;
+				const Json_t * attributes = Json_GetMemberByName( technique, "attributes" );
+				const int attributeCount = Json_GetMemberCount( attributes );
+				for ( int j = 0; j < attributeCount; j++ )
+				{
+					const char * attrib = Json_GetString( Json_GetMemberByIndex( attributes, j ), "" );
+					if ( strcmp( attrib, "POSITION" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_POSITION; }
+					else if ( strcmp( attrib, "NORMAL" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_NORMAL; }
+					else if ( strcmp( attrib, "TANGENT" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_TANGENT; }
+					else if ( strcmp( attrib, "BINORMAL" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_BINORMAL; }
+					else if ( strcmp( attrib, "COLOR" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_COLOR; }
+					else if ( strcmp( attrib, "TEXCOORD_0" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_UV0; }
+					else if ( strcmp( attrib, "TEXCOORD_1" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_UV1; }
+					else if ( strcmp( attrib, "TEXCOORD_2" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_UV2; }
+					else if ( strcmp( attrib, "JOINT" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES; }
+					else if ( strcmp( attrib, "WEIGHT" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS; }
+				}
+
+				// Must have at least positions.
+				assert( ( vertexAttribsFlags & VERTEX_ATTRIBUTE_FLAG_POSITION ) != 0 );
+
+				const Json_t * uniforms = Json_GetMemberByName( technique, "uniforms" );
+				const Json_t * parameters = Json_GetMemberByName( technique, "parameters" );
+				const int uniformCount = Json_GetMemberCount( uniforms );
+				scene->techniques[i].parms = (GpuProgramParm_t *) malloc( uniformCount * sizeof( GpuProgramParm_t ) );
+				scene->techniques[i].uniformCount = uniformCount;
+				scene->techniques[i].uniforms = (GltfUniform_t *) malloc( uniformCount * sizeof( GltfUniform_t ) );
+				for ( int j = 0; j < uniformCount; j++ )
+				{
+					const Json_t * uniform = Json_GetMemberByIndex( uniforms, j );
+					const char * uniformName = Json_GetMemberName( uniform );
+					const char * parmName = Json_GetString( uniform, "" );
+					const Json_t * parameter = Json_GetMemberByName( parameters, parmName );
+					const char * semantic = Json_GetString( Json_GetMemberByName( parameter, "semantic" ), "" );
+					const int type = Json_GetUint16( Json_GetMemberByName( parameter, "type" ), 0 );
+					const int binding = Json_GetUint32( Json_GetMemberByName( parameters, "binding" ), 0 );
+
+					GpuProgramParmType_t parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED;
+					switch ( type )
+					{
+						case GL_SAMPLER_2D:		parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED; break;
+						case GL_SAMPLER_3D:		parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED; break;
+						case GL_SAMPLER_CUBE:	parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED; break;
+						case GL_INT:			parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT; break;
+						case GL_INT_VEC2:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2; break;
+						case GL_INT_VEC3:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3; break;
+						case GL_INT_VEC4:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4; break;
+						case GL_FLOAT:			parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT; break;
+						case GL_FLOAT_VEC2:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2; break;
+						case GL_FLOAT_VEC3:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3; break;
+						case GL_FLOAT_VEC4:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4; break;
+						case GL_FLOAT_MAT2:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2; break;
+						case GL_FLOAT_MAT2x3:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3; break;
+						case GL_FLOAT_MAT2x4:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4; break;
+						case GL_FLOAT_MAT3x2:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2; break;
+						case GL_FLOAT_MAT3:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3; break;
+						case GL_FLOAT_MAT3x4:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4; break;
+						case GL_FLOAT_MAT4x2:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2; break;
+						case GL_FLOAT_MAT4x3:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3; break;
+						case GL_FLOAT_MAT4:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4; break;
+					}
+
+					if ( strcmp( semantic, "JOINTMATRIX" ) == 0 )
+					{
+						parmType = GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM;
+					}
+
+					scene->techniques[i].parms[j].stage = Gltf_GetUniformProgramStage( program, uniformName );
+					scene->techniques[i].parms[j].type = parmType;
+					scene->techniques[i].parms[j].access = GPU_PROGRAM_PARM_ACCESS_READ_ONLY;	// assume all parms are read-only
+					scene->techniques[i].parms[j].index = j;
+					scene->techniques[i].parms[j].name = Gltf_strdup( uniformName );
+					scene->techniques[i].parms[j].binding = binding;
+
+					scene->techniques[i].uniforms[j].name = Gltf_strdup( parmName );
+					scene->techniques[i].uniforms[j].semantic = GLTF_UNIFORM_SEMANTIC_NONE;		// default to the material setting the uniform
+					scene->techniques[i].uniforms[j].type = parmType;
+					scene->techniques[i].uniforms[j].index = j;
+					for ( int s = 0; s < sizeof( gltfUniformSemanticNames ) / sizeof( gltfUniformSemanticNames[0] ); s++ )
+					{
+						if ( strcmp( gltfUniformSemanticNames[s].name, semantic ) == 0 )
+						{
+							scene->techniques[i].uniforms[j].semantic = gltfUniformSemanticNames[s].semantic;
+							break;
+						}
+					}
+				}
+
+				GpuGraphicsProgram_Create( context, &scene->techniques[i].program,
+											program->vertexSource, program->vertexSourceSize,
+											program->fragmentSource, program->fragmentSourceSize,
+											scene->techniques[i].parms, uniformCount, DefaultVertexAttributeLayout, vertexAttribsFlags );
+			}
+			Gltf_CreateTechniqueHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load techniques\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF materials
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * materials = Json_GetMemberByName( rootNode, "materials" );
+			scene->materialCount = Json_GetMemberCount( materials );
+			scene->materials = (GltfMaterial_t *) malloc( scene->materialCount * sizeof( GltfMaterial_t ) );
+			memset( scene->materials, 0, scene->materialCount * sizeof( GltfMaterial_t ) );
+			for ( int i = 0; i < scene->materialCount; i++ )
+			{
+				const Json_t * material = Json_GetMemberByIndex( materials, i );
+				const GltfTechnique_t * technique = Gltf_GetTechniqueByName( scene, Json_GetString( Json_GetMemberByName( material, "technique" ), "" ) );
+				scene->materials[i].name = Gltf_strdup( Json_GetMemberName( material ) );
+				scene->materials[i].technique = technique;
+
+				assert( scene->materials[i].name[0] != '\0' );
+				assert( scene->materials[i].technique != NULL );
+
+				const Json_t * values = Json_GetMemberByName( material, "values" );
+				scene->materials[i].valueCount = Json_GetMemberCount( values );
+				scene->materials[i].values = (GltfMaterialValue_t *) malloc( scene->materials[i].valueCount * sizeof( GltfMaterialValue_t ) );
+				memset( scene->materials[i].values, 0, scene->materials[i].valueCount * sizeof( GltfMaterialValue_t ) );
+				for ( int v = 0; v < scene->materials[i].valueCount; v++ )
+				{
+					const Json_t * value = Json_GetMemberByIndex( values, v );
+					const char * valueName = Json_GetMemberName( value );
+					GltfUniform_t * uniform = NULL;
+					for ( int u = 0; u < technique->uniformCount; u++ )
+					{
+						if ( strcmp( technique->uniforms[u].name, valueName ) == 0 )
+						{
+							uniform = &technique->uniforms[u];
+							break;
+						}
+					}
+					if ( uniform == NULL )
+					{
+						assert( false );
+						continue;
+					}
+					assert( uniform->semantic == GLTF_UNIFORM_SEMANTIC_NONE );
+					scene->materials[i].values[v].uniform = uniform;
+					switch ( uniform->type )
+					{
+						case GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED:					scene->materials[i].values[v].texture = Gltf_GetTextureByName( scene, Json_GetString( value, "" ) ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT:				scene->materials[i].values[v].intValue[0] = Json_GetInt32( value, 0 ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2:		Gltf_ParseIntArray( scene->materials[i].values[v].intValue, 16, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3:		Gltf_ParseIntArray( scene->materials[i].values[v].intValue, 16, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4:		Gltf_ParseIntArray( scene->materials[i].values[v].intValue, 16, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT:				scene->materials[i].values[v].floatValue[0] = Json_GetFloat( value, 0.0f ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 2, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 3, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 4, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 2*2, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 2*3, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 2*4, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 3*2, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 3*3, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 3*4, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 4*2, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 4*3, value ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	Gltf_ParseFloatArray( scene->materials[i].values[v].floatValue, 4*4, value ); break;
+					}
+				}
+				// Make sure that the material sets any uniforms that do not have a special semantic.
+				for ( int u = 0; u < technique->uniformCount; u++ )
+				{
+					if ( technique->uniforms[u].semantic == GLTF_UNIFORM_SEMANTIC_NONE )
+					{
+						bool found = false;
+						for ( int v = 0; v < scene->materials[i].valueCount; v++ )
+						{
+							const Json_t * value = Json_GetMemberByIndex( values, v );
+							const char * valueName = Json_GetMemberName( value );
+							if ( strcmp( technique->uniforms[u].name, valueName ) == 0 )
+							{
+								found = true;
+							}
+						}
+						assert( found );
+					}
+				}
+			}
+			Gltf_CreateMaterialHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load materials\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF meshes
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * models = Json_GetMemberByName( rootNode, "meshes" );
+			scene->modelCount = Json_GetMemberCount( models );
+			scene->models = (GltfModel_t *) malloc( scene->modelCount * sizeof( GltfModel_t ) );
+			memset( scene->models, 0, scene->modelCount * sizeof( GltfModel_t ) );
+			for ( int i = 0; i < scene->modelCount; i++ )
+			{
+				const Json_t * model = Json_GetMemberByIndex( models, i );
+				scene->models[i].name = Gltf_strdup( Json_GetMemberName( model ) );
+
+				assert( scene->models[i].name[0] != '\0' );
+
+				const Json_t * primitives = Json_GetMemberByName( model, "primitives" );
+				scene->models[i].surfaceCount = Json_GetMemberCount( primitives );
+				scene->models[i].surfaces = (GltfSurface_t *) malloc( scene->models[i].surfaceCount * sizeof( GltfSurface_t ) );
+				memset( scene->models[i].surfaces, 0, scene->models[i].surfaceCount * sizeof( GltfSurface_t ) );
+				for ( int s = 0; s < scene->models[i].surfaceCount; s++ )
+				{
+					GltfSurface_t * surface = &scene->models[i].surfaces[s];
+
+					const Json_t * primitive = Json_GetMemberByIndex( primitives, s );
+					const Json_t * attributes = Json_GetMemberByName( primitive, "attributes" );
+
+					const char * positionAccessor		= Json_GetString( Json_GetMemberByName( attributes, "POSITION" ), "" );
+					const char * normalAccessor			= Json_GetString( Json_GetMemberByName( attributes, "NORMAL" ), "" );
+					const char * tangentAccessor		= Json_GetString( Json_GetMemberByName( attributes, "TANGENT" ), "" );
+					const char * binormalAccessor		= Json_GetString( Json_GetMemberByName( attributes, "BINORMAL" ), "" );
+					const char * colorAccessor			= Json_GetString( Json_GetMemberByName( attributes, "COLOR" ), "" );
+					const char * uv0Accessor			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_0" ), "" );
+					const char * uv1Accessor			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_1" ), "" );
+					const char * uv2Accessor			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_2" ), "" );
+					const char * jointIndicesAccessor	= Json_GetString( Json_GetMemberByName( attributes, "JOINT" ), "" );
+					const char * jointWeightsAccessor	= Json_GetString( Json_GetMemberByName( attributes, "WEIGHT" ), "" );
+					const char * indicesAccessor		= Json_GetString( Json_GetMemberByName( primitive, "indices" ), "" );
+
+					surface->material = Gltf_GetMaterialByName( scene, Json_GetString( Json_GetMemberByName( primitive, "material" ), "" ) );
+					assert( surface->material != NULL );
+
+					const GltfAccessor_t * access_position		= Gltf_GetAccessorByNameAndType( scene, positionAccessor,		"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * access_normal		= Gltf_GetAccessorByNameAndType( scene, normalAccessor,			"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * access_tangent		= Gltf_GetAccessorByNameAndType( scene, tangentAccessor,		"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * access_binormal		= Gltf_GetAccessorByNameAndType( scene, binormalAccessor,		"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * access_color			= Gltf_GetAccessorByNameAndType( scene, colorAccessor,			"VEC4",		GL_FLOAT );
+					const GltfAccessor_t * access_uv0			= Gltf_GetAccessorByNameAndType( scene, uv0Accessor,			"VEC2",		GL_FLOAT );
+					const GltfAccessor_t * access_uv1			= Gltf_GetAccessorByNameAndType( scene, uv1Accessor,			"VEC2",		GL_FLOAT );
+					const GltfAccessor_t * access_uv2			= Gltf_GetAccessorByNameAndType( scene, uv2Accessor,			"VEC2",		GL_FLOAT );
+					const GltfAccessor_t * access_jointIndices	= Gltf_GetAccessorByNameAndType( scene, jointIndicesAccessor,	"VEC4",		GL_FLOAT );
+					const GltfAccessor_t * access_jointWeights	= Gltf_GetAccessorByNameAndType( scene, jointWeightsAccessor,	"VEC4",		GL_FLOAT );
+					const GltfAccessor_t * access_indices		= Gltf_GetAccessorByNameAndType( scene, indicesAccessor,		"SCALAR",	GL_UNSIGNED_SHORT );
+
+					if ( access_position == NULL || access_indices == NULL )
+					{
+						assert( false );
+						continue;
+					}
+
+					assert( access_normal		== NULL || access_normal->count			== access_position->count );
+					assert( access_tangent		== NULL || access_tangent->count		== access_position->count );
+					assert( access_binormal		== NULL || access_binormal->count		== access_position->count );
+					assert( access_color		== NULL || access_color->count			== access_position->count );
+					assert( access_uv0			== NULL || access_uv0->count			== access_position->count );
+					assert( access_uv1			== NULL || access_uv1->count			== access_position->count );
+					assert( access_uv2			== NULL || access_uv2->count			== access_position->count );
+					assert( access_jointIndices	== NULL || access_jointIndices->count	== access_position->count );
+					assert( access_jointWeights	== NULL || access_jointWeights->count	== access_position->count );
+
+					const int attribFlags = ( access_position != NULL		? VERTEX_ATTRIBUTE_FLAG_POSITION : 0 ) |
+											( access_normal != NULL			? VERTEX_ATTRIBUTE_FLAG_NORMAL : 0 ) |
+											( access_tangent != NULL		? VERTEX_ATTRIBUTE_FLAG_TANGENT : 0 ) |
+											( access_binormal != NULL		? VERTEX_ATTRIBUTE_FLAG_BINORMAL : 0 ) |
+											( access_color != NULL			? VERTEX_ATTRIBUTE_FLAG_COLOR : 0 ) |
+											( access_uv0 != NULL			? VERTEX_ATTRIBUTE_FLAG_UV0 : 0 ) |
+											( access_uv1 != NULL			? VERTEX_ATTRIBUTE_FLAG_UV1 : 0 ) |
+											( access_uv2 != NULL			? VERTEX_ATTRIBUTE_FLAG_UV2 : 0 ) |
+											( access_jointIndices != NULL	? VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES : 0 ) |
+											( access_jointWeights != NULL	? VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS : 0 );
+
+					GpuVertexAttributeArrays_t attribs;
+					GpuVertexAttributeArrays_Alloc( &attribs.base, DefaultVertexAttributeLayout, access_position->count, attribFlags );
+
+					if ( access_position != NULL )		memcpy( attribs.position,		Gltf_GetBufferData( access_position ),		access_position->count		* sizeof( attribs.position[0] ) );
+					if ( access_normal != NULL )		memcpy( attribs.normal,			Gltf_GetBufferData( access_normal ),		access_normal->count		* sizeof( attribs.normal[0] ) );
+					if ( access_tangent != NULL )		memcpy( attribs.tangent,		Gltf_GetBufferData( access_tangent ),		access_tangent->count		* sizeof( attribs.tangent[0] ) );
+					if ( access_binormal != NULL )		memcpy( attribs.binormal,		Gltf_GetBufferData( access_binormal ),		access_binormal->count		* sizeof( attribs.binormal[0] ) );
+					if ( access_color != NULL )			memcpy( attribs.color,			Gltf_GetBufferData( access_color ),			access_color->count			* sizeof( attribs.color[0] ) );
+					if ( access_uv0 != NULL )			memcpy( attribs.uv0,			Gltf_GetBufferData( access_uv0 ),			access_uv0->count			* sizeof( attribs.uv0[0] ) );
+					if ( access_uv1 != NULL )			memcpy( attribs.uv1,			Gltf_GetBufferData( access_uv1 ),			access_uv1->count			* sizeof( attribs.uv1[0] ) );
+					if ( access_uv2 != NULL )			memcpy( attribs.uv2,			Gltf_GetBufferData( access_uv2 ),			access_uv2->count			* sizeof( attribs.uv2[0] ) );
+					if ( access_jointIndices != NULL )	memcpy( attribs.jointIndices,	Gltf_GetBufferData( access_jointIndices ),	access_jointIndices->count	* sizeof( attribs.jointIndices[0] ) );
+					if ( access_jointWeights != NULL )	memcpy( attribs.jointWeights,	Gltf_GetBufferData( access_jointWeights ),	access_jointWeights->count	* sizeof( attribs.jointWeights[0] ) );
+
+					GpuTriangleIndex_t * indices = (GpuTriangleIndex_t *)Gltf_GetBufferData( access_indices );
+
+					GpuGeometry_Create( context, &surface->geometry, &attribs.base, access_position->count, indices, access_indices->count );
+
+					GpuVertexAttributeArrays_Free( &attribs.base );
+
+					GpuGraphicsPipelineParms_t pipelineParms;
+					GpuGraphicsPipelineParms_Init( &pipelineParms );
+
+					pipelineParms.rop.depthTestEnable = true;
+					pipelineParms.rop.depthWriteEnable = true;
+					pipelineParms.renderPass = renderPass;
+					pipelineParms.program = &surface->material->technique->program;
+					pipelineParms.geometry = &surface->geometry;
+
+					GpuGraphicsPipeline_Create( context, &surface->pipeline, &pipelineParms );
+				}
+			}
+			Gltf_CreateModelHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load models\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF animations
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * animations = Json_GetMemberByName( rootNode, "animations" );
+			scene->animationCount = Json_GetMemberCount( animations );
+			scene->animations = (GltfAnimation_t *) malloc( scene->animationCount * sizeof( GltfAnimation_t ) );
+			memset( scene->animations, 0, scene->animationCount * sizeof( GltfAnimation_t ) );
+			for ( int i = 0; i < scene->animationCount; i++ )
+			{
+				const Json_t * animation = Json_GetMemberByIndex( animations, i );
+				scene->animations[i].name = Gltf_strdup( Json_GetMemberName( animation ) );
+
+				const Json_t * parameters = Json_GetMemberByName( animation, "parameters" );
+				const Json_t * samplers = Json_GetMemberByName( animation, "samplers" );
+
+				const char * timeAccessor = Json_GetString( Json_GetMemberByName( parameters, "TIME" ), "" );
+				const GltfAccessor_t * access_time = Gltf_GetAccessorByNameAndType( scene, timeAccessor, "SCALAR", GL_FLOAT );
+
+				if ( access_time == NULL || access_time->count <= 0 )
+				{
+					assert( false );
+					continue;
+				}
+
+				scene->animations[i].sampleCount = access_time->count;
+				scene->animations[i].sampleTimes = (float *)Gltf_GetBufferData( access_time );
+
+				const Json_t * channels = Json_GetMemberByName( animation, "channels" );
+				scene->animations[i].channelCount = Json_GetMemberCount( channels );
+				scene->animations[i].channels = (GltfAnimationChannel_t *) malloc( scene->animations[i].channelCount * sizeof( GltfAnimationChannel_t ) );
+				memset( scene->animations[i].channels, 0, scene->animations[i].channelCount * sizeof( GltfAnimationChannel_t ) );
+				for ( int j = 0; j < scene->animations[i].channelCount; j++ )
+				{
+					const Json_t * channel = Json_GetMemberByIndex( channels, j );
+					const char * samplerName = Json_GetString( Json_GetMemberByName( channel, "sampler" ), "" );
+					const Json_t * sampler = Json_GetMemberByName( samplers, samplerName );
+					const char * outputName = Json_GetString( Json_GetMemberByName( sampler, "output" ), "" );
+
+					const Json_t * target = Json_GetMemberByName( channel, "target" );
+					const char * nodeName = Json_GetString( Json_GetMemberByName( target, "id" ), "" );
+					const char * pathName = Json_GetString( Json_GetMemberByName( target, "path" ), "" );
+
+					scene->animations[i].channels[j].nodeName = Gltf_strdup( nodeName );
+					scene->animations[i].channels[j].node = NULL; // linked up once the nodes are loaded
+
+					if ( strcmp( pathName, "translation" ) == 0 )
+					{
+						const char * accessorName = Json_GetString( Json_GetMemberByName( parameters, outputName ), "" );
+						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC3", GL_FLOAT );
+						assert( accessor != NULL );
+						scene->animations[i].channels[j].translation = (Vector3f_t *) Gltf_GetBufferData( accessor );
+					}
+					else if ( strcmp( pathName, "rotation" ) == 0 )
+					{
+						const char * accessorName = Json_GetString( Json_GetMemberByName( parameters, outputName ), "" );
+						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC4", GL_FLOAT );
+						assert( accessor != NULL );
+						scene->animations[i].channels[j].rotation = (Quatf_t *) Gltf_GetBufferData( accessor );
+					}
+					else if ( strcmp( pathName, "scale" ) == 0 )
+					{
+						const char * accessorName = Json_GetString( Json_GetMemberByName( parameters, outputName ), "" );
+						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC3", GL_FLOAT );
+						assert( accessor != NULL );
+						scene->animations[i].channels[j].scale = (Vector3f_t *) Gltf_GetBufferData( accessor );
+					}
+				}
+			}
+			Gltf_CreateAnimationHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load animations\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF skins
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * skins = Json_GetMemberByName( rootNode, "skins" );
+			scene->skinCount = Json_GetMemberCount( skins );
+			scene->skins = (GltfSkin_t *) malloc( scene->skinCount * sizeof( GltfSkin_t ) );
+			memset( scene->skins, 0, scene->skinCount * sizeof( GltfSkin_t ) );
+			for ( int i = 0; i < scene->skinCount; i++ )
+			{
+				const Json_t * skin = Json_GetMemberByIndex( skins, i );
+				scene->skins[i].name = Gltf_strdup( Json_GetMemberName( skin ) );
+				Gltf_ParseFloatArray( scene->skins[i].bindShapeMatrix.m[0], 16, Json_GetMemberByName( skin, "bindShapeMatrix" ) );
+				const char * bindAccessorName = Json_GetString( Json_GetMemberByName( skin, "inverseBindMatrices" ), "" );
+				const GltfAccessor_t * bindAccess = Gltf_GetAccessorByNameAndType( scene, bindAccessorName, "MAT4", GL_FLOAT );
+				scene->skins[i].inverseBindMatrices = Gltf_GetBufferData( bindAccess );
+
+				assert( scene->skins[i].name[0] != '\0' );
+				assert( scene->skins[i].inverseBindMatrices != NULL );
+
+				const Json_t * jointNames = Json_GetMemberByName( skin, "jointNames" );
+				scene->skins[i].jointCount = Json_GetMemberCount( jointNames );
+				scene->skins[i].joints = (GltfJoint_t *) malloc( scene->skins[i].jointCount * sizeof( GltfJoint_t ) );
+				assert( scene->skins[i].jointCount <= MAX_JOINTS );
+				for ( int j = 0; j < scene->skins[i].jointCount; j++ )
+				{
+					scene->skins[i].joints[j].name = Gltf_strdup( Json_GetString( Json_GetMemberByIndex( jointNames, j ), "" ) );
+					scene->skins[i].joints[j].node = NULL; // linked up once the nodes are loaded
+				}
+				assert( bindAccess->count == scene->skins[i].jointCount );
+
+				GpuBuffer_Create( context, &scene->skins[i].jointBuffer, GPU_BUFFER_TYPE_UNIFORM, scene->skins[i].jointCount * sizeof( Matrix4x4f_t ), NULL, false );
+			}
+			Gltf_CreateSkinHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load skins\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF cameras
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * cameras = Json_GetMemberByName( rootNode, "cameras" );
+			scene->cameraCount = Json_GetMemberCount( cameras );
+			scene->cameras = (GltfCamera_t *) malloc( scene->cameraCount * sizeof( GltfCamera_t ) );
+			memset( scene->cameras, 0, scene->cameraCount * sizeof( GltfCamera_t ) );
+			for ( int i = 0; i < scene->cameraCount; i++ )
+			{
+				const Json_t * camera = Json_GetMemberByIndex( cameras, i );
+				const char * type = Json_GetString( Json_GetMemberByName( camera, "type" ), "" );
+				scene->cameras[i].name = Gltf_strdup( Json_GetMemberName( camera ) );
+				scene->cameras[i].type = ( strcmp( type, "perspective" ) == 0 ) ? GLTF_CAMERA_TYPE_PERSPECTIVE : GLTF_CAMERA_TYPE_ORTHOGRAPHIC;
+				if ( scene->cameras[i].type == GLTF_CAMERA_TYPE_PERSPECTIVE )
+				{
+					const Json_t * perspective = Json_GetMemberByName( camera, "perspective" );
+					const float aspectRatio = Json_GetFloat( Json_GetMemberByName( perspective, "aspectRatio" ), 0.0f );
+					const float yfov = Json_GetFloat( Json_GetMemberByName( perspective, "yfov" ), 0.0f );
+					scene->cameras[i].perspective.fovDegreesX = ( 180.0f / MATH_PI ) * 2.0f * atanf( tanf( yfov * 0.5f ) * aspectRatio );
+					scene->cameras[i].perspective.fovDegreesY = ( 180.0f / MATH_PI ) * yfov;
+					scene->cameras[i].perspective.nearZ = Json_GetFloat( Json_GetMemberByName( perspective, "znear" ), 0.0f );
+					scene->cameras[i].perspective.farZ = Json_GetFloat( Json_GetMemberByName( perspective, "zfar" ), 0.0f );
+					assert( scene->cameras[i].perspective.fovDegreesX > 0.0f );
+					assert( scene->cameras[i].perspective.fovDegreesY > 0.0f );
+					assert( scene->cameras[i].perspective.nearZ > 0.0f );
+				}
+				else
+				{
+					const Json_t * orthographic = Json_GetMemberByName( camera, "orthographic" );
+					scene->cameras[i].orthographic.magX = Json_GetFloat( Json_GetMemberByName( orthographic, "xmag" ), 0.0f );
+					scene->cameras[i].orthographic.magY = Json_GetFloat( Json_GetMemberByName( orthographic, "ymag" ), 0.0f );
+					scene->cameras[i].orthographic.nearZ = Json_GetFloat( Json_GetMemberByName( orthographic, "znear" ), 0.0f );
+					scene->cameras[i].orthographic.farZ = Json_GetFloat( Json_GetMemberByName( orthographic, "zfar" ), 0.0f );
+					assert( scene->cameras[i].orthographic.magX > 0.0f );
+					assert( scene->cameras[i].orthographic.magY > 0.0f );
+					assert( scene->cameras[i].orthographic.nearZ > 0.0f );
+				}
+			}
+			Gltf_CreateCameraHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load cameras\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF nodes
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * nodes = Json_GetMemberByName( rootNode, "nodes" );
+			scene->nodeCount = Json_GetMemberCount( nodes );
+			scene->nodes = (GltfNode_t *) malloc( scene->nodeCount * sizeof( GltfNode_t ) );
+			memset( scene->nodes, 0, scene->nodeCount * sizeof( GltfNode_t ) );
+			for ( int i = 0; i < scene->nodeCount; i++ )
+			{
+				const Json_t * node = Json_GetMemberByIndex( nodes, i );
+				scene->nodes[i].name = Gltf_strdup( Json_GetMemberName( node ) );
+				scene->nodes[i].jointName = Gltf_strdup( Json_GetString( Json_GetMemberByName( node, "jointName" ), "" ) );
+				const Json_t * matrix = Json_GetMemberByName( node, "matrix" );
+				if ( Json_IsArray( matrix ) )
+				{
+					Gltf_ParseFloatArray( scene->nodes[i].localTransform.m[0], 16, matrix );
+					Matrix4x4f_GetTranslation( &scene->nodes[i].translation, &scene->nodes[i].localTransform );
+					Matrix4x4f_GetRotation( &scene->nodes[i].rotation, &scene->nodes[i].localTransform );
+					Matrix4x4f_GetScale( &scene->nodes[i].scale, &scene->nodes[i].localTransform );
+				}
+				else
+				{
+					Gltf_ParseFloatArray( &scene->nodes[i].rotation.x, 4, Json_GetMemberByName( node, "rotation" ) );
+					Gltf_ParseFloatArray( &scene->nodes[i].scale.x, 3, Json_GetMemberByName( node, "scale" ) );
+					Gltf_ParseFloatArray( &scene->nodes[i].translation.x, 3, Json_GetMemberByName( node, "translation" ) );
+					Matrix4x4f_CreateScaleRotationTranslation( &scene->nodes[i].localTransform, &scene->nodes[i].scale, &scene->nodes[i].rotation, &scene->nodes[i].translation );
+				}
+				scene->nodes[i].globalTransform = scene->nodes[i].localTransform;	// transformed to global space later
+
+				assert( scene->nodes[i].name[0] != '\0' );
+				assert( Matrix4x4f_IsAffine( &scene->nodes[i].localTransform, 1e-4f ) );
+				assert( Matrix4x4f_IsAffine( &scene->nodes[i].globalTransform, 1e-4f ) );
+
+				const Json_t * children = Json_GetMemberByName( node, "children" );
+				scene->nodes[i].childCount = Json_GetMemberCount( children );
+				scene->nodes[i].children = (char **) malloc( scene->nodes[i].childCount * sizeof( char * ) );
+				for ( int c = 0; c < scene->nodes[i].childCount; c++ )
+				{
+					scene->nodes[i].children[c] = Gltf_strdup( Json_GetString( Json_GetMemberByIndex( children, c ), "" ) );
+				}
+				scene->nodes[i].camera = Gltf_GetCameraByName( scene, Json_GetString( Json_GetMemberByName( node, "camera" ), "" ) );
+				scene->nodes[i].skin = Gltf_GetSkinByName( scene, Json_GetString( Json_GetMemberByName( node, "skin" ), "" ) );
+				const Json_t * meshes = Json_GetMemberByName( node, "meshes" );
+				scene->nodes[i].modelCount = Json_GetMemberCount( meshes );
+				scene->nodes[i].models = (GltfModel_t **) malloc( scene->nodes[i].modelCount * sizeof( GltfModel_t ** ) );
+				for ( int m = 0; m < scene->nodes[i].modelCount; m++ )
+				{
+					scene->nodes[i].models[m] = Gltf_GetModelByName( scene, Json_GetString( Json_GetMemberByIndex( meshes, m ), "" ) );
+					assert( scene->nodes[i].models[m] != NULL );
+				}
+			}
+			Gltf_SortNodes( scene->nodes, scene->nodeCount );
+			Gltf_CreateNodeHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load nodes\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// Assign node pointers now that the nodes are sorted and the hash is setup.
+		//
+		{
+			for ( int i = 0; i < scene->animationCount; i++ )
+			{
+				for ( int j = 0; j < scene->animations[i].channelCount; j++ )
+				{
+					scene->animations[i].channels[j].node = Gltf_GetNodeByName( scene, scene->animations[i].channels[j].nodeName );
+					assert( scene->animations[i].channels[j].node != NULL );
+				}
+			}
+			for ( int i = 0; i < scene->skinCount; i++ )
+			{
+				for ( int j = 0; j < scene->skins[i].jointCount; j++ )
+				{
+					scene->skins[i].joints[j].node = Gltf_GetNodeByJointName( scene, scene->skins[i].joints[j].name );
+					assert( scene->skins[i].joints[j].node != NULL );
+				}
+			}
+			for ( int i = 0; i < scene->nodeCount; i++ )
+			{
+				if ( scene->nodes[i].skin != NULL )
+				{
+					scene->nodes[i].skin->parent = &scene->nodes[i];
+				}
+			}
+		}
+
+		//
+		// glTF scene
+		//
+		{
+			const Json_t * scenes = Json_GetMemberByName( rootNode, "scenes" );
+			const char * defaultSceneName = Json_GetString( scenes, "" );
+			const Json_t * defaultScene = Json_GetMemberByName( scenes, defaultSceneName );
+
+			UNUSED_PARM( defaultScene );
+			UNUSED_PARM( scenes );
+		}
+	}
+	Json_Destroy( rootNode );
+
+	// Create a default joint buffer.
+	{
+		Matrix4x4f_t * data = malloc( MAX_JOINTS * sizeof( Matrix4x4f_t ) );
+		for ( int i = 0; i < MAX_JOINTS; i++ )
+		{
+			Matrix4x4f_CreateIdentity( &data[i] );
+		}
+		GpuBuffer_Create( context, &scene->defaultJointBuffer, GPU_BUFFER_TYPE_UNIFORM, MAX_JOINTS * sizeof( Matrix4x4f_t ), data, false );
+		free( data );
+	}
+
+	const Microseconds_t t1 = GetTimeMicroseconds();
+
+	Print( "%1.3f seconds to load %s\n", ( t1 - t0 ) * 1e-6f, fileName );
+
+	return true;
+}
+
+static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
+{
+	{
+		for ( int i = 0; i < scene->bufferCount; i++ )
+		{
+			free( scene->buffers[i].name );
+			free( scene->buffers[i].type );
+			free( scene->buffers[i].bufferData );
+		}
+		free( scene->buffers );
+		free( scene->bufferHash );
+	}
+	{
+		for ( int i = 0; i < scene->bufferViewCount; i++ )
+		{
+			free( scene->bufferViews[i].name );
+		}
+		free( scene->bufferViews );
+		free( scene->bufferViewHash );
+	}
+	{
+		for ( int i = 0; i < scene->accessorCount; i++ )
+		{
+			free( scene->accessors[i].name );
+			free( scene->accessors[i].type );
+		}
+		free( scene->accessors );
+		free( scene->accessorHash );
+	}
+	{
+		for ( int i = 0; i < scene->imageCount; i++ )
+		{
+			free( scene->images[i].name );
+			free( scene->images[i].uri );
+		}
+		free( scene->images );
+		free( scene->imageHash );
+	}
+	{
+		for ( int i = 0; i < scene->textureCount; i++ )
+		{
+			free( scene->textures[i].name );
+			GpuTexture_Destroy( context, &scene->textures[i].texture );
+		}
+		free( scene->textures );
+		free( scene->textureHash );
+	}
+	{
+		for ( int i = 0; i < scene->shaderCount; i++ )
+		{
+			free( scene->shaders[i].name );
+			free( scene->shaders[i].uri );
+		}
+		free( scene->shaders );
+		free( scene->shaderHash );
+	}
+	{
+		for ( int i = 0; i < scene->programCount; i++ )
+		{
+			free( scene->programs[i].name );
+			free( scene->programs[i].vertexSource );
+			free( scene->programs[i].fragmentSource );
+		}
+		free( scene->programs );
+		free( scene->programHash );
+	}
+	{
+		for ( int i = 0; i < scene->techniqueCount; i++ )
+		{
+			for ( int j = 0; j < scene->techniques[i].uniformCount; j++ )
+			{
+				free( (void *)scene->techniques[i].parms[j].name );
+				free( scene->techniques[i].uniforms[j].name );
+			}
+			free( scene->techniques[i].name );
+			free( scene->techniques[i].parms );
+			free( scene->techniques[i].uniforms );
+			GpuGraphicsProgram_Destroy( context, &scene->techniques[i].program );
+		}
+		free( scene->techniques );
+		free( scene->techniqueHash );
+	}
+	{
+		for ( int i = 0; i < scene->materialCount; i++ )
+		{
+			free( scene->materials[i].name );
+			free( scene->materials[i].values );
+		}
+		free( scene->materials );
+		free( scene->materialHash );
+	}
+	{
+		for ( int i = 0; i < scene->modelCount; i++ )
+		{
+			for ( int s = 0; s < scene->models[i].surfaceCount; s++ )
+			{
+				GpuGeometry_Destroy( context, &scene->models[i].surfaces[s].geometry );
+				GpuGraphicsPipeline_Destroy( context, &scene->models[i].surfaces[s].pipeline );
+			}
+			free( scene->models[i].name );
+			free( scene->models[i].surfaces );
+		}
+		free( scene->models );
+		free( scene->modelHash );
+	}
+	{
+		for ( int i = 0; i < scene->animationCount; i++ )
+		{
+			for ( int j = 0; j < scene->animations[i].channelCount; j++ )
+			{
+				free( scene->animations[i].channels[j].nodeName );
+			}
+			free( scene->animations[i].name );
+			free( scene->animations[i].channels );
+		}
+		free( scene->animations );
+		free( scene->animationHash );
+	}
+	{
+		for ( int i = 0; i < scene->skinCount; i++ )
+		{
+			for ( int j = 0; j < scene->skins[i].jointCount; j++ )
+			{
+				free( scene->skins[i].joints[j].name );
+			}
+			free( scene->skins[i].name );
+			free( scene->skins[i].joints );
+			GpuBuffer_Destroy( context, &scene->skins[i].jointBuffer );
+		}
+		free( scene->skins );
+		free( scene->skinHash );
+	}
+	{
+		for ( int i = 0; i < scene->cameraCount; i++ )
+		{
+			free( scene->cameras[i].name );
+		}
+		free( scene->cameras );
+		free( scene->cameraHash );
+	}
+	{
+		for ( int i = 0; i < scene->nodeCount; i++ )
+		{
+			for ( int c = 0; c < scene->nodes[i].childCount; c++ )
+			{
+				free( scene->nodes[i].children[c] );
+			}
+			free( scene->nodes[i].name );
+			free( scene->nodes[i].jointName );
+			free( scene->nodes[i].children );
+			free( scene->nodes[i].models );
+		}
+		free( scene->nodes );
+		free( scene->nodeHash );
+	}
+	memset( scene, 0, sizeof( GltfScene_t ) );
+}
+
+static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeInMicroseconds )
+{
+	UNUSED_PARM( timeInMicroseconds );
+
+	// Apply animations to the nodes in the hierarchy.
+	for ( int i = 0; i < scene->animationCount; i++ )
+	{
+		const GltfAnimation_t * animation = &scene->animations[i];
+		if ( animation->sampleTimes == NULL || animation->sampleCount < 2 )
+		{
+			continue;
+		}
+
+		const float timeInSeconds = fmodf( timeInMicroseconds * 1e-6f, animation->sampleTimes[animation->sampleCount - 1] - animation->sampleTimes[0] );
+		int frame = 0;
+		for ( int sampleCount = animation->sampleCount; sampleCount > 1; sampleCount >>= 1 )
+		{
+			const int mid = sampleCount >> 1;
+			if ( timeInSeconds >= animation->sampleTimes[frame + mid] )
+			{
+				frame += mid;
+				sampleCount = ( sampleCount - mid ) * 2;
+			}
+		}
+		assert( timeInSeconds >= animation->sampleTimes[frame] && timeInSeconds < animation->sampleTimes[frame + 1] );
+		const float fraction = ( timeInSeconds - animation->sampleTimes[frame] ) / ( animation->sampleTimes[frame + 1] - animation->sampleTimes[frame] );
+
+		for ( int j = 0; j < animation->channelCount; j++ )
+		{
+			const GltfAnimationChannel_t * channel = &animation->channels[j];
+			if ( channel->translation != NULL )
+			{
+				Vector3f_Lerp( &channel->node->translation, &channel->translation[frame], &channel->translation[frame + 1], fraction );
+			}
+			if ( channel->rotation != NULL )
+			{
+				Quatf_Lerp( &channel->node->rotation, &channel->rotation[frame], &channel->rotation[frame + 1], fraction );
+			}
+			if ( channel->scale != NULL )
+			{
+				Vector3f_Lerp( &channel->node->scale, &channel->scale[frame], &channel->scale[frame + 1], fraction );
+			}
+		}
+	}
+
+	// Transform the node hierarchy into global space.
+	for ( int i = 0; i < scene->nodeCount; i++ )
+	{
+		GltfNode_t * node = &scene->nodes[i];
+		Matrix4x4f_CreateScaleRotationTranslation( &node->localTransform, &node->scale, &node->rotation, &node->translation );
+		if ( node->parent != NULL )
+		{
+			assert( node->parent < node );
+			Matrix4x4f_Multiply( &node->globalTransform, &node->parent->globalTransform, &node->localTransform );
+		}
+		else
+		{
+			node->globalTransform = node->localTransform;
+		}
+	}
+}
+
+static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene )
+{
+	// Update the skin joint buffers.
+	for ( int i = 0; i < scene->skinCount; i++ )
+	{
+		GltfSkin_t * skin = &scene->skins[i];
+
+		// Exclude the transform of the whole skeleton because that transform will be
+		// passed down the vertex shader as the model matrix.
+		Matrix4x4f_t inverseGlobalSkeletonTransfom;
+		Matrix4x4f_Invert( &inverseGlobalSkeletonTransfom, &skin->parent->globalTransform );
+
+		Matrix4x4f_t * joints = NULL;
+		GpuBuffer_t * mappedJointBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &skin->jointBuffer, &joints );
+
+		for ( int j = 0; j < skin->jointCount; j++ )
+		{
+			Matrix4x4f_t inverseBindMatrix;
+			Matrix4x4f_Multiply( &inverseBindMatrix, &skin->inverseBindMatrices[j], &skin->bindShapeMatrix );
+
+			Matrix4x4f_t localJointTransform;
+			Matrix4x4f_Multiply( &localJointTransform, &inverseGlobalSkeletonTransfom, &skin->joints[j].node->globalTransform );
+
+			Matrix4x4f_Multiply( &joints[j], &localJointTransform, &inverseBindMatrix );
+			//Matrix4x4f_CreateIdentity( &joints[j] );
+		}
+
+		GpuCommandBuffer_UnmapBuffer( commandBuffer, &scene->skins[i].jointBuffer, mappedJointBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
+	}
+}
+
+static void GltfScene_HandleInput( Matrix4x4f_t * viewMatrix, GpuWindow_t * window )
+{
+	static const float DEGREES_PER_TAP = 15.0f;
+	static const float UNITS_PER_TAP = 0.125f;
+
+	static Vector3f_t viewAngles = { 0.0f, 0.0f, 0.0f };
+	static Vector3f_t viewOffset = { 0.0f, 1.5f, 0.25f };
+	Vector3f_t moveDelta = { 0.0f, 0.0f, 0.0f };
+
+	if ( GpuWindow_CheckKeyboardKey( window, KEY_SHIFT_LEFT ) )
+	{
+		if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_UP ) )			{ viewAngles.x += DEGREES_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_DOWN ) )		{ viewAngles.x -= DEGREES_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_LEFT ) )		{ viewAngles.y += DEGREES_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_RIGHT ) )	{ viewAngles.y -= DEGREES_PER_TAP; }
+	}
+	else if ( GpuWindow_CheckKeyboardKey( window, KEY_CTRL_LEFT ) )
+	{
+		if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_UP ) )			{ moveDelta.y += UNITS_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_DOWN ) )		{ moveDelta.y -= UNITS_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_LEFT ) )		{ moveDelta.x -= UNITS_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_RIGHT ) )	{ moveDelta.x += UNITS_PER_TAP; }
+	}
+	else
+	{
+		if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_UP ) )			{ moveDelta.z -= UNITS_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_DOWN ) )		{ moveDelta.z += UNITS_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_LEFT ) )		{ viewAngles.y += DEGREES_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_RIGHT ) )	{ viewAngles.y -= DEGREES_PER_TAP; }
+	}
+
+	Matrix4x4f_t yawRotation;
+	Matrix4x4f_CreateRotation( &yawRotation, 0.0f, viewAngles.y, 0.0f );
+
+	Vector3f_t rotatedMoveDelta;
+	Matrix4x4f_TransformVector3f( &rotatedMoveDelta, &yawRotation, &moveDelta );
+
+	viewOffset.x += rotatedMoveDelta.x;
+	viewOffset.y += rotatedMoveDelta.y;
+	viewOffset.z += rotatedMoveDelta.z;
+
+	Matrix4x4f_t viewRotation;
+	Matrix4x4f_CreateRotation( &viewRotation, viewAngles.x, viewAngles.y, viewAngles.z );
+
+	Matrix4x4f_t viewRotationTranspose;
+	Matrix4x4f_Transpose( &viewRotationTranspose, &viewRotation );
+
+	Matrix4x4f_t viewTranslation;
+	Matrix4x4f_CreateTranslation( &viewTranslation, -viewOffset.x, -viewOffset.y, -viewOffset.z );
+
+	Matrix4x4f_Multiply( viewMatrix, &viewRotationTranspose, &viewTranslation );
+}
+
+typedef struct
+{
+	Vector4f_t		viewport;
+	Matrix4x4f_t	viewMatrix;
+	Matrix4x4f_t	projectionMatrix;
+	Matrix4x4f_t	viewInverseMatrix;
+	Matrix4x4f_t	projectionInverseMatrix;
+	Matrix4x4f_t	localMatrix;
+	Matrix4x4f_t	modelMatrix;
+	Matrix4x4f_t	modelViewMatrix;
+	Matrix4x4f_t	modelViewProjectionMatrix;
+	Matrix4x4f_t	modelInverseMatrix;
+	Matrix4x4f_t	modelViewInverseMatrix;
+	Matrix4x4f_t	modelViewProjectionInverseMatrix;
+	Matrix3x3f_t	modelInverseTransposeMatrix;
+	Matrix3x3f_t	modelViewInverseTransposeMatrix;
+} GltfBuiltinUniforms_t;
+
+static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, GpuWindow_t * window )
+{
+
+	const GltfNode_t * cameraNode = NULL;
+	const GltfCamera_t * camera = NULL;
+	for ( int i = 0; i < scene->nodeCount; i++ )
+	{
+		if ( scene->nodes[i].camera != NULL )
+		{
+			cameraNode = &scene->nodes[i];
+			camera = scene->nodes[i].camera;
+			break;
+		}
+	}
+
+	GltfBuiltinUniforms_t builtin;
+
+	if ( 0 )//cameraNode != NULL )
+	{
+		Matrix4x4f_Invert( &builtin.viewMatrix, &cameraNode->globalTransform );
+		Matrix4x4f_CreateProjectionFov( &builtin.projectionMatrix,
+										camera->perspective.fovDegreesX, camera->perspective.fovDegreesY,
+										0.0f, 0.0f,
+										camera->perspective.nearZ, camera->perspective.farZ );
+	}
+	else
+	{
+		GltfScene_HandleInput( &builtin.viewMatrix, window );
+		Matrix4x4f_CreateProjectionFov( &builtin.projectionMatrix, 90.0f, 60.0f, 0.0f, 0.0f, 0.01f, 0.0f );
+	}
+
+	builtin.viewport.x = 0.0f;
+	builtin.viewport.y = 0.0f;
+	builtin.viewport.z = 1.0f;
+	builtin.viewport.w = 1.0f;
+
+	Matrix4x4f_Invert( &builtin.viewInverseMatrix, &builtin.viewMatrix );
+	Matrix4x4f_Invert( &builtin.projectionInverseMatrix, &builtin.projectionMatrix );
+
+	for ( int i = 0; i < scene->nodeCount; i++ )
+	{
+		const GltfNode_t * node = &scene->nodes[i];
+		if ( node->modelCount == 0 )
+		{
+			continue;
+		}
+
+		builtin.localMatrix = node->localTransform;
+		builtin.modelMatrix = node->globalTransform;
+		Matrix4x4f_Multiply( &builtin.modelViewMatrix, &builtin.viewMatrix, &builtin.modelMatrix );
+		Matrix4x4f_Multiply( &builtin.modelViewProjectionMatrix, &builtin.projectionMatrix, &builtin.modelViewMatrix );
+		Matrix4x4f_Invert( &builtin.modelInverseMatrix, &builtin.modelMatrix );
+		Matrix4x4f_Invert( &builtin.modelViewInverseMatrix, &builtin.modelViewMatrix );
+		Matrix4x4f_Invert( &builtin.modelViewProjectionInverseMatrix, &builtin.modelViewProjectionMatrix );
+		Matrix3x3f_TransposeFromMatrix4x4f( &builtin.modelInverseTransposeMatrix, &builtin.modelInverseMatrix );
+		Matrix3x3f_TransposeFromMatrix4x4f( &builtin.modelViewInverseTransposeMatrix, &builtin.modelViewInverseMatrix );
+
+		const GltfSkin_t * skin = scene->nodes[i].skin;
+		const GpuBuffer_t * jointBuffer = ( skin != NULL ) ? &skin->jointBuffer : &scene->defaultJointBuffer;
+		for ( int m = 0; m < node->modelCount; m++ )
+		{
+			const GltfModel_t * model = node->models[m];
+			for ( int s = 0; s < model->surfaceCount; s++ )
+			{
+				const GltfSurface_t * surface = &model->surfaces[s];
+
+				GpuGraphicsCommand_t command;
+				GpuGraphicsCommand_Init( &command );
+
+				command.pipeline = &surface->pipeline;
+
+				const GltfTechnique_t * technique = surface->material->technique;
+				for ( int u = 0; u < technique->uniformCount; u++ )
+				{
+					const int index = technique->uniforms[u].index;
+					switch ( technique->uniforms[u].semantic )
+					{
+						case GLTF_UNIFORM_SEMANTIC_LOCAL:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &builtin.localMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODEL:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &builtin.modelMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_VIEW:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &builtin.viewMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_PROJECTION:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &builtin.projectionMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODELVIEW:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &builtin.modelViewMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTION:			GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &builtin.modelViewProjectionMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODELINVERSE:				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &builtin.modelInverseMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_VIEWINVERSE:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &builtin.viewInverseMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_PROJECTIONINVERSE:			GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &builtin.projectionInverseMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSE:			GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &builtin.modelViewInverseMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTIONINVERSE:	GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, &builtin.modelViewProjectionInverseMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODELINVERSETRANSPOSE:		GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, index, &builtin.modelInverseTransposeMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSETRANSPOSE:	GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, index, &builtin.modelViewInverseTransposeMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_VIEWPORT:					GpuGraphicsCommand_SetParmFloatVector4( &command, index, &builtin.viewport );
+						case GLTF_UNIFORM_SEMANTIC_JOINTMATRIX:					GpuGraphicsCommand_SetParmBufferUniform( &command, index, jointBuffer );
+					}
+				}
+
+				for ( int v = 0; v < surface->material->valueCount; v++ )
+				{
+					const GltfMaterialValue_t * value = &surface->material->values[v];
+					if ( value->uniform == NULL )
+					{
+						continue;
+					}
+					const int index = value->uniform->index;
+					switch ( value->uniform->type )
+					{
+						case GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED:					GpuGraphicsCommand_SetParmTextureSampled( &command, index, &value->texture->texture ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT:				GpuGraphicsCommand_SetParmInt( &command, index, value->intValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2:		GpuGraphicsCommand_SetParmIntVector2( &command, index, (const Vector2i_t *)value->intValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3:		GpuGraphicsCommand_SetParmIntVector3( &command, index, (const Vector3i_t *)value->intValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4:		GpuGraphicsCommand_SetParmIntVector4( &command, index, (const Vector4i_t *)value->intValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT:				GpuGraphicsCommand_SetParmFloat( &command, index, value->floatValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		GpuGraphicsCommand_SetParmFloatVector2( &command, index, (const Vector2f_t *)value->floatValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		GpuGraphicsCommand_SetParmFloatVector3( &command, index, (const Vector3f_t *)value->floatValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		GpuGraphicsCommand_SetParmFloatVector4( &command, index, (const Vector4f_t *)value->floatValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2:	GpuGraphicsCommand_SetParmFloatMatrix2x2( &command, index, (const Matrix2x2f_t *)value->floatValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3:	GpuGraphicsCommand_SetParmFloatMatrix2x3( &command, index, (const Matrix2x3f_t *)value->floatValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4:	GpuGraphicsCommand_SetParmFloatMatrix2x4( &command, index, (const Matrix2x4f_t *)value->floatValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2:	GpuGraphicsCommand_SetParmFloatMatrix3x2( &command, index, (const Matrix3x2f_t *)value->floatValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3:	GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, index, (const Matrix3x3f_t *)value->floatValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4:	GpuGraphicsCommand_SetParmFloatMatrix3x4( &command, index, (const Matrix3x4f_t *)value->floatValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	GpuGraphicsCommand_SetParmFloatMatrix4x2( &command, index, (const Matrix4x2f_t *)value->floatValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	GpuGraphicsCommand_SetParmFloatMatrix4x3( &command, index, (const Matrix4x3f_t *)value->floatValue ); break;
+						case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, index, (const Matrix4x4f_t *)value->floatValue ); break;
+					}
+				}
+
+				// Make sure all uniforms are set.
+				for ( int u = 0; u < technique->uniformCount; u++ )
+				{
+					assert( command.parmState.parms[u] != NULL );
+				}
+
+				GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
+			}
+		}
+	}
+}
+
+#endif // USE_GLTF == 1
 
 /*
 ================================================================================================================================
@@ -11641,7 +14146,7 @@ static void BarGraph_Create( GpuContext_t * context, BarGraph_t * barGraph, GpuR
 									PROGRAM( barGraphVertexProgram ), sizeof( PROGRAM( barGraphVertexProgram ) ),
 									PROGRAM( barGraphFragmentProgram ), sizeof( PROGRAM( barGraphFragmentProgram ) ),
 									barGraphGraphicsProgramParms, 0,
-									VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_TRANSFORM );
+									barGraph->graphics.quad.layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_TRANSFORM );
 
 		GpuGraphicsPipelineParms_t pipelineParms;
 		GpuGraphicsPipelineParms_Init( &pipelineParms );
@@ -11707,7 +14212,7 @@ static void BarGraph_AddBar( BarGraph_t * barGraph, const int stackedBar, const 
 static void BarGraph_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph )
 {
 	GpuVertexAttributeArrays_t attribs;
-	GpuBuffer_t * instanceBuffer = GpuCommandBuffer_MapInstanceAttributes( commandBuffer, &barGraph->graphics.quad, &attribs );
+	GpuBuffer_t * instanceBuffer = GpuCommandBuffer_MapInstanceAttributes( commandBuffer, &barGraph->graphics.quad, &attribs.base );
 
 #if defined( GRAPHICS_API_VULKAN )
 	const float flipY = -1.0f;
@@ -12799,22 +15304,23 @@ static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t 
 		{
 			const int offset = ( y * EYE_TILES_WIDE + x ) * 6;
 
-			indices[offset + 0] = ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 );
-			indices[offset + 1] = ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 );
-			indices[offset + 2] = ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 );
+			indices[offset + 0] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
+			indices[offset + 1] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
+			indices[offset + 2] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
 
-			indices[offset + 3] = ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 );
-			indices[offset + 4] = ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 );
-			indices[offset + 5] = ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 );
+			indices[offset + 3] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
+			indices[offset + 4] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
+			indices[offset + 5] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
 		}
 	}
 
 	GpuVertexAttributeArrays_t vertexAttribs;
-	GpuVertexAttributeArrays_Alloc( &vertexAttribs, numVertices,
-							VERTEX_ATTRIBUTE_FLAG_POSITION |
-							VERTEX_ATTRIBUTE_FLAG_UV0 |
-							VERTEX_ATTRIBUTE_FLAG_UV1 |
-							VERTEX_ATTRIBUTE_FLAG_UV2 );
+	GpuVertexAttributeArrays_Alloc( &vertexAttribs.base,
+									DefaultVertexAttributeLayout, numVertices,
+									VERTEX_ATTRIBUTE_FLAG_POSITION |
+									VERTEX_ATTRIBUTE_FLAG_UV0 |
+									VERTEX_ATTRIBUTE_FLAG_UV1 |
+									VERTEX_ATTRIBUTE_FLAG_UV2 );
 
 	const int numMeshCoords = ( EYE_TILES_WIDE + 1 ) * ( EYE_TILES_HIGH + 1 );
 	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t ) );
@@ -12851,23 +15357,23 @@ static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t 
 			}
 		}
 
-		GpuGeometry_Create( context, &graphics->distortionMesh[eye], &vertexAttribs, numVertices, indices, numIndices );
+		GpuGeometry_Create( context, &graphics->distortionMesh[eye], &vertexAttribs.base, numVertices, indices, numIndices );
 	}
 
 	free( meshCoordsBasePtr );
-	GpuVertexAttributeArrays_Free( &vertexAttribs );
+	GpuVertexAttributeArrays_Free( &vertexAttribs.base );
 	free( indices );
 
 	GpuGraphicsProgram_Create( context, &graphics->timeWarpSpatialProgram,
 								PROGRAM( timeWarpSpatialVertexProgram ), sizeof( PROGRAM( timeWarpSpatialVertexProgram ) ),
 								PROGRAM( timeWarpSpatialFragmentProgram ), sizeof( PROGRAM( timeWarpSpatialFragmentProgram ) ),
 								timeWarpSpatialGraphicsProgramParms, ARRAY_SIZE( timeWarpSpatialGraphicsProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV0 );
+								graphics->distortionMesh[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV1 );
 	GpuGraphicsProgram_Create( context, &graphics->timeWarpChromaticProgram,
 								PROGRAM( timeWarpChromaticVertexProgram ), sizeof( PROGRAM( timeWarpChromaticVertexProgram ) ),
 								PROGRAM( timeWarpChromaticFragmentProgram ), sizeof( PROGRAM( timeWarpChromaticFragmentProgram ) ),
 								timeWarpChromaticGraphicsProgramParms, ARRAY_SIZE( timeWarpChromaticGraphicsProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV0 |
+								graphics->distortionMesh[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV0 |
 								VERTEX_ATTRIBUTE_FLAG_UV1 | VERTEX_ATTRIBUTE_FLAG_UV2 );
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
@@ -15327,14 +17833,14 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 								PROGRAM( flatShadedFragmentProgram ),
 								sizeof( PROGRAM( flatShadedFragmentProgram ) ),
 								flatShadedProgramParms, ARRAY_SIZE( flatShadedProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL );
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL );
 	GpuGraphicsProgram_Create( context, &scene->program[1],
 								PROGRAM( normalMappedVertexProgram ),
 								sizeof( PROGRAM( normalMappedVertexProgram ) ),
 								PROGRAM( normalMapped100LightsFragmentProgram ),
 								sizeof( PROGRAM( normalMapped100LightsFragmentProgram ) ),
 								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
 								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
 								VERTEX_ATTRIBUTE_FLAG_UV0 );
 	GpuGraphicsProgram_Create( context, &scene->program[2],
@@ -15343,7 +17849,7 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 								PROGRAM( normalMapped1000LightsFragmentProgram ),
 								sizeof( PROGRAM( normalMapped1000LightsFragmentProgram ) ),
 								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
 								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
 								VERTEX_ATTRIBUTE_FLAG_UV0 );
 	GpuGraphicsProgram_Create( context, &scene->program[3],
@@ -15352,7 +17858,7 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 								PROGRAM( normalMapped2000LightsFragmentProgram ),
 								sizeof( PROGRAM( normalMapped2000LightsFragmentProgram ) ),
 								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
 								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
 								VERTEX_ATTRIBUTE_FLAG_UV0 );
 
@@ -16290,8 +18796,13 @@ bool RenderScene( StartupSettings_t * startupSettings )
 	SceneSettings_SetFragmentLevel( &sceneSettings, startupSettings->fragmentLevel );
 	SceneSettings_SetSamplesLevel( &sceneSettings, startupSettings->samplesLevel );
 
+#if USE_GLTF == 1
+	GltfScene_t sceneGltf;
+	GltfScene_CreateFromFile( &window.context, &sceneGltf, "models.gltf", &renderPass );
+#else
 	Scene_t scene;
 	Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
+#endif
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
 
@@ -16377,7 +18888,11 @@ bool RenderScene( StartupSettings_t * startupSettings )
 		if ( recreate )
 		{
 			const GpuSampleCount_t newSampleCount = sampleCountTable[SceneSettings_GetSamplesLevel( &sceneSettings )];
+#if USE_GLTF == 1
+			GltfScene_Destroy( &window.context, &sceneGltf );
+#else
 			Scene_Destroy( &window.context, &scene );
+#endif
 			BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
 			BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
 			GpuTimer_Destroy( &window.context, &timer );
@@ -16399,15 +18914,22 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			GpuTimer_Create( &window.context, &timer );
 			BarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
 			BarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
+#if USE_GLTF == 1
+			GltfScene_CreateFromFile( &window.context, &sceneGltf, "models.gltf", &renderPass );
+#else
 			Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
+#endif
 			recreate = false;
 		}
 
 		if ( window.windowActive )
 		{
+#if USE_GLTF == 1
+			GltfScene_Simulate( &sceneGltf, GpuWindow_GetNextSwapTime( &window ) );
+#else
 			Scene_UpdateSettings( &scene );
-
 			Scene_Simulate( &scene, GpuWindow_GetNextSwapTime( &window ) );
+#endif
 
 			Matrix4x4f_t viewMatrix;
 			Matrix4x4f_CreateIdentity( &viewMatrix );
@@ -16424,7 +18946,11 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			GpuCommandBuffer_BeginPrimary( &commandBuffer );
 			GpuCommandBuffer_BeginFramebuffer( &commandBuffer, &framebuffer, 0, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
 
+#if USE_GLTF == 1
+			GltfScene_UpdateBuffers( &commandBuffer, &sceneGltf );
+#else
 			Scene_UpdateMatrices( &commandBuffer, &scene, &viewMatrix, &projectionMatrix );
+#endif
 
 			BarGraph_UpdateGraphics( &commandBuffer, &frameCpuTimeBarGraph );
 			BarGraph_UpdateGraphics( &commandBuffer, &frameGpuTimeBarGraph );
@@ -16434,7 +18960,11 @@ bool RenderScene( StartupSettings_t * startupSettings )
 
 			GpuCommandBuffer_SetViewport( &commandBuffer, &screenRect );
 			GpuCommandBuffer_SetScissor( &commandBuffer, &screenRect );
+#if USE_GLTF == 1
+			GltfScene_Render( &commandBuffer, &sceneGltf, &window );
+#else
 			Scene_Render( &commandBuffer, &scene );
+#endif
 
 			BarGraph_RenderGraphics( &commandBuffer, &frameCpuTimeBarGraph );
 			BarGraph_RenderGraphics( &commandBuffer, &frameGpuTimeBarGraph );
@@ -16461,7 +18991,11 @@ bool RenderScene( StartupSettings_t * startupSettings )
 		}
 	}
 
+#if USE_GLTF == 1
+	GltfScene_Destroy( &window.context, &sceneGltf );
+#else
 	Scene_Destroy( &window.context, &scene );
+#endif
 	BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
 	BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
 	GpuTimer_Destroy( &window.context, &timer );
@@ -16538,7 +19072,7 @@ static int StartApplication( int argc, char * argv[] )
 	//startupSettings.samplesLevel = 0;
 	//startupSettings.useMultiView = true;
 	//startupSettings.correctChromaticAberration = true;
-	//startupSettings.renderMode = RENDER_MODE_SCENE;
+	startupSettings.renderMode = RENDER_MODE_SCENE;
 	//startupSettings.timeWarpImplementation = TIMEWARP_IMPLEMENTATION_COMPUTE;
 
 	Print( "    fullscreen = %d\n",					startupSettings.fullscreen );
