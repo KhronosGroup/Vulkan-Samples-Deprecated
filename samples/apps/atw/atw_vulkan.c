@@ -524,6 +524,11 @@ Common headers
 #include <utils/json.h>
 #include <utils/base64.h>
 
+#define GL_BYTE				0x1400
+#define GL_UNSIGNED_BYTE	0x1401
+#define GL_SHORT			0x1402
+#define GL_UNSIGNED_SHORT	0x1403
+
 #define GL_INT				0x1404
 #define GL_INT_VEC2			0x8B53
 #define GL_INT_VEC3			0x8B54
@@ -545,6 +550,9 @@ Common headers
 #define GL_SAMPLER_2D		0x8B5E
 #define GL_SAMPLER_3D		0x8B5F
 #define GL_SAMPLER_CUBE		0x8B60
+
+#define GL_VERTEX_SHADER	0x8B31
+#define GL_FRAGMENT_SHADER	0x8B30
 #endif
 
 /*
@@ -11917,8 +11925,10 @@ typedef struct GltfTexture_t
 typedef struct GltfShader_t
 {
 	char *						name;
-	char *						uri;
-	int							type;
+	char *						uri;				// GLSL text for OpenGL
+	char *						uriSpirvOpenGL;		// SPIR-V binary for OpenGL
+	char *						uriSpirvVulkan;		// SPIR-V binary for Vulkan
+	int							type;				// either GL_VERTEX_SHADER or GL_FRAGMENT_SHADER
 } GltfShader_t;
 
 typedef struct GltfProgram_t
@@ -12340,15 +12350,6 @@ static void * Gltf_GetBufferData( const GltfAccessor_t * access )
 	return ptr;
 }
 
-static GpuProgramStage_t Gltf_GetUniformProgramStage( const GltfProgram_t * program, const char * uniformName )
-{
-	if ( strstr( (char *)program->fragmentSource, uniformName ) )
-	{
-		return GPU_PROGRAM_STAGE_FRAGMENT;
-	}
-	return GPU_PROGRAM_STAGE_VERTEX;
-}
-
 // Sort the nodes such that parents come before their children.
 // Note that the node graph must be acyclic.
 static void Gltf_SortNodes( GltfNode_t * nodes, const int nodeCount )
@@ -12601,6 +12602,8 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				const Json_t * shader = Json_GetMemberByIndex( shaders, i );
 				scene->shaders[i].name = Gltf_strdup( Json_GetMemberName( shader ) );
 				scene->shaders[i].uri = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uri" ), "" ) );
+				scene->shaders[i].uriSpirvOpenGL = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uriSpirvOpenGL" ), "" ) );
+				scene->shaders[i].uriSpirvVulkan = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uriSpirvVulkan" ), "" ) );
 				scene->shaders[i].type = Json_GetUint16( Json_GetMemberByName( shader, "type" ), 0 );
 				assert( scene->shaders[i].name[0] != '\0' );
 				assert( scene->shaders[i].uri[0] != '\0' );
@@ -12699,8 +12702,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					const char * parmName = Json_GetString( uniform, "" );
 					const Json_t * parameter = Json_GetMemberByName( parameters, parmName );
 					const char * semantic = Json_GetString( Json_GetMemberByName( parameter, "semantic" ), "" );
+					const int stage = Json_GetUint32( Json_GetMemberByName( parameter, "stage" ), 0 );
 					const int type = Json_GetUint16( Json_GetMemberByName( parameter, "type" ), 0 );
-					const int binding = Json_GetUint32( Json_GetMemberByName( parameters, "binding" ), 0 );
+					const int binding = Json_GetUint32( Json_GetMemberByName( parameters, "bindingVulkan" ), 0 );
 
 					GpuProgramParmType_t parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED;
 					switch ( type )
@@ -12732,7 +12736,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 						parmType = GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM;
 					}
 
-					scene->techniques[i].parms[j].stage = Gltf_GetUniformProgramStage( program, uniformName );
+					scene->techniques[i].parms[j].stage = ( stage == GL_VERTEX_SHADER ) ? GPU_PROGRAM_STAGE_VERTEX : GPU_PROGRAM_STAGE_FRAGMENT;
 					scene->techniques[i].parms[j].type = parmType;
 					scene->techniques[i].parms[j].access = GPU_PROGRAM_PARM_ACCESS_READ_ONLY;	// assume all parms are read-only
 					scene->techniques[i].parms[j].index = j;
@@ -13314,6 +13318,8 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 		{
 			free( scene->shaders[i].name );
 			free( scene->shaders[i].uri );
+			free( scene->shaders[i].uriSpirvOpenGL );
+			free( scene->shaders[i].uriSpirvVulkan );
 		}
 		free( scene->shaders );
 		free( scene->shaderHash );
