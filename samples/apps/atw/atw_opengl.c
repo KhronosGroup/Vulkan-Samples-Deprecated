@@ -1698,8 +1698,15 @@ Matrix4x2f_t
 Matrix4x3f_t
 Matrix4x4f_t
 
-static void Vector3f_Zero( Vector3f_t * v );
+static void Vector3f_Set( Vector3f_t * v, const float value );
+static void Vector3f_Add( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
+static void Vector3f_Sub( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
+static void Vector3f_Min( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
+static void Vector3f_Max( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
+static void Vector3f_Lerp( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b, const float fraction );
 static void Vector3f_Normalize( Vector3f_t * v );
+
+static void Quatf_Lerp( Quatf_t * result, const Quatf_t * a, const Quatf_t * b, const float fraction );
 
 static void Matrix3x3f_TransposeFromMatrix4x4f( Matrix3x3f_t * result, const Matrix4x4f_t * src );
 static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * result, const Matrix4x4f_t * src );
@@ -1714,6 +1721,7 @@ static void Matrix4x4f_CreateProjection( Matrix4x4f_t * result, const float minX
 static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * result, const float fovDegreesX, const float fovDegreesY,
 											const float offsetX, const float offsetY, const float nearZ, const float farZ );
 static void Matrix4x4f_CreateFromQuaternion( Matrix3x4f_t * result, const Quatf_t * src );
+static void Matrix4x4f_CreateOffsetScaleForBounds( Matrix4x4f_t * result, const Matrix4x4f_t * matrix, const Vector3f_t * mins, const Vector3f_t * maxs );
 
 static bool Matrix4x4f_IsAffine( const Matrix4x4f_t * matrix, const float epsilon );
 static bool Matrix4x4f_IsOrthogonal( const Matrix4x4f_t * matrix, const float epsilon );
@@ -1731,6 +1739,9 @@ static void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4
 
 static void Matrix4x4f_TransformVector3f( Vector3f_t * result, const Matrix4x4f_t * m, const Vector3f_t * v );
 static void Matrix4x4f_TransformVector4f( Vector4f_t * result, const Matrix4x4f_t * m, const Vector4f_t * v );
+
+static void Matrix4x4f_TransformBounds( Vector3f_t * resultMins, Vector3f_t * resultMaxs, const Matrix4x4f_t * matrix, const Vector3f_t * mins, const Vector3f_t * maxs );
+static bool Matrix4x4f_CullBounds( const Matrix4x4f_t * mvp, const Vector3f_t * mins, const Vector3f_t * maxs );
 
 ================================================================================================================================
 */
@@ -1860,13 +1871,6 @@ static float RcpSqrt( const float x )
 	const float SMALLEST_NON_DENORMAL = 1.1754943508222875e-038f;	// ( 1U << 23 )
 	const float rcp = ( x >= SMALLEST_NON_DENORMAL ) ? 1.0f / sqrtf( x ) : 1.0f;
 	return rcp;
-}
-
-static void Vector3f_Zero( Vector3f_t * v )
-{
-	v->x = 0.0f;
-	v->y = 0.0f;
-	v->z = 0.0f;
 }
 
 static void Vector3f_Set( Vector3f_t * v, const float value )
@@ -2297,7 +2301,7 @@ static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * result, const float f
 }
 
 // Creates a matrix that transforms the -1 to 1 cube to cover the given 'mins' and 'maxs' transformed with the given 'matrix'.
-void Matrix4x4f_CreateOffsetScaleForBounds( Matrix4x4f_t * result, const Matrix4x4f_t * matrix, const Vector3f_t * mins, const Vector3f_t * maxs )
+static void Matrix4x4f_CreateOffsetScaleForBounds( Matrix4x4f_t * result, const Matrix4x4f_t * matrix, const Vector3f_t * mins, const Vector3f_t * maxs )
 {
 	const Vector3f_t offset = { ( maxs->x + mins->x ) * 0.5f, ( maxs->y + mins->y ) * 0.5f, ( maxs->z + mins->z ) * 0.5f };
 	const Vector3f_t scale = { ( maxs->x - mins->x ) * 0.5f, ( maxs->y - mins->y ) * 0.5f, ( maxs->z - mins->z ) * 0.5f };
@@ -2489,7 +2493,7 @@ static void Matrix4x4f_TransformBounds( Vector3f_t * resultMins, Vector3f_t * re
 		matrix->m[0][1] * center.x + matrix->m[1][1] * center.y + matrix->m[2][1] * center.z + matrix->m[3][1],
 		matrix->m[0][2] * center.x + matrix->m[1][2] * center.y + matrix->m[2][2] * center.z + matrix->m[3][2]
 	};
-    const Vector3f_t newExtents =
+	const Vector3f_t newExtents =
 	{
 		fabsf( extents.x * matrix->m[0][0] ) + fabsf( extents.y * matrix->m[1][0] ) + fabsf( extents.z * matrix->m[2][0] ),
 		fabsf( extents.x * matrix->m[0][1] ) + fabsf( extents.y * matrix->m[1][1] ) + fabsf( extents.z * matrix->m[2][1] ),
@@ -2497,6 +2501,99 @@ static void Matrix4x4f_TransformBounds( Vector3f_t * resultMins, Vector3f_t * re
 	};
 	Vector3f_Sub( resultMins, &newCenter, &newExtents );
 	Vector3f_Add( resultMaxs, &newCenter, &newExtents );
+}
+
+// Returns true if the 'mins' and 'maxs' bounds is completely off to one side of the projection matrix.
+static bool Matrix4x4f_CullBounds( const Matrix4x4f_t * mvp, const Vector3f_t * mins, const Vector3f_t * maxs )
+{
+	if ( maxs->x <= mins->x && maxs->y <= mins->y && maxs->z <= mins->z )
+	{
+		return false;
+	}
+
+	Vector4f_t c[8];
+	for ( int i = 0; i < 8; i++ )
+	{
+		const Vector4f_t corner =
+		{
+			( i & 1 ) ? maxs->x : mins->x,
+			( i & 2 ) ? maxs->y : mins->y,
+			( i & 4 ) ? maxs->z : mins->z,
+			1.0f
+		};
+		Matrix4x4f_TransformVector4f( &c[i], mvp, &corner );
+	}
+
+	int i;
+	for ( i = 0; i < 8; i++ )
+	{
+		if ( c[i].x > -c[i].w )
+		{
+			break;
+		}
+	}
+	if ( i == 8 )
+	{
+		return true;
+	}
+	for ( i = 0; i < 8; i++ )
+	{
+		if ( c[i].x < c[i].w )
+		{
+			break;
+		}
+	}
+	if ( i == 8 )
+	{
+		return true;
+	}
+
+	for ( i = 0; i < 8; i++ )
+	{
+		if ( c[i].y > -c[i].w )
+		{
+			break;
+		}
+	}
+	if ( i == 8 )
+	{
+		return true;
+	}
+	for ( i = 0; i < 8; i++ )
+	{
+		if ( c[i].y < c[i].w )
+		{
+			break;
+		}
+	}
+	if ( i == 8 )
+	{
+		return true;
+	}
+	for ( i = 0; i < 8; i++ )
+	{
+		if ( c[i].z > -c[i].w )
+		{
+			break;
+		}
+	}
+	if ( i == 8 )
+	{
+		return true;
+	}
+	for ( i = 0; i < 8; i++ )
+	{
+		if ( c[i].z < c[i].w )
+		{
+			break;
+		}
+	}
+	if ( i == 8 )
+	{
+		return true;
+	}
+
+	return false;
 }
 
 /*
@@ -7950,8 +8047,8 @@ static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays
 
 	for ( int i = 0; i < numVertices; i++ )
 	{
-		Vector3f_Zero( &vertexTangent[i] );
-		Vector3f_Zero( &vertexBinormal[i] );
+		Vector3f_Set( &vertexTangent[i], 0.0f );
+		Vector3f_Set( &vertexBinormal[i], 0.0f );
 	}
 
 	for ( int i = 0; i < numIndices; i += 3 )
@@ -9443,6 +9540,9 @@ static void InitVertexAttributes( const bool instance,
 static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipeline_t * pipeline, const GpuGraphicsPipelineParms_t * parms )
 {
 	UNUSED_PARM( context );
+
+	// Make sure the geometry provides all the attributes needed by the program.
+	assert( ( ( parms->geometry->vertexAttribsFlags | parms->geometry->instanceAttribsFlags ) & parms->program->vertexAttribsFlags ) == parms->program->vertexAttribsFlags );
 
 	memset( pipeline, 0, sizeof( GpuGraphicsPipeline_t ) );
 
@@ -11104,17 +11204,17 @@ typedef enum
 	GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE,
 	GLTF_UNIFORM_SEMANTIC_LOCAL,
 	GLTF_UNIFORM_SEMANTIC_MODEL,
+	GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE,
+	GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE,
 	GLTF_UNIFORM_SEMANTIC_VIEW,
+	GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE,
 	GLTF_UNIFORM_SEMANTIC_PROJECTION,
-	GLTF_UNIFORM_SEMANTIC_MODELVIEW,
-	GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTION,
-	GLTF_UNIFORM_SEMANTIC_MODELINVERSE,
-	GLTF_UNIFORM_SEMANTIC_VIEWINVERSE,
-	GLTF_UNIFORM_SEMANTIC_PROJECTIONINVERSE,
-	GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSE,
-	GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTIONINVERSE,
-	GLTF_UNIFORM_SEMANTIC_MODELINVERSETRANSPOSE,
-	GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSETRANSPOSE,
+	GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE,
+	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW,
+	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE,
+	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE,
+	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION,
+	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE,
 	GLTF_UNIFORM_SEMANTIC_VIEWPORT,
 	GLTF_UNIFORM_SEMANTIC_JOINTMATRIX
 } GltfUniformSemantic_t;
@@ -11130,17 +11230,17 @@ gltfUniformSemanticNames[] =
 	{ "",								GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE },
 	{ "LOCAL",							GLTF_UNIFORM_SEMANTIC_LOCAL },
 	{ "MODEL",							GLTF_UNIFORM_SEMANTIC_MODEL },
+	{ "MODELINVERSE",					GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE },
+	{ "MODELINVERSETRANSPOSE",			GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE },
 	{ "VIEW",							GLTF_UNIFORM_SEMANTIC_VIEW },
+	{ "VIEWINVERSE",					GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE },
 	{ "PROJECTION",						GLTF_UNIFORM_SEMANTIC_PROJECTION },
-	{ "MODELVIEW",						GLTF_UNIFORM_SEMANTIC_MODELVIEW },
-	{ "MODELVIEWPROJECTION",			GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTION },
-	{ "MODELINVERSE",					GLTF_UNIFORM_SEMANTIC_MODELINVERSE },
-	{ "VIEWINVERSE",					GLTF_UNIFORM_SEMANTIC_VIEWINVERSE },
-	{ "PROJECTIONINVERSE",				GLTF_UNIFORM_SEMANTIC_PROJECTIONINVERSE },
-	{ "MODELVIEWINVERSE",				GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSE },
-	{ "MODELVIEWPROJECTIONINVERSE",		GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTIONINVERSE },
-	{ "MODELINVERSETRANSPOSE",			GLTF_UNIFORM_SEMANTIC_MODELINVERSETRANSPOSE },
-	{ "MODELVIEWINVERSETRANSPOSE",		GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSETRANSPOSE },
+	{ "PROJECTIONINVERSE",				GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE },
+	{ "MODELVIEW",						GLTF_UNIFORM_SEMANTIC_MODEL_VIEW },
+	{ "MODELVIEWINVERSE",				GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE },
+	{ "MODELVIEWINVERSETRANSPOSE",		GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE },
+	{ "MODELVIEWPROJECTION",			GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION },
+	{ "MODELVIEWPROJECTIONINVERSE",		GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE },
 	{ "VIEWPORT",						GLTF_UNIFORM_SEMANTIC_VIEWPORT },
 	{ "JOINTMATRIX",					GLTF_UNIFORM_SEMANTIC_JOINTMATRIX },
 	{ NULL,								0 }
@@ -11188,11 +11288,11 @@ typedef struct GltfMaterial_t
 
 typedef struct GltfSurface_t
 {
-	const GltfMaterial_t *		material;
-	GpuGeometry_t				geometry;
-	GpuGraphicsPipeline_t		pipeline;
-	Vector3f_t					mins;
-	Vector3f_t					maxs;
+	const GltfMaterial_t *		material;		// material used to render this surface
+	GpuGeometry_t				geometry;		// surface geometry
+	GpuGraphicsPipeline_t		pipeline;		// rendering pipeline for this surface
+	Vector3f_t					mins;			// minimums of the surface geometry excluding animations
+	Vector3f_t					maxs;			// maximums of the surface geometry excluding animations
 } GltfSurface_t;
 
 typedef struct GltfModel_t
@@ -11232,10 +11332,10 @@ typedef struct GltfSkin_t
 	struct GltfNode_t *			parent;
 	Matrix4x4f_t				bindShapeMatrix;
 	Matrix4x4f_t *				inverseBindMatrices;
-	Vector3f_t *				jointGeometryMins;
-	Vector3f_t *				jointGeometryMaxs;
-	GltfJoint_t *				joints;
-	int							jointCount;
+	Vector3f_t *				jointGeometryMins;		// joint local space minimums of the geometry influenced by each joint
+	Vector3f_t *				jointGeometryMaxs;		// joint local space maximums of the geometry influenced by each joint
+	GltfJoint_t *				joints;					// joints of this skin
+	int							jointCount;				// number of joints
 	GpuBuffer_t					jointBuffer;			// buffer with joint matrices
 	Vector3f_t					mins;					// minimums of the complete skin geometry
 	Vector3f_t					maxs;					// maximums of the complete skin geometry
@@ -12001,8 +12101,8 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 
 				scene->techniques[i].rop.blendEnable = false;
 				scene->techniques[i].rop.alphaWriteEnable = false;
-				scene->techniques[i].rop.depthTestEnable = true;
-				scene->techniques[i].rop.depthWriteEnable = true;
+				scene->techniques[i].rop.depthTestEnable = false;
+				scene->techniques[i].rop.depthWriteEnable = false;
 				scene->techniques[i].rop.blendOpColor = GPU_BLEND_OP_ADD;
 				scene->techniques[i].rop.blendSrcColor = GPU_BLEND_FACTOR_ONE;
 				scene->techniques[i].rop.blendDstColor = GPU_BLEND_FACTOR_ZERO;
@@ -12041,24 +12141,63 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 							break;
 					}
 				}
+
 				const Json_t * functions = Json_GetMemberByName( states, "functions" );
 				const int functionCount = Json_GetMemberCount( functions );
 				for ( int j = 0; j < functionCount; j++ )
 				{
 					const Json_t * func = Json_GetMemberByIndex( functions, j );
 					const char * funcName = Json_GetMemberName( func );
-					if ( strcmp( funcName, "blendColor" ) == 0 ) { /* [float:red, float:blue, float:green, float:alpha] */ }
-					else if ( strcmp( funcName, "blendEquationSeparate" ) == 0 ) { /* [GLenum:GL_FUNC_* (rgb), GLenum:GL_FUNC_* (alpha)] */ }
-					else if ( strcmp( funcName, "blendFuncSeparate" ) == 0 ) { /* [GLenum:GL_ONE, GLenum:GL_ZERO, GLenum:GL_ONE, GLenum:GL_ZERO] */ }
-					else if ( strcmp( funcName, "colorMask" ) == 0 ) { /* [bool:red, bool:green, bool:blue, bool:alpha] */ }
-					else if ( strcmp( funcName, "cullFace" ) == 0 ) { /* [GLenum:GL_BACK] */ }
-					else if ( strcmp( funcName, "depthFunc" ) == 0 ) { /* [GLenum:GL_LESS] */ }
-					else if ( strcmp( funcName, "depthMask" ) == 0 ) { /* [true/false] */ }
-					else if ( strcmp( funcName, "depthRange" ) == 0 ) { /* [float:znear, float:zfar] */ }
-					else if ( strcmp( funcName, "frontFace" ) == 0 ) { /* [Glenum:GL_CCW] */ }
-					else if ( strcmp( funcName, "lineWidth" ) == 0 ) { /* [float:width] */ }
-					else if ( strcmp( funcName, "polygonOffset" ) == 0 ) { /* [float:factor, float:units] */ }
-					else if ( strcmp( funcName, "scissor" ) == 0 ) { /* [int:x, int:y, int:width, int:height] */ }
+					if ( strcmp( funcName, "blendColor" ) == 0 )
+					{
+						/* [float:red, float:blue, float:green, float:alpha] */
+					}
+					else if ( strcmp( funcName, "blendEquationSeparate" ) == 0 )
+					{
+						/* [GLenum:GL_FUNC_* (rgb), GLenum:GL_FUNC_* (alpha)] */
+					}
+					else if ( strcmp( funcName, "blendFuncSeparate" ) == 0 )
+					{
+						/* [GLenum:GL_ONE, GLenum:GL_ZERO, GLenum:GL_ONE, GLenum:GL_ZERO] */
+					}
+					else if ( strcmp( funcName, "colorMask" ) == 0 )
+					{
+						// [bool:red, bool:green, bool:blue, bool:alpha]
+						scene->techniques[i].rop.alphaWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 3 ), false );
+					}
+					else if ( strcmp( funcName, "cullFace" ) == 0 )
+					{
+						/* [GLenum:GL_BACK,GL_FRONT] */
+					}
+					else if ( strcmp( funcName, "depthFunc" ) == 0 )
+					{
+						/* [GLenum:GL_LESS,GL_LEQUAL,GL_GREATER] */
+					}
+					else if ( strcmp( funcName, "depthMask" ) == 0 )
+					{
+						// [bool:mask]
+						scene->techniques[i].rop.depthWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 0 ), false );
+					}
+					else if ( strcmp( funcName, "depthRange" ) == 0 )
+					{
+						/* [float:znear, float:zfar] */
+					}
+					else if ( strcmp( funcName, "frontFace" ) == 0 )
+					{
+						/* [Glenum:GL_CCW,GL_CW] */
+					}
+					else if ( strcmp( funcName, "lineWidth" ) == 0 )
+					{
+						/* [float:width] */
+					}
+					else if ( strcmp( funcName, "polygonOffset" ) == 0 )
+					{
+						/* [float:factor, float:units] */
+					}
+					else if ( strcmp( funcName, "scissor" ) == 0 )
+					{
+						/* [int:x, int:y, int:width, int:height] */
+					}
 				}
 
 				GpuGraphicsProgram_Create( context, &scene->techniques[i].program,
@@ -12169,84 +12308,84 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					const Json_t * primitive = Json_GetMemberByIndex( primitives, s );
 					const Json_t * attributes = Json_GetMemberByName( primitive, "attributes" );
 
-					const char * positionAccessor		= Json_GetString( Json_GetMemberByName( attributes, "POSITION" ), "" );
-					const char * normalAccessor			= Json_GetString( Json_GetMemberByName( attributes, "NORMAL" ), "" );
-					const char * tangentAccessor		= Json_GetString( Json_GetMemberByName( attributes, "TANGENT" ), "" );
-					const char * binormalAccessor		= Json_GetString( Json_GetMemberByName( attributes, "BINORMAL" ), "" );
-					const char * colorAccessor			= Json_GetString( Json_GetMemberByName( attributes, "COLOR" ), "" );
-					const char * uv0Accessor			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_0" ), "" );
-					const char * uv1Accessor			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_1" ), "" );
-					const char * uv2Accessor			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_2" ), "" );
-					const char * jointIndicesAccessor	= Json_GetString( Json_GetMemberByName( attributes, "JOINT" ), "" );
-					const char * jointWeightsAccessor	= Json_GetString( Json_GetMemberByName( attributes, "WEIGHT" ), "" );
-					const char * indicesAccessor		= Json_GetString( Json_GetMemberByName( primitive, "indices" ), "" );
+					const char * positionAccessorName		= Json_GetString( Json_GetMemberByName( attributes, "POSITION" ), "" );
+					const char * normalAccessorName			= Json_GetString( Json_GetMemberByName( attributes, "NORMAL" ), "" );
+					const char * tangentAccessorName		= Json_GetString( Json_GetMemberByName( attributes, "TANGENT" ), "" );
+					const char * binormalAccessorName		= Json_GetString( Json_GetMemberByName( attributes, "BINORMAL" ), "" );
+					const char * colorAccessorName			= Json_GetString( Json_GetMemberByName( attributes, "COLOR" ), "" );
+					const char * uv0AccessorName			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_0" ), "" );
+					const char * uv1AccessorName			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_1" ), "" );
+					const char * uv2AccessorName			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_2" ), "" );
+					const char * jointIndicesAccessorName	= Json_GetString( Json_GetMemberByName( attributes, "JOINT" ), "" );
+					const char * jointWeightsAccessorName	= Json_GetString( Json_GetMemberByName( attributes, "WEIGHT" ), "" );
+					const char * indicesAccessorName		= Json_GetString( Json_GetMemberByName( primitive, "indices" ), "" );
 
 					surface->material = Gltf_GetMaterialByName( scene, Json_GetString( Json_GetMemberByName( primitive, "material" ), "" ) );
 					assert( surface->material != NULL );
 
-					const GltfAccessor_t * access_position		= Gltf_GetAccessorByNameAndType( scene, positionAccessor,		"VEC3",		GL_FLOAT );
-					const GltfAccessor_t * access_normal		= Gltf_GetAccessorByNameAndType( scene, normalAccessor,			"VEC3",		GL_FLOAT );
-					const GltfAccessor_t * access_tangent		= Gltf_GetAccessorByNameAndType( scene, tangentAccessor,		"VEC3",		GL_FLOAT );
-					const GltfAccessor_t * access_binormal		= Gltf_GetAccessorByNameAndType( scene, binormalAccessor,		"VEC3",		GL_FLOAT );
-					const GltfAccessor_t * access_color			= Gltf_GetAccessorByNameAndType( scene, colorAccessor,			"VEC4",		GL_FLOAT );
-					const GltfAccessor_t * access_uv0			= Gltf_GetAccessorByNameAndType( scene, uv0Accessor,			"VEC2",		GL_FLOAT );
-					const GltfAccessor_t * access_uv1			= Gltf_GetAccessorByNameAndType( scene, uv1Accessor,			"VEC2",		GL_FLOAT );
-					const GltfAccessor_t * access_uv2			= Gltf_GetAccessorByNameAndType( scene, uv2Accessor,			"VEC2",		GL_FLOAT );
-					const GltfAccessor_t * access_jointIndices	= Gltf_GetAccessorByNameAndType( scene, jointIndicesAccessor,	"VEC4",		GL_FLOAT );
-					const GltfAccessor_t * access_jointWeights	= Gltf_GetAccessorByNameAndType( scene, jointWeightsAccessor,	"VEC4",		GL_FLOAT );
-					const GltfAccessor_t * access_indices		= Gltf_GetAccessorByNameAndType( scene, indicesAccessor,		"SCALAR",	GL_UNSIGNED_SHORT );
+					const GltfAccessor_t * positionAccessor		= Gltf_GetAccessorByNameAndType( scene, positionAccessorName,		"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * normalAccessor		= Gltf_GetAccessorByNameAndType( scene, normalAccessorName,			"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * tangentAccessor		= Gltf_GetAccessorByNameAndType( scene, tangentAccessorName,		"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * binormalAccessor		= Gltf_GetAccessorByNameAndType( scene, binormalAccessorName,		"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * colorAccessor		= Gltf_GetAccessorByNameAndType( scene, colorAccessorName,			"VEC4",		GL_FLOAT );
+					const GltfAccessor_t * uv0Accessor			= Gltf_GetAccessorByNameAndType( scene, uv0AccessorName,			"VEC2",		GL_FLOAT );
+					const GltfAccessor_t * uv1Accessor			= Gltf_GetAccessorByNameAndType( scene, uv1AccessorName,			"VEC2",		GL_FLOAT );
+					const GltfAccessor_t * uv2Accessor			= Gltf_GetAccessorByNameAndType( scene, uv2AccessorName,			"VEC2",		GL_FLOAT );
+					const GltfAccessor_t * jointIndicesAccessor	= Gltf_GetAccessorByNameAndType( scene, jointIndicesAccessorName,	"VEC4",		GL_FLOAT );
+					const GltfAccessor_t * jointWeightsAccessor	= Gltf_GetAccessorByNameAndType( scene, jointWeightsAccessorName,	"VEC4",		GL_FLOAT );
+					const GltfAccessor_t * indicesAccessor		= Gltf_GetAccessorByNameAndType( scene, indicesAccessorName,		"SCALAR",	GL_UNSIGNED_SHORT );
 
-					if ( access_position == NULL || access_indices == NULL )
+					if ( positionAccessor == NULL || indicesAccessor == NULL )
 					{
 						assert( false );
 						continue;
 					}
 
-					surface->mins.x = access_position->floatMin[0];
-					surface->mins.y = access_position->floatMin[1];
-					surface->mins.z = access_position->floatMin[2];
-					surface->maxs.x = access_position->floatMax[0];
-					surface->maxs.y = access_position->floatMax[1];
-					surface->maxs.z = access_position->floatMax[2];
+					surface->mins.x = positionAccessor->floatMin[0];
+					surface->mins.y = positionAccessor->floatMin[1];
+					surface->mins.z = positionAccessor->floatMin[2];
+					surface->maxs.x = positionAccessor->floatMax[0];
+					surface->maxs.y = positionAccessor->floatMax[1];
+					surface->maxs.z = positionAccessor->floatMax[2];
 
-					assert( access_normal		== NULL || access_normal->count			== access_position->count );
-					assert( access_tangent		== NULL || access_tangent->count		== access_position->count );
-					assert( access_binormal		== NULL || access_binormal->count		== access_position->count );
-					assert( access_color		== NULL || access_color->count			== access_position->count );
-					assert( access_uv0			== NULL || access_uv0->count			== access_position->count );
-					assert( access_uv1			== NULL || access_uv1->count			== access_position->count );
-					assert( access_uv2			== NULL || access_uv2->count			== access_position->count );
-					assert( access_jointIndices	== NULL || access_jointIndices->count	== access_position->count );
-					assert( access_jointWeights	== NULL || access_jointWeights->count	== access_position->count );
+					assert( normalAccessor			== NULL || normalAccessor->count		== positionAccessor->count );
+					assert( tangentAccessor			== NULL || tangentAccessor->count		== positionAccessor->count );
+					assert( binormalAccessor		== NULL || binormalAccessor->count		== positionAccessor->count );
+					assert( colorAccessor			== NULL || colorAccessor->count			== positionAccessor->count );
+					assert( uv0Accessor				== NULL || uv0Accessor->count			== positionAccessor->count );
+					assert( uv1Accessor				== NULL || uv1Accessor->count			== positionAccessor->count );
+					assert( uv2Accessor				== NULL || uv2Accessor->count			== positionAccessor->count );
+					assert( jointIndicesAccessor	== NULL || jointIndicesAccessor->count	== positionAccessor->count );
+					assert( jointWeightsAccessor	== NULL || jointWeightsAccessor->count	== positionAccessor->count );
 
-					const int attribFlags = ( access_position != NULL		? VERTEX_ATTRIBUTE_FLAG_POSITION : 0 ) |
-											( access_normal != NULL			? VERTEX_ATTRIBUTE_FLAG_NORMAL : 0 ) |
-											( access_tangent != NULL		? VERTEX_ATTRIBUTE_FLAG_TANGENT : 0 ) |
-											( access_binormal != NULL		? VERTEX_ATTRIBUTE_FLAG_BINORMAL : 0 ) |
-											( access_color != NULL			? VERTEX_ATTRIBUTE_FLAG_COLOR : 0 ) |
-											( access_uv0 != NULL			? VERTEX_ATTRIBUTE_FLAG_UV0 : 0 ) |
-											( access_uv1 != NULL			? VERTEX_ATTRIBUTE_FLAG_UV1 : 0 ) |
-											( access_uv2 != NULL			? VERTEX_ATTRIBUTE_FLAG_UV2 : 0 ) |
-											( access_jointIndices != NULL	? VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES : 0 ) |
-											( access_jointWeights != NULL	? VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS : 0 );
+					const int attribFlags = ( positionAccessor != NULL		? VERTEX_ATTRIBUTE_FLAG_POSITION : 0 ) |
+											( normalAccessor != NULL		? VERTEX_ATTRIBUTE_FLAG_NORMAL : 0 ) |
+											( tangentAccessor != NULL		? VERTEX_ATTRIBUTE_FLAG_TANGENT : 0 ) |
+											( binormalAccessor != NULL		? VERTEX_ATTRIBUTE_FLAG_BINORMAL : 0 ) |
+											( colorAccessor != NULL			? VERTEX_ATTRIBUTE_FLAG_COLOR : 0 ) |
+											( uv0Accessor != NULL			? VERTEX_ATTRIBUTE_FLAG_UV0 : 0 ) |
+											( uv1Accessor != NULL			? VERTEX_ATTRIBUTE_FLAG_UV1 : 0 ) |
+											( uv2Accessor != NULL			? VERTEX_ATTRIBUTE_FLAG_UV2 : 0 ) |
+											( jointIndicesAccessor != NULL	? VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES : 0 ) |
+											( jointWeightsAccessor != NULL	? VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS : 0 );
 
 					GpuVertexAttributeArrays_t attribs;
-					GpuVertexAttributeArrays_Alloc( &attribs.base, DefaultVertexAttributeLayout, access_position->count, attribFlags );
+					GpuVertexAttributeArrays_Alloc( &attribs.base, DefaultVertexAttributeLayout, positionAccessor->count, attribFlags );
 
-					if ( access_position != NULL )		memcpy( attribs.position,		Gltf_GetBufferData( access_position ),		access_position->count		* sizeof( attribs.position[0] ) );
-					if ( access_normal != NULL )		memcpy( attribs.normal,			Gltf_GetBufferData( access_normal ),		access_normal->count		* sizeof( attribs.normal[0] ) );
-					if ( access_tangent != NULL )		memcpy( attribs.tangent,		Gltf_GetBufferData( access_tangent ),		access_tangent->count		* sizeof( attribs.tangent[0] ) );
-					if ( access_binormal != NULL )		memcpy( attribs.binormal,		Gltf_GetBufferData( access_binormal ),		access_binormal->count		* sizeof( attribs.binormal[0] ) );
-					if ( access_color != NULL )			memcpy( attribs.color,			Gltf_GetBufferData( access_color ),			access_color->count			* sizeof( attribs.color[0] ) );
-					if ( access_uv0 != NULL )			memcpy( attribs.uv0,			Gltf_GetBufferData( access_uv0 ),			access_uv0->count			* sizeof( attribs.uv0[0] ) );
-					if ( access_uv1 != NULL )			memcpy( attribs.uv1,			Gltf_GetBufferData( access_uv1 ),			access_uv1->count			* sizeof( attribs.uv1[0] ) );
-					if ( access_uv2 != NULL )			memcpy( attribs.uv2,			Gltf_GetBufferData( access_uv2 ),			access_uv2->count			* sizeof( attribs.uv2[0] ) );
-					if ( access_jointIndices != NULL )	memcpy( attribs.jointIndices,	Gltf_GetBufferData( access_jointIndices ),	access_jointIndices->count	* sizeof( attribs.jointIndices[0] ) );
-					if ( access_jointWeights != NULL )	memcpy( attribs.jointWeights,	Gltf_GetBufferData( access_jointWeights ),	access_jointWeights->count	* sizeof( attribs.jointWeights[0] ) );
+					if ( positionAccessor != NULL )		memcpy( attribs.position,		Gltf_GetBufferData( positionAccessor ),		positionAccessor->count		* sizeof( attribs.position[0] ) );
+					if ( normalAccessor != NULL )		memcpy( attribs.normal,			Gltf_GetBufferData( normalAccessor ),		normalAccessor->count		* sizeof( attribs.normal[0] ) );
+					if ( tangentAccessor != NULL )		memcpy( attribs.tangent,		Gltf_GetBufferData( tangentAccessor ),		tangentAccessor->count		* sizeof( attribs.tangent[0] ) );
+					if ( binormalAccessor != NULL )		memcpy( attribs.binormal,		Gltf_GetBufferData( binormalAccessor ),		binormalAccessor->count		* sizeof( attribs.binormal[0] ) );
+					if ( colorAccessor != NULL )		memcpy( attribs.color,			Gltf_GetBufferData( colorAccessor ),		colorAccessor->count		* sizeof( attribs.color[0] ) );
+					if ( uv0Accessor != NULL )			memcpy( attribs.uv0,			Gltf_GetBufferData( uv0Accessor ),			uv0Accessor->count			* sizeof( attribs.uv0[0] ) );
+					if ( uv1Accessor != NULL )			memcpy( attribs.uv1,			Gltf_GetBufferData( uv1Accessor ),			uv1Accessor->count			* sizeof( attribs.uv1[0] ) );
+					if ( uv2Accessor != NULL )			memcpy( attribs.uv2,			Gltf_GetBufferData( uv2Accessor ),			uv2Accessor->count			* sizeof( attribs.uv2[0] ) );
+					if ( jointIndicesAccessor != NULL )	memcpy( attribs.jointIndices,	Gltf_GetBufferData( jointIndicesAccessor ),	jointIndicesAccessor->count	* sizeof( attribs.jointIndices[0] ) );
+					if ( jointWeightsAccessor != NULL )	memcpy( attribs.jointWeights,	Gltf_GetBufferData( jointWeightsAccessor ),	jointWeightsAccessor->count	* sizeof( attribs.jointWeights[0] ) );
 
-					GpuTriangleIndex_t * indices = (GpuTriangleIndex_t *)Gltf_GetBufferData( access_indices );
+					GpuTriangleIndex_t * indices = (GpuTriangleIndex_t *)Gltf_GetBufferData( indicesAccessor );
 
-					GpuGeometry_Create( context, &surface->geometry, &attribs.base, access_position->count, indices, access_indices->count );
+					GpuGeometry_Create( context, &surface->geometry, &attribs.base, positionAccessor->count, indices, indicesAccessor->count );
 
 					GpuVertexAttributeArrays_Free( &attribs.base );
 
@@ -12301,42 +12440,88 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				scene->animations[i].channelCount = Json_GetMemberCount( channels );
 				scene->animations[i].channels = (GltfAnimationChannel_t *) malloc( scene->animations[i].channelCount * sizeof( GltfAnimationChannel_t ) );
 				memset( scene->animations[i].channels, 0, scene->animations[i].channelCount * sizeof( GltfAnimationChannel_t ) );
+				int newChannelCount = 0;
 				for ( int j = 0; j < scene->animations[i].channelCount; j++ )
 				{
 					const Json_t * channel = Json_GetMemberByIndex( channels, j );
 					const char * samplerName = Json_GetString( Json_GetMemberByName( channel, "sampler" ), "" );
 					const Json_t * sampler = Json_GetMemberByName( samplers, samplerName );
+					const char * inputName = Json_GetString( Json_GetMemberByName( sampler, "input" ), "" );
+					const char * interpolation = Json_GetString( Json_GetMemberByName( sampler, "interpolation" ), "" );
 					const char * outputName = Json_GetString( Json_GetMemberByName( sampler, "output" ), "" );
+					const char * accessorName = Json_GetString( Json_GetMemberByName( parameters, outputName ), "" );
+
+					assert( strcmp( inputName, "TIME" ) == 0 );
+					assert( strcmp( interpolation, "LINEAR" ) == 0 );
+					assert( outputName[0] != '\0' );
+					assert( accessorName[0] != '\0' );
+
+					UNUSED_PARM( inputName );
+					UNUSED_PARM( interpolation );
 
 					const Json_t * target = Json_GetMemberByName( channel, "target" );
 					const char * nodeName = Json_GetString( Json_GetMemberByName( target, "id" ), "" );
 					const char * pathName = Json_GetString( Json_GetMemberByName( target, "path" ), "" );
 
-					scene->animations[i].channels[j].nodeName = Gltf_strdup( nodeName );
-					scene->animations[i].channels[j].node = NULL; // linked up once the nodes are loaded
+					Vector3f_t * translation = NULL;
+					Quatf_t * rotation = NULL;
+					Vector3f_t * scale = NULL;
 
 					if ( strcmp( pathName, "translation" ) == 0 )
 					{
-						const char * accessorName = Json_GetString( Json_GetMemberByName( parameters, outputName ), "" );
 						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC3", GL_FLOAT );
 						assert( accessor != NULL );
-						scene->animations[i].channels[j].translation = (Vector3f_t *) Gltf_GetBufferData( accessor );
+						translation = (Vector3f_t *) Gltf_GetBufferData( accessor );
 					}
 					else if ( strcmp( pathName, "rotation" ) == 0 )
 					{
-						const char * accessorName = Json_GetString( Json_GetMemberByName( parameters, outputName ), "" );
 						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC4", GL_FLOAT );
 						assert( accessor != NULL );
-						scene->animations[i].channels[j].rotation = (Quatf_t *) Gltf_GetBufferData( accessor );
+						rotation = (Quatf_t *) Gltf_GetBufferData( accessor );
 					}
 					else if ( strcmp( pathName, "scale" ) == 0 )
 					{
-						const char * accessorName = Json_GetString( Json_GetMemberByName( parameters, outputName ), "" );
 						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC3", GL_FLOAT );
 						assert( accessor != NULL );
-						scene->animations[i].channels[j].scale = (Vector3f_t *) Gltf_GetBufferData( accessor );
+						scale = (Vector3f_t *) Gltf_GetBufferData( accessor );
+					}
+
+					// Try to merge this channel with a previous channel for the same node.
+					for ( int k = 0; k < newChannelCount; k++ )
+					{
+						if ( strcmp( nodeName, scene->animations[i].channels[k].nodeName ) == 0 )
+						{
+							if ( translation != NULL )
+							{
+								scene->animations[i].channels[k].translation = translation;
+								translation = NULL;
+							}
+							if ( rotation != NULL )
+							{
+								scene->animations[i].channels[k].rotation = rotation;
+								rotation = NULL;
+							}
+							if ( scale != NULL )
+							{
+								scene->animations[i].channels[k].scale = scale;
+								scale = NULL;
+							}
+							break;
+						}
+					}
+
+					// Only store the channel if it was not merged.
+					if ( translation != NULL || rotation != NULL || scale != NULL )
+					{
+						scene->animations[i].channels[newChannelCount].nodeName = Gltf_strdup( nodeName );
+						scene->animations[i].channels[newChannelCount].node = NULL; // linked up once the nodes are loaded
+						scene->animations[i].channels[newChannelCount].translation = translation;
+						scene->animations[i].channels[newChannelCount].rotation = rotation;
+						scene->animations[i].channels[newChannelCount].scale = scale;
+						newChannelCount++;
 					}
 				}
+				scene->animations[i].channelCount = newChannelCount;
 			}
 			Gltf_CreateAnimationHash( scene );
 
@@ -12753,9 +12938,9 @@ static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeIn
 	UNUSED_PARM( timeInMicroseconds );
 
 	// Apply animations to the nodes in the hierarchy.
-	for ( int i = 0; i < scene->animationCount; i++ )
+	for ( int animIndex = 0; animIndex < scene->animationCount; animIndex++ )
 	{
-		const GltfAnimation_t * animation = &scene->animations[i];
+		const GltfAnimation_t * animation = &scene->animations[animIndex];
 		if ( animation->sampleTimes == NULL || animation->sampleCount < 2 )
 		{
 			continue;
@@ -12775,9 +12960,9 @@ static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeIn
 		assert( timeInSeconds >= animation->sampleTimes[frame] && timeInSeconds < animation->sampleTimes[frame + 1] );
 		const float fraction = ( timeInSeconds - animation->sampleTimes[frame] ) / ( animation->sampleTimes[frame + 1] - animation->sampleTimes[frame] );
 
-		for ( int j = 0; j < animation->channelCount; j++ )
+		for ( int channelIndex = 0; channelIndex < animation->channelCount; channelIndex++ )
 		{
-			const GltfAnimationChannel_t * channel = &animation->channels[j];
+			const GltfAnimationChannel_t * channel = &animation->channels[channelIndex];
 			if ( channel->translation != NULL )
 			{
 				Vector3f_Lerp( &channel->node->translation, &channel->translation[frame], &channel->translation[frame + 1], fraction );
@@ -12794,9 +12979,9 @@ static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeIn
 	}
 
 	// Transform the node hierarchy into global space.
-	for ( int i = 0; i < scene->nodeCount; i++ )
+	for ( int nodeIndex = 0; nodeIndex < scene->nodeCount; nodeIndex++ )
 	{
-		GltfNode_t * node = &scene->nodes[i];
+		GltfNode_t * node = &scene->nodes[nodeIndex];
 		Matrix4x4f_CreateScaleRotationTranslation( &node->localTransform, &node->scale, &node->rotation, &node->translation );
 		if ( node->parent != NULL )
 		{
@@ -12812,62 +12997,51 @@ static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeIn
 
 static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene )
 {
-	// Update the skin joint buffers.
-	for ( int i = 0; i < scene->skinCount; i++ )
+	for ( int skinIndex = 0; skinIndex < scene->skinCount; skinIndex++ )
 	{
-		GltfSkin_t * skin = &scene->skins[i];
-
-		// Initialize the skin bounds.
-		Vector3f_Set( &skin->mins, FLT_MAX );
-		Vector3f_Set( &skin->maxs, -FLT_MAX );
-		if ( skin->jointGeometryMins != NULL )
-		{
-			for ( int j = 0; j < skin->jointCount; j++ )
-			{
-				Vector3f_t jointMins;
-				Vector3f_t jointMaxs;
-				Matrix4x4f_TransformBounds( &jointMins, &jointMaxs, &skin->joints[j].node->globalTransform, &skin->jointGeometryMins[j], &skin->jointGeometryMaxs[j] );
-				Vector3f_Min( &skin->mins, &skin->mins, &jointMins );
-				Vector3f_Max( &skin->maxs, &skin->maxs, &jointMaxs );
-			}
-		}
-		else
-		{
-			for ( int j = 0; j < skin->jointCount; j++ )
-			{
-				Vector3f_t jointPosition;
-				Matrix4x4f_GetTranslation( &jointPosition, &skin->joints[j].node->globalTransform );
-				Vector3f_Min( &skin->mins, &skin->mins, &jointPosition );
-				Vector3f_Max( &skin->maxs, &skin->maxs, &jointPosition );
-			}
-			Vector3f_t expand = { 0.1f, 0.1f, 0.1f };
-			Vector3f_Sub( &skin->mins, &skin->mins, &expand );
-			Vector3f_Add( &skin->maxs, &skin->maxs, &expand );
-		}
-
-		// FIXME: only update the joints buffer if the skin bounds are not culled
+		GltfSkin_t * skin = &scene->skins[skinIndex];
 
 		// Exclude the transform of the whole skeleton because that transform will be
 		// passed down the vertex shader as the model matrix.
 		Matrix4x4f_t inverseGlobalSkeletonTransfom;
 		Matrix4x4f_Invert( &inverseGlobalSkeletonTransfom, &skin->parent->globalTransform );
 
+		// Calculate the skin bounds.
+		Vector3f_Set( &skin->mins, FLT_MAX );
+		Vector3f_Set( &skin->maxs, -FLT_MAX );
+		if ( skin->jointGeometryMins != NULL && skin->jointGeometryMaxs != NULL )
+		{
+			for ( int jointIndex = 0; jointIndex < skin->jointCount; jointIndex++ )
+			{
+				Matrix4x4f_t localJointTransform;
+				Matrix4x4f_Multiply( &localJointTransform, &inverseGlobalSkeletonTransfom, &skin->joints[jointIndex].node->globalTransform );
+
+				Vector3f_t jointMins;
+				Vector3f_t jointMaxs;
+				Matrix4x4f_TransformBounds( &jointMins, &jointMaxs, &localJointTransform, &skin->jointGeometryMins[jointIndex], &skin->jointGeometryMaxs[jointIndex] );
+				Vector3f_Min( &skin->mins, &skin->mins, &jointMins );
+				Vector3f_Max( &skin->maxs, &skin->maxs, &jointMaxs );
+			}
+		}
+
+		// FIXME: only update the joints buffer if the skin bounds are not culled
+
+		// Update the skin joint buffer.
 		Matrix4x4f_t * joints = NULL;
 		GpuBuffer_t * mappedJointBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &skin->jointBuffer, &joints );
 
-		for ( int j = 0; j < skin->jointCount; j++ )
+		for ( int jointIndex = 0; jointIndex < skin->jointCount; jointIndex++ )
 		{
 			Matrix4x4f_t inverseBindMatrix;
-			Matrix4x4f_Multiply( &inverseBindMatrix, &skin->inverseBindMatrices[j], &skin->bindShapeMatrix );
+			Matrix4x4f_Multiply( &inverseBindMatrix, &skin->inverseBindMatrices[jointIndex], &skin->bindShapeMatrix );
 
 			Matrix4x4f_t localJointTransform;
-			Matrix4x4f_Multiply( &localJointTransform, &inverseGlobalSkeletonTransfom, &skin->joints[j].node->globalTransform );
+			Matrix4x4f_Multiply( &localJointTransform, &inverseGlobalSkeletonTransfom, &skin->joints[jointIndex].node->globalTransform );
 
-			Matrix4x4f_Multiply( &joints[j], &localJointTransform, &inverseBindMatrix );
-			//Matrix4x4f_CreateIdentity( &joints[j] );
+			Matrix4x4f_Multiply( &joints[jointIndex], &localJointTransform, &inverseBindMatrix );
 		}
 
-		GpuCommandBuffer_UnmapBuffer( commandBuffer, &scene->skins[i].jointBuffer, mappedJointBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
+		GpuCommandBuffer_UnmapBuffer( commandBuffer, &scene->skins[skinIndex].jointBuffer, mappedJointBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
 	}
 }
 
@@ -12971,26 +13145,25 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 {
 
 	const GltfNode_t * cameraNode = NULL;
-	const GltfCamera_t * camera = NULL;
-	for ( int i = 0; i < scene->nodeCount; i++ )
+	for ( int nodeIndex = 0; nodeIndex < scene->nodeCount; nodeIndex++ )
 	{
-		if ( scene->nodes[i].camera != NULL )
+		if ( scene->nodes[nodeIndex].camera != NULL )
 		{
-			cameraNode = &scene->nodes[i];
-			camera = scene->nodes[i].camera;
+			cameraNode = &scene->nodes[nodeIndex];
 			break;
 		}
 	}
 
 	GltfBuiltinUniforms_t builtin;
 
-	if ( 0 )//cameraNode != NULL )
+	if ( cameraNode != NULL )
 	{
 		Matrix4x4f_Invert( &builtin.viewMatrix, &cameraNode->globalTransform );
 		Matrix4x4f_CreateProjectionFov( &builtin.projectionMatrix,
-										camera->perspective.fovDegreesX, camera->perspective.fovDegreesY,
+										cameraNode->camera->perspective.fovDegreesX,
+										cameraNode->camera->perspective.fovDegreesY,
 										0.0f, 0.0f,
-										camera->perspective.nearZ, camera->perspective.farZ );
+										cameraNode->camera->perspective.nearZ, cameraNode->camera->perspective.farZ );
 	}
 	else
 	{
@@ -13000,21 +13173,21 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 
 	builtin.viewport.x = 0.0f;
 	builtin.viewport.y = 0.0f;
-	builtin.viewport.z = 1.0f;
-	builtin.viewport.w = 1.0f;
+	builtin.viewport.z = (float)window->windowWidth;
+	builtin.viewport.w = (float)window->windowHeight;
 
 	Matrix4x4f_Invert( &builtin.viewInverseMatrix, &builtin.viewMatrix );
 	Matrix4x4f_Invert( &builtin.projectionInverseMatrix, &builtin.projectionMatrix );
 
-	for ( int i = 0; i < scene->nodeCount; i++ )
+	for ( int nodeIndex = 0; nodeIndex < scene->nodeCount; nodeIndex++ )
 	{
-		const GltfNode_t * node = &scene->nodes[i];
+		const GltfNode_t * node = &scene->nodes[nodeIndex];
 		if ( node->modelCount == 0 )
 		{
 			continue;
 		}
 
-		const GltfSkin_t * skin = scene->nodes[i].skin;
+		const GltfSkin_t * skin = scene->nodes[nodeIndex].skin;
 		const GpuBuffer_t * jointBuffer = ( skin != NULL ) ? &skin->jointBuffer : &scene->defaultJointBuffer;
 		const GltfNode_t * parent = ( skin != NULL ) ? skin->parent : node;
 
@@ -13028,12 +13201,11 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 		Matrix3x3f_TransposeFromMatrix4x4f( &builtin.modelInverseTransposeMatrix, &builtin.modelInverseMatrix );
 		Matrix3x3f_TransposeFromMatrix4x4f( &builtin.modelViewInverseTransposeMatrix, &builtin.modelViewInverseMatrix );
 
-		if ( skin != NULL )
+		bool showSkinBounds = false;
+		if ( skin != NULL && showSkinBounds )
 		{
-			Matrix4x4f_t identity;
-			Matrix4x4f_CreateIdentity( &identity );
 			Matrix4x4f_t unitCubeMatrix;
-			Matrix4x4f_CreateOffsetScaleForBounds( &unitCubeMatrix, &identity, &skin->mins, &skin->maxs );
+			Matrix4x4f_CreateOffsetScaleForBounds( &unitCubeMatrix, &builtin.modelMatrix, &skin->mins, &skin->maxs );
 
 			GpuGraphicsCommand_t command;
 			GpuGraphicsCommand_Init( &command );
@@ -13046,12 +13218,28 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 			GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
 		}
 
-		for ( int m = 0; m < node->modelCount; m++ )
+		if ( skin != NULL )
 		{
-			const GltfModel_t * model = node->models[m];
-			for ( int s = 0; s < model->surfaceCount; s++ )
+			if ( Matrix4x4f_CullBounds( &builtin.modelViewProjectionMatrix, &skin->mins, &skin->maxs ) )
 			{
-				const GltfSurface_t * surface = &model->surfaces[s];
+				continue;
+			}
+		}
+
+		for ( int modelIndex = 0; modelIndex < node->modelCount; modelIndex++ )
+		{
+			const GltfModel_t * model = node->models[modelIndex];
+			for ( int surfaceIndex = 0; surfaceIndex < model->surfaceCount; surfaceIndex++ )
+			{
+				const GltfSurface_t * surface = &model->surfaces[surfaceIndex];
+
+				if ( skin == NULL )
+				{
+					if ( Matrix4x4f_CullBounds( &builtin.modelViewProjectionMatrix, &surface->mins, &surface->maxs ) )
+					{
+						continue;
+					}
+				}
 
 				GpuGraphicsCommand_t command;
 				GpuGraphicsCommand_Init( &command );
@@ -13059,38 +13247,37 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 				command.pipeline = &surface->pipeline;
 
 				const GltfTechnique_t * technique = surface->material->technique;
-				for ( int u = 0; u < technique->uniformCount; u++ )
+				for ( int uniformIndex = 0; uniformIndex < technique->uniformCount; uniformIndex++ )
 				{
-					const GltfUniform_t * uniform = &technique->uniforms[u];
+					const GltfUniform_t * uniform = &technique->uniforms[uniformIndex];
 					switch ( uniform->semantic )
 					{
-						case GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE:				GltfScene_SetUniformValue( &command, uniform, &uniform->defaultValue ); break;
-						case GLTF_UNIFORM_SEMANTIC_LOCAL:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.localMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_MODEL:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_VIEW:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.viewMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_PROJECTION:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.projectionMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_MODELVIEW:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTION:			GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_MODELINVERSE:				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelInverseMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_VIEWINVERSE:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.viewInverseMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_PROJECTIONINVERSE:			GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.projectionInverseMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSE:			GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewInverseMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_MODELVIEWPROJECTIONINVERSE:	GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionInverseMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_MODELINVERSETRANSPOSE:		GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, uniform->index, &builtin.modelInverseTransposeMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_MODELVIEWINVERSETRANSPOSE:	GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, uniform->index, &builtin.modelViewInverseTransposeMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_VIEWPORT:					GpuGraphicsCommand_SetParmFloatVector4( &command, uniform->index, &builtin.viewport ); break;
-						case GLTF_UNIFORM_SEMANTIC_JOINTMATRIX:					GpuGraphicsCommand_SetParmBufferUniform( &command, uniform->index, jointBuffer ); break;
+						case GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE:					GltfScene_SetUniformValue( &command, uniform, &uniform->defaultValue ); break;
+						case GLTF_UNIFORM_SEMANTIC_LOCAL:							GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.localMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODEL:							GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_VIEW:							GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.viewMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_PROJECTION:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.projectionMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION:			GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelInverseMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.viewInverseMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE:				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.projectionInverseMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE:				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewInverseMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE:	GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionInverseMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE:			GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, uniform->index, &builtin.modelInverseTransposeMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE:	GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, uniform->index, &builtin.modelViewInverseTransposeMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_VIEWPORT:						GpuGraphicsCommand_SetParmFloatVector4( &command, uniform->index, &builtin.viewport ); break;
+						case GLTF_UNIFORM_SEMANTIC_JOINTMATRIX:						GpuGraphicsCommand_SetParmBufferUniform( &command, uniform->index, jointBuffer ); break;
 					}
 				}
 
-				for ( int v = 0; v < surface->material->valueCount; v++ )
+				for ( int valueIndex = 0; valueIndex < surface->material->valueCount; valueIndex++ )
 				{
-					const GltfMaterialValue_t * value = &surface->material->values[v];
-					if ( value->uniform == NULL )
+					const GltfMaterialValue_t * value = &surface->material->values[valueIndex];
+					if ( value->uniform != NULL )
 					{
-						continue;
+						GltfScene_SetUniformValue( &command, value->uniform, &value->value );
 					}
-					GltfScene_SetUniformValue( &command, value->uniform, &value->value );
 				}
 
 				GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );

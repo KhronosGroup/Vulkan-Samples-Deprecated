@@ -108,9 +108,8 @@ full precision.
 
 Integer values less than INT64_MIN or greater than UINT64_MAX are
 stored as floating-point. JSON does not support floating-point values
-like infinity and NaN. Therefore floating-point values less than
-DBL_MIN or greater than DBL_MAX are represented as DBL_MIN and DBL_MAX
-respectively.
+like infinity and NaN. Therefore floating-point values greater than
+DBL_MAX are represented as DBL_MAX.
 
 The JSON specification allows an implementation to set limits on the
 length and character contents of strings. This implementation supports
@@ -219,12 +218,12 @@ The functions Json_GetMemberByIndex() and Json_GetMemberByName() are used
 to access the elements of an array and/or members of an object. These functions
 may return NULL if the node is not an object or array, the index is out of range,
 or no member by the given name exists. All the Json_Is* functions will return
-false when a NULL node is passed in. All the Json_Get* functions will return
-the default value when a NULL node is passed in.
+false when a NULL pointer is passed in. All the Json_Get* functions will return
+the default value when a NULL pointer is passed in.
 
 The interface to create/modify the JSON DOM does not allow nodes to be
 inserted into the DOM because this can easily lead to cyclic references
-and testing for cyclic references would be time consuming. Instead object
+and testing for cyclic references would be time consuming. Instead, object
 members and array elements are allocated from a JSON object or array after
 which the member or element can be assigned a value. The default value of
 a new object member or array element is null.

@@ -562,8 +562,13 @@ bool CompileSPIRV(
 
 	if ( !shader->parse( &resources, 100, false, messages ) )
 	{
-		puts( shader->getInfoLog() );
-		puts( shader->getInfoDebugLog() );
+		Print( "%s", shader->getInfoLog() );
+		Print( "%s", shader->getInfoDebugLog() );
+#if defined( OS_WINDOWS )
+		OutputDebugString( shaderSource );
+		OutputDebugString( shader->getInfoLog() );
+		OutputDebugString( shader->getInfoDebugLog() );
+#endif
 		glslang::FinalizeProcess();
 		return false;
 	}
@@ -573,8 +578,13 @@ bool CompileSPIRV(
 
 	if ( !program->link( messages ) )
 	{
-		puts( shader->getInfoLog() );
-		puts( shader->getInfoDebugLog() );
+		Print( "%s", shader->getInfoLog() );
+		Print( "%s", shader->getInfoDebugLog() );
+#if defined( OS_WINDOWS )
+		OutputDebugString( shaderSource );
+		OutputDebugString( shader->getInfoLog() );
+		OutputDebugString( shader->getInfoDebugLog() );
+#endif
 		glslang::FinalizeProcess();
 		return false;
 	}
