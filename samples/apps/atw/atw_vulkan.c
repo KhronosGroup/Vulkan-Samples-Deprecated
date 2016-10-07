@@ -519,62 +519,6 @@ Common headers
 #include <errno.h>			// for EBUSY, ETIMEDOUT etc.
 #include <ctype.h>			// for isspace, isdigit
 
-#define USE_GLTF	1
-#if USE_GLTF == 1
-#include <utils/json.h>
-#include <utils/base64.h>
-
-#define GL_BYTE						0x1400
-#define GL_UNSIGNED_BYTE			0x1401
-#define GL_SHORT					0x1402
-#define GL_UNSIGNED_SHORT			0x1403
-
-#define GL_BOOL						0x8B56
-#define GL_BOOL_VEC2				0x8B57
-#define GL_BOOL_VEC3				0x8B58
-#define GL_BOOL_VEC4				0x8B59
-#define GL_INT						0x1404
-#define GL_INT_VEC2					0x8B53
-#define GL_INT_VEC3					0x8B54
-#define GL_INT_VEC4					0x8B55
-#define GL_FLOAT					0x1406
-#define GL_FLOAT_VEC2				0x8B50
-#define GL_FLOAT_VEC3				0x8B51
-#define GL_FLOAT_VEC4				0x8B52
-#define GL_FLOAT_MAT2				0x8B5A
-#define GL_FLOAT_MAT2x3				0x8B65
-#define GL_FLOAT_MAT2x4				0x8B66
-#define GL_FLOAT_MAT3x2				0x8B67
-#define GL_FLOAT_MAT3				0x8B5B
-#define GL_FLOAT_MAT3x4				0x8B68
-#define GL_FLOAT_MAT4x2				0x8B69
-#define GL_FLOAT_MAT4x3				0x8B6A
-#define GL_FLOAT_MAT4				0x8B5C
-#define GL_SAMPLER_1D				0x8B5D
-#define GL_SAMPLER_2D				0x8B5E
-#define GL_SAMPLER_3D				0x8B5F
-#define GL_SAMPLER_CUBE				0x8B60
-
-#define GL_TEXTURE_1D				0x0DE0
-#define GL_TEXTURE_2D				0x0DE1
-#define GL_TEXTURE_3D				0x806F
-#define GL_TEXTURE_CUBE_MAP			0x8513
-#define GL_TEXTURE_1D_ARRAY			0x8C18
-#define GL_TEXTURE_2D_ARRAY			0x8C1A
-#define GL_TEXTURE_CUBE_MAP_ARRAY	0x9009
-
-#define GL_VERTEX_SHADER			0x8B31
-#define GL_FRAGMENT_SHADER			0x8B30
-
-#define GL_BLEND					0x0BE2
-#define GL_DEPTH_TEST				0x0B71
-#define GL_DEPTH_WRITEMASK			0x0B72
-#define GL_CULL_FACE				0x0B44
-#define GL_POLYGON_OFFSET_FILL		0x8037
-#define GL_SAMPLE_ALPHA_TO_COVERAGE	0x809E
-#define GL_SCISSOR_TEST				0x0C11
-#endif
-
 /*
 ================================
 Common defines
@@ -600,7 +544,8 @@ Common defines
 
 #define VK_ALLOCATOR					NULL
 
-#define USE_SPIRV						0
+#define USE_GLTF						1
+#define USE_SPIRV						1
 #define USE_PM_MULTIVIEW				1
 #define USE_API_DUMP					0	// place vk_layer_settings.txt in the executable folder and change APIDumpFile = TRUE
 
@@ -760,7 +705,7 @@ static void Error( const char * format, ... )
 	// Without exiting, the application will likely crash.
 	if ( format != NULL )
 	{
-//		exit( 0 );
+		exit( 0 );
 	}
 }
 
@@ -10037,9 +9982,11 @@ The vertex attribute locations are assigned here, when both the geometry and pro
 to avoid binding vertex attributes that are not used by the vertex shader, and to avoid binding
 to a discontinuous set of vertex attribute locations.
 
-GpuBlendFactor_t
-GpuBlendOp_t
+GpuFrontFace_t
+GpuCullMode_t
 GpuCompareOp_t
+GpuBlendOp_t
+GpuBlendFactor_t
 GpuRasterOperations_t
 GpuGraphicsPipelineParms_t
 GpuGraphicsPipeline_t
@@ -10052,52 +9999,76 @@ static void GpuGraphicsPipeline_Destroy( GpuContext_t * context, GpuGraphicsPipe
 
 typedef enum
 {
-	GPU_BLEND_FACTOR_ZERO					= VK_BLEND_FACTOR_ZERO,
-	GPU_BLEND_FACTOR_ONE					= VK_BLEND_FACTOR_ONE,
-	GPU_BLEND_FACTOR_SRC_COLOR				= VK_BLEND_FACTOR_SRC_COLOR,
-	GPU_BLEND_FACTOR_ONE_MINUS_SRC_COLOR	= VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
-	GPU_BLEND_FACTOR_DST_COLOR				= VK_BLEND_FACTOR_DST_COLOR,
-	GPU_BLEND_FACTOR_ONE_MINUS_DST_COLOR	= VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR,
-	GPU_BLEND_FACTOR_SRC_ALPHA				= VK_BLEND_FACTOR_SRC_ALPHA,
-	GPU_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA	= VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-	GPU_BLEND_FACTOR_DST_ALPHA				= VK_BLEND_FACTOR_DST_ALPHA,
-	GPU_BLEND_FACTOR_ONE_MINUS_DST_ALPHA	= VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA
-} GpuBlendFactor_t;
+	GPU_FRONT_FACE_COUNTER_CLOCKWISE			= VK_FRONT_FACE_COUNTER_CLOCKWISE,
+    GPU_FRONT_FACE_CLOCKWISE					= VK_FRONT_FACE_CLOCKWISE
+} GpuFrontFace_t;
 
 typedef enum
 {
-	GPU_BLEND_OP_ADD						= VK_BLEND_OP_ADD,
-	GPU_BLEND_OP_SUBTRACT					= VK_BLEND_OP_SUBTRACT,
-	GPU_BLEND_OP_REVERSE_SUBTRACT			= VK_BLEND_OP_REVERSE_SUBTRACT,
-	GPU_BLEND_OP_MIN						= VK_BLEND_OP_MIN,
-	GPU_BLEND_OP_MAX						= VK_BLEND_OP_MAX
+	GPU_CULL_MODE_NONE							= 0,
+	GPU_CULL_MODE_FRONT							= VK_CULL_MODE_FRONT_BIT,
+	GPU_CULL_MODE_BACK							= VK_CULL_MODE_BACK_BIT
+} GpuCullMode_t;
+
+typedef enum
+{
+	GPU_COMPARE_OP_NEVER						= VK_COMPARE_OP_NEVER,
+	GPU_COMPARE_OP_LESS							= VK_COMPARE_OP_LESS,
+	GPU_COMPARE_OP_EQUAL						= VK_COMPARE_OP_EQUAL,
+	GPU_COMPARE_OP_LESS_OR_EQUAL				= VK_COMPARE_OP_LESS_OR_EQUAL,
+	GPU_COMPARE_OP_GREATER						= VK_COMPARE_OP_GREATER,
+	GPU_COMPARE_OP_NOT_EQUAL					= VK_COMPARE_OP_NOT_EQUAL,
+	GPU_COMPARE_OP_GREATER_OR_EQUAL				= VK_COMPARE_OP_GREATER_OR_EQUAL,
+	GPU_COMPARE_OP_ALWAYS						= VK_COMPARE_OP_ALWAYS
+} GpuCompareOp_t;
+
+typedef enum
+{
+	GPU_BLEND_OP_ADD							= VK_BLEND_OP_ADD,
+	GPU_BLEND_OP_SUBTRACT						= VK_BLEND_OP_SUBTRACT,
+	GPU_BLEND_OP_REVERSE_SUBTRACT				= VK_BLEND_OP_REVERSE_SUBTRACT,
+	GPU_BLEND_OP_MIN							= VK_BLEND_OP_MIN,
+	GPU_BLEND_OP_MAX							= VK_BLEND_OP_MAX
 } GpuBlendOp_t;
 
 typedef enum
 {
-	GPU_COMPARE_OP_NEVER					= VK_COMPARE_OP_NEVER,
-	GPU_COMPARE_OP_LESS						= VK_COMPARE_OP_LESS,
-	GPU_COMPARE_OP_EQUAL					= VK_COMPARE_OP_EQUAL,
-	GPU_COMPARE_OP_LESS_OR_EQUAL			= VK_COMPARE_OP_LESS_OR_EQUAL,
-	GPU_COMPARE_OP_GREATER					= VK_COMPARE_OP_GREATER,
-	GPU_COMPARE_OP_NOT_EQUAL				= VK_COMPARE_OP_NOT_EQUAL,
-	GPU_COMPARE_OP_GREATER_OR_EQUAL			= VK_COMPARE_OP_GREATER_OR_EQUAL,
-	GPU_COMPARE_OP_ALWAYS					= VK_COMPARE_OP_ALWAYS
-} GpuCompareOp_t;
+	GPU_BLEND_FACTOR_ZERO						= VK_BLEND_FACTOR_ZERO,
+	GPU_BLEND_FACTOR_ONE						= VK_BLEND_FACTOR_ONE,
+	GPU_BLEND_FACTOR_SRC_COLOR					= VK_BLEND_FACTOR_SRC_COLOR,
+	GPU_BLEND_FACTOR_ONE_MINUS_SRC_COLOR		= VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
+	GPU_BLEND_FACTOR_DST_COLOR					= VK_BLEND_FACTOR_DST_COLOR,
+	GPU_BLEND_FACTOR_ONE_MINUS_DST_COLOR		= VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR,
+	GPU_BLEND_FACTOR_SRC_ALPHA					= VK_BLEND_FACTOR_SRC_ALPHA,
+	GPU_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA		= VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+	GPU_BLEND_FACTOR_DST_ALPHA					= VK_BLEND_FACTOR_DST_ALPHA,
+	GPU_BLEND_FACTOR_ONE_MINUS_DST_ALPHA		= VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA,
+	GPU_BLEND_FACTOR_CONSTANT_COLOR				= VK_BLEND_FACTOR_CONSTANT_COLOR,				
+	GPU_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR	= VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR,
+	GPU_BLEND_FACTOR_CONSTANT_ALPHA				= VK_BLEND_FACTOR_CONSTANT_ALPHA,
+	GPU_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA	= VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA,
+	GPU_BLEND_FACTOR_SRC_ALPHA_SATURAT			= VK_BLEND_FACTOR_SRC_ALPHA_SATURATE
+} GpuBlendFactor_t;
 
 typedef struct
 {
 	bool							blendEnable;
+	bool							redWriteEnable;
+	bool							blueWriteEnable;
+	bool							greenWriteEnable;
 	bool							alphaWriteEnable;
 	bool							depthTestEnable;
 	bool							depthWriteEnable;
+	GpuFrontFace_t					frontFace;
+	GpuCullMode_t					cullMode;
+	GpuCompareOp_t					depthCompare;
+	Vector4f_t						blendColor;
 	GpuBlendOp_t					blendOpColor;
 	GpuBlendFactor_t				blendSrcColor;
 	GpuBlendFactor_t				blendDstColor;
 	GpuBlendOp_t					blendOpAlpha;
 	GpuBlendFactor_t				blendSrcAlpha;
 	GpuBlendFactor_t				blendDstAlpha;
-	GpuCompareOp_t					depthCompare;
 } GpuRasterOperations_t;
 
 typedef struct
@@ -10129,16 +10100,25 @@ typedef struct
 static void GpuGraphicsPipelineParms_Init( GpuGraphicsPipelineParms_t * parms )
 {
 	parms->rop.blendEnable = false;
+	parms->rop.redWriteEnable = true;
+	parms->rop.blueWriteEnable = true;
+	parms->rop.greenWriteEnable = true;
 	parms->rop.alphaWriteEnable = false;
 	parms->rop.depthTestEnable = true;
 	parms->rop.depthWriteEnable = true;
+	parms->rop.frontFace = GPU_FRONT_FACE_COUNTER_CLOCKWISE;
+	parms->rop.cullMode = GPU_CULL_MODE_BACK;
+	parms->rop.depthCompare = GPU_COMPARE_OP_LESS_OR_EQUAL;
+	parms->rop.blendColor.x = 0.0f;
+	parms->rop.blendColor.y = 0.0f;
+	parms->rop.blendColor.z = 0.0f;
+	parms->rop.blendColor.w = 0.0f;
 	parms->rop.blendOpColor = GPU_BLEND_OP_ADD;
 	parms->rop.blendSrcColor = GPU_BLEND_FACTOR_ONE;
 	parms->rop.blendDstColor = GPU_BLEND_FACTOR_ZERO;
 	parms->rop.blendOpAlpha = GPU_BLEND_OP_ADD;
 	parms->rop.blendSrcAlpha = GPU_BLEND_FACTOR_ONE;
 	parms->rop.blendDstAlpha = GPU_BLEND_FACTOR_ZERO;
-	parms->rop.depthCompare = GPU_COMPARE_OP_LESS_OR_EQUAL;
 	parms->renderPass = NULL;
 	parms->program = NULL;
 	parms->geometry = NULL;
@@ -10242,8 +10222,8 @@ static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipel
 	rasterizationStateCreateInfo.depthClampEnable				= VK_TRUE;
 	rasterizationStateCreateInfo.rasterizerDiscardEnable		= VK_FALSE;
 	rasterizationStateCreateInfo.polygonMode					= VK_POLYGON_MODE_FILL;
-	rasterizationStateCreateInfo.cullMode						= VK_CULL_MODE_BACK_BIT;
-	rasterizationStateCreateInfo.frontFace						= VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	rasterizationStateCreateInfo.cullMode						= (VkCullModeFlags)parms->rop.cullMode;
+	rasterizationStateCreateInfo.frontFace						= (VkFrontFace)parms->rop.frontFace;
 	rasterizationStateCreateInfo.depthBiasEnable				= VK_FALSE;
 	rasterizationStateCreateInfo.depthBiasConstantFactor		= 0.0f;
 	rasterizationStateCreateInfo.depthBiasClamp					= 0.0f;
@@ -10289,9 +10269,9 @@ static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipel
 	colorBlendAttachementState[0].srcAlphaBlendFactor			= (VkBlendFactor)parms->rop.blendSrcAlpha;
 	colorBlendAttachementState[0].dstAlphaBlendFactor			= (VkBlendFactor)parms->rop.blendDstAlpha;
 	colorBlendAttachementState[0].alphaBlendOp					= (VkBlendOp)parms->rop.blendOpAlpha;
-	colorBlendAttachementState[0].colorWriteMask				=	VK_COLOR_COMPONENT_R_BIT |
-																	VK_COLOR_COMPONENT_G_BIT |
-																	VK_COLOR_COMPONENT_B_BIT |
+	colorBlendAttachementState[0].colorWriteMask				=	( parms->rop.redWriteEnable ? VK_COLOR_COMPONENT_R_BIT : 0 ) |
+																	( parms->rop.blueWriteEnable ? VK_COLOR_COMPONENT_G_BIT : 0 ) |
+																	( parms->rop.greenWriteEnable ? VK_COLOR_COMPONENT_B_BIT : 0 ) |
 																	( parms->rop.alphaWriteEnable ? VK_COLOR_COMPONENT_A_BIT : 0 );
 
 	VkPipelineColorBlendStateCreateInfo colorBlendStateCreateInfo;
@@ -10302,10 +10282,10 @@ static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipel
 	colorBlendStateCreateInfo.logicOp							= VK_LOGIC_OP_CLEAR;
 	colorBlendStateCreateInfo.attachmentCount					= 1;
 	colorBlendStateCreateInfo.pAttachments						= colorBlendAttachementState;
-	colorBlendStateCreateInfo.blendConstants[0]					= 1.0f;
-	colorBlendStateCreateInfo.blendConstants[1]					= 1.0f;
-	colorBlendStateCreateInfo.blendConstants[2]					= 1.0f;
-	colorBlendStateCreateInfo.blendConstants[3]					= 1.0f;
+	colorBlendStateCreateInfo.blendConstants[0]					= parms->rop.blendColor.x;
+	colorBlendStateCreateInfo.blendConstants[1]					= parms->rop.blendColor.y;
+	colorBlendStateCreateInfo.blendConstants[2]					= parms->rop.blendColor.z;
+	colorBlendStateCreateInfo.blendConstants[3]					= parms->rop.blendColor.w;
 
 	VkDynamicState dynamicStateEnables[] =
 	{
@@ -12091,6 +12071,97 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 ================================================================================================================================
 */
 
+#include <utils/json.h>
+#include <utils/base64.h>
+
+#define GL_BYTE							0x1400
+#define GL_UNSIGNED_BYTE				0x1401
+#define GL_SHORT						0x1402
+#define GL_UNSIGNED_SHORT				0x1403
+
+#define GL_BOOL							0x8B56
+#define GL_BOOL_VEC2					0x8B57
+#define GL_BOOL_VEC3					0x8B58
+#define GL_BOOL_VEC4					0x8B59
+#define GL_INT							0x1404
+#define GL_INT_VEC2						0x8B53
+#define GL_INT_VEC3						0x8B54
+#define GL_INT_VEC4						0x8B55
+#define GL_FLOAT						0x1406
+#define GL_FLOAT_VEC2					0x8B50
+#define GL_FLOAT_VEC3					0x8B51
+#define GL_FLOAT_VEC4					0x8B52
+#define GL_FLOAT_MAT2					0x8B5A
+#define GL_FLOAT_MAT2x3					0x8B65
+#define GL_FLOAT_MAT2x4					0x8B66
+#define GL_FLOAT_MAT3x2					0x8B67
+#define GL_FLOAT_MAT3					0x8B5B
+#define GL_FLOAT_MAT3x4					0x8B68
+#define GL_FLOAT_MAT4x2					0x8B69
+#define GL_FLOAT_MAT4x3					0x8B6A
+#define GL_FLOAT_MAT4					0x8B5C
+#define GL_SAMPLER_1D					0x8B5D
+#define GL_SAMPLER_2D					0x8B5E
+#define GL_SAMPLER_3D					0x8B5F
+#define GL_SAMPLER_CUBE					0x8B60
+
+#define GL_TEXTURE_1D					0x0DE0
+#define GL_TEXTURE_2D					0x0DE1
+#define GL_TEXTURE_3D					0x806F
+#define GL_TEXTURE_CUBE_MAP				0x8513
+#define GL_TEXTURE_1D_ARRAY				0x8C18
+#define GL_TEXTURE_2D_ARRAY				0x8C1A
+#define GL_TEXTURE_CUBE_MAP_ARRAY		0x9009
+
+#define GL_VERTEX_SHADER				0x8B31
+#define GL_FRAGMENT_SHADER				0x8B30
+
+#define GL_BLEND						0x0BE2
+#define GL_DEPTH_TEST					0x0B71
+#define GL_DEPTH_WRITEMASK				0x0B72
+#define GL_CULL_FACE					0x0B44
+#define GL_POLYGON_OFFSET_FILL			0x8037
+#define GL_SAMPLE_ALPHA_TO_COVERAGE		0x809E
+#define GL_SCISSOR_TEST					0x0C11
+
+#define GL_CW							0x0900
+#define GL_CCW							0x0901
+
+#define GL_NONE							0
+#define GL_FRONT						0x0404
+#define GL_BACK							0x0405
+
+#define GL_NEVER						0x0200
+#define GL_LESS							0x0201
+#define GL_EQUAL						0x0202
+#define GL_LEQUAL						0x0203
+#define GL_GREATER						0x0204
+#define GL_NOTEQUAL						0x0205
+#define GL_GEQUAL						0x0206
+#define GL_ALWAYS						0x0207
+
+#define GL_FUNC_ADD						0x8006
+#define GL_FUNC_SUBTRACT				0x800A
+#define GL_FUNC_REVERSE_SUBTRACT		0x800B
+#define GL_MIN							0x8007
+#define GL_MAX							0x8008
+
+#define GL_ZERO							0
+#define GL_ONE							1
+#define GL_SRC_COLOR					0x0300
+#define GL_ONE_MINUS_SRC_COLOR			0x0301
+#define GL_DST_COLOR					0x0306
+#define GL_ONE_MINUS_DST_COLOR			0x0307
+#define GL_SRC_ALPHA					0x0302
+#define GL_ONE_MINUS_SRC_ALPHA			0x0303
+#define GL_DST_ALPHA					0x0304
+#define GL_ONE_MINUS_DST_ALPHA			0x0305
+#define GL_CONSTANT_COLOR				0x8001
+#define GL_ONE_MINUS_CONSTANT_COLOR		0x8002
+#define GL_CONSTANT_ALPHA				0x8003
+#define GL_ONE_MINUS_CONSTANT_ALPHA		0x8004
+#define GL_SRC_ALPHA_SATURATE			0x0308
+
 static GpuProgramParm_t unitCubeFlatShadeProgramParms[] =
 {
 	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	0,		"ModelMatrix",		  0 },
@@ -12901,6 +12972,79 @@ static void Gltf_ParseUniformValue( GltfUniformValue_t * value, const Json_t * j
 	}
 }
 
+static GpuFrontFace_t Gltf_GetFrontFace( const int face )
+{
+	switch ( face )
+	{
+		case GL_CCW:	return GPU_FRONT_FACE_COUNTER_CLOCKWISE;
+		case GL_CW:		return GPU_FRONT_FACE_CLOCKWISE;
+		default:		return GPU_FRONT_FACE_COUNTER_CLOCKWISE;
+	}
+}
+
+static GpuCullMode_t Gltf_GetCullMode( const int mode )
+{
+	switch ( mode )
+	{
+		case GL_NONE:	return GPU_CULL_MODE_NONE;
+		case GL_FRONT:	return GPU_CULL_MODE_FRONT;
+		case GL_BACK:	return GPU_CULL_MODE_BACK;
+		default:		return GPU_CULL_MODE_BACK;
+	}
+}
+
+static GpuCompareOp_t Gltf_GetCompareOp( const int op )
+{
+	switch ( op )
+	{
+		case GL_NEVER:		return GPU_COMPARE_OP_NEVER;
+		case GL_LESS:		return GPU_COMPARE_OP_LESS;
+		case GL_EQUAL:		return GPU_COMPARE_OP_EQUAL;
+		case GL_LEQUAL:		return GPU_COMPARE_OP_LESS_OR_EQUAL;
+		case GL_GREATER:	return GPU_COMPARE_OP_GREATER;
+		case GL_NOTEQUAL:	return GPU_COMPARE_OP_NOT_EQUAL;
+		case GL_GEQUAL:		return GPU_COMPARE_OP_GREATER_OR_EQUAL;
+		case GL_ALWAYS:		return GPU_COMPARE_OP_ALWAYS;
+		default:			return GPU_COMPARE_OP_LESS;
+	}
+}
+
+static GpuBlendOp_t Gltf_GetBlendOp( const int op )
+{
+	switch( op )
+	{
+		case GL_FUNC_ADD:				return GPU_BLEND_OP_ADD;
+		case GL_FUNC_SUBTRACT:			return GPU_BLEND_OP_SUBTRACT;
+		case GL_FUNC_REVERSE_SUBTRACT:	return GPU_BLEND_OP_REVERSE_SUBTRACT;
+		case GL_MIN:					return GPU_BLEND_OP_MIN;
+		case GL_MAX:					return GPU_BLEND_OP_MAX;
+		default:						return GPU_BLEND_OP_ADD;
+	}
+}
+
+static GpuBlendFactor_t Gltf_GetBlendFactor( const int factor )
+{
+	switch ( factor )
+	{
+		case GL_ZERO:						return GPU_BLEND_FACTOR_ZERO;
+		case GL_ONE:						return GPU_BLEND_FACTOR_ONE;
+		case GL_SRC_COLOR:					return GPU_BLEND_FACTOR_SRC_COLOR;
+		case GL_ONE_MINUS_SRC_COLOR:		return GPU_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+		case GL_DST_COLOR:					return GPU_BLEND_FACTOR_DST_COLOR;
+		case GL_ONE_MINUS_DST_COLOR:		return GPU_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+		case GL_SRC_ALPHA:					return GPU_BLEND_FACTOR_SRC_ALPHA;
+		case GL_ONE_MINUS_SRC_ALPHA:		return GPU_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+		case GL_DST_ALPHA:					return GPU_BLEND_FACTOR_DST_ALPHA;
+		case GL_ONE_MINUS_DST_ALPHA:		return GPU_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+		case GL_CONSTANT_COLOR:				return GPU_BLEND_FACTOR_CONSTANT_COLOR;
+		case GL_ONE_MINUS_CONSTANT_COLOR:	return GPU_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
+		case GL_CONSTANT_ALPHA:				return GPU_BLEND_FACTOR_CONSTANT_ALPHA;
+		case GL_ONE_MINUS_CONSTANT_ALPHA:	return GPU_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
+		case GL_SRC_ALPHA_SATURATE:			return GPU_BLEND_FACTOR_SRC_ALPHA_SATURAT;
+		default:							return GPU_BLEND_FACTOR_ZERO;
+	}
+}
+
 static void * Gltf_GetBufferData( const GltfAccessor_t * access )
 {
 	if ( access == NULL )
@@ -13364,16 +13508,25 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				}
 
 				scene->techniques[i].rop.blendEnable = false;
+				scene->techniques[i].rop.redWriteEnable = true;
+				scene->techniques[i].rop.blueWriteEnable = true;
+				scene->techniques[i].rop.greenWriteEnable = true;
 				scene->techniques[i].rop.alphaWriteEnable = false;
 				scene->techniques[i].rop.depthTestEnable = false;
 				scene->techniques[i].rop.depthWriteEnable = false;
+				scene->techniques[i].rop.frontFace = GPU_FRONT_FACE_COUNTER_CLOCKWISE;
+				scene->techniques[i].rop.cullMode = GPU_CULL_MODE_NONE;
+				scene->techniques[i].rop.depthCompare = GPU_COMPARE_OP_LESS_OR_EQUAL;
+				scene->techniques[i].rop.blendColor.x = 0.0f;
+				scene->techniques[i].rop.blendColor.y = 0.0f;
+				scene->techniques[i].rop.blendColor.z = 0.0f;
+				scene->techniques[i].rop.blendColor.w = 0.0f;
 				scene->techniques[i].rop.blendOpColor = GPU_BLEND_OP_ADD;
 				scene->techniques[i].rop.blendSrcColor = GPU_BLEND_FACTOR_ONE;
 				scene->techniques[i].rop.blendDstColor = GPU_BLEND_FACTOR_ZERO;
 				scene->techniques[i].rop.blendOpAlpha = GPU_BLEND_OP_ADD;
 				scene->techniques[i].rop.blendSrcAlpha = GPU_BLEND_FACTOR_ONE;
 				scene->techniques[i].rop.blendDstAlpha = GPU_BLEND_FACTOR_ZERO;
-				scene->techniques[i].rop.depthCompare = GPU_COMPARE_OP_LESS_OR_EQUAL;
 
 				const Json_t * states = Json_GetMemberByName( technique, "states" );
 				const Json_t * enable = Json_GetMemberByName( states, "enable" );
@@ -13396,15 +13549,20 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 							scene->techniques[i].rop.depthWriteEnable = true;
 							break;
 						case GL_CULL_FACE:
+							scene->techniques[i].rop.cullMode = GPU_CULL_MODE_BACK;
 							break;
 						case GL_POLYGON_OFFSET_FILL:
+							assert( false );
 							break;
 						case GL_SAMPLE_ALPHA_TO_COVERAGE:
+							assert( false );
 							break;
 						case GL_SCISSOR_TEST:
+							assert( false );
 							break;
 					}
 				}
+
 				const Json_t * functions = Json_GetMemberByName( states, "functions" );
 				const int functionCount = Json_GetMemberCount( functions );
 				for ( int j = 0; j < functionCount; j++ )
@@ -13413,53 +13571,73 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					const char * funcName = Json_GetMemberName( func );
 					if ( strcmp( funcName, "blendColor" ) == 0 )
 					{
-						/* [float:red, float:blue, float:green, float:alpha] */
+						// [float:red, float:blue, float:green, float:alpha]
+						scene->techniques[i].rop.blendColor.x = Json_GetFloat( Json_GetMemberByIndex( func, 0 ), 0.0f );
+						scene->techniques[i].rop.blendColor.y = Json_GetFloat( Json_GetMemberByIndex( func, 1 ), 0.0f );
+						scene->techniques[i].rop.blendColor.z = Json_GetFloat( Json_GetMemberByIndex( func, 2 ), 0.0f );
+						scene->techniques[i].rop.blendColor.w = Json_GetFloat( Json_GetMemberByIndex( func, 3 ), 0.0f );
 					}
 					else if ( strcmp( funcName, "blendEquationSeparate" ) == 0 )
 					{
-						/* [GLenum:GL_FUNC_* (rgb), GLenum:GL_FUNC_* (alpha)] */
+						// [GLenum:GL_FUNC_* (rgb), GLenum:GL_FUNC_* (alpha)]
+						scene->techniques[i].rop.blendOpColor = Gltf_GetBlendOp( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+						scene->techniques[i].rop.blendOpAlpha = Gltf_GetBlendOp( Json_GetUint16( Json_GetMemberByIndex( func, 1 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "blendFuncSeparate" ) == 0 )
 					{
-						/* [GLenum:GL_ONE, GLenum:GL_ZERO, GLenum:GL_ONE, GLenum:GL_ZERO] */
+						// [GLenum:GL_ONE (srcRGB), GLenum:GL_ZERO (dstRGB), GLenum:GL_ONE (srcAlpha), GLenum:GL_ZERO (dstAlpha)]
+						scene->techniques[i].rop.blendSrcColor = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+						scene->techniques[i].rop.blendDstColor = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 1 ), 0 ) );
+						scene->techniques[i].rop.blendSrcAlpha = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 2 ), 0 ) );
+						scene->techniques[i].rop.blendDstAlpha = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 3 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "colorMask" ) == 0 )
 					{
 						// [bool:red, bool:green, bool:blue, bool:alpha]
+						scene->techniques[i].rop.redWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 0 ), false );
+						scene->techniques[i].rop.blueWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 1 ), false );
+						scene->techniques[i].rop.greenWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 2 ), false );
 						scene->techniques[i].rop.alphaWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 3 ), false );
 					}
 					else if ( strcmp( funcName, "cullFace" ) == 0 )
 					{
-						/* [GLenum:GL_BACK,GL_FRONT] */
+						// [GLenum:GL_BACK,GL_FRONT]
+						scene->techniques[i].rop.cullMode = Gltf_GetCullMode( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "depthFunc" ) == 0 )
 					{
-						/* [GLenum:GL_LESS,GL_LEQUAL,GL_GREATER] */
+						// [GLenum:GL_LESS,GL_LEQUAL,GL_GREATER]
+						scene->techniques[i].rop.depthCompare = Gltf_GetCompareOp( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "depthMask" ) == 0 )
 					{
 						// [bool:mask]
 						scene->techniques[i].rop.depthWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 0 ), false );
 					}
-					else if ( strcmp( funcName, "depthRange" ) == 0 )
-					{
-						/* [float:znear, float:zfar] */
-					}
 					else if ( strcmp( funcName, "frontFace" ) == 0 )
 					{
-						/* [Glenum:GL_CCW,GL_CW] */
+						// [Glenum:GL_CCW,GL_CW]
+						scene->techniques[i].rop.frontFace = Gltf_GetFrontFace( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "lineWidth" ) == 0 )
 					{
-						/* [float:width] */
+						// [float:width]
+						assert( false );
 					}
 					else if ( strcmp( funcName, "polygonOffset" ) == 0 )
 					{
-						/* [float:factor, float:units] */
+						// [float:factor, float:units]
+						assert( false );
+					}
+					else if ( strcmp( funcName, "depthRange" ) == 0 )
+					{
+						// [float:znear, float:zfar]
+						assert( false );
 					}
 					else if ( strcmp( funcName, "scissor" ) == 0 )
 					{
-						/* [int:x, int:y, int:width, int:height] */
+						// [int:x, int:y, int:width, int:height]
+						assert( false );
 					}
 				}
 
@@ -14038,6 +14216,8 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 
 static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 {
+	GpuContext_WaitIdle( context );
+
 	{
 		for ( int i = 0; i < scene->bufferCount; i++ )
 		{
@@ -14194,6 +14374,12 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 		free( scene->nodes );
 		free( scene->nodeHash );
 	}
+
+	GpuBuffer_Destroy( context, &scene->defaultJointBuffer );
+	GpuGraphicsPipeline_Destroy( context, &scene->unitCubePipeline );
+	GpuGraphicsProgram_Destroy( context, &scene->unitCubeFlatShadeProgram );
+	GpuGeometry_Destroy( context, &scene->unitCubeGeometry );
+
 	memset( scene, 0, sizeof( GltfScene_t ) );
 }
 
@@ -14320,8 +14506,8 @@ static void GltfScene_HandleInput( Matrix4x4f_t * viewMatrix, GpuWindow_t * wind
 
 	if ( GpuWindow_CheckKeyboardKey( window, KEY_SHIFT_LEFT ) )
 	{
-		if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_UP ) )			{ viewAngles.x += DEGREES_PER_TAP; }
-		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_DOWN ) )		{ viewAngles.x -= DEGREES_PER_TAP; }
+		if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_UP ) )			{ viewAngles.x -= DEGREES_PER_TAP; }
+		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_DOWN ) )		{ viewAngles.x += DEGREES_PER_TAP; }
 		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_LEFT ) )		{ viewAngles.y += DEGREES_PER_TAP; }
 		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_RIGHT ) )	{ viewAngles.y -= DEGREES_PER_TAP; }
 	}

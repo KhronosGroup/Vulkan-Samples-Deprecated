@@ -495,12 +495,6 @@ Common headers
 #include <errno.h>			// for EBUSY, ETIMEDOUT etc.
 #include <ctype.h>			// for isspace, isdigit
 
-#define USE_GLTF	1
-#if USE_GLTF == 1
-#include <utils/json.h>
-#include <utils/base64.h>
-#endif
-
 /*
 ================================
 Common defines
@@ -524,6 +518,7 @@ Common defines
 
 #define GRAPHICS_API_OPENGL				1
 
+#define USE_GLTF						1
 #define PROGRAM( name )					name##GLSL
 
 #define GLSL_EXTENSIONS					"#extension GL_EXT_shader_io_blocks : enable\n"
@@ -1703,6 +1698,7 @@ static void Vector3f_Add( Vector3f_t * result, const Vector3f_t * a, const Vecto
 static void Vector3f_Sub( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
 static void Vector3f_Min( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
 static void Vector3f_Max( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
+static void Vector3f_Decay( Vector3f_t * result, const Vector3f_t * a, const float value );
 static void Vector3f_Lerp( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b, const float fraction );
 static void Vector3f_Normalize( Vector3f_t * v );
 
@@ -1906,6 +1902,13 @@ static void Vector3f_Max( Vector3f_t * result, const Vector3f_t * a, const Vecto
 	result->x = ( a->x > b->x ) ? a->x : b->x;
 	result->y = ( a->y > b->y ) ? a->y : b->y;
 	result->z = ( a->z > b->z ) ? a->z : b->z;
+}
+
+static void Vector3f_Decay( Vector3f_t * result, const Vector3f_t * a, const float value )
+{
+	result->x = ( fabsf( a->x ) > value ) ? ( ( a->x > 0.0f ) ? ( a->x - value ) : ( a->x + value ) ) : 0.0f;
+	result->y = ( fabsf( a->y ) > value ) ? ( ( a->y > 0.0f ) ? ( a->y - value ) : ( a->y + value ) ) : 0.0f;
+	result->z = ( fabsf( a->z ) > value ) ? ( ( a->z > 0.0f ) ? ( a->z - value ) : ( a->z + value ) ) : 0.0f;
 }
 
 static void Vector3f_Lerp( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b, const float fraction )
@@ -2130,25 +2133,10 @@ static void Matrix4x4f_CreateRotation( Matrix4x4f_t * result, const float degree
 // Creates a scale matrix.
 static void Matrix4x4f_CreateScale( Matrix4x4f_t * result, const float x, const float y, const float z )
 {
-	result->m[0][0] = x;
-	result->m[0][1] = 0.0f;
-	result->m[0][2] = 0.0f;
-	result->m[0][3] = 0.0f;
-
-	result->m[1][0] = 0.0f;
-	result->m[1][1] = y;
-	result->m[1][2] = 0.0f;
-	result->m[1][3] = 0.0f;
-
-	result->m[2][0] = 0.0f;
-	result->m[2][1] = 0.0f;
-	result->m[2][2] = z;
-	result->m[2][3] = 0.0f;
-
-	result->m[3][0] = 0.0f;
-	result->m[3][1] = 0.0f;
-	result->m[3][2] = 0.0f;
-	result->m[3][3] = 1.0f;
+	result->m[0][0] =    x; result->m[0][1] = 0.0f; result->m[0][2] = 0.0f; result->m[0][3] = 0.0f;
+	result->m[1][0] = 0.0f; result->m[1][1] =    y; result->m[1][2] = 0.0f; result->m[1][3] = 0.0f;
+	result->m[2][0] = 0.0f; result->m[2][1] = 0.0f; result->m[2][2] =    z; result->m[2][3] = 0.0f;
+	result->m[3][0] = 0.0f; result->m[3][1] = 0.0f; result->m[3][2] = 0.0f; result->m[3][3] = 1.0f;
 }
 
 // Creates a matrix from a quaternion.
@@ -2193,11 +2181,11 @@ static void Matrix4x4f_CreateFromQuaternion( Matrix4x4f_t * result, const Quatf_
 // Creates a combined translation(rotation(scale(object))) matrix.
 static void Matrix4x4f_CreateScaleRotationTranslation( Matrix4x4f_t * result, const Vector3f_t * scale, const Quatf_t * rotation, const Vector3f_t * translation )
 {
-	Matrix4x4f_t rotationMatrix;
-	Matrix4x4f_CreateFromQuaternion( &rotationMatrix, rotation );
-
 	Matrix4x4f_t scaleMatrix;
 	Matrix4x4f_CreateScale( &scaleMatrix, scale->x, scale->y, scale->z );
+
+	Matrix4x4f_t rotationMatrix;
+	Matrix4x4f_CreateFromQuaternion( &rotationMatrix, rotation );
 
 	Matrix4x4f_t translationMatrix;
 	Matrix4x4f_CreateTranslation( &translationMatrix, translation->x, translation->y, translation->z );
@@ -2971,6 +2959,7 @@ PFNGLISSYNCPROC										glIsSync;
 
 PFNGLBLENDFUNCSEPARATEPROC							glBlendFuncSeparate;
 PFNGLBLENDEQUATIONSEPARATEPROC						glBlendEquationSeparate;
+PFNGLBLENDCOLORPROC									glBlendColor;
 
 #if defined( OS_WINDOWS )
 PFNWGLCHOOSEPIXELFORMATARBPROC						wglChoosePixelFormatARB;
@@ -3104,6 +3093,7 @@ static void GlInitExtensions()
 
 	glBlendFuncSeparate							= (PFNGLBLENDFUNCSEPARATEPROC)			GetExtension( "glBlendFuncSeparate" );
 	glBlendEquationSeparate						= (PFNGLBLENDEQUATIONSEPARATEPROC)		GetExtension( "glBlendEquationSeparate" );
+	glBlendColor								= (PFNGLBLENDCOLORPROC)					GetExtension( "glBlendColor" );
 
 #if defined( OS_WINDOWS )
 	wglChoosePixelFormatARB						= (PFNWGLCHOOSEPIXELFORMATARBPROC)		GetExtension( "wglChoosePixelFormatARB" );
@@ -4355,8 +4345,6 @@ and destroyed on the same thread that will actually render to the window and swa
 
 GpuWindow_t
 GpuWindowEvent_t
-KeyboardKey_t
-MouseButton_t
 
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
@@ -4367,10 +4355,7 @@ static void GpuWindow_Exit( GpuWindow_t * window );
 static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window );
 static void GpuWindow_SwapInterval( GpuWindow_t * window, const int swapInterval );
 static void GpuWindow_SwapBuffers( GpuWindow_t * window );
-static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window );
-static bool GpuWindow_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
-static bool GpuWindow_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button );
-static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
+static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window, const int extraFrames );
 
 ================================================================================================================================
 */
@@ -4382,6 +4367,14 @@ typedef enum
 	GPU_WINDOW_EVENT_DEACTIVATED,
 	GPU_WINDOW_EVENT_EXIT
 } GpuWindowEvent_t;
+
+typedef struct
+{
+	bool					keyInput[256];
+	bool					mouseInput[8];
+	int						mouseInputX[8];
+	int						mouseInputY[8];
+} GpuWindowInput_t;
 
 typedef struct
 {
@@ -4397,10 +4390,7 @@ typedef struct
 	bool					windowFullscreen;
 	bool					windowActive;
 	bool					windowExit;
-	bool					keyInput[256];
-	bool					mouseInput[8];
-	int						mouseInputX[8];
-	int						mouseInputY[8];
+	GpuWindowInput_t		input;
 	Microseconds_t			lastSwapTime;
 
 #if defined( OS_WINDOWS )
@@ -4482,9 +4472,9 @@ typedef enum
 	KEY_RETURN			= VK_RETURN,
 	KEY_TAB				= VK_TAB,
 	KEY_ESCAPE			= VK_ESCAPE,
-	KEY_SHIFT_LEFT		= VK_SHIFT,
-	KEY_CTRL_LEFT		= VK_CONTROL,
-	KEY_ALT_LEFT		= 0x00,
+	KEY_SHIFT_LEFT		= VK_LSHIFT,
+	KEY_CTRL_LEFT		= VK_LCONTROL,
+	KEY_ALT_LEFT		= VK_LMENU,
 	KEY_CURSOR_UP		= VK_UP,
 	KEY_CURSOR_DOWN		= VK_DOWN,
 	KEY_CURSOR_LEFT		= VK_LEFT,
@@ -4535,34 +4525,32 @@ LRESULT APIENTRY WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 			{
 				if ( (int)wParam >= 0 && (int)wParam < 256 )
 				{
-					window->keyInput[(int)wParam] = true;
-				}
-			}
-			break;
-		}
-		case WM_KEYUP:
-		{
-			if ( window != NULL )
-			{
-				if ( (int)wParam == VK_SHIFT || (int)wParam == VK_CONTROL )
-				{
-					window->keyInput[(int)wParam] = false;
+					if ( 	(int)wParam != KEY_SHIFT_LEFT &&
+							(int)wParam != KEY_CTRL_LEFT &&
+							(int)wParam != KEY_ALT_LEFT &&
+							(int)wParam != KEY_CURSOR_UP &&
+							(int)wParam != KEY_CURSOR_DOWN &&
+							(int)wParam != KEY_CURSOR_LEFT &&
+							(int)wParam != KEY_CURSOR_RIGHT )
+					{
+						window->input.keyInput[(int)wParam] = true;
+					}
 				}
 			}
 			break;
 		}
 		case WM_LBUTTONDOWN:
 		{
-			window->mouseInput[MOUSE_LEFT] = true;
-			window->mouseInputX[MOUSE_LEFT] = LOWORD( lParam );
-			window->mouseInputY[MOUSE_LEFT] = window->windowHeight - HIWORD( lParam );
+			window->input.mouseInput[MOUSE_LEFT] = true;
+			window->input.mouseInputX[MOUSE_LEFT] = LOWORD( lParam );
+			window->input.mouseInputY[MOUSE_LEFT] = window->windowHeight - HIWORD( lParam );
 			break;
 		}
 		case WM_RBUTTONDOWN:
 		{
-			window->mouseInput[MOUSE_RIGHT] = true;
-			window->mouseInputX[MOUSE_RIGHT] = LOWORD( lParam );
-			window->mouseInputY[MOUSE_RIGHT] = window->windowHeight - HIWORD( lParam );
+			window->input.mouseInput[MOUSE_RIGHT] = true;
+			window->input.mouseInputX[MOUSE_RIGHT] = LOWORD( lParam );
+			window->input.mouseInputY[MOUSE_RIGHT] = window->windowHeight - HIWORD( lParam );
 			break;
 		}
 	}
@@ -4761,8 +4749,6 @@ static void GpuWindow_Exit( GpuWindow_t * window )
 
 static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 {
-	UNUSED_PARM( window );
-
 	MSG msg;
 	while ( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) > 0 )
 	{
@@ -4776,6 +4762,14 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 			DispatchMessage( &msg );
 		}
 	}
+
+	window->input.keyInput[KEY_SHIFT_LEFT]	= GetAsyncKeyState( KEY_SHIFT_LEFT );
+	window->input.keyInput[KEY_CTRL_LEFT]		= GetAsyncKeyState( KEY_CTRL_LEFT );
+	window->input.keyInput[KEY_ALT_LEFT]		= GetAsyncKeyState( KEY_ALT_LEFT );
+	window->input.keyInput[KEY_CURSOR_UP]		= GetAsyncKeyState( KEY_CURSOR_UP );
+	window->input.keyInput[KEY_CURSOR_DOWN]	= GetAsyncKeyState( KEY_CURSOR_DOWN );
+	window->input.keyInput[KEY_CURSOR_LEFT]	= GetAsyncKeyState( KEY_CURSOR_LEFT );
+	window->input.keyInput[KEY_CURSOR_RIGHT]	= GetAsyncKeyState( KEY_CURSOR_RIGHT );
 
 	if ( window->windowExit )
 	{
@@ -5206,22 +5200,22 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 			unsigned short key = [event keyCode];
 			if ( key >= 0 && key < 256 )
 			{
-				window->keyInput[key] = true;
+				window->input.keyInput[key] = true;
 			}
 		}
 		else if ( event.type == NSLeftMouseDown )
 		{
 			NSPoint point = [event locationInWindow];
-			window->mouseInput[MOUSE_LEFT] = true;
-			window->mouseInputX[MOUSE_LEFT] = point.x;
-			window->mouseInputY[MOUSE_LEFT] = point.y - 1;	// change to zero-based
+			window->input.mouseInput[MOUSE_LEFT] = true;
+			window->input.mouseInputX[MOUSE_LEFT] = point.x;
+			window->input.mouseInputY[MOUSE_LEFT] = point.y - 1;	// change to zero-based
 		}
 		else if ( event.type == NSRightMouseDown )
 		{
 			NSPoint point = [event locationInWindow];
-			window->mouseInput[MOUSE_RIGHT] = true;
-			window->mouseInputX[MOUSE_RIGHT] = point.x;
-			window->mouseInputY[MOUSE_RIGHT] = point.y - 1;	// change to zero-based
+			window->input.mouseInput[MOUSE_RIGHT] = true;
+			window->input.mouseInputX[MOUSE_RIGHT] = point.x;
+			window->input.mouseInputY[MOUSE_RIGHT] = point.y - 1;	// change to zero-based
 		}
 
 		[NSApp sendEvent:event];
@@ -5832,7 +5826,7 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 				KeySym key = XLookupKeysym( &event.xkey, 0 );
 				if ( key < 256 || key == XK_Escape )
 				{
-					window->keyInput[key & 255] = true;
+					window->input.keyInput[key & 255] = true;
 				}
 				break;
 			}
@@ -5842,9 +5836,9 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 			}
 			case ButtonPress:
 			{
-				window->mouseInput[event.xbutton.button] = true;
-				window->mouseInputX[event.xbutton.button] = event.xbutton.x;
-				window->mouseInputY[event.xbutton.button] = event.xbutton.y;
+				window->input.mouseInput[event.xbutton.button] = true;
+				window->input.mouseInputX[event.xbutton.button] = event.xbutton.x;
+				window->input.mouseInputY[event.xbutton.button] = event.xbutton.y;
 			}
 			case ButtonRelease:
 			{
@@ -6337,7 +6331,7 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 				const xcb_keysym_t keysym = xcb_key_press_lookup_keysym( window->key_symbols, key_press_event, 0 );
 				if ( keysym < 256 || keysym == XK_Escape )
 				{
-					window->keyInput[keysym & 255] = true;
+					window->input.keyInput[keysym & 255] = true;
 				}
 				break;
 			}
@@ -6349,9 +6343,9 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 				{
 					if ( ( button_press_event->state & masks[i] ) != 0 )
 					{
-						window->mouseInput[i] = true;
-						window->mouseInputX[i] = button_press_event->event_x;
-						window->mouseInputY[i] = button_press_event->event_y;
+						window->input.mouseInput[i] = true;
+						window->input.mouseInputX[i] = button_press_event->event_x;
+						window->input.mouseInputY[i] = button_press_event->event_y;
 					}
 				}
 				break;
@@ -6508,7 +6502,7 @@ static int32_t app_handle_input( struct android_app * app, AInputEvent * event )
 			}
 			if ( keyCode >= 0 && keyCode < 256 )
 			{
-				window->keyInput[keyCode] = true;
+				window->input.keyInput[keyCode] = true;
 				return 1;
 			}
 		}
@@ -6526,9 +6520,9 @@ static int32_t app_handle_input( struct android_app * app, AInputEvent * event )
 			const float y = AMotionEvent_getRawY( event, 0 );
 			if ( action == AMOTION_EVENT_ACTION_UP )
 			{
-				window->mouseInput[MOUSE_LEFT] = true;
-				window->mouseInputX[MOUSE_LEFT] = (int)x;
-				window->mouseInputY[MOUSE_LEFT] = (int)y;
+				window->input.mouseInput[MOUSE_LEFT] = true;
+				window->input.mouseInputX[MOUSE_LEFT] = (int)x;
+				window->input.mouseInputY[MOUSE_LEFT] = (int)y;
 				return 1;
 			}
 			return 0;
@@ -6777,35 +6771,35 @@ static void GpuWindow_SwapBuffers( GpuWindow_t * window )
 	window->lastSwapTime = newTimeMicroseconds;
 }
 
-static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window )
+static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window, const int extraFrames )
 {
 	const float frameTimeMicroseconds = 1000.0f * 1000.0f / window->windowRefreshRate;
-	return window->lastSwapTime + (Microseconds_t)( frameTimeMicroseconds );
+	return window->lastSwapTime + ( 1 + extraFrames ) * (Microseconds_t)( frameTimeMicroseconds );
 }
 
-static bool GpuWindow_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key )
+static bool GpuWindowInput_ConsumeKeyboardKey( GpuWindowInput_t * input, const KeyboardKey_t key )
 {
-	if ( window->keyInput[key] )
+	if ( input->keyInput[key] )
 	{
-		window->keyInput[key] = false;
+		input->keyInput[key] = false;
 		return true;
 	}
 	return false;
 }
 
-static bool GpuWindow_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button )
+static bool GpuWindowInput_ConsumeMouseButton( GpuWindowInput_t * input, const MouseButton_t button )
 {
-	if ( window->mouseInput[button] )
+	if ( input->mouseInput[button] )
 	{
-		window->mouseInput[button] = false;
+		input->mouseInput[button] = false;
 		return true;
 	}
 	return false;
 }
 
-static bool GpuWindow_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key )
+static bool GpuWindowInput_CheckKeyboardKey( GpuWindowInput_t * input, const KeyboardKey_t key )
 {
-	return ( window->keyInput[key] != false );
+	return ( input->keyInput[key] != false );
 }
 
 /*
@@ -7783,7 +7777,7 @@ static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * tex
 	UNUSED_PARM( derivedFormat );
 	UNUSED_PARM( derivedType );
 
-	// The glFormat and glType must be either both be zero or both be non-zero.
+	// The glFormat and glType must either both be zero or both be non-zero.
 	assert( ( header->glFormat == 0 ) == ( header->glType == 0 ) );
 	// Uncompressed glTypeSize must be 1, 2, 4 or 8.
 	assert( header->glFormat == 0 || header->glTypeSize == 1 || header->glTypeSize == 2 || header->glTypeSize == 4 || header->glTypeSize == 8 );
@@ -9411,9 +9405,11 @@ context that is used to render with the graphics pipeline. The VAO is created he
 geometry and the program are known, to avoid binding vertex attributes that are not used by the
 vertex shader, and to avoid binding to a discontinuous set of vertex attribute locations.
 
-GpuBlendFactor_t
-GpuBlendOp_t
+GpuFrontFace_t
+GpuCullMode_t
 GpuCompareOp_t
+GpuBlendOp_t
+GpuBlendFactor_t
 GpuRasterOperations_t
 GpuGraphicsPipelineParms_t
 GpuGraphicsPipeline_t
@@ -9426,52 +9422,76 @@ static void GpuGraphicsPipeline_Destroy( GpuContext_t * context, GpuGraphicsPipe
 
 typedef enum
 {
-	GPU_BLEND_FACTOR_ZERO					= GL_ZERO,
-	GPU_BLEND_FACTOR_ONE					= GL_ONE,
-	GPU_BLEND_FACTOR_SRC_COLOR				= GL_SRC_COLOR,
-	GPU_BLEND_FACTOR_ONE_MINUS_SRC_COLOR	= GL_ONE_MINUS_SRC_COLOR,
-	GPU_BLEND_FACTOR_DST_COLOR				= GL_DST_COLOR,
-	GPU_BLEND_FACTOR_ONE_MINUS_DST_COLOR	= GL_ONE_MINUS_DST_COLOR,
-	GPU_BLEND_FACTOR_SRC_ALPHA				= GL_SRC_ALPHA,
-	GPU_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA	= GL_ONE_MINUS_SRC_ALPHA,
-	GPU_BLEND_FACTOR_DST_ALPHA				= GL_DST_ALPHA,
-	GPU_BLEND_FACTOR_ONE_MINUS_DST_ALPHA	= GL_ONE_MINUS_DST_ALPHA
-} GpuBlendFactor_t;
+	GPU_FRONT_FACE_COUNTER_CLOCKWISE			= GL_CCW,
+    GPU_FRONT_FACE_CLOCKWISE					= GL_CW
+} GpuFrontFace_t;
 
 typedef enum
 {
-	GPU_BLEND_OP_ADD						= GL_FUNC_ADD,
-	GPU_BLEND_OP_SUBTRACT					= GL_FUNC_SUBTRACT,
-	GPU_BLEND_OP_REVERSE_SUBTRACT			= GL_FUNC_REVERSE_SUBTRACT,
-	GPU_BLEND_OP_MIN						= GL_MIN,
-	GPU_BLEND_OP_MAX						= GL_MAX
+	GPU_CULL_MODE_NONE							= GL_NONE,
+	GPU_CULL_MODE_FRONT							= GL_FRONT,
+	GPU_CULL_MODE_BACK							= GL_BACK
+} GpuCullMode_t;
+
+typedef enum
+{
+	GPU_COMPARE_OP_NEVER						= GL_NEVER,
+	GPU_COMPARE_OP_LESS							= GL_LESS,
+	GPU_COMPARE_OP_EQUAL						= GL_EQUAL,
+	GPU_COMPARE_OP_LESS_OR_EQUAL				= GL_LEQUAL,
+	GPU_COMPARE_OP_GREATER						= GL_GREATER,
+	GPU_COMPARE_OP_NOT_EQUAL					= GL_NOTEQUAL,
+	GPU_COMPARE_OP_GREATER_OR_EQUAL				= GL_GEQUAL,
+	GPU_COMPARE_OP_ALWAYS						= GL_ALWAYS
+} GpuCompareOp_t;
+
+typedef enum
+{
+	GPU_BLEND_OP_ADD							= GL_FUNC_ADD,
+	GPU_BLEND_OP_SUBTRACT						= GL_FUNC_SUBTRACT,
+	GPU_BLEND_OP_REVERSE_SUBTRACT				= GL_FUNC_REVERSE_SUBTRACT,
+	GPU_BLEND_OP_MIN							= GL_MIN,
+	GPU_BLEND_OP_MAX							= GL_MAX
 } GpuBlendOp_t;
 
 typedef enum
 {
-	GPU_COMPARE_OP_NEVER					= GL_NEVER,
-	GPU_COMPARE_OP_LESS						= GL_LESS,
-	GPU_COMPARE_OP_EQUAL					= GL_EQUAL,
-	GPU_COMPARE_OP_LESS_OR_EQUAL			= GL_LEQUAL,
-	GPU_COMPARE_OP_GREATER					= GL_GREATER,
-	GPU_COMPARE_OP_NOT_EQUAL				= GL_NOTEQUAL,
-	GPU_COMPARE_OP_GREATER_OR_EQUAL			= GL_GEQUAL,
-	GPU_COMPARE_OP_ALWAYS					= GL_ALWAYS
-} GpuCompareOp_t;
+	GPU_BLEND_FACTOR_ZERO						= GL_ZERO,
+	GPU_BLEND_FACTOR_ONE						= GL_ONE,
+	GPU_BLEND_FACTOR_SRC_COLOR					= GL_SRC_COLOR,
+	GPU_BLEND_FACTOR_ONE_MINUS_SRC_COLOR		= GL_ONE_MINUS_SRC_COLOR,
+	GPU_BLEND_FACTOR_DST_COLOR					= GL_DST_COLOR,
+	GPU_BLEND_FACTOR_ONE_MINUS_DST_COLOR		= GL_ONE_MINUS_DST_COLOR,
+	GPU_BLEND_FACTOR_SRC_ALPHA					= GL_SRC_ALPHA,
+	GPU_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA		= GL_ONE_MINUS_SRC_ALPHA,
+	GPU_BLEND_FACTOR_DST_ALPHA					= GL_DST_ALPHA,
+	GPU_BLEND_FACTOR_ONE_MINUS_DST_ALPHA		= GL_ONE_MINUS_DST_ALPHA,
+	GPU_BLEND_FACTOR_CONSTANT_COLOR				= GL_CONSTANT_COLOR,
+	GPU_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR	= GL_ONE_MINUS_CONSTANT_COLOR,
+	GPU_BLEND_FACTOR_CONSTANT_ALPHA				= GL_CONSTANT_ALPHA,
+	GPU_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA	= GL_ONE_MINUS_CONSTANT_ALPHA,
+	GPU_BLEND_FACTOR_SRC_ALPHA_SATURAT			= GL_SRC_ALPHA_SATURATE
+} GpuBlendFactor_t;
 
 typedef struct
 {
 	bool							blendEnable;
+	bool							redWriteEnable;
+	bool							blueWriteEnable;
+	bool							greenWriteEnable;
 	bool							alphaWriteEnable;
 	bool							depthTestEnable;
 	bool							depthWriteEnable;
+	GpuFrontFace_t					frontFace;
+	GpuCullMode_t					cullMode;
+	GpuCompareOp_t					depthCompare;
+	Vector4f_t						blendColor;
 	GpuBlendOp_t					blendOpColor;
 	GpuBlendFactor_t				blendSrcColor;
 	GpuBlendFactor_t				blendDstColor;
 	GpuBlendOp_t					blendOpAlpha;
 	GpuBlendFactor_t				blendSrcAlpha;
 	GpuBlendFactor_t				blendDstAlpha;
-	GpuCompareOp_t					depthCompare;
 } GpuRasterOperations_t;
 
 typedef struct
@@ -9493,16 +9513,25 @@ typedef struct
 static void GpuGraphicsPipelineParms_Init( GpuGraphicsPipelineParms_t * parms )
 {
 	parms->rop.blendEnable = false;
+	parms->rop.redWriteEnable = true;
+	parms->rop.blueWriteEnable = true;
+	parms->rop.greenWriteEnable = true;
 	parms->rop.alphaWriteEnable = false;
 	parms->rop.depthTestEnable = true;
 	parms->rop.depthWriteEnable = true;
+	parms->rop.frontFace = GPU_FRONT_FACE_COUNTER_CLOCKWISE;
+	parms->rop.cullMode = GPU_CULL_MODE_BACK;
+	parms->rop.depthCompare = GPU_COMPARE_OP_LESS_OR_EQUAL;
+	parms->rop.blendColor.x = 0.0f;
+	parms->rop.blendColor.y = 0.0f;
+	parms->rop.blendColor.z = 0.0f;
+	parms->rop.blendColor.w = 0.0f;
 	parms->rop.blendOpColor = GPU_BLEND_OP_ADD;
 	parms->rop.blendSrcColor = GPU_BLEND_FACTOR_ONE;
 	parms->rop.blendDstColor = GPU_BLEND_FACTOR_ZERO;
 	parms->rop.blendOpAlpha = GPU_BLEND_OP_ADD;
 	parms->rop.blendSrcAlpha = GPU_BLEND_FACTOR_ONE;
 	parms->rop.blendDstAlpha = GPU_BLEND_FACTOR_ZERO;
-	parms->rop.depthCompare = GPU_COMPARE_OP_LESS_OR_EQUAL;
 	parms->renderPass = NULL;
 	parms->program = NULL;
 	parms->geometry = NULL;
@@ -10457,6 +10486,92 @@ static void GpuCommandBuffer_Destroy( GpuContext_t * context, GpuCommandBuffer_t
 	memset( commandBuffer, 0, sizeof( GpuCommandBuffer_t ) );
 }
 
+void GpuCommandBuffer_ChangeRopState( const GpuRasterOperations_t * cmdRop, const GpuRasterOperations_t * stateRop )
+{
+	// Set front face.
+	if ( stateRop == NULL ||
+			cmdRop->frontFace != stateRop->frontFace )
+	{
+		GL( glFrontFace( cmdRop->frontFace ) );
+	}
+	// Set face culling.
+	if ( stateRop == NULL ||
+			cmdRop->cullMode != stateRop->cullMode )
+	{
+		if ( cmdRop->cullMode != GPU_CULL_MODE_NONE )
+		{
+			GL( glEnable( GL_CULL_FACE ) );
+			GL( glCullFace( cmdRop->cullMode ) );
+		}
+		else
+		{
+			GL( glDisable( GL_CULL_FACE ) );
+		}
+	}
+	// Enable / disable depth testing.
+	if ( stateRop == NULL ||
+			cmdRop->depthTestEnable != stateRop->depthTestEnable )
+	{
+		if ( cmdRop->depthTestEnable ) { GL( glEnable( GL_DEPTH_TEST ) ); } else { GL( glDisable( GL_DEPTH_TEST ) ); }
+	}
+	// The depth test function is only used when depth testing is enabled.
+	if ( stateRop == NULL ||
+			cmdRop->depthCompare != stateRop->depthCompare )
+	{
+		GL( glDepthFunc( cmdRop->depthCompare ) );
+	}
+	// Depth is only written when depth testing is enabled.
+	// Set the depth function to GL_ALWAYS to write depth without actually testing depth.
+	if ( stateRop == NULL ||
+			cmdRop->depthWriteEnable != stateRop->depthWriteEnable )
+	{
+		if ( cmdRop->depthWriteEnable ) { GL( glDepthMask( GL_TRUE ) ); } else { GL( glDepthMask( GL_FALSE ) ); }
+	}
+	// Enable / disable blending.
+	if ( stateRop == NULL ||
+			cmdRop->blendEnable != stateRop->blendEnable )
+	{
+		if ( cmdRop->blendEnable ) { GL( glEnable( GL_BLEND ) ); } else { GL( glDisable( GL_BLEND ) ); }
+	}
+	// Enable / disable writing alpha.
+	if ( stateRop == NULL ||
+			cmdRop->redWriteEnable != stateRop->redWriteEnable ||
+			cmdRop->blueWriteEnable != stateRop->blueWriteEnable ||
+			cmdRop->greenWriteEnable != stateRop->greenWriteEnable ||
+			cmdRop->alphaWriteEnable != stateRop->alphaWriteEnable )
+	{
+		GL( glColorMask(	cmdRop->redWriteEnable ? GL_TRUE : GL_FALSE,
+							cmdRop->blueWriteEnable ? GL_TRUE : GL_FALSE,
+							cmdRop->greenWriteEnable ? GL_TRUE : GL_FALSE,
+							cmdRop->alphaWriteEnable ? GL_TRUE : GL_FALSE ) );
+	}
+	// The blend function is only used when blending is enabled.
+	if ( stateRop == NULL ||
+			cmdRop->blendSrcColor != stateRop->blendSrcColor ||
+				cmdRop->blendDstColor != stateRop->blendDstColor ||
+					cmdRop->blendSrcAlpha != stateRop->blendSrcAlpha ||
+						cmdRop->blendDstAlpha != stateRop->blendDstAlpha )
+	{
+		GL( glBlendFuncSeparate( cmdRop->blendSrcColor, cmdRop->blendDstColor, cmdRop->blendSrcAlpha, cmdRop->blendDstAlpha ) );
+	}
+	// The blend equation is only used when blending is enabled.
+	if ( stateRop == NULL ||
+			cmdRop->blendOpColor != stateRop->blendOpColor ||
+				cmdRop->blendOpAlpha != stateRop->blendOpAlpha )
+	{
+		GL( glBlendEquationSeparate( cmdRop->blendOpColor, cmdRop->blendOpAlpha ) );
+	}
+	// The blend color is only used when blending is enabled.
+	if ( stateRop == NULL ||
+			cmdRop->blendColor.x != stateRop->blendColor.x ||
+			cmdRop->blendColor.y != stateRop->blendColor.y ||
+			cmdRop->blendColor.z != stateRop->blendColor.z ||
+			cmdRop->blendColor.w != stateRop->blendColor.w )
+	{
+		GL( glBlendColor( cmdRop->blendColor.x, cmdRop->blendColor.y, cmdRop->blendColor.z, cmdRop->blendColor.w ) );
+	}
+}
+
 static void GpuCommandBuffer_BeginPrimary( GpuCommandBuffer_t * commandBuffer )
 {
 	assert( commandBuffer->type == GPU_COMMAND_BUFFER_TYPE_PRIMARY );
@@ -10469,17 +10584,9 @@ static void GpuCommandBuffer_BeginPrimary( GpuCommandBuffer_t * commandBuffer )
 	GpuComputeCommand_Init( &commandBuffer->currentComputeState );
 	commandBuffer->currentTextureUsage = GPU_TEXTURE_USAGE_UNDEFINED;
 
-	GL( glDisable( GL_BLEND ) );
-	GL( glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE ) );
-	GL( glEnable( GL_DEPTH_TEST ) );
-	GL( glDepthMask( GL_TRUE ) );
-	GL( glBlendFuncSeparate( GL_ONE, GL_ZERO, GL_ONE, GL_ZERO ) );
-	GL( glBlendEquationSeparate( GL_FUNC_ADD, GL_FUNC_ADD ) );
-	GL( glDepthFunc( GL_LEQUAL ) );
-
-	GL( glDisable( GL_POLYGON_OFFSET_FILL ) );
-	GL( glEnable( GL_CULL_FACE ) );
-	GL( glCullFace( GL_BACK ) );
+	GpuGraphicsPipelineParms_t parms;
+	GpuGraphicsPipelineParms_Init( &parms );
+	GpuCommandBuffer_ChangeRopState( &parms.rop, NULL );
 
 	GL( glUseProgram( 0 ) );
 	GL( glBindVertexArray( 0 ) );
@@ -10868,58 +10975,7 @@ static void GpuCommandBuffer_SubmitGraphicsCommand( GpuCommandBuffer_t * command
 
 	const GpuGraphicsCommand_t * state = &commandBuffer->currentGraphicsState;
 
-	{
-		const GpuRasterOperations_t * cmdRop = &command->pipeline->rop;
-		const GpuRasterOperations_t * stateRop = ( state->pipeline != NULL ) ? &state->pipeline->rop : NULL;
-
-		// Enable / disable blending.
-		if ( stateRop == NULL ||
-				cmdRop->blendEnable != stateRop->blendEnable )
-		{
-			if ( cmdRop->blendEnable ) { GL( glEnable( GL_BLEND ) ); } else { GL( glDisable( GL_BLEND ) ); }
-		}
-		// Enable / disable writing alpha.
-		if ( stateRop == NULL ||
-				cmdRop->alphaWriteEnable != stateRop->alphaWriteEnable )
-		{
-			GL( glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, cmdRop->alphaWriteEnable ? GL_TRUE : GL_FALSE ) );
-		}
-		// The blend function is only used when blending is enabled.
-		if ( stateRop == NULL ||
-				cmdRop->blendSrcColor != stateRop->blendSrcColor ||
-					cmdRop->blendDstColor != stateRop->blendDstColor ||
-						cmdRop->blendSrcAlpha != stateRop->blendSrcAlpha ||
-							cmdRop->blendDstAlpha != stateRop->blendDstAlpha )
-		{
-			GL( glBlendFuncSeparate( cmdRop->blendSrcColor, cmdRop->blendDstColor, cmdRop->blendSrcAlpha, cmdRop->blendDstAlpha ) );
-		}
-		// The blend equation is only used when blending is enabled.
-		if ( stateRop == NULL ||
-				cmdRop->blendOpColor != stateRop->blendOpColor ||
-					cmdRop->blendOpAlpha != stateRop->blendOpAlpha )
-		{
-			GL( glBlendEquationSeparate( cmdRop->blendOpColor, cmdRop->blendOpAlpha ) );
-		}
-		// Enable / disable depth testing.
-		if ( stateRop == NULL ||
-				cmdRop->depthTestEnable != stateRop->depthTestEnable )
-		{
-			if ( cmdRop->depthTestEnable ) { GL( glEnable( GL_DEPTH_TEST ) ); } else { GL( glDisable( GL_DEPTH_TEST ) ); }
-		}
-		// The depth test function is only used when depth testing is enabled.
-		if ( stateRop == NULL ||
-				cmdRop->depthCompare != stateRop->depthCompare )
-		{
-			GL( glDepthFunc( cmdRop->depthCompare ) );
-		}
-		// Depth is only written when depth testing is enabled.
-		// Set the depth function to GL_ALWAYS to write depth without actually testing depth.
-		if ( stateRop == NULL ||
-				cmdRop->depthWriteEnable != stateRop->depthWriteEnable )
-		{
-			if ( cmdRop->depthWriteEnable ) { GL( glDepthMask( GL_TRUE ) ); } else { GL( glDepthMask( GL_FALSE ) ); }
-		}
-	}
+	GpuCommandBuffer_ChangeRopState( &command->pipeline->rop, ( state->pipeline != NULL ) ? &state->pipeline->rop : NULL );
 
 	// Compare programs based on a vertex/fragment source code hash value to minimize state changes when
 	// the same source code is compiled to programs in different locations.
@@ -11056,6 +11112,321 @@ static void GpuCommandBuffer_Blit( GpuCommandBuffer_t * commandBuffer, GpuFrameb
 	GL( glBindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 ) );
 }
 
+/*
+================================================================================================================================
+
+HMD
+
+HmdInfo_t
+
+================================================================================================================================
+*/
+
+// Typical 16:9 resolutions: 1920 x 1080, 2560 x 1440, 3840 x 2160, 7680 x 4320
+#define DISPLAY_PIXELS_WIDE		1920
+#define DISPLAY_PIXELS_HIGH		1080
+
+#define NUM_EYES				2
+#define NUM_COLOR_CHANNELS		3
+
+#define TILE_PIXELS_WIDE		32
+#define TILE_PIXELS_HIGH		32
+
+#define EYE_TILES_WIDE			( DISPLAY_PIXELS_WIDE / TILE_PIXELS_WIDE / NUM_EYES )	// 30*32*2 = 1920
+#define EYE_TILES_HIGH			( DISPLAY_PIXELS_HIGH / TILE_PIXELS_HIGH )				// 33*32   = 1056 leaving 24 pixels untouched
+
+typedef struct
+{
+	int		widthInPixels;
+	int		heightInPixels;
+	float	widthInMeters;
+	float	heightInMeters;
+	float	lensSeparationInMeters;
+	float	metersPerTanAngleAtCenter;
+	int		numKnots;
+	float	K[11];
+	float	chromaticAberration[4];
+} HmdInfo_t;
+
+typedef struct
+{
+	float	interpupillaryDistance;
+} BodyInfo_t;
+
+static const HmdInfo_t * GetDefaultHmdInfo()
+{
+	static HmdInfo_t hmdInfo;
+	hmdInfo.widthInPixels = EYE_TILES_WIDE * TILE_PIXELS_WIDE * NUM_EYES;
+	hmdInfo.heightInPixels = EYE_TILES_HIGH * TILE_PIXELS_HIGH;
+	hmdInfo.widthInMeters = 0.11047f * ( EYE_TILES_WIDE * TILE_PIXELS_WIDE * NUM_EYES ) / DISPLAY_PIXELS_WIDE;
+	hmdInfo.heightInMeters = 0.06214f * ( EYE_TILES_HIGH * TILE_PIXELS_HIGH ) / DISPLAY_PIXELS_HIGH;
+	hmdInfo.lensSeparationInMeters = hmdInfo.widthInMeters / NUM_EYES;//0.062f;
+	hmdInfo.metersPerTanAngleAtCenter = 0.037f;
+	hmdInfo.numKnots = 11;
+	hmdInfo.K[0] = 1.0f;
+	hmdInfo.K[1] = 1.021f;
+	hmdInfo.K[2] = 1.051f;
+	hmdInfo.K[3] = 1.086f;
+	hmdInfo.K[4] = 1.128f;
+	hmdInfo.K[5] = 1.177f;
+	hmdInfo.K[6] = 1.232f;
+	hmdInfo.K[7] = 1.295f;
+	hmdInfo.K[8] = 1.368f;
+	hmdInfo.K[9] = 1.452f;
+	hmdInfo.K[10] = 1.560f;
+	hmdInfo.chromaticAberration[0] = -0.006f;
+	hmdInfo.chromaticAberration[1] =  0.0f;
+	hmdInfo.chromaticAberration[2] =  0.014f;
+	hmdInfo.chromaticAberration[3] =  0.0f;
+	return &hmdInfo;
+}
+
+static const BodyInfo_t * GetDefaultBodyInfo()
+{
+	static BodyInfo_t bodyInfo;
+	bodyInfo.interpupillaryDistance	= 0.0640f;	// average interpupillary distance
+	return &bodyInfo;
+}
+
+static bool hmd_headRotationDisabled = false;
+
+static void GetHmdViewMatrixForTime( Matrix4x4f_t * viewMatrix, const Microseconds_t time )
+{
+	if ( hmd_headRotationDisabled )
+	{
+		Matrix4x4f_CreateIdentity( viewMatrix );
+		return;
+	}
+
+	const float offset = time * ( MATH_PI / 1000.0f / 1000.0f );
+	const float degrees = 10.0f;
+	const float degreesX = sinf( offset ) * degrees;
+	const float degreesY = cosf( offset ) * degrees;
+
+	Matrix4x4f_CreateRotation( viewMatrix, degreesX, degreesY, 0.0f );
+}
+
+static void CalculateTimeWarpTransform( Matrix4x4f_t * transform, const Matrix4x4f_t * renderProjectionMatrix,
+										const Matrix4x4f_t * renderViewMatrix, const Matrix4x4f_t * newViewMatrix )
+{
+	// Convert the projection matrix from [-1, 1] space to [0, 1] space.
+	const Matrix4x4f_t texCoordProjection =
+	{ {
+		{ 0.5f * renderProjectionMatrix->m[0][0],        0.0f,                                           0.0f,  0.0f },
+		{ 0.0f,                                          0.5f * renderProjectionMatrix->m[1][1],         0.0f,  0.0f },
+		{ 0.5f * renderProjectionMatrix->m[2][0] - 0.5f, 0.5f * renderProjectionMatrix->m[2][1] - 0.5f, -1.0f,  0.0f },
+		{ 0.0f,                                          0.0f,                                           0.0f,  1.0f }
+	} };
+
+	// Calculate the delta between the view matrix used for rendering and
+	// a more recent or predicted view matrix based on new sensor input.
+	Matrix4x4f_t inverseRenderViewMatrix;
+	Matrix4x4f_InvertHomogeneous( &inverseRenderViewMatrix, renderViewMatrix );
+
+	Matrix4x4f_t deltaViewMatrix;
+	Matrix4x4f_Multiply( &deltaViewMatrix, &inverseRenderViewMatrix, newViewMatrix );
+
+	Matrix4x4f_t inverseDeltaViewMatrix;
+	Matrix4x4f_InvertHomogeneous( &inverseDeltaViewMatrix, &deltaViewMatrix );
+
+	// Make the delta rotation only.
+	inverseDeltaViewMatrix.m[3][0] = 0.0f;
+	inverseDeltaViewMatrix.m[3][1] = 0.0f;
+	inverseDeltaViewMatrix.m[3][2] = 0.0f;
+
+	// Accumulate the transforms.
+	Matrix4x4f_Multiply( transform, &texCoordProjection, &inverseDeltaViewMatrix );
+}
+
+/*
+================================================================================================================================
+
+ViewState_t
+
+static void ViewState_Init( ViewState_t * viewState, const float interpupillaryDistance );
+static void ViewState_HandleInput( ViewState_t * viewState, GpuWindowInput_t * input, const Microseconds_t time );
+static void ViewState_HandleHmd( ViewState_t * viewState, const Microseconds_t time );
+
+================================================================================================================================
+*/
+
+typedef struct ViewState_t
+{
+	float						interpupillaryDistance;
+	Vector4f_t					viewport;
+	Vector3f_t					viewTranslationalVelocity;
+	Vector3f_t					viewRotationalVelocity;
+	Vector3f_t					viewTranslation;
+	Vector3f_t					viewRotation;
+	Matrix4x4f_t				hmdViewMatrix;
+	Matrix4x4f_t				centerViewMatrix;
+	// Per view matrices.
+	Matrix4x4f_t				viewMatrix[NUM_EYES];
+	Matrix4x4f_t				projectionMatrix[NUM_EYES];
+	Matrix4x4f_t				viewInverseMatrix[NUM_EYES];
+	Matrix4x4f_t				projectionInverseMatrix[NUM_EYES];
+	// Combined matrices containing all views.
+	Matrix4x4f_t				combinedViewMatrix;
+	Matrix4x4f_t				combinedProjectionMatrix;
+	Matrix4x4f_t				combinedViewProjectionMatrix;
+} ViewState_t;
+
+static void ViewState_DerivedData( ViewState_t * viewState )
+{
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		Matrix4x4f_Invert( &viewState->viewInverseMatrix[eye], &viewState->viewMatrix[eye] );
+		Matrix4x4f_Invert( &viewState->projectionInverseMatrix[eye], &viewState->projectionMatrix[eye] );
+	}
+
+	viewState->combinedProjectionMatrix = viewState->projectionMatrix[0];
+	viewState->combinedProjectionMatrix.m[0][0] = viewState->projectionMatrix[0].m[0][0] / ( fabsf( viewState->projectionMatrix[0].m[0][2] ) + 1.0f );
+	viewState->combinedProjectionMatrix.m[0][2] = 0.0f;
+ 
+	Matrix4x4f_t moveBackMatrix;
+	Matrix4x4f_CreateTranslation( &moveBackMatrix, 0.0f, 0.0f, -0.5f * viewState->interpupillaryDistance * viewState->combinedProjectionMatrix.m[0][0] );
+	Matrix4x4f_Multiply( &viewState->combinedViewMatrix, &moveBackMatrix, &viewState->centerViewMatrix );
+
+	Matrix4x4f_Multiply( &viewState->combinedViewProjectionMatrix, &viewState->combinedProjectionMatrix, &viewState->combinedViewMatrix );
+}
+
+static void ViewState_Init( ViewState_t * viewState, const float interpupillaryDistance )
+{
+	viewState->interpupillaryDistance = interpupillaryDistance;
+	viewState->viewport.x = 0.0f;
+	viewState->viewport.y = 0.0f;
+	viewState->viewport.z = 1.0f;
+	viewState->viewport.w = 1.0f;
+	viewState->viewTranslationalVelocity.x = 0.0f;
+	viewState->viewTranslationalVelocity.y = 0.0f;
+	viewState->viewTranslationalVelocity.z = 0.0f;
+	viewState->viewRotationalVelocity.x = 0.0f;
+	viewState->viewRotationalVelocity.y = 0.0f;
+	viewState->viewRotationalVelocity.z = 0.0f;
+	viewState->viewTranslation.x = 0.0f;
+	viewState->viewTranslation.y = 1.5f;
+	viewState->viewTranslation.z = 0.25f;
+	viewState->viewRotation.x = 0.0f;
+	viewState->viewRotation.y = 0.0f;
+	viewState->viewRotation.z = 0.0f;
+
+	Matrix4x4f_CreateIdentity( &viewState->hmdViewMatrix );
+	Matrix4x4f_CreateIdentity( &viewState->centerViewMatrix );
+
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		Matrix4x4f_CreateIdentity( &viewState->viewMatrix[eye] );
+		Matrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 60.0f, 0.0f, 0.0f, 0.01f, 0.0f );
+
+		Matrix4x4f_Invert( &viewState->viewInverseMatrix[eye], &viewState->viewMatrix[eye] );
+		Matrix4x4f_Invert( &viewState->projectionInverseMatrix[eye], &viewState->projectionMatrix[eye] );
+	}
+
+	ViewState_DerivedData( viewState );
+}
+
+static void ViewState_HandleInput( ViewState_t * viewState, GpuWindowInput_t * input, const Microseconds_t time )
+{
+	static const float TRANSLATION_UNITS_PER_TAP		= 0.005f;
+	static const float TRANSLATION_UNITS_DECAY			= 0.0025f;
+	static const float ROTATION_DEGREES_PER_TAP			= 0.25f;
+	static const float ROTATION_DEGREES_DECAY			= 0.125f;
+	static const Vector3f_t minTranslationalVelocity	= { -0.05f, -0.05f, -0.05f};
+	static const Vector3f_t maxTranslationalVelocity	= { 0.05f, 0.05f, 0.05f };
+	static const Vector3f_t minRotationalVelocity		= { -2.0f, -2.0f, -2.0f };
+	static const Vector3f_t maxRotationalVelocity		= { 2.0f, 2.0f, 2.0f };
+
+	GetHmdViewMatrixForTime( &viewState->hmdViewMatrix, time );
+
+	Vector3f_t translationDelta = { 0.0f, 0.0f, 0.0f };
+	Vector3f_t rotationDelta = { 0.0f, 0.0f, 0.0f };
+
+	// NOTE: only check the keyboard state in case the input is maintained on another thread.
+	if ( GpuWindowInput_CheckKeyboardKey( input, KEY_SHIFT_LEFT ) )
+	{
+		if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ rotationDelta.x -= ROTATION_DEGREES_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )	{ rotationDelta.x += ROTATION_DEGREES_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )	{ rotationDelta.y += ROTATION_DEGREES_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ rotationDelta.y -= ROTATION_DEGREES_PER_TAP; }
+	}
+	else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CTRL_LEFT ) )
+	{
+		if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ translationDelta.y += TRANSLATION_UNITS_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )	{ translationDelta.y -= TRANSLATION_UNITS_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )	{ translationDelta.x -= TRANSLATION_UNITS_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ translationDelta.x += TRANSLATION_UNITS_PER_TAP; }
+	}
+	else
+	{
+		if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ translationDelta.z -= TRANSLATION_UNITS_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )	{ translationDelta.z += TRANSLATION_UNITS_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )	{ rotationDelta.y += ROTATION_DEGREES_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ rotationDelta.y -= ROTATION_DEGREES_PER_TAP; }
+	}
+
+	Vector3f_Decay( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, TRANSLATION_UNITS_DECAY );
+	Vector3f_Decay( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, ROTATION_DEGREES_DECAY );
+
+	Vector3f_Add( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, &translationDelta );
+	Vector3f_Add( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, &rotationDelta );
+
+	Vector3f_Max( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, &minTranslationalVelocity );
+	Vector3f_Min( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, &maxTranslationalVelocity );
+
+	Vector3f_Max( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, &minRotationalVelocity );
+	Vector3f_Min( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, &maxRotationalVelocity );
+
+	Vector3f_Add( &viewState->viewRotation, &viewState->viewRotation, &viewState->viewRotationalVelocity );
+
+	Matrix4x4f_t yawRotation;
+	Matrix4x4f_CreateRotation( &yawRotation, 0.0f, viewState->viewRotation.y, 0.0f );
+
+	Vector3f_t rotatedTranslationalVelocity;
+	Matrix4x4f_TransformVector3f( &rotatedTranslationalVelocity, &yawRotation, &viewState->viewTranslationalVelocity );
+
+	Vector3f_Add( &viewState->viewTranslation, &viewState->viewTranslation, &rotatedTranslationalVelocity );
+
+	Matrix4x4f_t viewRotation;
+	Matrix4x4f_CreateRotation( &viewRotation, viewState->viewRotation.x, viewState->viewRotation.y, viewState->viewRotation.z );
+
+	Matrix4x4f_t viewRotationTranspose;
+	Matrix4x4f_Transpose( &viewRotationTranspose, &viewRotation );
+
+	Matrix4x4f_t viewTranslation;
+	Matrix4x4f_CreateTranslation( &viewTranslation, -viewState->viewTranslation.x, -viewState->viewTranslation.y, -viewState->viewTranslation.z );
+
+	Matrix4x4f_Multiply( &viewState->centerViewMatrix, &viewRotationTranspose, &viewTranslation );
+
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		Matrix4x4f_t eyeOffsetMatrix;
+		Matrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
+
+		Matrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
+		Matrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 60.0f, 0.0f, 0.0f, 0.01f, 0.0f );
+	}
+
+	ViewState_DerivedData( viewState );
+}
+
+static void ViewState_HandleHmd( ViewState_t * viewState, const Microseconds_t time )
+{
+	GetHmdViewMatrixForTime( &viewState->hmdViewMatrix, time );
+
+	viewState->centerViewMatrix = viewState->hmdViewMatrix;
+
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		Matrix4x4f_t eyeOffsetMatrix;
+		Matrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
+
+		Matrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
+		Matrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 72.0f, 0.0f, 0.0f, 0.01f, 0.0f );
+	}
+
+	ViewState_DerivedData( viewState );
+}
+
 #if USE_GLTF == 1
 
 /*
@@ -11065,12 +11436,15 @@ GltfScene_t
 
 static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scene, const char * fileName, GpuRenderPass_t * renderPass );
 static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene );
-static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeInMicroseconds );
-static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene );
-static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, GpuWindow_t * window );
+static void GltfScene_Simulate( GltfScene_t * scene, ViewState_t * viewState, GpuWindowInput_t * input );
+static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState );
+static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState );
 
 ================================================================================================================================
 */
+
+#include <utils/json.h>
+#include <utils/base64.h>
 
 static GpuProgramParm_t unitCubeFlatShadeProgramParms[] =
 {
@@ -11183,7 +11557,8 @@ typedef struct GltfTexture_t
 typedef struct GltfShader_t
 {
 	char *						name;
-	char *						uri;
+	char *						uriGlslOpenGL;
+	char *						uriGlslVulkan;
 	char *						uriSpirvOpenGL;
 	char *						uriSpirvVulkan;
 	int							type;
@@ -11203,13 +11578,13 @@ typedef enum
 	GLTF_UNIFORM_SEMANTIC_NONE,
 	GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE,
 	GLTF_UNIFORM_SEMANTIC_LOCAL,
-	GLTF_UNIFORM_SEMANTIC_MODEL,
-	GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE,
-	GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE,
 	GLTF_UNIFORM_SEMANTIC_VIEW,
 	GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE,
 	GLTF_UNIFORM_SEMANTIC_PROJECTION,
 	GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE,
+	GLTF_UNIFORM_SEMANTIC_MODEL,
+	GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE,
+	GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE,
 	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW,
 	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE,
 	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE,
@@ -11229,13 +11604,13 @@ gltfUniformSemanticNames[] =
 	{ "",								GLTF_UNIFORM_SEMANTIC_NONE },
 	{ "",								GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE },
 	{ "LOCAL",							GLTF_UNIFORM_SEMANTIC_LOCAL },
-	{ "MODEL",							GLTF_UNIFORM_SEMANTIC_MODEL },
-	{ "MODELINVERSE",					GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE },
-	{ "MODELINVERSETRANSPOSE",			GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE },
 	{ "VIEW",							GLTF_UNIFORM_SEMANTIC_VIEW },
 	{ "VIEWINVERSE",					GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE },
 	{ "PROJECTION",						GLTF_UNIFORM_SEMANTIC_PROJECTION },
 	{ "PROJECTIONINVERSE",				GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE },
+	{ "MODEL",							GLTF_UNIFORM_SEMANTIC_MODEL },
+	{ "MODELINVERSE",					GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE },
+	{ "MODELINVERSETRANSPOSE",			GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE },
 	{ "MODELVIEW",						GLTF_UNIFORM_SEMANTIC_MODEL_VIEW },
 	{ "MODELVIEWINVERSE",				GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE },
 	{ "MODELVIEWINVERSETRANSPOSE",		GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE },
@@ -11337,8 +11712,9 @@ typedef struct GltfSkin_t
 	GltfJoint_t *				joints;					// joints of this skin
 	int							jointCount;				// number of joints
 	GpuBuffer_t					jointBuffer;			// buffer with joint matrices
-	Vector3f_t					mins;					// minimums of the complete skin geometry
-	Vector3f_t					maxs;					// maximums of the complete skin geometry
+	Vector3f_t					mins;					// minimums of the complete skin geometry (modified at run-time)
+	Vector3f_t					maxs;					// maximums of the complete skin geometry (modified at run-time)
+	bool						culled;
 } GltfSkin_t;
 
 typedef enum
@@ -11373,11 +11749,11 @@ typedef struct GltfNode_t
 	char *						name;
 	char *						jointName;
 	int							index;
-	Quatf_t						rotation;
-	Vector3f_t					translation;
-	Vector3f_t					scale;
-	Matrix4x4f_t				localTransform;
-	Matrix4x4f_t				globalTransform;
+	Quatf_t						rotation;			// (modified at run-time)
+	Vector3f_t					translation;		// (modified at run-time)
+	Vector3f_t					scale;				// (modified at run-time)
+	Matrix4x4f_t				localTransform;		// (modified at run-time)
+	Matrix4x4f_t				globalTransform;	// (modified at run-time)
 	char **						children;
 	int							childCount;
 	struct GltfNode_t *			parent;
@@ -11643,6 +12019,79 @@ static void Gltf_ParseUniformValue( GltfUniformValue_t * value, const Json_t * j
 		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	Gltf_ParseFloatArray( value->floatValue, 4*2, json ); break;
 		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	Gltf_ParseFloatArray( value->floatValue, 4*3, json ); break;
 		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	Gltf_ParseFloatArray( value->floatValue, 4*4, json ); break;
+	}
+}
+
+static GpuFrontFace_t Gltf_GetFrontFace( const int face )
+{
+	switch ( face )
+	{
+		case GL_CCW:	return GPU_FRONT_FACE_COUNTER_CLOCKWISE;
+		case GL_CW:		return GPU_FRONT_FACE_CLOCKWISE;
+		default:		return GPU_FRONT_FACE_COUNTER_CLOCKWISE;
+	}
+}
+
+static GpuCullMode_t Gltf_GetCullMode( const int mode )
+{
+	switch ( mode )
+	{
+		case GL_NONE:	return GPU_CULL_MODE_NONE;
+		case GL_FRONT:	return GPU_CULL_MODE_FRONT;
+		case GL_BACK:	return GPU_CULL_MODE_BACK;
+		default:		return GPU_CULL_MODE_BACK;
+	}
+}
+
+static GpuCompareOp_t Gltf_GetCompareOp( const int op )
+{
+	switch ( op )
+	{
+		case GL_NEVER:		return GPU_COMPARE_OP_NEVER;
+		case GL_LESS:		return GPU_COMPARE_OP_LESS;
+		case GL_EQUAL:		return GPU_COMPARE_OP_EQUAL;
+		case GL_LEQUAL:		return GPU_COMPARE_OP_LESS_OR_EQUAL;
+		case GL_GREATER:	return GPU_COMPARE_OP_GREATER;
+		case GL_NOTEQUAL:	return GPU_COMPARE_OP_NOT_EQUAL;
+		case GL_GEQUAL:		return GPU_COMPARE_OP_GREATER_OR_EQUAL;
+		case GL_ALWAYS:		return GPU_COMPARE_OP_ALWAYS;
+		default:			return GPU_COMPARE_OP_LESS;
+	}
+}
+
+static GpuBlendOp_t Gltf_GetBlendOp( const int op )
+{
+	switch( op )
+	{
+		case GL_FUNC_ADD:				return GPU_BLEND_OP_ADD;
+		case GL_FUNC_SUBTRACT:			return GPU_BLEND_OP_SUBTRACT;
+		case GL_FUNC_REVERSE_SUBTRACT:	return GPU_BLEND_OP_REVERSE_SUBTRACT;
+		case GL_MIN:					return GPU_BLEND_OP_MIN;
+		case GL_MAX:					return GPU_BLEND_OP_MAX;
+		default:						return GPU_BLEND_OP_ADD;
+	}
+}
+
+static GpuBlendFactor_t Gltf_GetBlendFactor( const int factor )
+{
+	switch ( factor )
+	{
+		case GL_ZERO:						return GPU_BLEND_FACTOR_ZERO;
+		case GL_ONE:						return GPU_BLEND_FACTOR_ONE;
+		case GL_SRC_COLOR:					return GPU_BLEND_FACTOR_SRC_COLOR;
+		case GL_ONE_MINUS_SRC_COLOR:		return GPU_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+		case GL_DST_COLOR:					return GPU_BLEND_FACTOR_DST_COLOR;
+		case GL_ONE_MINUS_DST_COLOR:		return GPU_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+		case GL_SRC_ALPHA:					return GPU_BLEND_FACTOR_SRC_ALPHA;
+		case GL_ONE_MINUS_SRC_ALPHA:		return GPU_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+		case GL_DST_ALPHA:					return GPU_BLEND_FACTOR_DST_ALPHA;
+		case GL_ONE_MINUS_DST_ALPHA:		return GPU_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+		case GL_CONSTANT_COLOR:				return GPU_BLEND_FACTOR_CONSTANT_COLOR;
+		case GL_ONE_MINUS_CONSTANT_COLOR:	return GPU_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
+		case GL_CONSTANT_ALPHA:				return GPU_BLEND_FACTOR_CONSTANT_ALPHA;
+		case GL_ONE_MINUS_CONSTANT_ALPHA:	return GPU_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
+		case GL_SRC_ALPHA_SATURATE:			return GPU_BLEND_FACTOR_SRC_ALPHA_SATURAT;
+		default:							return GPU_BLEND_FACTOR_ZERO;
 	}
 }
 
@@ -11935,12 +12384,16 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 			{
 				const Json_t * shader = Json_GetMemberByIndex( shaders, i );
 				scene->shaders[i].name = Gltf_strdup( Json_GetMemberName( shader ) );
-				scene->shaders[i].uri = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uri" ), "" ) );
+				scene->shaders[i].uriGlslOpenGL = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uri" ), "" ) );
+				scene->shaders[i].uriGlslVulkan = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uriGlslVulkan" ), "" ) );
 				scene->shaders[i].uriSpirvOpenGL = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uriSpirvOpenGL" ), "" ) );
 				scene->shaders[i].uriSpirvVulkan = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uriSpirvVulkan" ), "" ) );
 				scene->shaders[i].type = Json_GetUint16( Json_GetMemberByName( shader, "type" ), 0 );
 				assert( scene->shaders[i].name[0] != '\0' );
-				assert( scene->shaders[i].uri[0] != '\0' );
+				assert( scene->shaders[i].uriGlslOpenGL[0] != '\0' );
+				assert( scene->shaders[i].uriGlslVulkan != '\0' );
+				assert( scene->shaders[i].uriSpirvOpenGL != '\0' );
+				assert( scene->shaders[i].uriSpirvVulkan != '\0' );
 				assert( scene->shaders[i].type != 0 );
 			}
 			Gltf_CreateShaderHash( scene );
@@ -11971,8 +12424,8 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				assert( fragmentShader != NULL );
 
 				scene->programs[i].name = Gltf_strdup( Json_GetMemberName( program ) );
-				scene->programs[i].vertexSource = Gltf_ReadUri( vertexShader->uri, &scene->programs[i].vertexSourceSize );
-				scene->programs[i].fragmentSource = Gltf_ReadUri( fragmentShader->uri, &scene->programs[i].fragmentSourceSize );
+				scene->programs[i].vertexSource = Gltf_ReadUri( vertexShader->uriGlslOpenGL, &scene->programs[i].vertexSourceSize );
+				scene->programs[i].fragmentSource = Gltf_ReadUri( fragmentShader->uriGlslOpenGL, &scene->programs[i].fragmentSourceSize );
 				assert( scene->programs[i].name[0] != '\0' );
 				assert( scene->programs[i].vertexSource[0] != '\0' );
 				assert( scene->programs[i].fragmentSource[0] != '\0' );
@@ -12100,16 +12553,25 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				}
 
 				scene->techniques[i].rop.blendEnable = false;
+				scene->techniques[i].rop.redWriteEnable = true;
+				scene->techniques[i].rop.blueWriteEnable = true;
+				scene->techniques[i].rop.greenWriteEnable = true;
 				scene->techniques[i].rop.alphaWriteEnable = false;
 				scene->techniques[i].rop.depthTestEnable = false;
 				scene->techniques[i].rop.depthWriteEnable = false;
+				scene->techniques[i].rop.frontFace = GPU_FRONT_FACE_COUNTER_CLOCKWISE;
+				scene->techniques[i].rop.cullMode = GPU_CULL_MODE_NONE;
+				scene->techniques[i].rop.depthCompare = GPU_COMPARE_OP_LESS_OR_EQUAL;
+				scene->techniques[i].rop.blendColor.x = 0.0f;
+				scene->techniques[i].rop.blendColor.y = 0.0f;
+				scene->techniques[i].rop.blendColor.z = 0.0f;
+				scene->techniques[i].rop.blendColor.w = 0.0f;
 				scene->techniques[i].rop.blendOpColor = GPU_BLEND_OP_ADD;
 				scene->techniques[i].rop.blendSrcColor = GPU_BLEND_FACTOR_ONE;
 				scene->techniques[i].rop.blendDstColor = GPU_BLEND_FACTOR_ZERO;
 				scene->techniques[i].rop.blendOpAlpha = GPU_BLEND_OP_ADD;
 				scene->techniques[i].rop.blendSrcAlpha = GPU_BLEND_FACTOR_ONE;
 				scene->techniques[i].rop.blendDstAlpha = GPU_BLEND_FACTOR_ZERO;
-				scene->techniques[i].rop.depthCompare = GPU_COMPARE_OP_LESS_OR_EQUAL;
 
 				const Json_t * states = Json_GetMemberByName( technique, "states" );
 				const Json_t * enable = Json_GetMemberByName( states, "enable" );
@@ -12132,12 +12594,16 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 							scene->techniques[i].rop.depthWriteEnable = true;
 							break;
 						case GL_CULL_FACE:
+							scene->techniques[i].rop.cullMode = GPU_CULL_MODE_BACK;
 							break;
 						case GL_POLYGON_OFFSET_FILL:
+							assert( false );
 							break;
 						case GL_SAMPLE_ALPHA_TO_COVERAGE:
+							assert( false );
 							break;
 						case GL_SCISSOR_TEST:
+							assert( false );
 							break;
 					}
 				}
@@ -12150,53 +12616,73 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					const char * funcName = Json_GetMemberName( func );
 					if ( strcmp( funcName, "blendColor" ) == 0 )
 					{
-						/* [float:red, float:blue, float:green, float:alpha] */
+						// [float:red, float:blue, float:green, float:alpha]
+						scene->techniques[i].rop.blendColor.x = Json_GetFloat( Json_GetMemberByIndex( func, 0 ), 0.0f );
+						scene->techniques[i].rop.blendColor.y = Json_GetFloat( Json_GetMemberByIndex( func, 1 ), 0.0f );
+						scene->techniques[i].rop.blendColor.z = Json_GetFloat( Json_GetMemberByIndex( func, 2 ), 0.0f );
+						scene->techniques[i].rop.blendColor.w = Json_GetFloat( Json_GetMemberByIndex( func, 3 ), 0.0f );
 					}
 					else if ( strcmp( funcName, "blendEquationSeparate" ) == 0 )
 					{
-						/* [GLenum:GL_FUNC_* (rgb), GLenum:GL_FUNC_* (alpha)] */
+						// [GLenum:GL_FUNC_* (rgb), GLenum:GL_FUNC_* (alpha)]
+						scene->techniques[i].rop.blendOpColor = Gltf_GetBlendOp( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+						scene->techniques[i].rop.blendOpAlpha = Gltf_GetBlendOp( Json_GetUint16( Json_GetMemberByIndex( func, 1 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "blendFuncSeparate" ) == 0 )
 					{
-						/* [GLenum:GL_ONE, GLenum:GL_ZERO, GLenum:GL_ONE, GLenum:GL_ZERO] */
+						// [GLenum:GL_ONE (srcRGB), GLenum:GL_ZERO (dstRGB), GLenum:GL_ONE (srcAlpha), GLenum:GL_ZERO (dstAlpha)]
+						scene->techniques[i].rop.blendSrcColor = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+						scene->techniques[i].rop.blendDstColor = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 1 ), 0 ) );
+						scene->techniques[i].rop.blendSrcAlpha = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 2 ), 0 ) );
+						scene->techniques[i].rop.blendDstAlpha = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 3 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "colorMask" ) == 0 )
 					{
 						// [bool:red, bool:green, bool:blue, bool:alpha]
+						scene->techniques[i].rop.redWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 0 ), false );
+						scene->techniques[i].rop.blueWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 1 ), false );
+						scene->techniques[i].rop.greenWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 2 ), false );
 						scene->techniques[i].rop.alphaWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 3 ), false );
 					}
 					else if ( strcmp( funcName, "cullFace" ) == 0 )
 					{
-						/* [GLenum:GL_BACK,GL_FRONT] */
+						// [GLenum:GL_BACK,GL_FRONT]
+						scene->techniques[i].rop.cullMode = Gltf_GetCullMode( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "depthFunc" ) == 0 )
 					{
-						/* [GLenum:GL_LESS,GL_LEQUAL,GL_GREATER] */
+						// [GLenum:GL_LESS,GL_LEQUAL,GL_GREATER]
+						scene->techniques[i].rop.depthCompare = Gltf_GetCompareOp( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "depthMask" ) == 0 )
 					{
 						// [bool:mask]
 						scene->techniques[i].rop.depthWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 0 ), false );
 					}
-					else if ( strcmp( funcName, "depthRange" ) == 0 )
-					{
-						/* [float:znear, float:zfar] */
-					}
 					else if ( strcmp( funcName, "frontFace" ) == 0 )
 					{
-						/* [Glenum:GL_CCW,GL_CW] */
+						// [Glenum:GL_CCW,GL_CW]
+						scene->techniques[i].rop.frontFace = Gltf_GetFrontFace( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "lineWidth" ) == 0 )
 					{
-						/* [float:width] */
+						// [float:width]
+						assert( false );
 					}
 					else if ( strcmp( funcName, "polygonOffset" ) == 0 )
 					{
-						/* [float:factor, float:units] */
+						// [float:factor, float:units]
+						assert( false );
+					}
+					else if ( strcmp( funcName, "depthRange" ) == 0 )
+					{
+						// [float:znear, float:zfar]
+						assert( false );
 					}
 					else if ( strcmp( funcName, "scissor" ) == 0 )
 					{
-						/* [int:x, int:y, int:width, int:height] */
+						// [int:x, int:y, int:width, int:height]
+						assert( false );
 					}
 				}
 
@@ -12594,12 +13080,12 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				const Json_t * camera = Json_GetMemberByIndex( cameras, i );
 				const char * type = Json_GetString( Json_GetMemberByName( camera, "type" ), "" );
 				scene->cameras[i].name = Gltf_strdup( Json_GetMemberName( camera ) );
-				scene->cameras[i].type = ( strcmp( type, "perspective" ) == 0 ) ? GLTF_CAMERA_TYPE_PERSPECTIVE : GLTF_CAMERA_TYPE_ORTHOGRAPHIC;
-				if ( scene->cameras[i].type == GLTF_CAMERA_TYPE_PERSPECTIVE )
+				if ( strcmp( type, "perspective" ) == 0 )
 				{
 					const Json_t * perspective = Json_GetMemberByName( camera, "perspective" );
 					const float aspectRatio = Json_GetFloat( Json_GetMemberByName( perspective, "aspectRatio" ), 0.0f );
 					const float yfov = Json_GetFloat( Json_GetMemberByName( perspective, "yfov" ), 0.0f );
+					scene->cameras[i].type = GLTF_CAMERA_TYPE_PERSPECTIVE;
 					scene->cameras[i].perspective.fovDegreesX = ( 180.0f / MATH_PI ) * 2.0f * atanf( tanf( yfov * 0.5f ) * aspectRatio );
 					scene->cameras[i].perspective.fovDegreesY = ( 180.0f / MATH_PI ) * yfov;
 					scene->cameras[i].perspective.nearZ = Json_GetFloat( Json_GetMemberByName( perspective, "znear" ), 0.0f );
@@ -12611,6 +13097,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				else
 				{
 					const Json_t * orthographic = Json_GetMemberByName( camera, "orthographic" );
+					scene->cameras[i].type = GLTF_CAMERA_TYPE_ORTHOGRAPHIC;
 					scene->cameras[i].orthographic.magX = Json_GetFloat( Json_GetMemberByName( orthographic, "xmag" ), 0.0f );
 					scene->cameras[i].orthographic.magY = Json_GetFloat( Json_GetMemberByName( orthographic, "ymag" ), 0.0f );
 					scene->cameras[i].orthographic.nearZ = Json_GetFloat( Json_GetMemberByName( orthographic, "znear" ), 0.0f );
@@ -12749,24 +13236,26 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		free( data );
 	}
 
-	const Microseconds_t t1 = GetTimeMicroseconds();
-
 	// Create unit cube.
-	GpuGeometry_CreateCube( context, &scene->unitCubeGeometry, 0.0f, 1.0f );
-	GpuGraphicsProgram_Create( context, &scene->unitCubeFlatShadeProgram,
-								PROGRAM( unitCubeFlatShadeVertexProgram ), sizeof( PROGRAM( unitCubeFlatShadeVertexProgram ) ),
-								PROGRAM( unitCubeFlatShadeFragmentProgram ), sizeof( PROGRAM( unitCubeFlatShadeFragmentProgram ) ),
-								unitCubeFlatShadeProgramParms, ARRAY_SIZE( unitCubeFlatShadeProgramParms ),
-								scene->unitCubeGeometry.layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL );
+	{
+		GpuGeometry_CreateCube( context, &scene->unitCubeGeometry, 0.0f, 1.0f );
+		GpuGraphicsProgram_Create( context, &scene->unitCubeFlatShadeProgram,
+									PROGRAM( unitCubeFlatShadeVertexProgram ), sizeof( PROGRAM( unitCubeFlatShadeVertexProgram ) ),
+									PROGRAM( unitCubeFlatShadeFragmentProgram ), sizeof( PROGRAM( unitCubeFlatShadeFragmentProgram ) ),
+									unitCubeFlatShadeProgramParms, ARRAY_SIZE( unitCubeFlatShadeProgramParms ),
+									scene->unitCubeGeometry.layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL );
 
-	GpuGraphicsPipelineParms_t pipelineParms;
-	GpuGraphicsPipelineParms_Init( &pipelineParms );
+		GpuGraphicsPipelineParms_t pipelineParms;
+		GpuGraphicsPipelineParms_Init( &pipelineParms );
 
-	pipelineParms.renderPass = renderPass;
-	pipelineParms.program = &scene->unitCubeFlatShadeProgram;
-	pipelineParms.geometry = &scene->unitCubeGeometry;
+		pipelineParms.renderPass = renderPass;
+		pipelineParms.program = &scene->unitCubeFlatShadeProgram;
+		pipelineParms.geometry = &scene->unitCubeGeometry;
 
-	GpuGraphicsPipeline_Create( context, &scene->unitCubePipeline, &pipelineParms );
+		GpuGraphicsPipeline_Create( context, &scene->unitCubePipeline, &pipelineParms );
+	}
+
+	const Microseconds_t t1 = GetTimeMicroseconds();
 
 	Print( "%1.3f seconds to load %s\n", ( t1 - t0 ) * 1e-6f, fileName );
 
@@ -12824,7 +13313,8 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 		for ( int i = 0; i < scene->shaderCount; i++ )
 		{
 			free( scene->shaders[i].name );
-			free( scene->shaders[i].uri );
+			free( scene->shaders[i].uriGlslOpenGL );
+			free( scene->shaders[i].uriGlslVulkan );
 			free( scene->shaders[i].uriSpirvOpenGL );
 			free( scene->shaders[i].uriSpirvVulkan );
 		}
@@ -12930,13 +13420,17 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 		free( scene->nodes );
 		free( scene->nodeHash );
 	}
+
+	GpuBuffer_Destroy( context, &scene->defaultJointBuffer );
+	GpuGraphicsPipeline_Destroy( context, &scene->unitCubePipeline );
+	GpuGraphicsProgram_Destroy( context, &scene->unitCubeFlatShadeProgram );
+	GpuGeometry_Destroy( context, &scene->unitCubeGeometry );
+
 	memset( scene, 0, sizeof( GltfScene_t ) );
 }
 
-static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeInMicroseconds )
+static void GltfScene_Simulate( GltfScene_t * scene, ViewState_t * viewState, GpuWindowInput_t * input, const Microseconds_t time )
 {
-	UNUSED_PARM( timeInMicroseconds );
-
 	// Apply animations to the nodes in the hierarchy.
 	for ( int animIndex = 0; animIndex < scene->animationCount; animIndex++ )
 	{
@@ -12946,7 +13440,7 @@ static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeIn
 			continue;
 		}
 
-		const float timeInSeconds = fmodf( timeInMicroseconds * 1e-6f, animation->sampleTimes[animation->sampleCount - 1] - animation->sampleTimes[0] );
+		const float timeInSeconds = fmodf( time * 1e-6f, animation->sampleTimes[animation->sampleCount - 1] - animation->sampleTimes[0] );
 		int frame = 0;
 		for ( int sampleCount = animation->sampleCount; sampleCount > 1; sampleCount >>= 1 )
 		{
@@ -12993,10 +13487,54 @@ static void GltfScene_Simulate( GltfScene_t * scene, const Microseconds_t timeIn
 			node->globalTransform = node->localTransform;
 		}
 	}
+
+	// Find the first camera.
+	const GltfNode_t * cameraNode = NULL;
+	for ( int nodeIndex = 0; nodeIndex < scene->nodeCount; nodeIndex++ )
+	{
+		if ( scene->nodes[nodeIndex].camera != NULL )
+		{
+			cameraNode = &scene->nodes[nodeIndex];
+			break;
+		}
+	}
+
+	// Use the camera if there is one, otherwise use input to move the view point.
+	if ( cameraNode != NULL )
+	{
+		GetHmdViewMatrixForTime( &viewState->hmdViewMatrix, time );
+
+		Matrix4x4f_Invert( &viewState->centerViewMatrix, &cameraNode->globalTransform );
+
+		for ( int eye = 0; eye < NUM_EYES; eye++ )
+		{
+			Matrix4x4f_t eyeOffsetMatrix;
+			Matrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
+
+			Matrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
+			Matrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye],
+											cameraNode->camera->perspective.fovDegreesX,
+											cameraNode->camera->perspective.fovDegreesY,
+											0.0f, 0.0f,
+											cameraNode->camera->perspective.nearZ, cameraNode->camera->perspective.farZ );
+
+			ViewState_DerivedData( viewState );
+		}
+	}
+	else if ( input != NULL )
+	{
+		ViewState_HandleInput( viewState, input, time );
+	}
+	else
+	{
+		ViewState_HandleHmd( viewState, time );
+	}
 }
 
-static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene )
+static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState, const int eye )
 {
+	UNUSED_PARM( eye );
+
 	for ( int skinIndex = 0; skinIndex < scene->skinCount; skinIndex++ )
 	{
 		GltfSkin_t * skin = &scene->skins[skinIndex];
@@ -13024,7 +13562,17 @@ static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const G
 			}
 		}
 
-		// FIXME: only update the joints buffer if the skin bounds are not culled
+		// Only update the joints buffer if the skin bounds are not culled.
+		{
+			Matrix4x4f_t modelViewProjectionCullMatrix;
+			Matrix4x4f_Multiply( &modelViewProjectionCullMatrix, &viewState->combinedViewProjectionMatrix, &skin->parent->globalTransform );
+
+			skin->culled = Matrix4x4f_CullBounds( &modelViewProjectionCullMatrix, &skin->mins, &skin->maxs );
+			if ( skin->culled )
+			{
+				continue;
+			}
+		}
 
 		// Update the skin joint buffer.
 		Matrix4x4f_t * joints = NULL;
@@ -13043,59 +13591,6 @@ static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const G
 
 		GpuCommandBuffer_UnmapBuffer( commandBuffer, &scene->skins[skinIndex].jointBuffer, mappedJointBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
 	}
-}
-
-static void GltfScene_HandleInput( Matrix4x4f_t * viewMatrix, GpuWindow_t * window )
-{
-	static const float DEGREES_PER_TAP = 15.0f;
-	static const float UNITS_PER_TAP = 0.125f;
-
-	static Vector3f_t viewAngles = { 0.0f, 0.0f, 0.0f };
-	static Vector3f_t viewOffset = { 0.0f, 1.5f, 0.25f };
-	Vector3f_t moveDelta = { 0.0f, 0.0f, 0.0f };
-
-	if ( GpuWindow_CheckKeyboardKey( window, KEY_SHIFT_LEFT ) )
-	{
-		if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_UP ) )			{ viewAngles.x += DEGREES_PER_TAP; }
-		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_DOWN ) )		{ viewAngles.x -= DEGREES_PER_TAP; }
-		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_LEFT ) )		{ viewAngles.y += DEGREES_PER_TAP; }
-		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_RIGHT ) )	{ viewAngles.y -= DEGREES_PER_TAP; }
-	}
-	else if ( GpuWindow_CheckKeyboardKey( window, KEY_CTRL_LEFT ) )
-	{
-		if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_UP ) )			{ moveDelta.y += UNITS_PER_TAP; }
-		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_DOWN ) )		{ moveDelta.y -= UNITS_PER_TAP; }
-		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_LEFT ) )		{ moveDelta.x -= UNITS_PER_TAP; }
-		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_RIGHT ) )	{ moveDelta.x += UNITS_PER_TAP; }
-	}
-	else
-	{
-		if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_UP ) )			{ moveDelta.z -= UNITS_PER_TAP; }
-		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_DOWN ) )		{ moveDelta.z += UNITS_PER_TAP; }
-		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_LEFT ) )		{ viewAngles.y += DEGREES_PER_TAP; }
-		else if ( GpuWindow_ConsumeKeyboardKey( window, KEY_CURSOR_RIGHT ) )	{ viewAngles.y -= DEGREES_PER_TAP; }
-	}
-
-	Matrix4x4f_t yawRotation;
-	Matrix4x4f_CreateRotation( &yawRotation, 0.0f, viewAngles.y, 0.0f );
-
-	Vector3f_t rotatedMoveDelta;
-	Matrix4x4f_TransformVector3f( &rotatedMoveDelta, &yawRotation, &moveDelta );
-
-	viewOffset.x += rotatedMoveDelta.x;
-	viewOffset.y += rotatedMoveDelta.y;
-	viewOffset.z += rotatedMoveDelta.z;
-
-	Matrix4x4f_t viewRotation;
-	Matrix4x4f_CreateRotation( &viewRotation, viewAngles.x, viewAngles.y, viewAngles.z );
-
-	Matrix4x4f_t viewRotationTranspose;
-	Matrix4x4f_Transpose( &viewRotationTranspose, &viewRotation );
-
-	Matrix4x4f_t viewTranslation;
-	Matrix4x4f_CreateTranslation( &viewTranslation, -viewOffset.x, -viewOffset.y, -viewOffset.z );
-
-	Matrix4x4f_Multiply( viewMatrix, &viewRotationTranspose, &viewTranslation );
 }
 
 static void GltfScene_SetUniformValue( GpuGraphicsCommand_t * command, const GltfUniform_t * uniform, const GltfUniformValue_t * value )
@@ -13141,43 +13636,18 @@ typedef struct
 	Matrix3x3f_t	modelViewInverseTransposeMatrix;
 } GltfBuiltinUniforms_t;
 
-static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, GpuWindow_t * window )
+static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState )
 {
-
-	const GltfNode_t * cameraNode = NULL;
-	for ( int nodeIndex = 0; nodeIndex < scene->nodeCount; nodeIndex++ )
-	{
-		if ( scene->nodes[nodeIndex].camera != NULL )
-		{
-			cameraNode = &scene->nodes[nodeIndex];
-			break;
-		}
-	}
-
 	GltfBuiltinUniforms_t builtin;
 
-	if ( cameraNode != NULL )
-	{
-		Matrix4x4f_Invert( &builtin.viewMatrix, &cameraNode->globalTransform );
-		Matrix4x4f_CreateProjectionFov( &builtin.projectionMatrix,
-										cameraNode->camera->perspective.fovDegreesX,
-										cameraNode->camera->perspective.fovDegreesY,
-										0.0f, 0.0f,
-										cameraNode->camera->perspective.nearZ, cameraNode->camera->perspective.farZ );
-	}
-	else
-	{
-		GltfScene_HandleInput( &builtin.viewMatrix, window );
-		Matrix4x4f_CreateProjectionFov( &builtin.projectionMatrix, 90.0f, 60.0f, 0.0f, 0.0f, 0.01f, 0.0f );
-	}
-
-	builtin.viewport.x = 0.0f;
-	builtin.viewport.y = 0.0f;
-	builtin.viewport.z = (float)window->windowWidth;
-	builtin.viewport.w = (float)window->windowHeight;
-
-	Matrix4x4f_Invert( &builtin.viewInverseMatrix, &builtin.viewMatrix );
-	Matrix4x4f_Invert( &builtin.projectionInverseMatrix, &builtin.projectionMatrix );
+	builtin.viewMatrix = viewState->viewMatrix[0];
+	builtin.projectionMatrix = viewState->projectionMatrix[0];
+	builtin.viewInverseMatrix = viewState->viewInverseMatrix[0];
+	builtin.projectionInverseMatrix = viewState->projectionInverseMatrix[0];
+	builtin.viewport.x = viewState->viewport.x;
+	builtin.viewport.y = viewState->viewport.y;
+	builtin.viewport.z = viewState->viewport.z;
+	builtin.viewport.w = viewState->viewport.w;
 
 	for ( int nodeIndex = 0; nodeIndex < scene->nodeCount; nodeIndex++ )
 	{
@@ -13201,6 +13671,9 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 		Matrix3x3f_TransposeFromMatrix4x4f( &builtin.modelInverseTransposeMatrix, &builtin.modelInverseMatrix );
 		Matrix3x3f_TransposeFromMatrix4x4f( &builtin.modelViewInverseTransposeMatrix, &builtin.modelViewInverseMatrix );
 
+		Matrix4x4f_t modelViewProjectionCullMatrix;
+		Matrix4x4f_Multiply( &modelViewProjectionCullMatrix, &viewState->combinedViewProjectionMatrix, &builtin.modelMatrix );
+
 		bool showSkinBounds = false;
 		if ( skin != NULL && showSkinBounds )
 		{
@@ -13218,12 +13691,9 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 			GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
 		}
 
-		if ( skin != NULL )
+		if ( skin != NULL && skin->culled )
 		{
-			if ( Matrix4x4f_CullBounds( &builtin.modelViewProjectionMatrix, &skin->mins, &skin->maxs ) )
-			{
-				continue;
-			}
+			continue;
 		}
 
 		for ( int modelIndex = 0; modelIndex < node->modelCount; modelIndex++ )
@@ -13235,7 +13705,7 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 
 				if ( skin == NULL )
 				{
-					if ( Matrix4x4f_CullBounds( &builtin.modelViewProjectionMatrix, &surface->mins, &surface->maxs ) )
+					if ( Matrix4x4f_CullBounds( &modelViewProjectionCullMatrix, &surface->mins, &surface->maxs ) )
 					{
 						continue;
 					}
@@ -13253,19 +13723,19 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 					switch ( uniform->semantic )
 					{
 						case GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE:					GltfScene_SetUniformValue( &command, uniform, &uniform->defaultValue ); break;
+						case GLTF_UNIFORM_SEMANTIC_VIEW:							GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.viewMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.viewInverseMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_PROJECTION:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.projectionMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE:				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.projectionInverseMatrix ); break;
 						case GLTF_UNIFORM_SEMANTIC_LOCAL:							GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.localMatrix ); break;
 						case GLTF_UNIFORM_SEMANTIC_MODEL:							GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_VIEW:							GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.viewMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_PROJECTION:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.projectionMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION:			GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionMatrix ); break;
 						case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelInverseMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.viewInverseMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE:				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.projectionInverseMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE:				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewInverseMatrix ); break;
-						case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE:	GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionInverseMatrix ); break;
 						case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE:			GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, uniform->index, &builtin.modelInverseTransposeMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE:				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewInverseMatrix ); break;
 						case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE:	GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, uniform->index, &builtin.modelViewInverseTransposeMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION:			GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionMatrix ); break;
+						case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE:	GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionInverseMatrix ); break;
 						case GLTF_UNIFORM_SEMANTIC_VIEWPORT:						GpuGraphicsCommand_SetParmFloatVector4( &command, uniform->index, &builtin.viewport ); break;
 						case GLTF_UNIFORM_SEMANTIC_JOINTMATRIX:						GpuGraphicsCommand_SetParmBufferUniform( &command, uniform->index, jointBuffer ); break;
 					}
@@ -13959,132 +14429,6 @@ static float TimeWarpBarGraphs_GetGpuMillisecondsCompute( TimeWarpBarGraphs_t * 
 /*
 ================================================================================================================================
 
-HMD
-
-HmdInfo_t
-
-================================================================================================================================
-*/
-
-// Typical 16:9 resolutions: 1920 x 1080, 2560 x 1440, 3840 x 2160, 7680 x 4320
-#define DISPLAY_PIXELS_WIDE		1920
-#define DISPLAY_PIXELS_HIGH		1080
-
-#define NUM_EYES				2
-#define NUM_COLOR_CHANNELS		3
-
-#define TILE_PIXELS_WIDE		32
-#define TILE_PIXELS_HIGH		32
-
-#define EYE_TILES_WIDE			( DISPLAY_PIXELS_WIDE / TILE_PIXELS_WIDE / NUM_EYES )	// 30*32*2 = 1920
-#define EYE_TILES_HIGH			( DISPLAY_PIXELS_HIGH / TILE_PIXELS_HIGH )				// 33*32   = 1056 leaving 24 pixels untouched
-
-typedef struct
-{
-	int		widthInPixels;
-	int		heightInPixels;
-	float	widthInMeters;
-	float	heightInMeters;
-	float	lensSeparationInMeters;
-	float	metersPerTanAngleAtCenter;
-	int		numKnots;
-	float	K[11];
-	float	chromaticAberration[4];
-} HmdInfo_t;
-
-typedef struct
-{
-	float	interpupillaryDistance;
-} BodyInfo_t;
-
-static const HmdInfo_t * GetDefaultHmdInfo()
-{
-	static HmdInfo_t hmdInfo;
-	hmdInfo.widthInPixels = EYE_TILES_WIDE * TILE_PIXELS_WIDE * NUM_EYES;
-	hmdInfo.heightInPixels = EYE_TILES_HIGH * TILE_PIXELS_HIGH;
-	hmdInfo.widthInMeters = 0.11047f * ( EYE_TILES_WIDE * TILE_PIXELS_WIDE * NUM_EYES ) / DISPLAY_PIXELS_WIDE;
-	hmdInfo.heightInMeters = 0.06214f * ( EYE_TILES_HIGH * TILE_PIXELS_HIGH ) / DISPLAY_PIXELS_HIGH;
-	hmdInfo.lensSeparationInMeters = hmdInfo.widthInMeters / NUM_EYES;//0.062f;
-	hmdInfo.metersPerTanAngleAtCenter = 0.037f;
-	hmdInfo.numKnots = 11;
-	hmdInfo.K[0] = 1.0f;
-	hmdInfo.K[1] = 1.021f;
-	hmdInfo.K[2] = 1.051f;
-	hmdInfo.K[3] = 1.086f;
-	hmdInfo.K[4] = 1.128f;
-	hmdInfo.K[5] = 1.177f;
-	hmdInfo.K[6] = 1.232f;
-	hmdInfo.K[7] = 1.295f;
-	hmdInfo.K[8] = 1.368f;
-	hmdInfo.K[9] = 1.452f;
-	hmdInfo.K[10] = 1.560f;
-	hmdInfo.chromaticAberration[0] = -0.006f;
-	hmdInfo.chromaticAberration[1] =  0.0f;
-	hmdInfo.chromaticAberration[2] =  0.014f;
-	hmdInfo.chromaticAberration[3] =  0.0f;
-	return &hmdInfo;
-}
-
-static const BodyInfo_t * GetDefaultBodyInfo()
-{
-	static BodyInfo_t bodyInfo;
-	bodyInfo.interpupillaryDistance	= 0.0640f;	// average interpupillary distance
-	return &bodyInfo;
-}
-
-static bool hmd_headRotationDisabled = false;
-
-static void GetHmdViewMatrixForTime( Matrix4x4f_t * viewMatrix, const Microseconds_t time )
-{
-	if ( hmd_headRotationDisabled )
-	{
-		Matrix4x4f_CreateIdentity( viewMatrix );
-		return;
-	}
-
-	const float offset = time * ( MATH_PI / 1000.0f / 1000.0f );
-	const float degrees = 10.0f;
-	const float degreesX = sinf( offset ) * degrees;
-	const float degreesY = cosf( offset ) * degrees;
-
-	Matrix4x4f_CreateRotation( viewMatrix, degreesX, degreesY, 0.0f );
-}
-
-static void CalculateTimeWarpTransform( Matrix4x4f_t * transform, const Matrix4x4f_t * renderProjectionMatrix,
-										const Matrix4x4f_t * renderViewMatrix, const Matrix4x4f_t * newViewMatrix )
-{
-	// Convert the projection matrix from [-1, 1] space to [0, 1] space.
-	const Matrix4x4f_t texCoordProjection =
-	{ {
-		{ 0.5f * renderProjectionMatrix->m[0][0],        0.0f,                                           0.0f,  0.0f },
-		{ 0.0f,                                          0.5f * renderProjectionMatrix->m[1][1],         0.0f,  0.0f },
-		{ 0.5f * renderProjectionMatrix->m[2][0] - 0.5f, 0.5f * renderProjectionMatrix->m[2][1] - 0.5f, -1.0f,  0.0f },
-		{ 0.0f,                                          0.0f,                                           0.0f,  1.0f }
-	} };
-
-	// Calculate the delta between the view matrix used for rendering and
-	// a more recent or predicted view matrix based on new sensor input.
-	Matrix4x4f_t inverseRenderViewMatrix;
-	Matrix4x4f_InvertHomogeneous( &inverseRenderViewMatrix, renderViewMatrix );
-
-	Matrix4x4f_t deltaViewMatrix;
-	Matrix4x4f_Multiply( &deltaViewMatrix, &inverseRenderViewMatrix, newViewMatrix );
-
-	Matrix4x4f_t inverseDeltaViewMatrix;
-	Matrix4x4f_InvertHomogeneous( &inverseDeltaViewMatrix, &deltaViewMatrix );
-
-	// Make the delta rotation only.
-	inverseDeltaViewMatrix.m[3][0] = 0.0f;
-	inverseDeltaViewMatrix.m[3][1] = 0.0f;
-	inverseDeltaViewMatrix.m[3][2] = 0.0f;
-
-	// Accumulate the transforms.
-	Matrix4x4f_Multiply( transform, &texCoordProjection, &inverseDeltaViewMatrix );
-}
-
-/*
-================================================================================================================================
-
 Distortion meshes.
 
 MeshCoord_t
@@ -14158,7 +14502,7 @@ static void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_
 	{
 		for ( int y = 0; y <= eyeTilesHigh; y++ )
 		{
-			const float yf = (float)y / (float)eyeTilesHigh;
+			const float yf = 1.0f - (float)y / (float)eyeTilesHigh;
 
 			for ( int x = 0; x <= eyeTilesWide; x++ )
 			{
@@ -15048,7 +15392,7 @@ static void TimeWarp_SetTriangleLevel( TimeWarp_t * timeWarp, const int level );
 static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level );
 static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level );
 
-static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp,
+static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp, const Microseconds_t displayTime,
 											const Matrix4x4f_t * viewMatrix, const Matrix4x4_t * projectionMatrix,
 											GpuTexture_t * eyeTexture[2], GpuFence_t * eyeCompletionFence[2],
 											int eyeArrayLayer[2], float eyeTexturesCpuTime, float eyeTexturesGpuTime );
@@ -15069,6 +15413,7 @@ typedef enum
 typedef struct
 {
 	int							index;
+	Microseconds_t				displayTime;
 	Matrix4x4f_t				viewMatrix;
 	Matrix4x4f_t				projectionMatrix;
 	GpuTexture_t *				texture[NUM_EYES];
@@ -15081,6 +15426,7 @@ typedef struct
 typedef struct
 {
 	GpuTexture_t				defaultTexture;
+	Microseconds_t				displayTime;
 	Matrix4x4f_t				viewMatrix;
 	Matrix4x4f_t				projectionMatrix;
 	GpuTexture_t *				eyeTexture[NUM_EYES];
@@ -15089,7 +15435,6 @@ typedef struct
 	Mutex_t						newEyeTexturesMutex;
 	Signal_t					newEyeTexturesConsumed;
 	EyeTextures_t				newEyeTextures;
-
 	int							eyeTexturesPresentIndex;
 	int							eyeTexturesConsumedIndex;
 
@@ -15120,6 +15465,7 @@ static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	Signal_Raise( &timeWarp->newEyeTexturesConsumed );
 
 	timeWarp->newEyeTextures.index = 0;
+	timeWarp->newEyeTextures.displayTime = 0;
 	Matrix4x4f_CreateIdentity( &timeWarp->newEyeTextures.viewMatrix );
 	Matrix4x4f_CreateProjectionFov( &timeWarp->newEyeTextures.projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
@@ -15131,6 +15477,7 @@ static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	timeWarp->newEyeTextures.cpuTime = 0.0f;
 	timeWarp->newEyeTextures.gpuTime = 0.0f;
 
+	timeWarp->displayTime = 0;
 	timeWarp->viewMatrix = timeWarp->newEyeTextures.viewMatrix;
 	timeWarp->projectionMatrix = timeWarp->newEyeTextures.projectionMatrix;
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
@@ -15267,13 +15614,14 @@ static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level )
 	}
 }
 
-static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp,
+static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp, const Microseconds_t displayTime,
 											const Matrix4x4f_t * viewMatrix, const Matrix4x4f_t * projectionMatrix,
 											GpuTexture_t * eyeTexture[2], GpuFence_t * eyeCompletionFence[2],
 											int eyeArrayLayer[2], float eyeTexturesCpuTime, float eyeTexturesGpuTime )
 {
 	EyeTextures_t newEyeTextures;
 	newEyeTextures.index = timeWarp->eyeTexturesPresentIndex++;
+	newEyeTextures.displayTime = displayTime;
 	newEyeTextures.viewMatrix = *viewMatrix;
 	newEyeTextures.projectionMatrix = *projectionMatrix;
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
@@ -15310,6 +15658,7 @@ static void TimeWarp_ConsumeNewEyeTextures( GpuContext_t * context, TimeWarp_t *
 	{
 		assert( newEyeTextures.index == timeWarp->eyeTexturesConsumedIndex + 1 );
 		timeWarp->eyeTexturesConsumedIndex = newEyeTextures.index;
+		timeWarp->displayTime = newEyeTextures.displayTime;
 		timeWarp->projectionMatrix = newEyeTextures.projectionMatrix;
 		timeWarp->viewMatrix = newEyeTextures.viewMatrix;
 		for ( int eye = 0; eye < NUM_EYES; eye++ )
@@ -15333,7 +15682,7 @@ static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	float eyeTexturesFrameRate = timeWarp->refreshRate;
 	{
 		Microseconds_t lastTime = timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVARGE_FRAME_RATE_FRAMES];
-		Microseconds_t time = GpuWindow_GetNextSwapTime( window );
+		Microseconds_t time = GpuWindow_GetNextSwapTime( window, 0 );
 		timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVARGE_FRAME_RATE_FRAMES] = time;
 		timeWarp->timeWarpFrames++;
 		if ( timeWarp->timeWarpFrames > AVARGE_FRAME_RATE_FRAMES )
@@ -15392,8 +15741,14 @@ static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window )
 
 	FrameLog_BeginFrame();
 
-	const Microseconds_t refreshStartTime = GpuWindow_GetNextSwapTime( window );
+	const Microseconds_t refreshStartTime = GpuWindow_GetNextSwapTime( window, 0 );
 	const Microseconds_t refreshEndTime = refreshStartTime /* + refresh time for incremental display refresh */;
+
+	if ( refreshStartTime != timeWarp->displayTime )
+	{
+		int i = 0;
+		i++;
+	}
 
 	if ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS )
 	{
@@ -15432,11 +15787,9 @@ SceneSettings_t
 
 static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings_t * settings, GpuRenderPass_t * renderPass );
 static void Scene_Destroy( GpuContext_t * context, Scene_t * scene );
-static void Scene_UpdateSettings( Scene_t * scene );
-static void Scene_Simulate( Scene_t * scene, const Microseconds_t time );
-static void Scene_UpdateMatrices( GpuCommandBuffer_t * commandBuffer, Scene_t * scene,
-									const Matrix4x4f_t * viewMatrix, const Matrix4x4f_t * projectionMatrix );
-static void Scene_Render( GpuCommandBuffer_t * commandBuffer, const Scene_t * scene );
+static void Scene_Simulate( Scene_t * scene, ViewState_t * viewState, const Microseconds_t time );
+static void Scene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, Scene_t * scene, ViewState_t * viewState );
+static void Scene_Render( GpuCommandBuffer_t * commandBuffer, Scene_t * scene, ViewState_t * viewState );
 
 static void SceneSettings_ToggleSimulationPaused( SceneSettings_t * settings );
 static void SceneSettings_ToggleMultiView( SceneSettings_t * settings );
@@ -15973,15 +16326,12 @@ static void Scene_Destroy( GpuContext_t * context, Scene_t * scene )
 	scene->modelMatrix = NULL;
 }
 
-static void Scene_UpdateSettings( Scene_t * scene )
+static void Scene_Simulate( Scene_t * scene, ViewState_t * viewState, const Microseconds_t time )
 {
 	// Must recreate the scene if multi-view is enabled/disabled.
 	assert( scene->settings.useMultiView == scene->newSettings->useMultiView );
 	scene->settings = *scene->newSettings;
-}
 
-static void Scene_Simulate( Scene_t * scene, const Microseconds_t time )
-{
 	if ( scene->settings.simulationPaused )
 	{
 		return;
@@ -15992,20 +16342,21 @@ static void Scene_Simulate( Scene_t * scene, const Microseconds_t time )
 	scene->bigRotationY = 10.0f * offset;
 	scene->smallRotationX = -60.0f * offset;
 	scene->smallRotationY = -40.0f * offset;
+
+	ViewState_HandleHmd( viewState, time );
 }
 
-static void Scene_UpdateMatrices( GpuCommandBuffer_t * commandBuffer, Scene_t * scene,
-									const Matrix4x4f_t * viewMatrix, const Matrix4x4f_t * projectionMatrix )
+static void Scene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, Scene_t * scene, ViewState_t * viewState, const int eye )
 {
 	void * sceneMatrices = NULL;
 	GpuBuffer_t * sceneMatricesBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &scene->sceneMatrices, &sceneMatrices );
 	const int numMatrices = scene->settings.useMultiView ? 2 : 1;
-	memcpy( (char *)sceneMatrices + 0 * numMatrices * sizeof( Matrix4x4f_t ), viewMatrix, numMatrices * sizeof( Matrix4x4f_t ) );
-	memcpy( (char *)sceneMatrices + 1 * numMatrices * sizeof( Matrix4x4f_t ), projectionMatrix, numMatrices * sizeof( Matrix4x4f_t ) );
+	memcpy( (char *)sceneMatrices + 0 * numMatrices * sizeof( Matrix4x4f_t ), &viewState->viewMatrix[eye], numMatrices * sizeof( Matrix4x4f_t ) );
+	memcpy( (char *)sceneMatrices + 1 * numMatrices * sizeof( Matrix4x4f_t ), &viewState->projectionMatrix[eye], numMatrices * sizeof( Matrix4x4f_t ) );
 	GpuCommandBuffer_UnmapBuffer( commandBuffer, &scene->sceneMatrices, sceneMatricesBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
 }
 
-static void Scene_Render( GpuCommandBuffer_t * commandBuffer, const Scene_t * scene )
+static void Scene_Render( GpuCommandBuffer_t * commandBuffer, Scene_t * scene )
 {
 	const int dimension = 2 * ( 1 << scene->settings.drawCallLevel );
 	const float cubeOffset = ( dimension - 1.0f ) * 0.5f;
@@ -16243,8 +16594,9 @@ typedef struct
 	GpuContext_t *			shareContext;
 	TimeWarp_t *			timeWarp;
 	SceneSettings_t *		sceneSettings;
+	GpuWindowInput_t *		input;
 
-	volatile Microseconds_t	nextSwapTime;
+	volatile Microseconds_t	nextDisplayTime;
 	volatile bool			terminate;
 	volatile bool			openFrameLog;
 } SceneThreadData_t;
@@ -16290,10 +16642,18 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 		GpuTimer_Create( &context, &eyeTimer[eye] );
 	}
 
+	const BodyInfo_t * bodyInfo = GetDefaultBodyInfo();
+
+	ViewState_t viewState;
+	ViewState_Init( &viewState, bodyInfo->interpupillaryDistance );
+
+#if USE_GLTF == 1
+	GltfScene_t scene;
+	GltfScene_CreateFromFile( &context, &scene, "models.gltf", &renderPass );
+#else
 	Scene_t scene;
 	Scene_Create( &context, &scene, threadData->sceneSettings, &renderPass );
-
-	const BodyInfo_t * bodyInfo = GetDefaultBodyInfo();
+#endif
 
 	Signal_Raise( &threadData->initialized );
 
@@ -16305,23 +16665,11 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 			FrameLog_Open( OUTPUT_PATH "framelog_scene.txt", 10 );
 		}
 
-		Scene_UpdateSettings( &scene );
-
-		Scene_Simulate( &scene, threadData->nextSwapTime );
-
-		Matrix4x4f_t hmdViewMatrix;
-		GetHmdViewMatrixForTime( &hmdViewMatrix, threadData->nextSwapTime );
-
-		Matrix4x4f_t eyeViewMatrix[2];
-		Matrix4x4f_t eyeProjectionMatrix[2];
-		for ( int eye = 0; eye < NUM_EYES; eye++ )
-		{
-			const float eyeOffset = ( eye ? -0.5f : 0.5f ) * bodyInfo->interpupillaryDistance;
-			Matrix4x4f_t eyeOffsetMatrix;
-			Matrix4x4f_CreateTranslation( &eyeOffsetMatrix, eyeOffset, 0.0f, 0.0f );
-			Matrix4x4f_Multiply( &eyeViewMatrix[eye], &eyeOffsetMatrix, &hmdViewMatrix );
-			Matrix4x4f_CreateProjectionFov( &eyeProjectionMatrix[eye], 90.0f, 72.0f, 0.0f, 0.0f, 0.1f, 0.0f );
-		}
+#if USE_GLTF == 1
+		GltfScene_Simulate( &scene, &viewState, threadData->input, threadData->nextDisplayTime );
+#else
+		Scene_Simulate( &scene, &viewState, threadData->nextDisplayTime );
+#endif
 
 		FrameLog_BeginFrame();
 
@@ -16338,14 +16686,23 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 			GpuCommandBuffer_BeginPrimary( &eyeCommandBuffer[eye] );
 			GpuCommandBuffer_BeginFramebuffer( &eyeCommandBuffer[eye], &framebuffer, eye, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
 
-			Scene_UpdateMatrices( &eyeCommandBuffer[eye], &scene, eyeViewMatrix + eye, eyeProjectionMatrix + eye );
+#if USE_GLTF == 1
+			GltfScene_UpdateBuffers( &eyeCommandBuffer[eye], &scene, &viewState, eye );
+#else
+			Scene_UpdateBuffers( &eyeCommandBuffer[eye], &scene, &viewState, eye );
+#endif
 
 			GpuCommandBuffer_BeginTimer( &eyeCommandBuffer[eye], &eyeTimer[eye] );
 			GpuCommandBuffer_BeginRenderPass( &eyeCommandBuffer[eye], &renderPass, &framebuffer, &screenRect );
 
 			GpuCommandBuffer_SetViewport( &eyeCommandBuffer[eye], &screenRect );
 			GpuCommandBuffer_SetScissor( &eyeCommandBuffer[eye], &screenRect );
+
+#if USE_GLTF == 1
+			GltfScene_Render( &eyeCommandBuffer[eye], &scene, &viewState );
+#else
 			Scene_Render( &eyeCommandBuffer[eye], &scene );
+#endif
 
 			GpuCommandBuffer_EndRenderPass( &eyeCommandBuffer[eye], &renderPass );
 			GpuCommandBuffer_EndTimer( &eyeCommandBuffer[eye], &eyeTimer[eye] );
@@ -16357,7 +16714,7 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 			eyeCompletionFence[eye] = GpuCommandBuffer_SubmitPrimary( &eyeCommandBuffer[eye] );
 		}
 
-		if ( scene.settings.useMultiView )
+		if ( threadData->sceneSettings->useMultiView )
 		{
 			eyeTexture[1] = eyeTexture[0];
 			eyeCompletionFence[1] = eyeCompletionFence[0];
@@ -16373,14 +16730,19 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 		Matrix4x4f_t projectionMatrix;
 		Matrix4x4f_CreateProjectionFov( &projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 
-		TimeWarp_PresentNewEyeTextures( threadData->timeWarp, &hmdViewMatrix, &projectionMatrix,
+		TimeWarp_PresentNewEyeTextures( threadData->timeWarp, threadData->nextDisplayTime,
+										&viewState.hmdViewMatrix, &projectionMatrix,
 										eyeTexture, eyeCompletionFence, eyeArrayLayer,
 										eyeTexturesCpuTime, eyeTexturesGpuTime );
 	}
 
 	GpuContext_WaitIdle( &context );
 
+#if USE_GLTF == 1
+	GltfScene_Destroy( &context, &scene );
+#else
 	Scene_Destroy( &context, &scene );
+#endif
 
 	for ( int eye = 0; eye < numPasses; eye++ )
 	{
@@ -16394,24 +16756,25 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 }
 
 void SceneThread_Create( Thread_t * sceneThread, SceneThreadData_t * sceneThreadData,
-							GpuContext_t * shareContext, TimeWarp_t * timeWarp, SceneSettings_t * sceneSettings )
+							GpuWindow_t * window, TimeWarp_t * timeWarp, SceneSettings_t * sceneSettings )
 {
 	Signal_Create( &sceneThreadData->initialized, true );
-	sceneThreadData->shareContext = shareContext;
+	sceneThreadData->shareContext = &window->context;
 	sceneThreadData->timeWarp = timeWarp;
 	sceneThreadData->sceneSettings = sceneSettings;
-	sceneThreadData->nextSwapTime = GetTimeMicroseconds();
+	sceneThreadData->input = &window->input;
+	sceneThreadData->nextDisplayTime = GetTimeMicroseconds();
 	sceneThreadData->terminate = false;
 	sceneThreadData->openFrameLog = false;
 
 	// On MacOS context creation fails if the share context is current on another thread.
-	GpuContext_UnsetCurrent( shareContext );
+	GpuContext_UnsetCurrent( &window->context );
 
 	Thread_Create( sceneThread, "atw:scene", (threadFunction_t) SceneThread_Render, sceneThreadData );
 	Thread_Signal( sceneThread );
 	Signal_Wait( &sceneThreadData->initialized, -1 );
 
-	GpuContext_SetCurrent( shareContext );
+	GpuContext_SetCurrent( &window->context );
 }
 
 void SceneThread_Destroy( Thread_t * sceneThread, SceneThreadData_t * sceneThreadData )
@@ -16470,7 +16833,7 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 
 	Thread_t sceneThread;
 	SceneThreadData_t sceneThreadData;
-	SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
+	SceneThread_Create( &sceneThread, &sceneThreadData, &window, &timeWarp, &sceneSettings );
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
 
@@ -16495,16 +16858,16 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
 		{
 			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
 			break;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
 			// Must recreate the scene and time warp to create a new window.
@@ -16526,50 +16889,50 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
 			TimeWarp_SetSamplesLevel( &timeWarp, SceneSettings_GetSamplesLevel( &sceneSettings ) );
-			SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
+			SceneThread_Create( &sceneThread, &sceneThreadData, &window, &timeWarp, &sceneSettings );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
 			sceneThreadData.openFrameLog = true;
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_P ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_P ) )
 		{
 			SceneSettings_ToggleSimulationPaused( &sceneSettings );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_G ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_G ) )
 		{
 			TimeWarp_CycleBarGraphState( &timeWarp );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_Q ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Q ) )
 		{
 			SceneSettings_CycleDrawCallLevel( &sceneSettings );
 			TimeWarp_SetDrawCallLevel( &timeWarp, SceneSettings_GetDrawCallLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_W ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_W ) )
 		{
 			SceneSettings_CycleTriangleLevel( &sceneSettings );
 			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_E ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_E ) )
 		{
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_S ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_S ) )
 		{
 			SceneSettings_CycleSamplesLevel( &sceneSettings );
 			// Must recreate the scene and time warp to allocate different framebuffers.
@@ -16585,17 +16948,17 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
 			TimeWarp_SetSamplesLevel( &timeWarp, SceneSettings_GetSamplesLevel( &sceneSettings ) );
-			SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
+			SceneThread_Create( &sceneThread, &sceneThreadData, &window, &timeWarp, &sceneSettings );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_I ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_I ) )
 		{
 			TimeWarp_CycleImplementation( &timeWarp );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_C ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_C ) )
 		{
 			TimeWarp_ToggleChromaticAberrationCorrection( &timeWarp );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_M ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_M ) )
 		{
 			if ( glExtensions.multi_view )
 			{
@@ -16613,10 +16976,10 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 				TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
 				TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
 				TimeWarp_SetSamplesLevel( &timeWarp, SceneSettings_GetSamplesLevel( &sceneSettings ) );
-				SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
+				SceneThread_Create( &sceneThread, &sceneThreadData, &window, &timeWarp, &sceneSettings );
 			}
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_D ) )
 		{
 			DumpGLSL();
 		}
@@ -16626,7 +16989,7 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 			TimeWarp_Render( &timeWarp, &window );
 			GpuWindow_SwapBuffers( &window );
 
-			sceneThreadData.nextSwapTime = GpuWindow_GetNextSwapTime( &window );
+			sceneThreadData.nextDisplayTime = GpuWindow_GetNextSwapTime( &window, 2 );
 		}
 	}
 
@@ -16700,16 +17063,16 @@ bool RenderTimeWarp( StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
 		{
 			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
 			break;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
 			TimeWarp_Destroy( &timeWarp, &window );
@@ -16721,36 +17084,36 @@ bool RenderTimeWarp( StartupSettings_t * startupSettings )
 							fullscreen );
 			TimeWarp_Create( &timeWarp, &window );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_G ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_G ) )
 		{
 			TimeWarp_CycleBarGraphState( &timeWarp );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_I ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_I ) )
 		{
 			TimeWarp_CycleImplementation( &timeWarp );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_C ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_C ) )
 		{
 			TimeWarp_ToggleChromaticAberrationCorrection( &timeWarp );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_D ) )
 		{
 			DumpGLSL();
 		}
@@ -16840,9 +17203,12 @@ bool RenderScene( StartupSettings_t * startupSettings )
 	SceneSettings_SetFragmentLevel( &sceneSettings, startupSettings->fragmentLevel );
 	SceneSettings_SetSamplesLevel( &sceneSettings, startupSettings->samplesLevel );
 
+	ViewState_t viewState;
+	ViewState_Init( &viewState, 0.0f );
+
 #if USE_GLTF == 1
-	GltfScene_t sceneGltf;
-	GltfScene_CreateFromFile( &window.context, &sceneGltf, "models.gltf", &renderPass );
+	GltfScene_t scene;
+	GltfScene_CreateFromFile( &window.context, &scene, "models.gltf", &renderPass );
 #else
 	Scene_t scene;
 	Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
@@ -16872,59 +17238,59 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
 		{
 			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
 			break;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
 		{
 			startupSettings->fullscreen = !startupSettings->fullscreen;
 			recreate = true;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_scene.txt", 10 );
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_P ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_P ) )
 		{
 			SceneSettings_ToggleSimulationPaused( &sceneSettings );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_Q ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Q ) )
 		{
 			SceneSettings_CycleDrawCallLevel( &sceneSettings );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_W ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_W ) )
 		{
 			SceneSettings_CycleTriangleLevel( &sceneSettings );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_E ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_E ) )
 		{
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_S ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_S ) )
 		{
 			SceneSettings_CycleSamplesLevel( &sceneSettings );
 			recreate = true;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_D ) )
 		{
 			DumpGLSL();
 		}
@@ -16933,7 +17299,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 		{
 			const GpuSampleCount_t newSampleCount = sampleCountTable[SceneSettings_GetSamplesLevel( &sceneSettings )];
 #if USE_GLTF == 1
-			GltfScene_Destroy( &window.context, &sceneGltf );
+			GltfScene_Destroy( &window.context, &scene );
 #else
 			Scene_Destroy( &window.context, &scene );
 #endif
@@ -16959,7 +17325,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			BarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
 			BarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
 #if USE_GLTF == 1
-			GltfScene_CreateFromFile( &window.context, &sceneGltf, "models.gltf", &renderPass );
+			GltfScene_CreateFromFile( &window.context, &scene, "models.gltf", &renderPass );
 #else
 			Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
 #endif
@@ -16969,17 +17335,10 @@ bool RenderScene( StartupSettings_t * startupSettings )
 		if ( window.windowActive )
 		{
 #if USE_GLTF == 1
-			GltfScene_Simulate( &sceneGltf, GpuWindow_GetNextSwapTime( &window ) );
+			GltfScene_Simulate( &scene, &viewState, &window.input, GpuWindow_GetNextSwapTime( &window, 0 ) );
 #else
-			Scene_UpdateSettings( &scene );
-			Scene_Simulate( &scene, GpuWindow_GetNextSwapTime( &window ) );
+			Scene_Simulate( &scene, &viewState, GpuWindow_GetNextSwapTime( &window, 0 ) );
 #endif
-
-			Matrix4x4f_t viewMatrix;
-			Matrix4x4f_CreateIdentity( &viewMatrix );
-
-			Matrix4x4f_t projectionMatrix;
-			Matrix4x4f_CreateProjectionFov( &projectionMatrix, 90.0f, 72.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 
 			FrameLog_BeginFrame();
 
@@ -16991,9 +17350,9 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			GpuCommandBuffer_BeginFramebuffer( &commandBuffer, &framebuffer, 0, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
 
 #if USE_GLTF == 1
-			GltfScene_UpdateBuffers( &commandBuffer, &sceneGltf );
+			GltfScene_UpdateBuffers( &commandBuffer, &scene, &viewState, 0 );
 #else
-			Scene_UpdateMatrices( &commandBuffer, &scene, &viewMatrix, &projectionMatrix );
+			Scene_UpdateBuffers( &commandBuffer, &scene, &viewState, 0 );
 #endif
 
 			BarGraph_UpdateGraphics( &commandBuffer, &frameCpuTimeBarGraph );
@@ -17005,7 +17364,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			GpuCommandBuffer_SetViewport( &commandBuffer, &screenRect );
 			GpuCommandBuffer_SetScissor( &commandBuffer, &screenRect );
 #if USE_GLTF == 1
-			GltfScene_Render( &commandBuffer, &sceneGltf, &window );
+			GltfScene_Render( &commandBuffer, &scene, &viewState );
 #else
 			Scene_Render( &commandBuffer, &scene );
 #endif
@@ -17036,7 +17395,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 	}
 
 #if USE_GLTF == 1
-	GltfScene_Destroy( &window.context, &sceneGltf );
+	GltfScene_Destroy( &window.context, &scene );
 #else
 	Scene_Destroy( &window.context, &scene );
 #endif
@@ -17116,7 +17475,7 @@ static int StartApplication( int argc, char * argv[] )
 	//startupSettings.samplesLevel = 0;
 	//startupSettings.useMultiView = true;
 	//startupSettings.correctChromaticAberration = true;
-	startupSettings.renderMode = RENDER_MODE_SCENE;
+	//startupSettings.renderMode = RENDER_MODE_SCENE;
 	//startupSettings.timeWarpImplementation = TIMEWARP_IMPLEMENTATION_COMPUTE;
 
 	Print( "    fullscreen = %d\n",					startupSettings.fullscreen );
