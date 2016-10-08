@@ -4345,6 +4345,8 @@ and destroyed on the same thread that will actually render to the window and swa
 
 GpuWindow_t
 GpuWindowEvent_t
+KeyboardKey_t
+MouseButton_t
 
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
@@ -4355,7 +4357,11 @@ static void GpuWindow_Exit( GpuWindow_t * window );
 static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window );
 static void GpuWindow_SwapInterval( GpuWindow_t * window, const int swapInterval );
 static void GpuWindow_SwapBuffers( GpuWindow_t * window );
-static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window, const int extraFrames );
+static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window );
+static Microseconds_t GpuWindow_GetFrameTimeMicroseconds( GpuWindow_t * window );
+static bool GpuWindowInput_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
+static bool GpuWindowInput_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button );
+static bool GpuWindowInput_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
 
 ================================================================================================================================
 */
@@ -6771,10 +6777,16 @@ static void GpuWindow_SwapBuffers( GpuWindow_t * window )
 	window->lastSwapTime = newTimeMicroseconds;
 }
 
-static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window, const int extraFrames )
+static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window )
 {
 	const float frameTimeMicroseconds = 1000.0f * 1000.0f / window->windowRefreshRate;
-	return window->lastSwapTime + ( 1 + extraFrames ) * (Microseconds_t)( frameTimeMicroseconds );
+	return window->lastSwapTime + (Microseconds_t)( frameTimeMicroseconds );
+}
+
+static Microseconds_t GpuWindow_GetFrameTimeMicroseconds( GpuWindow_t * window )
+{
+	const float frameTimeMicroseconds = 1000.0f * 1000.0f / window->windowRefreshRate;
+	return (Microseconds_t)( frameTimeMicroseconds );
 }
 
 static bool GpuWindowInput_ConsumeKeyboardKey( GpuWindowInput_t * input, const KeyboardKey_t key )
@@ -11115,6 +11127,674 @@ static void GpuCommandBuffer_Blit( GpuCommandBuffer_t * commandBuffer, GpuFrameb
 /*
 ================================================================================================================================
 
+Bar graph.
+
+Real-time bar graph where new bars scroll in on the right and old bars scroll out on the left.
+Optionally supports stacking of bars. A bar value is in the range [0, 1] where 1 is a full height bar.
+The bar graph position x,y,width,height is specified in clip coordinates in the range [-1, 1].
+
+BarGraph_t
+
+static void BarGraph_Create( GpuContext_t * context, BarGraph_t * barGraph, GpuRenderPass_t * renderPass,
+								const float x, const float y, const float width, const float height,
+								const int numBars, const int numStacked, const Vector4f_t * backgroundColor );
+static void BarGraph_Destroy( GpuContext_t * context, BarGraph_t * barGraph );
+static void BarGraph_AddBar( BarGraph_t * barGraph, const int stackedBar, const float value, const Vector4f_t * color, const bool advance );
+
+static void BarGraph_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph );
+static void BarGraph_RenderGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph );
+
+static void BarGraph_UpdateCompute( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph );
+static void BarGraph_RenderCompute( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph, GpuFramebuffer_t * framebuffer );
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+	ClipRect_t			clipRect;
+	int					numBars;
+	int					numStacked;
+	int					barIndex;
+	float *				barValues;
+	Vector4f_t *		barColors;
+	Vector4f_t			backgroundColor;
+	struct
+	{
+		GpuGeometry_t			quad;
+		GpuGraphicsProgram_t	program;
+		GpuGraphicsPipeline_t	pipeline;
+		int						numInstances;
+	} graphics;
+#if OPENGL_COMPUTE_ENABLED == 1
+	struct
+	{
+		GpuBuffer_t				barValueBuffer;
+		GpuBuffer_t				barColorBuffer;
+		Vector2i_t				barGraphOffset;
+		GpuComputeProgram_t		program;
+		GpuComputePipeline_t	pipeline;
+	} compute;
+#endif
+} BarGraph_t;
+
+static const GpuProgramParm_t barGraphGraphicsProgramParms[] =
+{
+	{ 0 }
+};
+
+static const char barGraphVertexProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"in vec3 vertexPosition;\n"
+	"in mat4 vertexTransform;\n"
+	"out vec4 fragmentColor;\n"
+	"out gl_PerVertex { vec4 gl_Position; };\n"
+	"vec3 multiply4x3( mat4 m, vec3 v )\n"
+	"{\n"
+	"	return vec3(\n"
+	"		m[0].x * v.x + m[1].x * v.y + m[2].x * v.z + m[3].x,\n"
+	"		m[0].y * v.x + m[1].y * v.y + m[2].y * v.z + m[3].y,\n"
+	"		m[0].z * v.x + m[1].z * v.y + m[2].z * v.z + m[3].z );\n"
+	"}\n"
+	"void main( void )\n"
+	"{\n"
+	"	gl_Position.xyz = multiply4x3( vertexTransform, vertexPosition );\n"
+	"	gl_Position.w = 1.0;\n"
+	"	fragmentColor.r = vertexTransform[0][3];\n"
+	"	fragmentColor.g = vertexTransform[1][3];\n"
+	"	fragmentColor.b = vertexTransform[2][3];\n"
+	"	fragmentColor.a = vertexTransform[3][3];\n"
+	"}\n";
+
+static const char barGraphFragmentProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"in lowp vec4 fragmentColor;\n"
+	"out lowp vec4 outColor;\n"
+	"void main()\n"
+	"{\n"
+	"	outColor = fragmentColor;\n"
+	"}\n";
+
+#if OPENGL_COMPUTE_ENABLED == 1
+
+enum
+{
+	COMPUTE_PROGRAM_TEXTURE_BAR_GRAPH_DEST,
+	COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_VALUES,
+	COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_COLORS,
+	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_BARS,
+	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_STACKED,
+	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_INDEX,
+	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_GRAPH_OFFSET,
+	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BACK_GROUND_COLOR
+};
+
+static const GpuProgramParm_t barGraphComputeProgramParms[] =
+{
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,				GPU_PROGRAM_PARM_ACCESS_WRITE_ONLY,	COMPUTE_PROGRAM_TEXTURE_BAR_GRAPH_DEST,					"dest",				0 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_BUFFER_STORAGE,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_VALUES,			"barValueBuffer",	0 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_BUFFER_STORAGE,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_COLORS,			"barColorBuffer",	1 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BACK_GROUND_COLOR,	"backgroundColor",	0 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_GRAPH_OFFSET,		"barGraphOffset",	1 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_BARS,				"numBars",			2 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_STACKED,			"numStacked",		3 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_INDEX,			"barIndex",			4 }
+};
+
+#define BARGRAPH_LOCAL_SIZE_X	8
+#define BARGRAPH_LOCAL_SIZE_Y	8
+
+static const char barGraphComputeProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"\n"
+	"layout( local_size_x = " STRINGIFY( BARGRAPH_LOCAL_SIZE_X ) ", local_size_y = " STRINGIFY( BARGRAPH_LOCAL_SIZE_Y ) " ) in;\n"
+	"\n"
+	"layout( rgba8, binding = 0 ) uniform writeonly " ES_HIGHP " image2D dest;\n"
+	"layout( std430, binding = 0 ) buffer barValueBuffer { float barValues[]; };\n"
+	"layout( std430, binding = 1 ) buffer barColorBuffer { vec4 barColors[]; };\n"
+	"uniform lowp vec4 backgroundColor;\n"
+	"uniform ivec2 barGraphOffset;\n"
+	"uniform int numBars;\n"
+	"uniform int numStacked;\n"
+ 	"uniform int barIndex;\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"	ivec2 barGraph = ivec2( gl_GlobalInvocationID.xy );\n"
+	"	ivec2 barGraphSize = ivec2( gl_NumWorkGroups.xy * gl_WorkGroupSize.xy );\n"
+	"\n"
+	"	int index = barGraph.x * numBars / barGraphSize.x;\n"
+	"	int barOffset = ( ( barIndex + index ) % numBars ) * numStacked;\n"
+	"	float barColorScale = ( ( index & 1 ) != 0 ) ? 0.75f : 1.0f;\n"
+	"\n"
+	"	vec4 rgba = backgroundColor;\n"
+	"	float localY = float( barGraph.y );\n"
+	"	float stackedBarValue = 0.0f;\n"
+	"	for ( int i = 0; i < numStacked; i++ )\n"
+	"	{\n"
+	"		stackedBarValue += barValues[barOffset + i];\n"
+	"		if ( localY < stackedBarValue * float( barGraphSize.y ) )\n"
+	"		{\n"
+	"			rgba = barColors[barOffset + i] * barColorScale;\n"
+	"			break;\n"
+	"		}\n"
+	"	}\n"
+	"\n"
+	"	imageStore( dest, barGraphOffset + barGraph, rgba );\n"
+	"}\n";
+
+#endif
+
+static void BarGraph_Create( GpuContext_t * context, BarGraph_t * barGraph, GpuRenderPass_t * renderPass,
+								const float x, const float y, const float width, const float height,
+								const int numBars, const int numStacked, const Vector4f_t * backgroundColor )
+{
+	barGraph->clipRect.x = x;
+	barGraph->clipRect.y = y;
+	barGraph->clipRect.width = width;
+	barGraph->clipRect.height = height;
+	barGraph->numBars = numBars;
+	barGraph->numStacked = numStacked;
+	barGraph->barIndex = 0;
+	barGraph->barValues = (float *) AllocAlignedMemory( numBars * numStacked * sizeof( barGraph->barValues[0] ), sizeof( void * ) );
+	barGraph->barColors = (Vector4f_t *) AllocAlignedMemory( numBars * numStacked * sizeof( barGraph->barColors[0] ), sizeof( Vector4f_t ) );
+
+	for ( int i = 0; i < numBars * numStacked; i++ )
+	{
+		barGraph->barValues[i] = 0.0f;
+		barGraph->barColors[i] = colorGreen;
+	}
+
+	barGraph->backgroundColor = *backgroundColor;
+
+	// graphics
+	{
+		GpuGeometry_CreateQuad( context, &barGraph->graphics.quad, 1.0f, 0.5f );
+		GpuGeometry_AddInstanceAttributes( context, &barGraph->graphics.quad, numBars * numStacked + 1, VERTEX_ATTRIBUTE_FLAG_TRANSFORM );
+
+		GpuGraphicsProgram_Create( context, &barGraph->graphics.program,
+									PROGRAM( barGraphVertexProgram ), sizeof( PROGRAM( barGraphVertexProgram ) ),
+									PROGRAM( barGraphFragmentProgram ), sizeof( PROGRAM( barGraphFragmentProgram ) ),
+									barGraphGraphicsProgramParms, 0,
+									barGraph->graphics.quad.layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_TRANSFORM );
+
+		GpuGraphicsPipelineParms_t pipelineParms;
+		GpuGraphicsPipelineParms_Init( &pipelineParms );
+
+		pipelineParms.rop.depthTestEnable = false;
+		pipelineParms.rop.depthWriteEnable = false;
+		pipelineParms.renderPass = renderPass;
+		pipelineParms.program = &barGraph->graphics.program;
+		pipelineParms.geometry = &barGraph->graphics.quad;
+
+		GpuGraphicsPipeline_Create( context, &barGraph->graphics.pipeline, &pipelineParms );
+
+		barGraph->graphics.numInstances = 0;
+	}
+
+#if OPENGL_COMPUTE_ENABLED == 1
+	// compute
+	{
+		GpuBuffer_Create( context, &barGraph->compute.barValueBuffer, GPU_BUFFER_TYPE_STORAGE,
+							barGraph->numBars * barGraph->numStacked * sizeof( barGraph->barValues[0] ), NULL, false );
+		GpuBuffer_Create( context, &barGraph->compute.barColorBuffer, GPU_BUFFER_TYPE_STORAGE,
+							barGraph->numBars * barGraph->numStacked * sizeof( barGraph->barColors[0] ), NULL, false );
+
+		GpuComputeProgram_Create( context, &barGraph->compute.program,
+									PROGRAM( barGraphComputeProgram ), sizeof( PROGRAM( barGraphComputeProgram ) ),
+									barGraphComputeProgramParms, ARRAY_SIZE( barGraphComputeProgramParms ) );
+
+		GpuComputePipeline_Create( context, &barGraph->compute.pipeline, &barGraph->compute.program );
+	}
+#endif
+}
+
+static void BarGraph_Destroy( GpuContext_t * context, BarGraph_t * barGraph )
+{
+	FreeAlignedMemory( barGraph->barValues );
+	FreeAlignedMemory( barGraph->barColors );
+
+	// graphics
+	{
+		GpuGraphicsPipeline_Destroy( context, &barGraph->graphics.pipeline );
+		GpuGraphicsProgram_Destroy( context, &barGraph->graphics.program );
+		GpuGeometry_Destroy( context, &barGraph->graphics.quad );
+	}
+
+#if OPENGL_COMPUTE_ENABLED == 1
+	// compute
+	{
+		GpuComputePipeline_Destroy( context, &barGraph->compute.pipeline );
+		GpuComputeProgram_Destroy( context, &barGraph->compute.program );
+		GpuBuffer_Destroy( context, &barGraph->compute.barValueBuffer );
+		GpuBuffer_Destroy( context, &barGraph->compute.barColorBuffer );
+	}
+#endif
+}
+
+static void BarGraph_AddBar( BarGraph_t * barGraph, const int stackedBar, const float value, const Vector4f_t * color, const bool advance )
+{
+	assert( stackedBar >= 0 && stackedBar < barGraph->numStacked );
+	barGraph->barValues[barGraph->barIndex * barGraph->numStacked + stackedBar] = value;
+	barGraph->barColors[barGraph->barIndex * barGraph->numStacked + stackedBar] = *color;
+	if ( advance )
+	{
+		barGraph->barIndex = ( barGraph->barIndex + 1 ) % barGraph->numBars;
+	}
+}
+
+static void BarGraph_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph )
+{
+	GpuVertexAttributeArrays_t attribs;
+	GpuBuffer_t * instanceBuffer = GpuCommandBuffer_MapInstanceAttributes( commandBuffer, &barGraph->graphics.quad, &attribs.base );
+
+#if defined( GRAPHICS_API_VULKAN )
+	const float flipY = -1.0f;
+#else
+	const float flipY = 1.0f;
+#endif
+
+	int numInstances = 0;
+	Matrix4x4f_t * backgroundMatrix = &attribs.transform[numInstances++];
+
+	// Write in order to write-combined memory.
+	backgroundMatrix->m[0][0] = barGraph->clipRect.width;
+	backgroundMatrix->m[0][1] = 0.0f;
+	backgroundMatrix->m[0][2] = 0.0f;
+	backgroundMatrix->m[0][3] = barGraph->backgroundColor.x;
+
+	backgroundMatrix->m[1][0] = 0.0f;
+	backgroundMatrix->m[1][1] = barGraph->clipRect.height * flipY;
+	backgroundMatrix->m[1][2] = 0.0f;
+	backgroundMatrix->m[1][3] = barGraph->backgroundColor.y;
+
+	backgroundMatrix->m[2][0] = 0.0f;
+	backgroundMatrix->m[2][1] = 0.0f;
+	backgroundMatrix->m[2][2] = 0.0f;
+	backgroundMatrix->m[2][3] = barGraph->backgroundColor.z;
+
+	backgroundMatrix->m[3][0] = barGraph->clipRect.x;
+	backgroundMatrix->m[3][1] = barGraph->clipRect.y * flipY;
+	backgroundMatrix->m[3][2] = 0.0f;
+	backgroundMatrix->m[3][3] = barGraph->backgroundColor.w;
+
+	const float barWidth = barGraph->clipRect.width / barGraph->numBars;
+
+	for ( int i = 0; i < barGraph->numBars; i++ )
+	{
+		const int barIndex = ( ( barGraph->barIndex + i ) % barGraph->numBars ) * barGraph->numStacked;
+		const float barColorScale = ( i & 1 ) ? 0.75f : 1.0f;
+
+		float stackedBarValue = 0.0f;
+		for ( int j = 0; j < barGraph->numStacked; j++ )
+		{
+			float value = barGraph->barValues[barIndex + j];
+			if ( stackedBarValue + value > 1.0f )
+			{
+				value = 1.0f - stackedBarValue;
+			}
+			if ( value <= 0.0f )
+			{
+				continue;
+			}
+
+			Matrix4x4f_t * barMatrix = &attribs.transform[numInstances++];
+
+			// Write in order to write-combined memory.
+			barMatrix->m[0][0] = barWidth;
+			barMatrix->m[0][1] = 0.0f;
+			barMatrix->m[0][2] = 0.0f;
+			barMatrix->m[0][3] = barGraph->barColors[barIndex + j].x * barColorScale;
+
+			barMatrix->m[1][0] = 0.0f;
+			barMatrix->m[1][1] = value * barGraph->clipRect.height * flipY;
+			barMatrix->m[1][2] = 0.0f;
+			barMatrix->m[1][3] = barGraph->barColors[barIndex + j].y * barColorScale;
+
+			barMatrix->m[2][0] = 0.0f;
+			barMatrix->m[2][1] = 0.0f;
+			barMatrix->m[2][2] = 1.0f;
+			barMatrix->m[2][3] = barGraph->barColors[barIndex + j].z * barColorScale;
+
+			barMatrix->m[3][0] = barGraph->clipRect.x + i * barWidth;
+			barMatrix->m[3][1] = ( barGraph->clipRect.y + stackedBarValue * barGraph->clipRect.height ) * flipY;
+			barMatrix->m[3][2] = 0.0f;
+			barMatrix->m[3][3] = barGraph->barColors[barIndex + j].w;
+
+			stackedBarValue += value;
+		}
+	}
+
+	GpuCommandBuffer_UnmapInstanceAttributes( commandBuffer, &barGraph->graphics.quad, instanceBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
+
+	assert( numInstances <= barGraph->numBars * barGraph->numStacked + 1 );
+	barGraph->graphics.numInstances = numInstances;
+}
+
+static void BarGraph_RenderGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph )
+{
+	GpuGraphicsCommand_t command;
+	GpuGraphicsCommand_Init( &command );
+	GpuGraphicsCommand_SetPipeline( &command, &barGraph->graphics.pipeline );
+	GpuGraphicsCommand_SetNumInstances( &command, barGraph->graphics.numInstances );
+
+	GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
+}
+
+static void BarGraph_UpdateCompute( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph )
+{
+#if OPENGL_COMPUTE_ENABLED == 1
+	void * barValues = NULL;
+	GpuBuffer_t * mappedBarValueBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &barGraph->compute.barValueBuffer, &barValues );
+	memcpy( barValues, barGraph->barValues, barGraph->numBars * barGraph->numStacked * sizeof( barGraph->barValues[0] ) );
+	GpuCommandBuffer_UnmapBuffer( commandBuffer, &barGraph->compute.barValueBuffer, mappedBarValueBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
+
+	void * barColors = NULL;
+	GpuBuffer_t * mappedBarColorBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &barGraph->compute.barColorBuffer, &barColors );
+	memcpy( barColors, barGraph->barColors, barGraph->numBars * barGraph->numStacked * sizeof( barGraph->barColors[0] ) );
+	GpuCommandBuffer_UnmapBuffer( commandBuffer, &barGraph->compute.barColorBuffer, mappedBarColorBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
+#else
+	UNUSED_PARM( commandBuffer );
+	UNUSED_PARM( barGraph );
+#endif
+}
+
+static void BarGraph_RenderCompute( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph, GpuFramebuffer_t * framebuffer )
+{
+#if OPENGL_COMPUTE_ENABLED == 1
+	const int screenWidth = GpuFramebuffer_GetWidth( framebuffer );
+	const int screenHeight = GpuFramebuffer_GetHeight( framebuffer );
+	ScreenRect_t screenRect = ClipRect_ToScreenRect( &barGraph->clipRect, screenWidth, screenHeight );
+	barGraph->compute.barGraphOffset.x = screenRect.x;
+#if defined( GRAPHICS_API_VULKAN )
+	barGraph->compute.barGraphOffset.y = screenHeight - 1 - screenRect.y;
+#else
+	barGraph->compute.barGraphOffset.y = screenRect.y;
+#endif
+
+	screenRect.width = ROUNDUP( screenRect.width, 8 );
+	screenRect.height = ROUNDUP( screenRect.height, 8 );
+
+	assert( screenRect.width % BARGRAPH_LOCAL_SIZE_X == 0 );
+	assert( screenRect.height % BARGRAPH_LOCAL_SIZE_Y == 0 );
+
+	GpuComputeCommand_t command;
+	GpuComputeCommand_Init( &command );
+	GpuComputeCommand_SetPipeline( &command, &barGraph->compute.pipeline );
+	GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_BAR_GRAPH_DEST, GpuFramebuffer_GetColorTexture( framebuffer ) );
+	GpuComputeCommand_SetParmBufferStorage( &command, COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_VALUES, &barGraph->compute.barValueBuffer );
+	GpuComputeCommand_SetParmBufferStorage( &command, COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_COLORS, &barGraph->compute.barColorBuffer );
+	GpuComputeCommand_SetParmFloatVector4( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BACK_GROUND_COLOR, &barGraph->backgroundColor );
+	GpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_GRAPH_OFFSET, &barGraph->compute.barGraphOffset );
+	GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_BARS, &barGraph->numBars );
+	GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_STACKED, &barGraph->numStacked );
+	GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_INDEX, &barGraph->barIndex );
+	GpuComputeCommand_SetDimensions( &command, screenRect.width / BARGRAPH_LOCAL_SIZE_X, screenRect.height / BARGRAPH_LOCAL_SIZE_Y, 1 );
+
+	GpuCommandBuffer_SubmitComputeCommand( commandBuffer, &command );
+#else
+	UNUSED_PARM( commandBuffer );
+	UNUSED_PARM( barGraph );
+	UNUSED_PARM( framebuffer );
+#endif
+}
+
+/*
+================================================================================================================================
+
+Time warp bar graphs.
+
+TimeWarpBarGraphs_t
+
+static void TimeWarpBarGraphs_Create( GpuContext_t * context, TimeWarpBarGraphs_t * bargraphs, GpuFramebuffer_t * framebuffer );
+static void TimeWarpBarGraphs_Destroy( GpuContext_t * context, TimeWarpBarGraphs_t * bargraphs );
+
+static void TimeWarpBarGraphs_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs );
+static void TimeWarpBarGraphs_RenderGraphics( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs );
+
+static void TimeWarpBarGraphs_UpdateCompute( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs );
+static void TimeWarpBarGraphs_RenderCompute( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs, GpuFramebuffer_t * framebuffer );
+
+static float TimeWarpBarGraphs_GetGpuMillisecondsGraphics( TimeWarpBarGraphs_t * bargraphs );
+static float TimeWarpBarGraphs_GetGpuMillisecondsCompute( TimeWarpBarGraphs_t * bargraphs );
+
+================================================================================================================================
+*/
+
+#define BARGRAPH_VIRTUAL_PIXELS_WIDE		1920
+#define BARGRAPH_VIRTUAL_PIXELS_HIGH		1080
+
+#if defined( OS_ANDROID )
+#define BARGRAPH_INSET						64
+#else
+#define BARGRAPH_INSET						16
+#endif
+
+static const ScreenRect_t eyeTextureFrameRateBarGraphRect			= { BARGRAPH_INSET + 0 * 264, BARGRAPH_INSET, 256, 128 };
+static const ScreenRect_t timeWarpFrameRateBarGraphRect				= { BARGRAPH_INSET + 1 * 264, BARGRAPH_INSET, 256, 128 };
+static const ScreenRect_t frameCpuTimeBarGraphRect					= { BARGRAPH_INSET + 2 * 264, BARGRAPH_INSET, 256, 128 };
+static const ScreenRect_t frameGpuTimeBarGraphRect					= { BARGRAPH_INSET + 3 * 264, BARGRAPH_INSET, 256, 128 };
+
+static const ScreenRect_t multiViewBarGraphRect						= { 3 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 4 + 0 * 40, BARGRAPH_INSET, 32, 32 };
+static const ScreenRect_t correctChromaticAberrationBarGraphRect	= { 3 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 4 + 1 * 40, BARGRAPH_INSET, 32, 32 };
+static const ScreenRect_t timeWarpImplementationBarGraphRect		= { 3 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 4 + 2 * 40, BARGRAPH_INSET, 32, 32 };
+
+static const ScreenRect_t sceneDrawCallLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 4 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ScreenRect_t sceneTriangleLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 3 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ScreenRect_t sceneFragmentLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 2 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ScreenRect_t sceneSamplesLevelBarGraphRect				= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 1 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+
+typedef enum
+{
+	BAR_GRAPH_HIDDEN,
+	BAR_GRAPH_VISIBLE,
+	BAR_GRAPH_PAUSED
+} BarGraphState_t;
+
+typedef struct
+{
+	BarGraphState_t	barGraphState;
+
+	BarGraph_t		eyeTexturesFrameRateGraph;
+	BarGraph_t		timeWarpFrameRateGraph;
+	BarGraph_t		frameCpuTimeBarGraph;
+	BarGraph_t		frameGpuTimeBarGraph;
+
+	BarGraph_t		multiViewBarGraph;
+	BarGraph_t		correctChromaticAberrationBarGraph;
+	BarGraph_t		timeWarpImplementationBarGraph;
+
+	BarGraph_t		sceneDrawCallLevelBarGraph;
+	BarGraph_t		sceneTriangleLevelBarGraph;
+	BarGraph_t		sceneFragmentLevelBarGraph;
+	BarGraph_t		sceneSamplesLevelBarGraph;
+
+	GpuTimer_t		barGraphTimer;
+} TimeWarpBarGraphs_t;
+
+enum
+{
+	PROFILE_TIME_EYE_TEXTURES,
+	PROFILE_TIME_TIME_WARP,
+	PROFILE_TIME_BAR_GRAPHS,
+	PROFILE_TIME_BLIT,
+	PROFILE_TIME_OVERFLOW,
+	PROFILE_TIME_MAX
+};
+
+static const Vector4f_t * profileTimeBarColors[] =
+{
+	&colorPurple,
+	&colorGreen,
+	&colorYellow,
+	&colorBlue,
+	&colorRed
+};
+
+static void BarGraph_CreateVirtualRect( GpuContext_t * context, BarGraph_t * barGraph, GpuRenderPass_t * renderPass,
+						const ScreenRect_t * virtualRect, const int numBars, const int numStacked, const Vector4f_t * backgroundColor )
+{
+	const ClipRect_t clipRect = ScreenRect_ToClipRect( virtualRect, BARGRAPH_VIRTUAL_PIXELS_WIDE, BARGRAPH_VIRTUAL_PIXELS_HIGH );
+	BarGraph_Create( context, barGraph, renderPass, clipRect.x, clipRect.y, clipRect.width, clipRect.height, numBars, numStacked, backgroundColor );
+}
+
+static void TimeWarpBarGraphs_Create( GpuContext_t * context, TimeWarpBarGraphs_t * bargraphs, GpuRenderPass_t * renderPass )
+{
+	bargraphs->barGraphState = BAR_GRAPH_VISIBLE;
+
+	BarGraph_CreateVirtualRect( context, &bargraphs->eyeTexturesFrameRateGraph, renderPass, &eyeTextureFrameRateBarGraphRect, 64, 1, &colorDarkGrey );
+	BarGraph_CreateVirtualRect( context, &bargraphs->timeWarpFrameRateGraph, renderPass, &timeWarpFrameRateBarGraphRect, 64, 1, &colorDarkGrey );
+	BarGraph_CreateVirtualRect( context, &bargraphs->frameCpuTimeBarGraph, renderPass, &frameCpuTimeBarGraphRect, 64, PROFILE_TIME_MAX, &colorDarkGrey );
+	BarGraph_CreateVirtualRect( context, &bargraphs->frameGpuTimeBarGraph, renderPass, &frameGpuTimeBarGraphRect, 64, PROFILE_TIME_MAX, &colorDarkGrey );
+
+	BarGraph_CreateVirtualRect( context, &bargraphs->multiViewBarGraph, renderPass, &multiViewBarGraphRect, 1, 1, &colorDarkGrey );
+	BarGraph_CreateVirtualRect( context, &bargraphs->correctChromaticAberrationBarGraph, renderPass, &correctChromaticAberrationBarGraphRect, 1, 1, &colorDarkGrey );
+	BarGraph_CreateVirtualRect( context, &bargraphs->timeWarpImplementationBarGraph, renderPass, &timeWarpImplementationBarGraphRect, 1, 1, &colorDarkGrey );
+
+	BarGraph_CreateVirtualRect( context, &bargraphs->sceneDrawCallLevelBarGraph, renderPass, &sceneDrawCallLevelBarGraphRect, 1, 4, &colorDarkGrey );
+	BarGraph_CreateVirtualRect( context, &bargraphs->sceneTriangleLevelBarGraph, renderPass, &sceneTriangleLevelBarGraphRect, 1, 4, &colorDarkGrey );
+	BarGraph_CreateVirtualRect( context, &bargraphs->sceneFragmentLevelBarGraph, renderPass, &sceneFragmentLevelBarGraphRect, 1, 4, &colorDarkGrey );
+	BarGraph_CreateVirtualRect( context, &bargraphs->sceneSamplesLevelBarGraph, renderPass, &sceneSamplesLevelBarGraphRect, 1, 4, &colorDarkGrey );
+
+	BarGraph_AddBar( &bargraphs->sceneDrawCallLevelBarGraph, 0, 0.25f, &colorBlue, false );
+	BarGraph_AddBar( &bargraphs->sceneTriangleLevelBarGraph, 0, 0.25f, &colorBlue, false );
+	BarGraph_AddBar( &bargraphs->sceneFragmentLevelBarGraph, 0, 0.25f, &colorBlue, false );
+	BarGraph_AddBar( &bargraphs->sceneSamplesLevelBarGraph, 0, 0.25f, &colorBlue, false );
+
+	GpuTimer_Create( context, &bargraphs->barGraphTimer );
+}
+
+static void TimeWarpBarGraphs_Destroy( GpuContext_t * context, TimeWarpBarGraphs_t * bargraphs )
+{
+	BarGraph_Destroy( context, &bargraphs->eyeTexturesFrameRateGraph );
+	BarGraph_Destroy( context, &bargraphs->timeWarpFrameRateGraph );
+	BarGraph_Destroy( context, &bargraphs->frameCpuTimeBarGraph );
+	BarGraph_Destroy( context, &bargraphs->frameGpuTimeBarGraph );
+
+	BarGraph_Destroy( context, &bargraphs->multiViewBarGraph );
+	BarGraph_Destroy( context, &bargraphs->correctChromaticAberrationBarGraph );
+	BarGraph_Destroy( context, &bargraphs->timeWarpImplementationBarGraph );
+
+	BarGraph_Destroy( context, &bargraphs->sceneDrawCallLevelBarGraph );
+	BarGraph_Destroy( context, &bargraphs->sceneTriangleLevelBarGraph );
+	BarGraph_Destroy( context, &bargraphs->sceneFragmentLevelBarGraph );
+	BarGraph_Destroy( context, &bargraphs->sceneSamplesLevelBarGraph );
+
+	GpuTimer_Destroy( context, &bargraphs->barGraphTimer );
+}
+
+static void TimeWarpBarGraphs_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs )
+{
+	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
+	{
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
+
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->multiViewBarGraph );
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
+
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph );
+	}
+}
+
+static void TimeWarpBarGraphs_RenderGraphics( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs )
+{
+	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
+	{
+		GpuCommandBuffer_BeginTimer( commandBuffer, &bargraphs->barGraphTimer );
+
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
+
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->multiViewBarGraph );
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
+
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph );
+
+		GpuCommandBuffer_EndTimer( commandBuffer, &bargraphs->barGraphTimer );
+	}
+}
+
+static void TimeWarpBarGraphs_UpdateCompute( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs )
+{
+	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
+	{
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
+
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->multiViewBarGraph );
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
+
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph );
+	}
+}
+
+static void TimeWarpBarGraphs_RenderCompute( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs, GpuFramebuffer_t * framebuffer )
+{
+	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
+	{
+		GpuCommandBuffer_BeginTimer( commandBuffer, &bargraphs->barGraphTimer );
+
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph, framebuffer );
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->timeWarpFrameRateGraph, framebuffer );
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->frameCpuTimeBarGraph, framebuffer );
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->frameGpuTimeBarGraph, framebuffer );
+
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->multiViewBarGraph, framebuffer );
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph, framebuffer );
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->timeWarpImplementationBarGraph, framebuffer );
+
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph, framebuffer );
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph, framebuffer );
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph, framebuffer );
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph, framebuffer );
+
+		GpuCommandBuffer_EndTimer( commandBuffer, &bargraphs->barGraphTimer );
+	}
+}
+
+static float TimeWarpBarGraphs_GetGpuMillisecondsGraphics( TimeWarpBarGraphs_t * bargraphs )
+{
+	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
+	{
+		return GpuTimer_GetMilliseconds( &bargraphs->barGraphTimer );
+	}
+	return 0.0f;
+}
+
+static float TimeWarpBarGraphs_GetGpuMillisecondsCompute( TimeWarpBarGraphs_t * bargraphs )
+{
+	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
+	{
+		return GpuTimer_GetMilliseconds( &bargraphs->barGraphTimer );
+	}
+	return 0.0f;
+}
+
+/*
+================================================================================================================================
+
 HMD
 
 HmdInfo_t
@@ -11241,6 +11921,1366 @@ static void CalculateTimeWarpTransform( Matrix4x4f_t * transform, const Matrix4x
 /*
 ================================================================================================================================
 
+Distortion meshes.
+
+MeshCoord_t
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+	float x;
+	float y;
+} MeshCoord_t;
+
+static float MaxFloat( float x, float y ) { return ( x > y ) ? x : y; }
+static float MinFloat( float x, float y ) { return ( x < y ) ? x : y; }
+
+// A Catmull-Rom spline through the values K[0], K[1], K[2] ... K[numKnots-1] evenly spaced from 0.0 to 1.0
+static float EvaluateCatmullRomSpline( const float value, float const * K, const int numKnots )
+{
+	const float scaledValue = (float)( numKnots - 1 ) * value;
+	const float scaledValueFloor = MaxFloat( 0.0f, MinFloat( (float)( numKnots - 1 ), floorf( scaledValue ) ) );
+	const float t = scaledValue - scaledValueFloor;
+	const int k = (int)scaledValueFloor;
+
+	float p0 = 0.0f;
+	float p1 = 0.0f;
+	float m0 = 0.0f;
+	float m1 = 0.0f;
+
+	if ( k == 0 )
+	{
+		p0 = K[0];
+		m0 = K[1] - K[0];
+		p1 = K[1];
+		m1 = 0.5f * ( K[2] - K[0] );
+	}
+	else if ( k < numKnots - 2 )
+	{
+		p0 = K[k];
+		m0 = 0.5f * ( K[k+1] - K[k-1] );
+		p1 = K[k+1];
+		m1 = 0.5f * ( K[k+2] - K[k] );
+	}
+	else if ( k == numKnots - 2 )
+	{
+		p0 = K[k];
+		m0 = 0.5f * ( K[k+1] - K[k-1] );
+		p1 = K[k+1];
+		m1 = K[k+1] - K[k];
+	}
+	else if ( k == numKnots - 1 )
+	{
+		p0 = K[k];
+		m0 = K[k] - K[k-1];
+		p1 = p0 + m0;
+		m1 = m0;
+	}
+
+	const float omt = 1.0f - t;
+	const float res = ( p0 * ( 1.0f + 2.0f *   t ) + m0 *   t ) * omt * omt
+					+ ( p1 * ( 1.0f + 2.0f * omt ) - m1 * omt ) *   t *   t;
+	return res;
+}
+
+static void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS], const int eyeTilesWide, const int eyeTilesHigh, const HmdInfo_t * hmdInfo )
+{
+	const float horizontalShiftMeters = ( hmdInfo->lensSeparationInMeters / 2 ) - ( hmdInfo->widthInMeters / 4 );
+	const float horizontalShiftView = horizontalShiftMeters / ( hmdInfo->widthInMeters / 2 );
+
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		for ( int y = 0; y <= eyeTilesHigh; y++ )
+		{
+			const float yf = 1.0f - (float)y / (float)eyeTilesHigh;
+
+			for ( int x = 0; x <= eyeTilesWide; x++ )
+			{
+				const float xf = (float)x / (float)eyeTilesWide;
+
+				const float in[2] = { ( eye ? -horizontalShiftView : horizontalShiftView ) + xf, yf };
+				const float ndcToPixels[2] = { hmdInfo->widthInPixels * 0.25f, hmdInfo->heightInPixels * 0.5f };
+				const float pixelsToMeters[2] = { hmdInfo->widthInMeters / hmdInfo->widthInPixels, hmdInfo->heightInMeters / hmdInfo->heightInPixels };
+
+				float theta[2];
+				for ( int i = 0; i < 2; i++ )
+				{
+					const float unit = in[i];
+					const float ndc = 2.0f * unit - 1.0f;
+					const float pixels = ndc * ndcToPixels[i];
+					const float meters = pixels * pixelsToMeters[i];
+					const float tanAngle = meters / hmdInfo->metersPerTanAngleAtCenter;
+					theta[i] = tanAngle;
+				}
+
+				const float rsq = theta[0] * theta[0] + theta[1] * theta[1];
+				const float scale = EvaluateCatmullRomSpline( rsq, hmdInfo->K, hmdInfo->numKnots );
+				const float chromaScale[NUM_COLOR_CHANNELS] =
+				{
+					scale * ( 1.0f + hmdInfo->chromaticAberration[0] + rsq * hmdInfo->chromaticAberration[1] ),
+					scale,
+					scale * ( 1.0f + hmdInfo->chromaticAberration[2] + rsq * hmdInfo->chromaticAberration[3] )
+				};
+
+				const int vertNum = y * ( eyeTilesWide + 1 ) + x;
+				for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
+				{
+					meshCoords[eye][channel][vertNum].x = chromaScale[channel] * theta[0];
+					meshCoords[eye][channel][vertNum].y = chromaScale[channel] * theta[1];
+				}
+			}
+		}
+	}
+}
+
+/*
+================================================================================================================================
+
+Time warp graphics rendering.
+
+TimeWarpGraphics_t
+
+static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics, GpuRenderPass_t * renderPass );
+static void TimeWarpGraphics_Destroy( GpuContext_t * context, TimeWarpGraphics_t * graphics );
+static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpGraphics_t * graphics,
+									GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
+									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
+									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
+									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
+									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
+									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] );
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+	GpuGeometry_t			distortionMesh[NUM_EYES];
+	GpuGraphicsProgram_t	timeWarpSpatialProgram;
+	GpuGraphicsProgram_t	timeWarpChromaticProgram;
+	GpuGraphicsPipeline_t	timeWarpSpatialPipeline[NUM_EYES];
+	GpuGraphicsPipeline_t	timeWarpChromaticPipeline[NUM_EYES];
+	GpuTimer_t				timeWarpGpuTime;
+} TimeWarpGraphics_t;
+
+enum
+{
+	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,
+	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,
+	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER,
+	GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE
+};
+
+static const GpuProgramParm_t timeWarpSpatialGraphicsProgramParms[] =
+{
+	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"TimeWarpStartTransform",	0 },
+	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,	"TimeWarpEndTransform",		1 },
+	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER,		"ArrayLayer",				2 },
+	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE,			"Texture",					0 }
+};
+
+static const char timeWarpSpatialVertexProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"uniform highp mat3x4 TimeWarpStartTransform;\n"
+	"uniform highp mat3x4 TimeWarpEndTransform;\n"
+	"in highp vec3 vertexPosition;\n"
+	"in highp vec2 vertexUv1;\n"
+	"out mediump vec2 fragmentUv1;\n"
+	"out gl_PerVertex { vec4 gl_Position; };\n"
+	"void main( void )\n"
+	"{\n"
+	"	gl_Position = vec4( vertexPosition, 1.0 );\n"
+	"\n"
+	"	float displayFraction = vertexPosition.x * 0.5 + 0.5;\n"	// landscape left-to-right
+	"\n"
+	"	vec3 startUv1 = vec4( vertexUv1, -1, 1 ) * TimeWarpStartTransform;\n"
+	"	vec3 endUv1 = vec4( vertexUv1, -1, 1 ) * TimeWarpEndTransform;\n"
+	"	vec3 curUv1 = mix( startUv1, endUv1, displayFraction );\n"
+	"	fragmentUv1 = curUv1.xy * ( 1.0 / max( curUv1.z, 0.00001 ) );\n"
+	"}\n";
+
+static const char timeWarpSpatialFragmentProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"uniform int ArrayLayer;\n"
+	"uniform highp sampler2DArray Texture;\n"
+	"in mediump vec2 fragmentUv1;\n"
+	"out lowp vec4 outColor;\n"
+	"void main()\n"
+	"{\n"
+	"	outColor = texture( Texture, vec3( fragmentUv1, ArrayLayer ) );\n"
+	"}\n";
+
+static const GpuProgramParm_t timeWarpChromaticGraphicsProgramParms[] =
+{
+	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"TimeWarpStartTransform",	0 },
+	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,	"TimeWarpEndTransform",		1 },
+	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER,		"ArrayLayer",				2 },
+	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE,			"Texture",					0 }
+};
+
+static const char timeWarpChromaticVertexProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"uniform highp mat3x4 TimeWarpStartTransform;\n"
+	"uniform highp mat3x4 TimeWarpEndTransform;\n"
+	"in highp vec3 vertexPosition;\n"
+	"in highp vec2 vertexUv0;\n"
+	"in highp vec2 vertexUv1;\n"
+	"in highp vec2 vertexUv2;\n"
+	"out mediump vec2 fragmentUv0;\n"
+	"out mediump vec2 fragmentUv1;\n"
+	"out mediump vec2 fragmentUv2;\n"
+	"out gl_PerVertex { vec4 gl_Position; };\n"
+	"void main( void )\n"
+	"{\n"
+	"	gl_Position = vec4( vertexPosition, 1.0 );\n"
+	"\n"
+	"	float displayFraction = vertexPosition.x * 0.5 + 0.5;\n"	// landscape left-to-right
+	"\n"
+	"	vec3 startUv0 = vec4( vertexUv0, -1, 1 ) * TimeWarpStartTransform;\n"
+	"	vec3 startUv1 = vec4( vertexUv1, -1, 1 ) * TimeWarpStartTransform;\n"
+	"	vec3 startUv2 = vec4( vertexUv2, -1, 1 ) * TimeWarpStartTransform;\n"
+	"\n"
+	"	vec3 endUv0 = vec4( vertexUv0, -1, 1 ) * TimeWarpEndTransform;\n"
+	"	vec3 endUv1 = vec4( vertexUv1, -1, 1 ) * TimeWarpEndTransform;\n"
+	"	vec3 endUv2 = vec4( vertexUv2, -1, 1 ) * TimeWarpEndTransform;\n"
+	"\n"
+	"	vec3 curUv0 = mix( startUv0, endUv0, displayFraction );\n"
+	"	vec3 curUv1 = mix( startUv1, endUv1, displayFraction );\n"
+	"	vec3 curUv2 = mix( startUv2, endUv2, displayFraction );\n"
+	"\n"
+	"	fragmentUv0 = curUv0.xy * ( 1.0 / max( curUv0.z, 0.00001 ) );\n"
+	"	fragmentUv1 = curUv1.xy * ( 1.0 / max( curUv1.z, 0.00001 ) );\n"
+	"	fragmentUv2 = curUv2.xy * ( 1.0 / max( curUv2.z, 0.00001 ) );\n"
+	"}\n";
+
+static const char timeWarpChromaticFragmentProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"uniform int ArrayLayer;\n"
+	"uniform highp sampler2DArray Texture;\n"
+	"in mediump vec2 fragmentUv0;\n"
+	"in mediump vec2 fragmentUv1;\n"
+	"in mediump vec2 fragmentUv2;\n"
+	"out lowp vec4 outColor;\n"
+	"void main()\n"
+	"{\n"
+	"	outColor.r = texture( Texture, vec3( fragmentUv0, ArrayLayer ) ).r;\n"
+	"	outColor.g = texture( Texture, vec3( fragmentUv1, ArrayLayer ) ).g;\n"
+	"	outColor.b = texture( Texture, vec3( fragmentUv2, ArrayLayer ) ).b;\n"
+	"	outColor.a = 1.0;\n"
+	"}\n";
+
+static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics, GpuRenderPass_t * renderPass )
+{
+	const int numVertices = ( EYE_TILES_HIGH + 1 ) * ( EYE_TILES_WIDE + 1 );
+	const int numIndices = EYE_TILES_HIGH * EYE_TILES_WIDE * 6;
+
+	GpuTriangleIndex_t * indices = (GpuTriangleIndex_t *) malloc( numIndices * sizeof( indices[0] ) );
+	for ( int y = 0; y < EYE_TILES_HIGH; y++ )
+	{
+		for ( int x = 0; x < EYE_TILES_WIDE; x++ )
+		{
+			const int offset = ( y * EYE_TILES_WIDE + x ) * 6;
+
+			indices[offset + 0] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
+			indices[offset + 1] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
+			indices[offset + 2] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
+
+			indices[offset + 3] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
+			indices[offset + 4] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
+			indices[offset + 5] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
+		}
+	}
+
+	GpuVertexAttributeArrays_t vertexAttribs;
+	GpuVertexAttributeArrays_Alloc( &vertexAttribs.base,
+									DefaultVertexAttributeLayout, numVertices,
+									VERTEX_ATTRIBUTE_FLAG_POSITION |
+									VERTEX_ATTRIBUTE_FLAG_UV0 |
+									VERTEX_ATTRIBUTE_FLAG_UV1 |
+									VERTEX_ATTRIBUTE_FLAG_UV2 );
+
+	const int numMeshCoords = ( EYE_TILES_WIDE + 1 ) * ( EYE_TILES_HIGH + 1 );
+	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t ) );
+	MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
+	{
+		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
+		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
+	};
+	BuildDistortionMeshes( meshCoords, EYE_TILES_WIDE, EYE_TILES_HIGH, GetDefaultHmdInfo() );
+
+#if defined( GRAPHICS_API_VULKAN )
+	const float flipY = -1.0f;
+#else
+	const float flipY = 1.0f;
+#endif
+
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		for ( int y = 0; y <= EYE_TILES_HIGH; y++ )
+		{
+			for ( int x = 0; x <= EYE_TILES_WIDE; x++ )
+			{
+				const int index = y * ( EYE_TILES_WIDE + 1 ) + x;
+				vertexAttribs.position[index].x = ( -1.0f + eye + ( (float)x / EYE_TILES_WIDE ) );
+				vertexAttribs.position[index].y = ( -1.0f + 2.0f * ( ( EYE_TILES_HIGH - (float)y ) / EYE_TILES_HIGH ) *
+													( (float)( EYE_TILES_HIGH * TILE_PIXELS_HIGH ) / DISPLAY_PIXELS_HIGH ) ) * flipY;
+				vertexAttribs.position[index].z = 0.0f;
+				vertexAttribs.uv0[index].x = meshCoords[eye][0][index].x;
+				vertexAttribs.uv0[index].y = meshCoords[eye][0][index].y;
+				vertexAttribs.uv1[index].x = meshCoords[eye][1][index].x;
+				vertexAttribs.uv1[index].y = meshCoords[eye][1][index].y;
+				vertexAttribs.uv2[index].x = meshCoords[eye][2][index].x;
+				vertexAttribs.uv2[index].y = meshCoords[eye][2][index].y;
+			}
+		}
+
+		GpuGeometry_Create( context, &graphics->distortionMesh[eye], &vertexAttribs.base, numVertices, indices, numIndices );
+	}
+
+	free( meshCoordsBasePtr );
+	GpuVertexAttributeArrays_Free( &vertexAttribs.base );
+	free( indices );
+
+	GpuGraphicsProgram_Create( context, &graphics->timeWarpSpatialProgram,
+								PROGRAM( timeWarpSpatialVertexProgram ), sizeof( PROGRAM( timeWarpSpatialVertexProgram ) ),
+								PROGRAM( timeWarpSpatialFragmentProgram ), sizeof( PROGRAM( timeWarpSpatialFragmentProgram ) ),
+								timeWarpSpatialGraphicsProgramParms, ARRAY_SIZE( timeWarpSpatialGraphicsProgramParms ),
+								graphics->distortionMesh[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV1 );
+	GpuGraphicsProgram_Create( context, &graphics->timeWarpChromaticProgram,
+								PROGRAM( timeWarpChromaticVertexProgram ), sizeof( PROGRAM( timeWarpChromaticVertexProgram ) ),
+								PROGRAM( timeWarpChromaticFragmentProgram ), sizeof( PROGRAM( timeWarpChromaticFragmentProgram ) ),
+								timeWarpChromaticGraphicsProgramParms, ARRAY_SIZE( timeWarpChromaticGraphicsProgramParms ),
+								graphics->distortionMesh[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV0 |
+								VERTEX_ATTRIBUTE_FLAG_UV1 | VERTEX_ATTRIBUTE_FLAG_UV2 );
+
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		GpuGraphicsPipelineParms_t pipelineParms;
+		GpuGraphicsPipelineParms_Init( &pipelineParms );
+
+		pipelineParms.rop.depthTestEnable = false;
+		pipelineParms.rop.depthWriteEnable = false;
+		pipelineParms.renderPass = renderPass;
+		pipelineParms.program = &graphics->timeWarpSpatialProgram;
+		pipelineParms.geometry = &graphics->distortionMesh[eye];
+
+		GpuGraphicsPipeline_Create( context, &graphics->timeWarpSpatialPipeline[eye], &pipelineParms );
+
+		pipelineParms.program = &graphics->timeWarpChromaticProgram;
+		pipelineParms.geometry = &graphics->distortionMesh[eye];
+
+		GpuGraphicsPipeline_Create( context, &graphics->timeWarpChromaticPipeline[eye], &pipelineParms );
+	}
+
+	GpuTimer_Create( context, &graphics->timeWarpGpuTime );
+}
+
+static void TimeWarpGraphics_Destroy( GpuContext_t * context, TimeWarpGraphics_t * graphics )
+{
+	GpuTimer_Destroy( context, &graphics->timeWarpGpuTime );
+
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		GpuGraphicsPipeline_Destroy( context, &graphics->timeWarpSpatialPipeline[eye] );
+		GpuGraphicsPipeline_Destroy( context, &graphics->timeWarpChromaticPipeline[eye] );
+	}
+
+	GpuGraphicsProgram_Destroy( context, &graphics->timeWarpSpatialProgram );
+	GpuGraphicsProgram_Destroy( context, &graphics->timeWarpChromaticProgram );
+
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		GpuGeometry_Destroy( context, &graphics->distortionMesh[eye] );
+	}
+}
+
+static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpGraphics_t * graphics,
+									GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
+									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
+									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
+									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
+									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
+									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] )
+{
+	const Microseconds_t t0 = GetTimeMicroseconds();
+
+	Matrix4x4f_t displayRefreshStartViewMatrix;
+	Matrix4x4f_t displayRefreshEndViewMatrix;
+	GetHmdViewMatrixForTime( &displayRefreshStartViewMatrix, refreshStartTime );
+	GetHmdViewMatrixForTime( &displayRefreshEndViewMatrix, refreshEndTime );
+
+	Matrix4x4f_t timeWarpStartTransform;
+	Matrix4x4f_t timeWarpEndTransform;
+	CalculateTimeWarpTransform( &timeWarpStartTransform, projectionMatrix, viewMatrix, &displayRefreshStartViewMatrix );
+	CalculateTimeWarpTransform( &timeWarpEndTransform, projectionMatrix, viewMatrix, &displayRefreshEndViewMatrix );
+
+	Matrix3x4f_t timeWarpStartTransform3x4;
+	Matrix3x4f_t timeWarpEndTransform3x4;
+	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpStartTransform3x4, &timeWarpStartTransform );
+	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpEndTransform3x4, &timeWarpEndTransform );
+
+	const ScreenRect_t screenRect = GpuFramebuffer_GetRect( framebuffer );
+
+	GpuCommandBuffer_BeginPrimary( commandBuffer );
+	GpuCommandBuffer_BeginFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
+
+	TimeWarpBarGraphs_UpdateGraphics( commandBuffer, bargraphs );
+
+	GpuCommandBuffer_BeginTimer( commandBuffer, &graphics->timeWarpGpuTime );
+	GpuCommandBuffer_BeginRenderPass( commandBuffer, renderPass, framebuffer, &screenRect );
+
+	GpuCommandBuffer_SetViewport( commandBuffer, &screenRect );
+	GpuCommandBuffer_SetScissor( commandBuffer, &screenRect );
+
+	for ( int eye = 0; eye < NUM_EYES; eye ++ )
+	{
+		GpuGraphicsCommand_t command;
+		GpuGraphicsCommand_Init( &command );
+		GpuGraphicsCommand_SetPipeline( &command, correctChromaticAberration ? &graphics->timeWarpChromaticPipeline[eye] : &graphics->timeWarpSpatialPipeline[eye] );
+		GpuGraphicsCommand_SetParmFloatMatrix3x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform3x4 );
+		GpuGraphicsCommand_SetParmFloatMatrix3x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform3x4 );
+		GpuGraphicsCommand_SetParmInt( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER, &eyeArrayLayer[eye] );
+		GpuGraphicsCommand_SetParmTextureSampled( &command, GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE, eyeTexture[eye] );
+
+		GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
+	}
+
+	const Microseconds_t t1 = GetTimeMicroseconds();
+
+	TimeWarpBarGraphs_RenderGraphics( commandBuffer, bargraphs );
+
+	GpuCommandBuffer_EndRenderPass( commandBuffer, renderPass );
+	GpuCommandBuffer_EndTimer( commandBuffer, &graphics->timeWarpGpuTime );
+
+	GpuCommandBuffer_EndFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_PRESENTATION );
+	GpuCommandBuffer_EndPrimary( commandBuffer );
+
+	GpuCommandBuffer_SubmitPrimary( commandBuffer );
+
+	const Microseconds_t t2 = GetTimeMicroseconds();
+
+	cpuTimes[PROFILE_TIME_TIME_WARP] = ( t1 - t0 ) * ( 1.0f / 1000.0f );
+	cpuTimes[PROFILE_TIME_BAR_GRAPHS] = ( t2 - t1 ) * ( 1.0f / 1000.0f );
+	cpuTimes[PROFILE_TIME_BLIT] = 0.0f;
+
+	const float barGraphGpuTime = TimeWarpBarGraphs_GetGpuMillisecondsGraphics( bargraphs );
+
+	gpuTimes[PROFILE_TIME_TIME_WARP] = GpuTimer_GetMilliseconds( &graphics->timeWarpGpuTime ) - barGraphGpuTime;
+	gpuTimes[PROFILE_TIME_BAR_GRAPHS] = barGraphGpuTime;
+	gpuTimes[PROFILE_TIME_BLIT] = 0.0f;
+
+#if GL_FINISH_SYNC == 1
+	GL( glFinish() );
+#endif
+}
+
+/*
+================================================================================================================================
+
+Time warp compute rendering.
+
+TimeWarpCompute_t
+
+static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, GpuRenderPass_t * renderPass, GpuWindow_t * window );
+static void TimeWarpCompute_Destroy( GpuContext_t * context, TimeWarpCompute_t * compute );
+static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpCompute_t * compute,
+									GpuFramebuffer_t * framebuffer,
+									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
+									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
+									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
+									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
+									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] );
+
+================================================================================================================================
+*/
+
+#if OPENGL_COMPUTE_ENABLED == 1
+
+typedef struct
+{
+	GpuTexture_t			distortionImage[NUM_EYES][NUM_COLOR_CHANNELS];
+	GpuTexture_t			timeWarpImage[NUM_EYES][NUM_COLOR_CHANNELS];
+	GpuComputeProgram_t		timeWarpTransformProgram;
+	GpuComputeProgram_t		timeWarpSpatialProgram;
+	GpuComputeProgram_t		timeWarpChromaticProgram;
+	GpuComputePipeline_t	timeWarpTransformPipeline;
+	GpuComputePipeline_t	timeWarpSpatialPipeline;
+	GpuComputePipeline_t	timeWarpChromaticPipeline;
+	GpuTimer_t				timeWarpGpuTime;
+	GpuFramebuffer_t		framebuffer;
+} TimeWarpCompute_t;
+
+enum
+{
+	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_DST,
+	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_SRC,
+	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_DIMENSIONS,
+	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE,
+	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,
+	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM
+};
+
+static const GpuProgramParm_t timeWarpTransformComputeProgramParms[] =
+{
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,					GPU_PROGRAM_PARM_ACCESS_WRITE_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_DST,		"dst",						0 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_SRC,		"src",						1 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,		GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_DIMENSIONS,		"dimensions",				0 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE,				"eye",						1 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"timeWarpStartTransform",	2 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,		"timeWarpEndTransform",		3 }
+};
+
+#define TRANSFORM_LOCAL_SIZE_X		8
+#define TRANSFORM_LOCAL_SIZE_Y		8
+
+static const char timeWarpTransformComputeProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"\n"
+	"layout( local_size_x = " STRINGIFY( TRANSFORM_LOCAL_SIZE_X ) ", local_size_y = " STRINGIFY( TRANSFORM_LOCAL_SIZE_Y ) " ) in;\n"
+	"\n"
+	"layout( rgba16f, binding = 0 ) uniform writeonly " ES_HIGHP " image2D dst;\n"
+	"layout( rgba32f, binding = 1 ) uniform readonly " ES_HIGHP " image2D src;\n"
+	"uniform highp mat3x4 timeWarpStartTransform;\n"
+ 	"uniform highp mat3x4 timeWarpEndTransform;\n"
+	"uniform ivec2 dimensions;\n"
+	"uniform int eye;\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"	ivec2 mesh = ivec2( gl_GlobalInvocationID.xy );\n"
+	"	if ( mesh.x >= dimensions.x || mesh.y >= dimensions.y )\n"
+	"	{\n"
+	"		return;\n"
+	"	}\n"
+	"	int eyeTilesWide = int( gl_NumWorkGroups.x * gl_WorkGroupSize.x ) - 1;\n"
+	"	int eyeTilesHigh = int( gl_NumWorkGroups.y * gl_WorkGroupSize.y ) - 1;\n"
+	"\n"
+	"	vec2 coords = imageLoad( src, mesh ).xy;\n"
+	"\n"
+	"	float displayFraction = float( eye * eyeTilesWide + mesh.x ) / ( float( eyeTilesWide ) * 2.0f );\n"		// landscape left-to-right
+	"	vec3 start = vec4( coords, -1.0f, 1.0f ) * timeWarpStartTransform;\n"
+	"	vec3 end = vec4( coords, -1.0f, 1.0f ) * timeWarpEndTransform;\n"
+	"	vec3 cur = start + displayFraction * ( end - start );\n"
+	"	float rcpZ = 1.0f / cur.z;\n"
+	"\n"
+	"	imageStore( dst, mesh, vec4( cur.xy * rcpZ, 0.0f, 0.0f ) );\n"
+	"}\n";
+
+enum
+{
+	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_DEST,
+	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_EYE_IMAGE,
+	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_R,
+	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_G,
+	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_B,
+	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE,
+	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS,
+	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER,
+	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET
+};
+
+static const GpuProgramParm_t timeWarpSpatialComputeProgramParms[] =
+{
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,				GPU_PROGRAM_PARM_ACCESS_WRITE_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_DEST,				"dest",				0 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_EYE_IMAGE,			"eyeImage",			0 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_G,		"warpImageG",		1 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE,		"imageScale",		0 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS,		"imageBias",		1 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET,	"eyePixelOffset",	3 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER,		"imageLayer",		2 }
+};
+
+#define SPATIAL_LOCAL_SIZE_X		8
+#define SPATIAL_LOCAL_SIZE_Y		8
+
+static const char timeWarpSpatialComputeProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"\n"
+	"layout( local_size_x = " STRINGIFY( SPATIAL_LOCAL_SIZE_X ) ", local_size_y = " STRINGIFY( SPATIAL_LOCAL_SIZE_Y ) " ) in;\n"
+	"\n"
+	"// imageScale = {	eyeTilesWide / ( eyeTilesWide + 1 ) / eyePixelsWide,\n"
+	"//					eyeTilesHigh / ( eyeTilesHigh + 1 ) / eyePixelsHigh };\n"
+	"// imageBias  = {	0.5f / ( eyeTilesWide + 1 ),\n"
+	"//					0.5f / ( eyeTilesHigh + 1 ) };\n"
+	"layout( rgba8, binding = 0 ) uniform writeonly " ES_HIGHP " image2D dest;\n"
+	"uniform highp sampler2DArray eyeImage;\n"
+	"uniform highp sampler2D warpImageG;\n"
+	"uniform highp vec2 imageScale;\n"
+	"uniform highp vec2 imageBias;\n"
+	"uniform ivec2 eyePixelOffset;\n"
+	"uniform int imageLayer;\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"	vec2 tile = ( vec2( gl_GlobalInvocationID.xy ) + vec2( 0.5f ) ) * imageScale + imageBias;\n"
+	"\n"
+	"	vec2 eyeCoords = texture( warpImageG, tile ).xy;\n"
+	"\n"
+	"	vec4 rgba = texture( eyeImage, vec3( eyeCoords, imageLayer ) );\n"
+	"\n"
+	"	imageStore( dest, ivec2( int( gl_GlobalInvocationID.x ) + eyePixelOffset.x, eyePixelOffset.y - 1 - int( gl_GlobalInvocationID.y ) ), rgba );\n"
+	"}\n";
+
+static const GpuProgramParm_t timeWarpChromaticComputeProgramParms[] =
+{
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,				GPU_PROGRAM_PARM_ACCESS_WRITE_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_DEST,				"dest",				0 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_EYE_IMAGE,			"eyeImage",			0 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_R,		"warpImageR",		1 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_G,		"warpImageG",		2 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_B,		"warpImageB",		3 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE,		"imageScale",		0 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS,		"imageBias",		1 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET,	"eyePixelOffset",	3 },
+	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER,		"imageLayer",		2 }
+};
+
+#define CHROMATIC_LOCAL_SIZE_X		8
+#define CHROMATIC_LOCAL_SIZE_Y		8
+
+static const char timeWarpChromaticComputeProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"\n"
+	"layout( local_size_x = " STRINGIFY( CHROMATIC_LOCAL_SIZE_X ) ", local_size_y = " STRINGIFY( CHROMATIC_LOCAL_SIZE_Y ) " ) in;\n"
+	"\n"
+	"// imageScale = {	eyeTilesWide / ( eyeTilesWide + 1 ) / eyePixelsWide,\n"
+	"//					eyeTilesHigh / ( eyeTilesHigh + 1 ) / eyePixelsHigh };\n"
+	"// imageBias  = {	0.5f / ( eyeTilesWide + 1 ),\n"
+	"//					0.5f / ( eyeTilesHigh + 1 ) };\n"
+	"layout( rgba8, binding = 0 ) uniform writeonly " ES_HIGHP " image2D dest;\n"
+	"uniform highp sampler2DArray eyeImage;\n"
+	"uniform highp sampler2D warpImageR;\n"
+	"uniform highp sampler2D warpImageG;\n"
+	"uniform highp sampler2D warpImageB;\n"
+	"uniform highp vec2 imageScale;\n"
+	"uniform highp vec2 imageBias;\n"
+	"uniform ivec2 eyePixelOffset;\n"
+	"uniform int imageLayer;\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"	vec2 tile = ( vec2( gl_GlobalInvocationID.xy ) + vec2( 0.5f ) ) * imageScale + imageBias;\n"
+	"\n"
+	"	vec2 eyeCoordsR = texture( warpImageR, tile ).xy;\n"
+	"	vec2 eyeCoordsG = texture( warpImageG, tile ).xy;\n"
+	"	vec2 eyeCoordsB = texture( warpImageB, tile ).xy;\n"
+	"\n"
+	"	vec4 rgba;\n"
+	"	rgba.x = texture( eyeImage, vec3( eyeCoordsR, imageLayer ) ).x;\n"
+	"	rgba.y = texture( eyeImage, vec3( eyeCoordsG, imageLayer ) ).y;\n"
+	"	rgba.z = texture( eyeImage, vec3( eyeCoordsB, imageLayer ) ).z;\n"
+	"	rgba.w = 1.0f;\n"
+	"\n"
+	"	imageStore( dest, ivec2( int( gl_GlobalInvocationID.x ) + eyePixelOffset.x, eyePixelOffset.y - 1 - int( gl_GlobalInvocationID.y ) ), rgba );\n"
+	"}\n";
+
+static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, GpuRenderPass_t * renderPass, GpuWindow_t * window )
+{
+	memset( compute, 0, sizeof( TimeWarpCompute_t ) );
+
+	const int numMeshCoords = ( EYE_TILES_WIDE + 1 ) * ( EYE_TILES_HIGH + 1 );
+	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t ) );
+	MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
+	{
+		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
+		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
+	};
+	BuildDistortionMeshes( meshCoords, EYE_TILES_WIDE, EYE_TILES_HIGH, GetDefaultHmdInfo() );
+
+	float * rgbaFloat = (float *) malloc( numMeshCoords * 4 * sizeof( float ) );
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
+		{
+			for ( int i = 0; i < numMeshCoords; i++ )
+			{
+				rgbaFloat[i * 4 + 0] = meshCoords[eye][channel][i].x;
+				rgbaFloat[i * 4 + 1] = meshCoords[eye][channel][i].y;
+				rgbaFloat[i * 4 + 2] = 0.0f;
+				rgbaFloat[i * 4 + 3] = 0.0f;
+			}
+			const size_t rgbaSize = numMeshCoords * 4 * sizeof( float );
+			GpuTexture_Create2D( context, &compute->distortionImage[eye][channel],
+								GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT, GPU_SAMPLE_COUNT_1,
+								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, GPU_TEXTURE_USAGE_STORAGE, rgbaFloat, rgbaSize );
+			GpuTexture_Create2D( context, &compute->timeWarpImage[eye][channel],
+								GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT, GPU_SAMPLE_COUNT_1,
+								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, GPU_TEXTURE_USAGE_STORAGE | GPU_TEXTURE_USAGE_SAMPLED, NULL, 0 );
+		}
+	}
+	free( rgbaFloat );
+
+	free( meshCoordsBasePtr );
+
+	GpuComputeProgram_Create( context, &compute->timeWarpTransformProgram,
+								PROGRAM( timeWarpTransformComputeProgram ), sizeof( PROGRAM( timeWarpTransformComputeProgram ) ),
+								timeWarpTransformComputeProgramParms, ARRAY_SIZE( timeWarpTransformComputeProgramParms ) );
+	GpuComputeProgram_Create( context, &compute->timeWarpSpatialProgram,
+								PROGRAM( timeWarpSpatialComputeProgram ), sizeof( PROGRAM( timeWarpSpatialComputeProgram ) ),
+								timeWarpSpatialComputeProgramParms, ARRAY_SIZE( timeWarpSpatialComputeProgramParms ) );
+	GpuComputeProgram_Create( context, &compute->timeWarpChromaticProgram,
+								PROGRAM( timeWarpChromaticComputeProgram ), sizeof( PROGRAM( timeWarpChromaticComputeProgram ) ),
+								timeWarpChromaticComputeProgramParms, ARRAY_SIZE( timeWarpChromaticComputeProgramParms ) );
+
+	GpuComputePipeline_Create( context, &compute->timeWarpTransformPipeline, &compute->timeWarpTransformProgram );
+	GpuComputePipeline_Create( context, &compute->timeWarpSpatialPipeline, &compute->timeWarpSpatialProgram );
+	GpuComputePipeline_Create( context, &compute->timeWarpChromaticPipeline, &compute->timeWarpChromaticProgram );
+
+	GpuTimer_Create( context, &compute->timeWarpGpuTime );
+
+	GpuFramebuffer_CreateFromTextures( context, &compute->framebuffer, renderPass, window->windowWidth, window->windowHeight, 1 );
+}
+
+static void TimeWarpCompute_Destroy( GpuContext_t * context, TimeWarpCompute_t * compute )
+{
+	GpuFramebuffer_Destroy( context, &compute->framebuffer );
+
+	GpuTimer_Destroy( context, &compute->timeWarpGpuTime );
+
+	GpuComputePipeline_Destroy( context, &compute->timeWarpTransformPipeline );
+	GpuComputePipeline_Destroy( context, &compute->timeWarpSpatialPipeline );
+	GpuComputePipeline_Destroy( context, &compute->timeWarpChromaticPipeline );
+
+	GpuComputeProgram_Destroy( context, &compute->timeWarpTransformProgram );
+	GpuComputeProgram_Destroy( context, &compute->timeWarpSpatialProgram );
+	GpuComputeProgram_Destroy( context, &compute->timeWarpChromaticProgram );
+
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
+		{
+			GpuTexture_Destroy( context, &compute->distortionImage[eye][channel] );
+			GpuTexture_Destroy( context, &compute->timeWarpImage[eye][channel] );
+		}
+	}
+
+	memset( compute, 0, sizeof( TimeWarpCompute_t ) );
+}
+
+static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpCompute_t * compute,
+									GpuFramebuffer_t * framebuffer,
+									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
+									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
+									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
+									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
+									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] )
+{
+	const Microseconds_t t0 = GetTimeMicroseconds();
+
+	Matrix4x4f_t displayRefreshStartViewMatrix;
+	Matrix4x4f_t displayRefreshEndViewMatrix;
+	GetHmdViewMatrixForTime( &displayRefreshStartViewMatrix, refreshStartTime );
+	GetHmdViewMatrixForTime( &displayRefreshEndViewMatrix, refreshEndTime );
+
+	Matrix4x4f_t timeWarpStartTransform;
+	Matrix4x4f_t timeWarpEndTransform;
+	CalculateTimeWarpTransform( &timeWarpStartTransform, projectionMatrix, viewMatrix, &displayRefreshStartViewMatrix );
+	CalculateTimeWarpTransform( &timeWarpEndTransform, projectionMatrix, viewMatrix, &displayRefreshEndViewMatrix );
+
+	Matrix3x4f_t timeWarpStartTransform3x4;
+	Matrix3x4f_t timeWarpEndTransform3x4;
+	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpStartTransform3x4, &timeWarpStartTransform );
+	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpEndTransform3x4, &timeWarpEndTransform );
+
+	GpuCommandBuffer_BeginPrimary( commandBuffer );
+	GpuCommandBuffer_BeginFramebuffer( commandBuffer, &compute->framebuffer, 0, GPU_TEXTURE_USAGE_STORAGE );
+
+	GpuCommandBuffer_BeginTimer( commandBuffer, &compute->timeWarpGpuTime );
+
+	for ( int eye = 0; eye < NUM_EYES; eye ++ )
+	{
+		for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
+		{
+			GpuCommandBuffer_ChangeTextureUsage( commandBuffer, &compute->timeWarpImage[eye][channel], GPU_TEXTURE_USAGE_STORAGE );
+			GpuCommandBuffer_ChangeTextureUsage( commandBuffer, &compute->distortionImage[eye][channel], GPU_TEXTURE_USAGE_STORAGE );
+		}
+	}
+
+	const Vector2i_t dimensions = { EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1 };
+	const int eyeIndex[NUM_EYES] = { 0, 1 };
+
+	for ( int eye = 0; eye < NUM_EYES; eye ++ )
+	{
+		for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
+		{
+			GpuComputeCommand_t command;
+			GpuComputeCommand_Init( &command );
+			GpuComputeCommand_SetPipeline( &command, &compute->timeWarpTransformPipeline );
+			GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_DST, &compute->timeWarpImage[eye][channel] );
+			GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_SRC, &compute->distortionImage[eye][channel] );
+			GpuComputeCommand_SetParmFloatMatrix3x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform3x4 );
+			GpuComputeCommand_SetParmFloatMatrix3x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform3x4 );
+			GpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_DIMENSIONS, &dimensions );
+			GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE, &eyeIndex[eye] );
+			GpuComputeCommand_SetDimensions( &command, ( dimensions.x + TRANSFORM_LOCAL_SIZE_X - 1 ) / TRANSFORM_LOCAL_SIZE_X, 
+														( dimensions.y + TRANSFORM_LOCAL_SIZE_Y - 1 ) / TRANSFORM_LOCAL_SIZE_Y, 1 );
+
+			GpuCommandBuffer_SubmitComputeCommand( commandBuffer, &command );
+		}
+	}
+
+	for ( int eye = 0; eye < NUM_EYES; eye ++ )
+	{
+		for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
+		{
+			GpuCommandBuffer_ChangeTextureUsage( commandBuffer, &compute->timeWarpImage[eye][channel], GPU_TEXTURE_USAGE_SAMPLED );
+		}
+	}
+	GpuCommandBuffer_ChangeTextureUsage( commandBuffer, GpuFramebuffer_GetColorTexture( &compute->framebuffer ), GPU_TEXTURE_USAGE_STORAGE );
+
+	const int screenWidth = GpuFramebuffer_GetWidth( &compute->framebuffer );
+	const int screenHeight = GpuFramebuffer_GetHeight( &compute->framebuffer );
+	const int eyePixelsWide = screenWidth / NUM_EYES;
+	const int eyePixelsHigh = screenHeight * EYE_TILES_HIGH * TILE_PIXELS_HIGH / DISPLAY_PIXELS_HIGH;
+	const Vector2f_t imageScale =
+	{
+		(float)EYE_TILES_WIDE / ( EYE_TILES_WIDE + 1 ) / eyePixelsWide,
+		(float)EYE_TILES_HIGH / ( EYE_TILES_HIGH + 1 ) / eyePixelsHigh
+	};
+	const Vector2f_t imageBias =
+	{
+		0.5f / ( EYE_TILES_WIDE + 1 ),
+		0.5f / ( EYE_TILES_HIGH + 1 )
+	};
+	const Vector2i_t eyePixelOffset[NUM_EYES] =
+	{
+#if defined( GRAPHICS_API_VULKAN )
+		{ 0 * eyePixelsWide, screenHeight - eyePixelsHigh },
+		{ 1 * eyePixelsWide, screenHeight - eyePixelsHigh }
+#else
+		{ 0 * eyePixelsWide, eyePixelsHigh },
+		{ 1 * eyePixelsWide, eyePixelsHigh }
+#endif
+	};
+
+	for ( int eye = 0; eye < NUM_EYES; eye ++ )
+	{
+		assert( screenWidth % ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_X : SPATIAL_LOCAL_SIZE_X ) == 0 );
+		assert( screenHeight % ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_Y : SPATIAL_LOCAL_SIZE_Y ) == 0 );
+
+		GpuComputeCommand_t command;
+		GpuComputeCommand_Init( &command );
+		GpuComputeCommand_SetPipeline( &command, correctChromaticAberration ? &compute->timeWarpChromaticPipeline : &compute->timeWarpSpatialPipeline );
+		GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_DEST, GpuFramebuffer_GetColorTexture( &compute->framebuffer ) );
+		GpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_EYE_IMAGE, eyeTexture[eye] );
+		GpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_R, &compute->timeWarpImage[eye][0] );
+		GpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_G, &compute->timeWarpImage[eye][1] );
+		GpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_B, &compute->timeWarpImage[eye][2] );
+		GpuComputeCommand_SetParmFloatVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE, &imageScale );
+		GpuComputeCommand_SetParmFloatVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS, &imageBias );
+		GpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET, &eyePixelOffset[eye] );
+		GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER, &eyeArrayLayer[eye] );
+		GpuComputeCommand_SetDimensions( &command, screenWidth / ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_X : SPATIAL_LOCAL_SIZE_X ) / 2,
+													screenHeight / ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_Y : SPATIAL_LOCAL_SIZE_Y ), 1 );
+
+		GpuCommandBuffer_SubmitComputeCommand( commandBuffer, &command );
+	}
+
+	const Microseconds_t t1 = GetTimeMicroseconds();
+
+	TimeWarpBarGraphs_UpdateCompute( commandBuffer, bargraphs );
+	TimeWarpBarGraphs_RenderCompute( commandBuffer, bargraphs, &compute->framebuffer );
+
+	const Microseconds_t t2 = GetTimeMicroseconds();
+
+	GpuCommandBuffer_Blit( commandBuffer, &compute->framebuffer, framebuffer );
+
+	GpuCommandBuffer_EndTimer( commandBuffer, &compute->timeWarpGpuTime );
+
+	GpuCommandBuffer_EndFramebuffer( commandBuffer, &compute->framebuffer, 0, GPU_TEXTURE_USAGE_PRESENTATION );
+	GpuCommandBuffer_EndPrimary( commandBuffer );
+
+	GpuCommandBuffer_SubmitPrimary( commandBuffer );
+
+	const Microseconds_t t3 = GetTimeMicroseconds();
+
+	cpuTimes[PROFILE_TIME_TIME_WARP] = ( t1 - t0 ) * ( 1.0f / 1000.0f );
+	cpuTimes[PROFILE_TIME_BAR_GRAPHS] = ( t2 - t1 ) * ( 1.0f / 1000.0f );
+	cpuTimes[PROFILE_TIME_BLIT] = ( t3 - t2 ) * ( 1.0f / 1000.0f );
+
+	const float barGraphGpuTime = TimeWarpBarGraphs_GetGpuMillisecondsCompute( bargraphs );
+
+	gpuTimes[PROFILE_TIME_TIME_WARP] = GpuTimer_GetMilliseconds( &compute->timeWarpGpuTime ) - barGraphGpuTime;
+	gpuTimes[PROFILE_TIME_BAR_GRAPHS] = barGraphGpuTime;
+	gpuTimes[PROFILE_TIME_BLIT] = 0.0f;
+
+#if GL_FINISH_SYNC == 1
+	GL( glFinish() );
+#endif
+}
+
+#else
+
+typedef struct
+{
+	int		empty;
+} TimeWarpCompute_t;
+
+static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, GpuRenderPass_t * renderPass, GpuWindow_t * window )
+{
+	UNUSED_PARM( context );
+	UNUSED_PARM( compute );
+	UNUSED_PARM( renderPass );
+	UNUSED_PARM( window );
+}
+
+static void TimeWarpCompute_Destroy( GpuContext_t * context, TimeWarpCompute_t * compute )
+{
+	UNUSED_PARM( context );
+	UNUSED_PARM( compute );
+}
+
+static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpCompute_t * compute,
+									GpuFramebuffer_t * framebuffer,
+									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
+									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
+									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
+									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
+									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] )
+{
+	UNUSED_PARM( commandBuffer );
+	UNUSED_PARM( compute );
+	UNUSED_PARM( framebuffer );
+	UNUSED_PARM( refreshStartTime );
+	UNUSED_PARM( refreshEndTime );
+	UNUSED_PARM( viewMatrix );
+	UNUSED_PARM( eyeTexture );
+	UNUSED_PARM( eyeArrayLayer );
+	UNUSED_PARM( correctChromaticAberration );
+	UNUSED_PARM( bargraphs );
+	UNUSED_PARM( cpuTimes );
+	UNUSED_PARM( gpuTimes );
+}
+
+#endif
+
+/*
+================================================================================================================================
+
+Time warp rendering.
+
+TimeWarp_t
+
+static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window );
+static void TimeWarp_Destroy( TimeWarp_t * timeWarp, GpuWindow_t * window );
+
+static void TimeWarp_SetBarGraphState( TimeWarp_t * timeWarp, const BarGraphState_t state );
+static void TimeWarp_CycleBarGraphState( TimeWarp_t * timeWarp );
+static void TimeWarp_SetImplementation( TimeWarp_t * timeWarp, const TimeWarpImplementation_t implementation );
+static void TimeWarp_CycleImplementation( TimeWarp_t * timeWarp );
+static void TimeWarp_SetChromaticAberrationCorrection( TimeWarp_t * timeWarp, const bool set );
+static void TimeWarp_ToggleChromaticAberrationCorrection( TimeWarp_t * timeWarp );
+static void TimeWarp_SetMultiView( TimeWarp_t * timeWarp, const bool enabled );
+static void TimeWarp_SetDrawCallLevel( TimeWarp_t * timeWarp, const int level );
+static void TimeWarp_SetTriangleLevel( TimeWarp_t * timeWarp, const int level );
+static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level );
+static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level );
+
+static Microseconds_t TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp, const Microseconds_t displayTime,
+											const Matrix4x4f_t * viewMatrix, const Matrix4x4_t * projectionMatrix,
+											GpuTexture_t * eyeTexture[2], GpuFence_t * eyeCompletionFence[2],
+											int eyeArrayLayer[2], float eyeTexturesCpuTime, float eyeTexturesGpuTime );
+static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window );
+
+================================================================================================================================
+*/
+
+#define AVERAGE_FRAME_RATE_FRAMES		20
+
+typedef enum
+{
+	TIMEWARP_IMPLEMENTATION_GRAPHICS,
+	TIMEWARP_IMPLEMENTATION_COMPUTE,
+	TIMEWARP_IMPLEMENTATION_MAX
+} TimeWarpImplementation_t;
+
+typedef struct
+{
+	int							index;
+	Microseconds_t				displayTime;
+	Matrix4x4f_t				viewMatrix;
+	Matrix4x4f_t				projectionMatrix;
+	GpuTexture_t *				texture[NUM_EYES];
+	GpuFence_t *				completionFence[NUM_EYES];
+	int							arrayLayer[NUM_EYES];
+	float						cpuTime;
+	float						gpuTime;
+} EyeTextures_t;
+
+typedef struct
+{
+	GpuTexture_t				defaultTexture;
+	Microseconds_t				displayTime;
+	Matrix4x4f_t				viewMatrix;
+	Matrix4x4f_t				projectionMatrix;
+	GpuTexture_t *				eyeTexture[NUM_EYES];
+	int							eyeArrayLayer[NUM_EYES];
+
+	Mutex_t						newEyeTexturesMutex;
+	Signal_t					newEyeTexturesConsumed;
+	EyeTextures_t				newEyeTextures;
+	int							eyeTexturesPresentIndex;
+	int							eyeTexturesConsumedIndex;
+	Microseconds_t				nextDisplayTime;
+
+	float						refreshRate;
+	Microseconds_t				frameCpuTime[AVERAGE_FRAME_RATE_FRAMES];
+	int							eyeTexturesFrames[AVERAGE_FRAME_RATE_FRAMES];
+	int							timeWarpFrames;
+	float						cpuTimes[PROFILE_TIME_MAX];
+	float						gpuTimes[PROFILE_TIME_MAX];
+
+	GpuRenderPass_t				renderPass;
+	GpuFramebuffer_t			framebuffer;
+	GpuCommandBuffer_t			commandBuffer;
+	bool						correctChromaticAberration;
+	TimeWarpImplementation_t	implementation;
+	TimeWarpGraphics_t			graphics;
+	TimeWarpCompute_t			compute;
+	TimeWarpBarGraphs_t			bargraphs;
+} TimeWarp_t;
+
+static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
+{
+	GpuTexture_CreateDefault( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_DEFAULT_CIRCLES, 1024, 1024, 1, 2, 1, false, true );
+	GpuTexture_SetWrapMode( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
+
+	Mutex_Create( &timeWarp->newEyeTexturesMutex );
+	Signal_Create( &timeWarp->newEyeTexturesConsumed, true );
+	Signal_Raise( &timeWarp->newEyeTexturesConsumed );
+
+	timeWarp->newEyeTextures.index = 0;
+	timeWarp->newEyeTextures.displayTime = 0;
+	Matrix4x4f_CreateIdentity( &timeWarp->newEyeTextures.viewMatrix );
+	Matrix4x4f_CreateProjectionFov( &timeWarp->newEyeTextures.projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		timeWarp->newEyeTextures.texture[eye] = &timeWarp->defaultTexture;
+		timeWarp->newEyeTextures.completionFence[eye] = NULL;
+		timeWarp->newEyeTextures.arrayLayer[eye] = eye;
+	}
+	timeWarp->newEyeTextures.cpuTime = 0.0f;
+	timeWarp->newEyeTextures.gpuTime = 0.0f;
+
+	timeWarp->displayTime = 0;
+	timeWarp->viewMatrix = timeWarp->newEyeTextures.viewMatrix;
+	timeWarp->projectionMatrix = timeWarp->newEyeTextures.projectionMatrix;
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		timeWarp->eyeTexture[eye] = timeWarp->newEyeTextures.texture[eye];
+		timeWarp->eyeArrayLayer[eye] = timeWarp->newEyeTextures.arrayLayer[eye];
+	}
+
+	timeWarp->eyeTexturesPresentIndex = 1;
+	timeWarp->eyeTexturesConsumedIndex = 0;
+	timeWarp->nextDisplayTime = 0;
+
+	timeWarp->refreshRate = window->windowRefreshRate;
+	for ( int i = 0; i < AVERAGE_FRAME_RATE_FRAMES; i++ )
+	{
+		timeWarp->frameCpuTime[i] = 0;
+		timeWarp->eyeTexturesFrames[i] = 0;
+	}
+	timeWarp->timeWarpFrames = 0;
+
+	GpuRenderPass_Create( &window->context, &timeWarp->renderPass, window->colorFormat, window->depthFormat,
+							GPU_SAMPLE_COUNT_1, GPU_RENDERPASS_TYPE_INLINE,
+							GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER );
+	GpuFramebuffer_CreateFromSwapchain( window, &timeWarp->framebuffer, &timeWarp->renderPass );
+	GpuCommandBuffer_Create( &window->context, &timeWarp->commandBuffer, GPU_COMMAND_BUFFER_TYPE_PRIMARY, GpuFramebuffer_GetBufferCount( &timeWarp->framebuffer ) );
+
+	timeWarp->correctChromaticAberration = false;
+	timeWarp->implementation = TIMEWARP_IMPLEMENTATION_GRAPHICS;
+	TimeWarpGraphics_Create( &window->context, &timeWarp->graphics, &timeWarp->renderPass );
+	TimeWarpCompute_Create( &window->context, &timeWarp->compute, &timeWarp->renderPass, window );
+	TimeWarpBarGraphs_Create( &window->context, &timeWarp->bargraphs, &timeWarp->renderPass );
+
+	memset( timeWarp->cpuTimes, 0, sizeof( timeWarp->cpuTimes ) );
+	memset( timeWarp->gpuTimes, 0, sizeof( timeWarp->gpuTimes ) );
+}
+
+static void TimeWarp_Destroy( TimeWarp_t * timeWarp, GpuWindow_t * window )
+{
+	GpuContext_WaitIdle( &window->context );
+
+	TimeWarpGraphics_Destroy( &window->context, &timeWarp->graphics );
+	TimeWarpCompute_Destroy( &window->context, &timeWarp->compute );
+	TimeWarpBarGraphs_Destroy( &window->context, &timeWarp->bargraphs );
+
+	GpuCommandBuffer_Destroy( &window->context, &timeWarp->commandBuffer );
+	GpuFramebuffer_Destroy( &window->context, &timeWarp->framebuffer );
+	GpuRenderPass_Destroy( &window->context, &timeWarp->renderPass );
+
+	Signal_Destroy( &timeWarp->newEyeTexturesConsumed );
+	Mutex_Destroy( &timeWarp->newEyeTexturesMutex );
+
+	GpuTexture_Destroy( &window->context, &timeWarp->defaultTexture );
+}
+
+static void TimeWarp_SetBarGraphState( TimeWarp_t * timeWarp, const BarGraphState_t state )
+{
+	timeWarp->bargraphs.barGraphState = state;
+}
+
+static void TimeWarp_CycleBarGraphState( TimeWarp_t * timeWarp )
+{
+	timeWarp->bargraphs.barGraphState = (BarGraphState_t)( ( timeWarp->bargraphs.barGraphState + 1 ) % 3 );
+}
+
+static void TimeWarp_SetImplementation( TimeWarp_t * timeWarp, const TimeWarpImplementation_t implementation )
+{
+	timeWarp->implementation = implementation;
+	const float delta = ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS ) ? 0.0f : 1.0f;
+	BarGraph_AddBar( &timeWarp->bargraphs.timeWarpImplementationBarGraph, 0, delta, &colorRed, false );
+}
+
+static void TimeWarp_CycleImplementation( TimeWarp_t * timeWarp )
+{
+	timeWarp->implementation = (TimeWarpImplementation_t)( ( timeWarp->implementation + 1 ) % TIMEWARP_IMPLEMENTATION_MAX );
+#if OPENGL_COMPUTE_ENABLED == 0
+	if ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_COMPUTE )
+	{
+		timeWarp->implementation = (TimeWarpImplementation_t)( ( timeWarp->implementation + 1 ) % TIMEWARP_IMPLEMENTATION_MAX );
+	}
+#endif
+	const float delta = ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS ) ? 0.0f : 1.0f;
+	BarGraph_AddBar( &timeWarp->bargraphs.timeWarpImplementationBarGraph, 0, delta, &colorRed, false );
+}
+
+static void TimeWarp_SetChromaticAberrationCorrection( TimeWarp_t * timeWarp, const bool set )
+{
+	timeWarp->correctChromaticAberration = set;
+	BarGraph_AddBar( &timeWarp->bargraphs.correctChromaticAberrationBarGraph, 0, timeWarp->correctChromaticAberration ? 1.0f : 0.0f, &colorRed, false );
+}
+
+static void TimeWarp_ToggleChromaticAberrationCorrection( TimeWarp_t * timeWarp )
+{
+	timeWarp->correctChromaticAberration = !timeWarp->correctChromaticAberration;
+	BarGraph_AddBar( &timeWarp->bargraphs.correctChromaticAberrationBarGraph, 0, timeWarp->correctChromaticAberration ? 1.0f : 0.0f, &colorRed, false );
+}
+
+static void TimeWarp_SetMultiView( TimeWarp_t * timeWarp, const bool enabled )
+{
+	BarGraph_AddBar( &timeWarp->bargraphs.multiViewBarGraph, 0, enabled ? 1.0f : 0.0f, &colorRed, false );
+}
+
+static void TimeWarp_SetDrawCallLevel( TimeWarp_t * timeWarp, const int level )
+{
+	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
+	for ( int i = 0; i < 4; i++ )
+	{
+		BarGraph_AddBar( &timeWarp->bargraphs.sceneDrawCallLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
+	}
+}
+
+static void TimeWarp_SetTriangleLevel( TimeWarp_t * timeWarp, const int level )
+{
+	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
+	for ( int i = 0; i < 4; i++ )
+	{
+		BarGraph_AddBar( &timeWarp->bargraphs.sceneTriangleLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
+	}
+}
+
+static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level )
+{
+	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
+	for ( int i = 0; i < 4; i++ )
+	{
+		BarGraph_AddBar( &timeWarp->bargraphs.sceneFragmentLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
+	}
+}
+
+static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level )
+{
+	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
+	for ( int i = 0; i < 4; i++ )
+	{
+		BarGraph_AddBar( &timeWarp->bargraphs.sceneSamplesLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
+	}
+}
+
+static Microseconds_t TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp, const Microseconds_t displayTime,
+											const Matrix4x4f_t * viewMatrix, const Matrix4x4f_t * projectionMatrix,
+											GpuTexture_t * eyeTexture[2], GpuFence_t * eyeCompletionFence[2],
+											int eyeArrayLayer[2], float eyeTexturesCpuTime, float eyeTexturesGpuTime )
+{
+	EyeTextures_t newEyeTextures;
+	newEyeTextures.index = timeWarp->eyeTexturesPresentIndex++;
+	newEyeTextures.displayTime = displayTime;
+	newEyeTextures.viewMatrix = *viewMatrix;
+	newEyeTextures.projectionMatrix = *projectionMatrix;
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		newEyeTextures.texture[eye] = eyeTexture[eye];
+		newEyeTextures.completionFence[eye] = eyeCompletionFence[eye];
+		newEyeTextures.arrayLayer[eye] = eyeArrayLayer[eye];
+	}
+	newEyeTextures.cpuTime = eyeTexturesCpuTime;
+	newEyeTextures.gpuTime = eyeTexturesGpuTime;
+
+	Signal_Wait( &timeWarp->newEyeTexturesConsumed, -1 );
+
+	Mutex_Lock( &timeWarp->newEyeTexturesMutex, true );
+	timeWarp->newEyeTextures = newEyeTextures;
+	const Microseconds_t nextDisplayTime = timeWarp->nextDisplayTime;
+	Mutex_Unlock( &timeWarp->newEyeTexturesMutex );
+
+	return nextDisplayTime;
+}
+
+static void TimeWarp_ConsumeNewEyeTextures( GpuContext_t * context, TimeWarp_t * timeWarp, const Microseconds_t nextDisplayTime )
+{
+	timeWarp->eyeTexturesFrames[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES] = 0;
+
+	// Never block the time warp thread.
+	if ( !Mutex_Lock( &timeWarp->newEyeTexturesMutex, false ) )
+	{
+		return;
+	}
+	EyeTextures_t newEyeTextures = timeWarp->newEyeTextures;
+	timeWarp->nextDisplayTime = nextDisplayTime;
+	Mutex_Unlock( &timeWarp->newEyeTexturesMutex );
+
+	if ( newEyeTextures.index > timeWarp->eyeTexturesConsumedIndex &&
+			GpuFence_IsSignalled( context, newEyeTextures.completionFence[0] ) &&
+				GpuFence_IsSignalled( context, newEyeTextures.completionFence[1] ) )
+	{
+		assert( newEyeTextures.index == timeWarp->eyeTexturesConsumedIndex + 1 );
+		timeWarp->eyeTexturesConsumedIndex = newEyeTextures.index;
+		timeWarp->displayTime = newEyeTextures.displayTime;
+		timeWarp->projectionMatrix = newEyeTextures.projectionMatrix;
+		timeWarp->viewMatrix = newEyeTextures.viewMatrix;
+		for ( int eye = 0; eye < NUM_EYES; eye++ )
+		{
+			timeWarp->eyeTexture[eye] = newEyeTextures.texture[eye];
+			timeWarp->eyeArrayLayer[eye] = newEyeTextures.arrayLayer[eye];
+		}
+		timeWarp->cpuTimes[PROFILE_TIME_EYE_TEXTURES] = newEyeTextures.cpuTime;
+		timeWarp->gpuTimes[PROFILE_TIME_EYE_TEXTURES] = newEyeTextures.gpuTime;
+		timeWarp->eyeTexturesFrames[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES] = 1;
+		Signal_Raise( &timeWarp->newEyeTexturesConsumed );
+	}
+}
+
+static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window )
+{
+	const Microseconds_t nextSwapTime = GpuWindow_GetNextSwapTime( window );
+	const Microseconds_t predTime = 2 * GpuWindow_GetFrameTimeMicroseconds( window );
+
+	TimeWarp_ConsumeNewEyeTextures( &window->context, timeWarp, nextSwapTime + predTime );
+
+	// Calculate the eye texture and time warp frame rates.
+	float timeWarpFrameRate = timeWarp->refreshRate;
+	float eyeTexturesFrameRate = timeWarp->refreshRate;
+	{
+		Microseconds_t lastTime = timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES];
+		Microseconds_t time = nextSwapTime;
+		timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES] = time;
+		timeWarp->timeWarpFrames++;
+		if ( timeWarp->timeWarpFrames > AVERAGE_FRAME_RATE_FRAMES )
+		{
+			int timeWarpFrames = AVERAGE_FRAME_RATE_FRAMES;
+			int eyeTexturesFrames = 0;
+			for ( int i = 0; i < AVERAGE_FRAME_RATE_FRAMES; i++ )
+			{
+				eyeTexturesFrames += timeWarp->eyeTexturesFrames[i];
+			}
+
+			timeWarpFrameRate = timeWarpFrames * 1000.0f * 1000.0f / ( time - lastTime );
+			eyeTexturesFrameRate = eyeTexturesFrames * 1000.0f * 1000.0f / ( time - lastTime );
+		}
+	}
+
+	// Update the bar graphs if not paused.
+	if ( timeWarp->bargraphs.barGraphState == BAR_GRAPH_VISIBLE )
+	{
+		const Vector4f_t * eyeTexturesFrameRateColor = ( eyeTexturesFrameRate > timeWarp->refreshRate - 0.5f ) ? &colorPurple : &colorRed;
+		const Vector4f_t * timeWarpFrameRateColor = ( timeWarpFrameRate > timeWarp->refreshRate - 0.5f ) ? &colorGreen : &colorRed;
+
+		BarGraph_AddBar( &timeWarp->bargraphs.eyeTexturesFrameRateGraph, 0, eyeTexturesFrameRate / timeWarp->refreshRate, eyeTexturesFrameRateColor, true );
+		BarGraph_AddBar( &timeWarp->bargraphs.timeWarpFrameRateGraph, 0, timeWarpFrameRate / timeWarp->refreshRate, timeWarpFrameRateColor, true );
+
+		for ( int i = 0; i < 2; i++ )
+		{
+			const float * times = ( i == 0 ) ? timeWarp->cpuTimes : timeWarp->gpuTimes;
+			float barHeights[PROFILE_TIME_MAX];
+			float totalBarHeight = 0.0f;
+			for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
+			{
+				barHeights[p] = times[p] * timeWarp->refreshRate * ( 1.0f / 1000.0f );
+				totalBarHeight += barHeights[p];
+			}
+
+			const float limit = 0.9f;
+			if ( totalBarHeight > limit )
+			{
+				totalBarHeight = 0.0f;
+				for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
+				{
+					barHeights[p] = ( totalBarHeight + barHeights[p] > limit ) ? ( limit - totalBarHeight ) : barHeights[p];
+					totalBarHeight += barHeights[p];
+				}
+				barHeights[PROFILE_TIME_OVERFLOW] = 1.0f - limit;
+			}
+
+			BarGraph_t * barGraph = ( i == 0 ) ? &timeWarp->bargraphs.frameCpuTimeBarGraph : &timeWarp->bargraphs.frameGpuTimeBarGraph;
+			for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
+			{
+				BarGraph_AddBar( barGraph, p, barHeights[p], profileTimeBarColors[p], ( p == PROFILE_TIME_MAX - 1 ) );
+			}
+		}
+	}
+
+	FrameLog_BeginFrame();
+
+	const Microseconds_t refreshStartTime = nextSwapTime;
+	const Microseconds_t refreshEndTime = refreshStartTime /* + refresh time for incremental display refresh */;
+
+	if ( refreshStartTime != timeWarp->displayTime )
+	{
+		int i = 0;
+		i++;
+	}
+
+	if ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS )
+	{
+		TimeWarpGraphics_Render( &timeWarp->commandBuffer, &timeWarp->graphics, &timeWarp->framebuffer, &timeWarp->renderPass,
+								refreshStartTime, refreshEndTime,
+								&timeWarp->projectionMatrix, &timeWarp->viewMatrix,
+								timeWarp->eyeTexture, timeWarp->eyeArrayLayer, timeWarp->correctChromaticAberration,
+								&timeWarp->bargraphs, timeWarp->cpuTimes, timeWarp->gpuTimes );
+	}
+	else if ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_COMPUTE )
+	{
+		TimeWarpCompute_Render( &timeWarp->commandBuffer, &timeWarp->compute, &timeWarp->framebuffer,
+								refreshStartTime, refreshEndTime,
+								&timeWarp->projectionMatrix, &timeWarp->viewMatrix,
+								timeWarp->eyeTexture, timeWarp->eyeArrayLayer, timeWarp->correctChromaticAberration,
+								&timeWarp->bargraphs, timeWarp->cpuTimes, timeWarp->gpuTimes );
+	}
+
+	const int gpuTimeFramesDelayed = ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS ) ? GPU_TIMER_FRAMES_DELAYED : 0;
+
+	FrameLog_EndFrame(	timeWarp->cpuTimes[PROFILE_TIME_TIME_WARP] +
+						timeWarp->cpuTimes[PROFILE_TIME_BAR_GRAPHS] +
+						timeWarp->cpuTimes[PROFILE_TIME_BLIT],
+						timeWarp->gpuTimes[PROFILE_TIME_TIME_WARP] +
+						timeWarp->gpuTimes[PROFILE_TIME_BAR_GRAPHS] +
+						timeWarp->gpuTimes[PROFILE_TIME_BLIT], gpuTimeFramesDelayed );
+}
+
+/*
+================================================================================================================================
+
 ViewState_t
 
 static void ViewState_Init( ViewState_t * viewState, const float interpupillaryDistance );
@@ -11258,17 +13298,13 @@ typedef struct ViewState_t
 	Vector3f_t					viewRotationalVelocity;
 	Vector3f_t					viewTranslation;
 	Vector3f_t					viewRotation;
-	Matrix4x4f_t				hmdViewMatrix;
-	Matrix4x4f_t				centerViewMatrix;
-	// Per view matrices.
-	Matrix4x4f_t				viewMatrix[NUM_EYES];
-	Matrix4x4f_t				projectionMatrix[NUM_EYES];
-	Matrix4x4f_t				viewInverseMatrix[NUM_EYES];
-	Matrix4x4f_t				projectionInverseMatrix[NUM_EYES];
-	// Combined matrices containing all views.
-	Matrix4x4f_t				combinedViewMatrix;
-	Matrix4x4f_t				combinedProjectionMatrix;
-	Matrix4x4f_t				combinedViewProjectionMatrix;
+	Matrix4x4f_t				hmdViewMatrix;						// HMD view matrix.
+	Matrix4x4f_t				centerViewMatrix;					// Center eye view matrix.
+	Matrix4x4f_t				viewMatrix[NUM_EYES];				// Per eye view matrix.
+	Matrix4x4f_t				projectionMatrix[NUM_EYES];			// Per eye projection matrix.
+	Matrix4x4f_t				viewInverseMatrix[NUM_EYES];		// Per eye inverse view matrix.
+	Matrix4x4f_t				projectionInverseMatrix[NUM_EYES];	// Per eye inverse projection matrix.
+	Matrix4x4f_t				combinedViewProjectionMatrix;		// Combined matrix containing all views for culling.
 } ViewState_t;
 
 static void ViewState_DerivedData( ViewState_t * viewState )
@@ -11279,15 +13315,19 @@ static void ViewState_DerivedData( ViewState_t * viewState )
 		Matrix4x4f_Invert( &viewState->projectionInverseMatrix[eye], &viewState->projectionMatrix[eye] );
 	}
 
-	viewState->combinedProjectionMatrix = viewState->projectionMatrix[0];
-	viewState->combinedProjectionMatrix.m[0][0] = viewState->projectionMatrix[0].m[0][0] / ( fabsf( viewState->projectionMatrix[0].m[0][2] ) + 1.0f );
-	viewState->combinedProjectionMatrix.m[0][2] = 0.0f;
+	// Derive a combined view and projection matrix that encapsulates both views.
+	Matrix4x4f_t combinedProjectionMatrix;
+	combinedProjectionMatrix = viewState->projectionMatrix[0];
+	combinedProjectionMatrix.m[0][0] = viewState->projectionMatrix[0].m[0][0] / ( fabsf( viewState->projectionMatrix[0].m[2][0] ) + 1.0f );
+	combinedProjectionMatrix.m[2][0] = 0.0f;
  
 	Matrix4x4f_t moveBackMatrix;
-	Matrix4x4f_CreateTranslation( &moveBackMatrix, 0.0f, 0.0f, -0.5f * viewState->interpupillaryDistance * viewState->combinedProjectionMatrix.m[0][0] );
-	Matrix4x4f_Multiply( &viewState->combinedViewMatrix, &moveBackMatrix, &viewState->centerViewMatrix );
+	Matrix4x4f_CreateTranslation( &moveBackMatrix, 0.0f, 0.0f, -0.5f * viewState->interpupillaryDistance * combinedProjectionMatrix.m[0][0] );
 
-	Matrix4x4f_Multiply( &viewState->combinedViewProjectionMatrix, &viewState->combinedProjectionMatrix, &viewState->combinedViewMatrix );
+	Matrix4x4f_t combinedViewMatrix;
+	Matrix4x4f_Multiply( &combinedViewMatrix, &moveBackMatrix, &viewState->centerViewMatrix );
+
+	Matrix4x4f_Multiply( &viewState->combinedViewProjectionMatrix, &combinedProjectionMatrix, &combinedViewMatrix );
 }
 
 static void ViewState_Init( ViewState_t * viewState, const float interpupillaryDistance )
@@ -11395,7 +13435,10 @@ static void ViewState_HandleInput( ViewState_t * viewState, GpuWindowInput_t * i
 	Matrix4x4f_t viewTranslation;
 	Matrix4x4f_CreateTranslation( &viewTranslation, -viewState->viewTranslation.x, -viewState->viewTranslation.y, -viewState->viewTranslation.z );
 
-	Matrix4x4f_Multiply( &viewState->centerViewMatrix, &viewRotationTranspose, &viewTranslation );
+	Matrix4x4f_t inputViewMatrix;
+	Matrix4x4f_Multiply( &inputViewMatrix, &viewRotationTranspose, &viewTranslation );
+
+	Matrix4x4f_Multiply( &viewState->centerViewMatrix, &viewState->hmdViewMatrix, &inputViewMatrix );
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
@@ -11427,6 +13470,632 @@ static void ViewState_HandleHmd( ViewState_t * viewState, const Microseconds_t t
 	ViewState_DerivedData( viewState );
 }
 
+/*
+================================================================================================================================
+
+Scene rendering.
+
+PerfScene_t
+SceneSettings_t
+
+static void PerfScene_Create( GpuContext_t * context, PerfScene_t * scene, SceneSettings_t * settings, GpuRenderPass_t * renderPass );
+static void PerfScene_Destroy( GpuContext_t * context, PerfScene_t * scene );
+static void PerfScene_Simulate( PerfScene_t * scene, ViewState_t * viewState, const Microseconds_t time );
+static void PerfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, PerfScene_t * scene, ViewState_t * viewState );
+static void PerfScene_Render( GpuCommandBuffer_t * commandBuffer, PerfScene_t * scene, ViewState_t * viewState );
+
+static void SceneSettings_ToggleSimulationPaused( SceneSettings_t * settings );
+static void SceneSettings_ToggleMultiView( SceneSettings_t * settings );
+static void SceneSettings_SetSimulationPaused( SceneSettings_t * settings, const bool set );
+static void SceneSettings_SetMultiView( SceneSettings_t * settings, const bool set );
+static bool SceneSettings_GetSimulationPaused( SceneSettings_t * settings );
+static bool SceneSettings_GetMultiView( SceneSettings_t * settings );
+static void SceneSettings_CycleDrawCallLevel( SceneSettings_t * settings );
+static void SceneSettings_CycleTriangleLevel( SceneSettings_t * settings );
+static void SceneSettings_CycleFragmentLevel( SceneSettings_t * settings );
+static void SceneSettings_CycleSamplesLevel( SceneSettings_t * settings );
+static void SceneSettings_SetDrawCallLevel( SceneSettings_t * settings, const int level );
+static void SceneSettings_SetTriangleLevel( SceneSettings_t * settings, const int level );
+static void SceneSettings_SetFragmentLevel( SceneSettings_t * settings, const int level );
+static void SceneSettings_SetSamplesLevel( SceneSettings_t * settings, const int level );
+static int SceneSettings_GetDrawCallLevel( const SceneSettings_t * settings );
+static int SceneSettings_GetTriangleLevel( const SceneSettings_t * settings );
+static int SceneSettings_GetFragmentLevel( const SceneSettings_t * settings );
+static int SceneSettings_GetSamplesLevel( const SceneSettings_t * settings );
+
+================================================================================================================================
+*/
+
+#define MAX_SCENE_DRAWCALL_LEVELS	4
+#define MAX_SCENE_TRIANGLE_LEVELS	4
+#define MAX_SCENE_FRAGMENT_LEVELS	4
+#define MAX_SCENE_SAMPLES_LEVELS	4
+
+typedef struct
+{
+	bool	simulationPaused;
+	bool	useMultiView;
+	int		drawCallLevel;
+	int		triangleLevel;
+	int		fragmentLevel;
+	int		samplesLevel;
+	int		maxSamplesLevels;
+} SceneSettings_t;
+
+static void SceneSettings_Init( GpuContext_t * context, SceneSettings_t * settings )
+{
+	settings->simulationPaused = false;
+	settings->useMultiView = false;
+	settings->drawCallLevel = 0;
+	settings->triangleLevel = 0;
+	settings->fragmentLevel = 0;
+	settings->samplesLevel = 0;
+
+	const int maxSamplesLevels = IntegerLog2( glGetInteger( GL_MAX_SAMPLES ) + 1 );
+	settings->maxSamplesLevels = ( maxSamplesLevels < MAX_SCENE_SAMPLES_LEVELS ) ? maxSamplesLevels : MAX_SCENE_SAMPLES_LEVELS;
+
+	UNUSED_PARM( context );
+}
+
+static void CycleLevel( int * x, const int max ) { (*x) = ( (*x) + 1 ) % max; }
+
+static void SceneSettings_ToggleSimulationPaused( SceneSettings_t * settings ) { settings->simulationPaused = !settings->simulationPaused; }
+static void SceneSettings_ToggleMultiView( SceneSettings_t * settings ) { settings->useMultiView = !settings->useMultiView; }
+
+static void SceneSettings_SetSimulationPaused( SceneSettings_t * settings, const bool set ) { settings->simulationPaused = set; }
+static void SceneSettings_SetMultiView( SceneSettings_t * settings, const bool set ) { settings->useMultiView = set; }
+
+static bool SceneSettings_GetSimulationPaused( SceneSettings_t * settings ) { return settings->simulationPaused; }
+static bool SceneSettings_GetMultiView( SceneSettings_t * settings ) { return settings->useMultiView; }
+
+static void SceneSettings_CycleDrawCallLevel( SceneSettings_t * settings ) { CycleLevel( &settings->drawCallLevel, MAX_SCENE_DRAWCALL_LEVELS ); }
+static void SceneSettings_CycleTriangleLevel( SceneSettings_t * settings ) { CycleLevel( &settings->triangleLevel, MAX_SCENE_TRIANGLE_LEVELS ); }
+static void SceneSettings_CycleFragmentLevel( SceneSettings_t * settings ) { CycleLevel( &settings->fragmentLevel, MAX_SCENE_FRAGMENT_LEVELS ); }
+static void SceneSettings_CycleSamplesLevel( SceneSettings_t * settings ) { CycleLevel( &settings->samplesLevel, settings->maxSamplesLevels ); }
+
+static void SceneSettings_SetDrawCallLevel( SceneSettings_t * settings, const int level ) { settings->drawCallLevel = level; }
+static void SceneSettings_SetTriangleLevel( SceneSettings_t * settings, const int level ) { settings->triangleLevel = level; }
+static void SceneSettings_SetFragmentLevel( SceneSettings_t * settings, const int level ) { settings->fragmentLevel = level; }
+static void SceneSettings_SetSamplesLevel( SceneSettings_t * settings, const int level ) { settings->samplesLevel = ( level < settings->maxSamplesLevels ) ? level : settings->maxSamplesLevels; }
+
+static int SceneSettings_GetDrawCallLevel( const SceneSettings_t * settings ) { return settings->drawCallLevel; }
+static int SceneSettings_GetTriangleLevel( const SceneSettings_t * settings ) { return settings->triangleLevel; }
+static int SceneSettings_GetFragmentLevel( const SceneSettings_t * settings ) { return settings->fragmentLevel; }
+static int SceneSettings_GetSamplesLevel( const SceneSettings_t * settings ) { return settings->samplesLevel; }
+
+typedef struct
+{
+	// assets
+	GpuGeometry_t			geometry[MAX_SCENE_TRIANGLE_LEVELS];
+	GpuGraphicsProgram_t	program[MAX_SCENE_FRAGMENT_LEVELS];
+	GpuGraphicsPipeline_t	pipelines[MAX_SCENE_TRIANGLE_LEVELS][MAX_SCENE_FRAGMENT_LEVELS];
+	GpuBuffer_t				sceneMatrices;
+	GpuTexture_t			diffuseTexture;
+	GpuTexture_t			specularTexture;
+	GpuTexture_t			normalTexture;
+	SceneSettings_t			settings;
+	SceneSettings_t *		newSettings;
+	// simulation state
+	float					bigRotationX;
+	float					bigRotationY;
+	float					smallRotationX;
+	float					smallRotationY;
+	Matrix4x4f_t *			modelMatrix;
+} PerfScene_t;
+
+enum
+{
+	PROGRAM_UNIFORM_MODEL_MATRIX,
+	PROGRAM_UNIFORM_SCENE_MATRICES,
+	PROGRAM_TEXTURE_0,
+	PROGRAM_TEXTURE_1,
+	PROGRAM_TEXTURE_2
+};
+
+static GpuProgramParm_t flatShadedProgramParms[] =
+{
+	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_MODEL_MATRIX,		"ModelMatrix",		0 },
+	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_SCENE_MATRICES,		"SceneMatrices",	0 }
+};
+
+static const char flatShadedVertexProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"uniform mat4 ModelMatrix;\n"
+	"uniform SceneMatrices\n"
+	"{\n"
+	"	mat4 ViewMatrix;\n"
+	"	mat4 ProjectionMatrix;\n"
+	"} ub;\n"
+	"in vec3 vertexPosition;\n"
+	"in vec3 vertexNormal;\n"
+	"out vec3 fragmentEyeDir;\n"
+	"out vec3 fragmentNormal;\n"
+	"out gl_PerVertex { vec4 gl_Position; };\n"
+	"vec3 multiply3x3( mat4 m, vec3 v )\n"
+	"{\n"
+	"	return vec3(\n"
+	"		m[0].x * v.x + m[1].x * v.y + m[2].x * v.z,\n"
+	"		m[0].y * v.x + m[1].y * v.y + m[2].y * v.z,\n"
+	"		m[0].z * v.x + m[1].z * v.y + m[2].z * v.z );\n"
+	"}\n"
+	"vec3 transposeMultiply3x3( mat4 m, vec3 v )\n"
+	"{\n"
+	"	return vec3(\n"
+	"		m[0].x * v.x + m[0].y * v.y + m[0].z * v.z,\n"
+	"		m[1].x * v.x + m[1].y * v.y + m[1].z * v.z,\n"
+	"		m[2].x * v.x + m[2].y * v.y + m[2].z * v.z );\n"
+	"}\n"
+	"void main( void )\n"
+	"{\n"
+	"	vec4 vertexWorldPos = ModelMatrix * vec4( vertexPosition, 1.0 );\n"
+	"	vec3 eyeWorldPos = transposeMultiply3x3( ub.ViewMatrix, -vec3( ub.ViewMatrix[3] ) );\n"
+	"	gl_Position = ub.ProjectionMatrix * ( ub.ViewMatrix * vertexWorldPos );\n"
+	"	fragmentEyeDir = eyeWorldPos - vec3( vertexWorldPos );\n"
+	"	fragmentNormal = multiply3x3( ModelMatrix, vertexNormal );\n"
+	"}\n";
+
+static const char flatShadedMultiViewVertexProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"#define NUM_VIEWS 2\n"
+	"#define VIEW_ID gl_ViewID_OVR\n"
+	"#extension GL_OVR_multiview2 : require\n"
+	"layout( num_views = NUM_VIEWS ) in;\n"
+	"\n"
+	"uniform mat4 ModelMatrix;\n"
+	"uniform SceneMatrices\n"
+	"{\n"
+	"	mat4 ViewMatrix[NUM_VIEWS];\n"
+	"	mat4 ProjectionMatrix[NUM_VIEWS];\n"
+	"} ub;\n"
+	"in vec3 vertexPosition;\n"
+	"in vec3 vertexNormal;\n"
+	"out vec3 fragmentEyeDir;\n"
+	"out vec3 fragmentNormal;\n"
+	"vec3 multiply3x3( mat4 m, vec3 v )\n"
+	"{\n"
+	"	return vec3(\n"
+	"		m[0].x * v.x + m[1].x * v.y + m[2].x * v.z,\n"
+	"		m[0].y * v.x + m[1].y * v.y + m[2].y * v.z,\n"
+	"		m[0].z * v.x + m[1].z * v.y + m[2].z * v.z );\n"
+	"}\n"
+	"vec3 transposeMultiply3x3( mat4 m, vec3 v )\n"
+	"{\n"
+	"	return vec3(\n"
+	"		m[0].x * v.x + m[0].y * v.y + m[0].z * v.z,\n"
+	"		m[1].x * v.x + m[1].y * v.y + m[1].z * v.z,\n"
+	"		m[2].x * v.x + m[2].y * v.y + m[2].z * v.z );\n"
+	"}\n"
+	"void main( void )\n"
+	"{\n"
+	"	vec4 vertexWorldPos = ModelMatrix * vec4( vertexPosition, 1.0 );\n"
+	"	vec3 eyeWorldPos = transposeMultiply3x3( ub.ViewMatrix[VIEW_ID], -vec3( ub.ViewMatrix[VIEW_ID][3] ) );\n"
+	"	gl_Position = ub.ProjectionMatrix[VIEW_ID] * ( ub.ViewMatrix[VIEW_ID] * vertexWorldPos );\n"
+	"	fragmentEyeDir = eyeWorldPos - vec3( vertexWorldPos );\n"
+	"	fragmentNormal = multiply3x3( ModelMatrix, vertexNormal );\n"
+	"}\n";
+
+static const char flatShadedFragmentProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"in lowp vec3 fragmentEyeDir;\n"
+	"in lowp vec3 fragmentNormal;\n"
+	"out lowp vec4 outColor;\n"
+	"void main()\n"
+	"{\n"
+	"	lowp vec3 diffuseMap = vec3( 0.2, 0.2, 1.0 );\n"
+	"	lowp vec3 specularMap = vec3( 0.5, 0.5, 0.5 );\n"
+	"	lowp float specularPower = 10.0;\n"
+	"	lowp vec3 eyeDir = normalize( fragmentEyeDir );\n"
+	"	lowp vec3 normal = normalize( fragmentNormal );\n"
+	"\n"
+	"	lowp vec3 lightDir = normalize( vec3( -1.0, 1.0, 1.0 ) );\n"
+	"	lowp vec3 lightReflection = normalize( 2.0 * dot( lightDir, normal ) * normal - lightDir );\n"
+	"	lowp vec3 lightDiffuse = diffuseMap * ( max( dot( normal, lightDir ), 0.0 ) * 0.5 + 0.5 );\n"
+	"	lowp vec3 lightSpecular = specularMap * pow( max( dot( lightReflection, eyeDir ), 0.0 ), specularPower );\n"
+	"\n"
+	"	outColor.xyz = lightDiffuse + lightSpecular;\n"
+	"	outColor.w = 1.0;\n"
+	"}\n";
+
+static GpuProgramParm_t normalMappedProgramParms[] =
+{
+	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_MODEL_MATRIX,		"ModelMatrix",		0 },
+	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_SCENE_MATRICES,		"SceneMatrices",	0 },
+	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_TEXTURE_0,					"Texture0",			0 },
+	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_TEXTURE_1,					"Texture1",			1 },
+	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_TEXTURE_2,					"Texture2",			2 }
+};
+
+static const char normalMappedVertexProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"uniform mat4 ModelMatrix;\n"
+	"uniform SceneMatrices\n"
+	"{\n"
+	"	mat4 ViewMatrix;\n"
+	"	mat4 ProjectionMatrix;\n"
+	"} ub;\n"
+	"in vec3 vertexPosition;\n"
+	"in vec3 vertexNormal;\n"
+	"in vec3 vertexTangent;\n"
+	"in vec3 vertexBinormal;\n"
+	"in vec2 vertexUv0;\n"
+	"out vec3 fragmentEyeDir;\n"
+	"out vec3 fragmentNormal;\n"
+	"out vec3 fragmentTangent;\n"
+	"out vec3 fragmentBinormal;\n"
+	"out vec2 fragmentUv0;\n"
+	"out gl_PerVertex { vec4 gl_Position; };\n"
+	"vec3 multiply3x3( mat4 m, vec3 v )\n"
+	"{\n"
+	"	return vec3(\n"
+	"		m[0].x * v.x + m[1].x * v.y + m[2].x * v.z,\n"
+	"		m[0].y * v.x + m[1].y * v.y + m[2].y * v.z,\n"
+	"		m[0].z * v.x + m[1].z * v.y + m[2].z * v.z );\n"
+	"}\n"
+	"vec3 transposeMultiply3x3( mat4 m, vec3 v )\n"
+	"{\n"
+	"	return vec3(\n"
+	"		m[0].x * v.x + m[0].y * v.y + m[0].z * v.z,\n"
+	"		m[1].x * v.x + m[1].y * v.y + m[1].z * v.z,\n"
+	"		m[2].x * v.x + m[2].y * v.y + m[2].z * v.z );\n"
+	"}\n"
+	"void main( void )\n"
+	"{\n"
+	"	vec4 vertexWorldPos = ModelMatrix * vec4( vertexPosition, 1.0 );\n"
+	"	vec3 eyeWorldPos = transposeMultiply3x3( ub.ViewMatrix, -vec3( ub.ViewMatrix[3] ) );\n"
+	"	gl_Position = ub.ProjectionMatrix * ( ub.ViewMatrix * vertexWorldPos );\n"
+	"	fragmentEyeDir = eyeWorldPos - vec3( vertexWorldPos );\n"
+	"	fragmentNormal = multiply3x3( ModelMatrix, vertexNormal );\n"
+	"	fragmentTangent = multiply3x3( ModelMatrix, vertexTangent );\n"
+	"	fragmentBinormal = multiply3x3( ModelMatrix, vertexBinormal );\n"
+	"	fragmentUv0 = vertexUv0;\n"
+	"}\n";
+
+static const char normalMappedMultiViewVertexProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"#define NUM_VIEWS 2\n"
+	"#define VIEW_ID gl_ViewID_OVR\n"
+	"#extension GL_OVR_multiview2 : require\n"
+	"layout( num_views = NUM_VIEWS ) in;\n"
+	"\n"
+	"uniform mat4 ModelMatrix;\n"
+	"uniform SceneMatrices\n"
+	"{\n"
+	"	mat4 ViewMatrix[NUM_VIEWS];\n"
+	"	mat4 ProjectionMatrix[NUM_VIEWS];\n"
+	"} ub;\n"
+	"in vec3 vertexPosition;\n"
+	"in vec3 vertexNormal;\n"
+	"in vec3 vertexTangent;\n"
+	"in vec3 vertexBinormal;\n"
+	"in vec2 vertexUv0;\n"
+	"out vec3 fragmentEyeDir;\n"
+	"out vec3 fragmentNormal;\n"
+	"out vec3 fragmentTangent;\n"
+	"out vec3 fragmentBinormal;\n"
+	"out vec2 fragmentUv0;\n"
+	"vec3 multiply3x3( mat4 m, vec3 v )\n"
+	"{\n"
+	"	return vec3(\n"
+	"		m[0].x * v.x + m[1].x * v.y + m[2].x * v.z,\n"
+	"		m[0].y * v.x + m[1].y * v.y + m[2].y * v.z,\n"
+	"		m[0].z * v.x + m[1].z * v.y + m[2].z * v.z );\n"
+	"}\n"
+	"vec3 transposeMultiply3x3( mat4 m, vec3 v )\n"
+	"{\n"
+	"	return vec3(\n"
+	"		m[0].x * v.x + m[0].y * v.y + m[0].z * v.z,\n"
+	"		m[1].x * v.x + m[1].y * v.y + m[1].z * v.z,\n"
+	"		m[2].x * v.x + m[2].y * v.y + m[2].z * v.z );\n"
+	"}\n"
+	"void main( void )\n"
+	"{\n"
+	"	vec4 vertexWorldPos = ModelMatrix * vec4( vertexPosition, 1.0 );\n"
+	"	vec3 eyeWorldPos = transposeMultiply3x3( ub.ViewMatrix[VIEW_ID], -vec3( ub.ViewMatrix[VIEW_ID][3] ) );\n"
+	"	gl_Position = ub.ProjectionMatrix[VIEW_ID] * ( ub.ViewMatrix[VIEW_ID] * vertexWorldPos );\n"
+	"	fragmentEyeDir = eyeWorldPos - vec3( vertexWorldPos );\n"
+	"	fragmentNormal = multiply3x3( ModelMatrix, vertexNormal );\n"
+	"	fragmentTangent = multiply3x3( ModelMatrix, vertexTangent );\n"
+	"	fragmentBinormal = multiply3x3( ModelMatrix, vertexBinormal );\n"
+	"	fragmentUv0 = vertexUv0;\n"
+	"}\n";
+
+static const char normalMapped100LightsFragmentProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"uniform sampler2D Texture0;\n"
+	"uniform sampler2D Texture1;\n"
+	"uniform sampler2D Texture2;\n"
+	"in lowp vec3 fragmentEyeDir;\n"
+	"in lowp vec3 fragmentNormal;\n"
+	"in lowp vec3 fragmentTangent;\n"
+	"in lowp vec3 fragmentBinormal;\n"
+	"in lowp vec2 fragmentUv0;\n"
+	"out lowp vec4 outColor;\n"
+	"void main()\n"
+	"{\n"
+	"	lowp vec3 diffuseMap = texture( Texture0, fragmentUv0 ).xyz;\n"
+	"	lowp vec3 specularMap = texture( Texture1, fragmentUv0 ).xyz * 2.0;\n"
+	"	lowp vec3 normalMap = texture( Texture2, fragmentUv0 ).xyz * 2.0 - 1.0;\n"
+	"	lowp float specularPower = 10.0;\n"
+	"	lowp vec3 eyeDir = normalize( fragmentEyeDir );\n"
+	"	lowp vec3 normal = normalize( normalMap.x * fragmentTangent + normalMap.y * fragmentBinormal + normalMap.z * fragmentNormal );\n"
+	"\n"
+	"	lowp vec3 color = vec3( 0 );\n"
+	"	for ( int i = 0; i < 100; i++ )\n"
+	"	{\n"
+	"		lowp vec3 lightDir = normalize( vec3( -1.0, 1.0, 1.0 ) );\n"
+	"		lowp vec3 lightReflection = normalize( 2.0 * dot( lightDir, normal ) * normal - lightDir );\n"
+	"		lowp vec3 lightDiffuse = diffuseMap * ( max( dot( normal, lightDir ), 0.0 ) * 0.5 + 0.5 );\n"
+	"		lowp vec3 lightSpecular = specularMap * pow( max( dot( lightReflection, eyeDir ), 0.0 ), specularPower );\n"
+	"		color += ( lightDiffuse + lightSpecular ) * ( 1.0 / 100.0 );\n"
+	"	}\n"
+	"\n"
+	"	outColor.xyz = color;\n"
+	"	outColor.w = 1.0;\n"
+	"}\n";
+
+static const char normalMapped1000LightsFragmentProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"uniform sampler2D Texture0;\n"
+	"uniform sampler2D Texture1;\n"
+	"uniform sampler2D Texture2;\n"
+	"in lowp vec3 fragmentEyeDir;\n"
+	"in lowp vec3 fragmentNormal;\n"
+	"in lowp vec3 fragmentTangent;\n"
+	"in lowp vec3 fragmentBinormal;\n"
+	"in lowp vec2 fragmentUv0;\n"
+	"out lowp vec4 outColor;\n"
+	"void main()\n"
+	"{\n"
+	"	lowp vec3 diffuseMap = texture( Texture0, fragmentUv0 ).xyz;\n"
+	"	lowp vec3 specularMap = texture( Texture1, fragmentUv0 ).xyz * 2.0;\n"
+	"	lowp vec3 normalMap = texture( Texture2, fragmentUv0 ).xyz * 2.0 - 1.0;\n"
+	"	lowp float specularPower = 10.0;\n"
+	"	lowp vec3 eyeDir = normalize( fragmentEyeDir );\n"
+	"	lowp vec3 normal = normalize( normalMap.x * fragmentTangent + normalMap.y * fragmentBinormal + normalMap.z * fragmentNormal );\n"
+	"\n"
+	"	lowp vec3 color = vec3( 0 );\n"
+	"	for ( int i = 0; i < 1000; i++ )\n"
+	"	{\n"
+	"		lowp vec3 lightDir = normalize( vec3( -1.0, 1.0, 1.0 ) );\n"
+	"		lowp vec3 lightReflection = normalize( 2.0 * dot( lightDir, normal ) * normal - lightDir );\n"
+	"		lowp vec3 lightDiffuse = diffuseMap * ( max( dot( normal, lightDir ), 0.0 ) * 0.5 + 0.5 );\n"
+	"		lowp vec3 lightSpecular = specularMap * pow( max( dot( lightReflection, eyeDir ), 0.0 ), specularPower );\n"
+	"		color += ( lightDiffuse + lightSpecular ) * ( 1.0 / 1000.0 );\n"
+	"	}\n"
+	"\n"
+	"	outColor.xyz = color;\n"
+	"	outColor.w = 1.0;\n"
+	"}\n";
+
+static const char normalMapped2000LightsFragmentProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"uniform sampler2D Texture0;\n"
+	"uniform sampler2D Texture1;\n"
+	"uniform sampler2D Texture2;\n"
+	"in lowp vec3 fragmentEyeDir;\n"
+	"in lowp vec3 fragmentNormal;\n"
+	"in lowp vec3 fragmentTangent;\n"
+	"in lowp vec3 fragmentBinormal;\n"
+	"in lowp vec2 fragmentUv0;\n"
+	"out lowp vec4 outColor;\n"
+	"void main()\n"
+	"{\n"
+	"	lowp vec3 diffuseMap = texture( Texture0, fragmentUv0 ).xyz;\n"
+	"	lowp vec3 specularMap = texture( Texture1, fragmentUv0 ).xyz * 2.0;\n"
+	"	lowp vec3 normalMap = texture( Texture2, fragmentUv0 ).xyz * 2.0 - 1.0;\n"
+	"	lowp float specularPower = 10.0;\n"
+	"	lowp vec3 eyeDir = normalize( fragmentEyeDir );\n"
+	"	lowp vec3 normal = normalize( normalMap.x * fragmentTangent + normalMap.y * fragmentBinormal + normalMap.z * fragmentNormal );\n"
+	"\n"
+	"	lowp vec3 color = vec3( 0 );\n"
+	"	for ( int i = 0; i < 2000; i++ )\n"
+	"	{\n"
+	"		lowp vec3 lightDir = normalize( vec3( -1.0, 1.0, 1.0 ) );\n"
+	"		lowp vec3 lightReflection = normalize( 2.0 * dot( lightDir, normal ) * normal - lightDir );\n"
+	"		lowp vec3 lightDiffuse = diffuseMap * ( max( dot( normal, lightDir ), 0.0 ) * 0.5 + 0.5 );\n"
+	"		lowp vec3 lightSpecular = specularMap * pow( max( dot( lightReflection, eyeDir ), 0.0 ), specularPower );\n"
+	"		color += ( lightDiffuse + lightSpecular ) * ( 1.0 / 2000.0 );\n"
+	"	}\n"
+	"\n"
+	"	outColor.xyz = color;\n"
+	"	outColor.w = 1.0;\n"
+	"}\n";
+
+static void PerfScene_Create( GpuContext_t * context, PerfScene_t * scene, SceneSettings_t * settings, GpuRenderPass_t * renderPass )
+{
+	memset( scene, 0, sizeof( PerfScene_t ) );
+
+	GpuGeometry_CreateCube( context, &scene->geometry[0], 0.0f, 0.5f );			// 12 triangles
+	GpuGeometry_CreateTorus( context, &scene->geometry[1], 8, 0.0f, 1.0f );		// 128 triangles
+	GpuGeometry_CreateTorus( context, &scene->geometry[2], 16, 0.0f, 1.0f );	// 512 triangles
+	GpuGeometry_CreateTorus( context, &scene->geometry[3], 32, 0.0f, 1.0f );	// 2048 triangles
+
+	GpuGraphicsProgram_Create( context, &scene->program[0],
+								settings->useMultiView ? PROGRAM( flatShadedMultiViewVertexProgram ) : PROGRAM( flatShadedVertexProgram ),
+								settings->useMultiView ? sizeof( PROGRAM( flatShadedMultiViewVertexProgram ) ) : sizeof( PROGRAM( flatShadedVertexProgram ) ),
+								PROGRAM( flatShadedFragmentProgram ),
+								sizeof( PROGRAM( flatShadedFragmentProgram ) ),
+								flatShadedProgramParms, ARRAY_SIZE( flatShadedProgramParms ),
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL );
+	GpuGraphicsProgram_Create( context, &scene->program[1],
+								settings->useMultiView ? PROGRAM( normalMappedMultiViewVertexProgram ) : PROGRAM( normalMappedVertexProgram ),
+								settings->useMultiView ? sizeof( PROGRAM( normalMappedMultiViewVertexProgram ) ) : sizeof( PROGRAM( normalMappedVertexProgram ) ),
+								PROGRAM( normalMapped100LightsFragmentProgram ),
+								sizeof( PROGRAM( normalMapped100LightsFragmentProgram ) ),
+								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
+								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
+								VERTEX_ATTRIBUTE_FLAG_UV0 );
+	GpuGraphicsProgram_Create( context, &scene->program[2],
+								settings->useMultiView ? PROGRAM( normalMappedMultiViewVertexProgram ) : PROGRAM( normalMappedVertexProgram ),
+								settings->useMultiView ? sizeof( PROGRAM( normalMappedMultiViewVertexProgram ) ) : sizeof( PROGRAM( normalMappedVertexProgram ) ),
+								PROGRAM( normalMapped1000LightsFragmentProgram ),
+								sizeof( PROGRAM( normalMapped1000LightsFragmentProgram ) ),
+								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
+								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
+								VERTEX_ATTRIBUTE_FLAG_UV0 );
+	GpuGraphicsProgram_Create( context, &scene->program[3],
+								settings->useMultiView ? PROGRAM( normalMappedMultiViewVertexProgram ) : PROGRAM( normalMappedVertexProgram ),
+								settings->useMultiView ? sizeof( PROGRAM( normalMappedMultiViewVertexProgram ) ) : sizeof( PROGRAM( normalMappedVertexProgram ) ),
+								PROGRAM( normalMapped2000LightsFragmentProgram ),
+								sizeof( PROGRAM( normalMapped2000LightsFragmentProgram ) ),
+								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
+								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
+								VERTEX_ATTRIBUTE_FLAG_UV0 );
+
+	for ( int i = 0; i < MAX_SCENE_TRIANGLE_LEVELS; i++ )
+	{
+		for ( int j = 0; j < MAX_SCENE_FRAGMENT_LEVELS; j++ )
+		{
+			GpuGraphicsPipelineParms_t pipelineParms;
+			GpuGraphicsPipelineParms_Init( &pipelineParms );
+
+			pipelineParms.renderPass = renderPass;
+			pipelineParms.program = &scene->program[j];
+			pipelineParms.geometry = &scene->geometry[i];
+
+			GpuGraphicsPipeline_Create( context, &scene->pipelines[i][j], &pipelineParms );
+		}
+	}
+
+	GpuBuffer_Create( context, &scene->sceneMatrices, GPU_BUFFER_TYPE_UNIFORM, ( settings->useMultiView ? 4 : 2 ) * sizeof( Matrix4x4f_t ), NULL, false );
+
+	GpuTexture_CreateDefault( context, &scene->diffuseTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 1, 1, 1, true, false );
+	GpuTexture_CreateDefault( context, &scene->specularTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 1, 1, 1, true, false );
+	GpuTexture_CreateDefault( context, &scene->normalTexture, GPU_TEXTURE_DEFAULT_PYRAMIDS, 256, 256, 1, 1, 1, true, false );
+
+	scene->settings = *settings;
+	scene->newSettings = settings;
+
+	const int maxDimension = 2 * ( 1 << ( MAX_SCENE_DRAWCALL_LEVELS - 1 ) );
+
+	scene->bigRotationX = 0.0f;
+	scene->bigRotationY = 0.0f;
+	scene->smallRotationX = 0.0f;
+	scene->smallRotationY = 0.0f;
+
+	scene->modelMatrix = (Matrix4x4f_t *) AllocAlignedMemory( maxDimension * maxDimension * maxDimension * sizeof( Matrix4x4f_t ), sizeof( Matrix4x4f_t ) );
+}
+
+static void PerfScene_Destroy( GpuContext_t * context, PerfScene_t * scene )
+{
+	GpuContext_WaitIdle( context );
+
+	for ( int i = 0; i < MAX_SCENE_TRIANGLE_LEVELS; i++ )
+	{
+		for ( int j = 0; j < MAX_SCENE_FRAGMENT_LEVELS; j++ )
+		{
+			GpuGraphicsPipeline_Destroy( context, &scene->pipelines[i][j] );
+		}
+	}
+
+	for ( int i = 0; i < MAX_SCENE_TRIANGLE_LEVELS; i++ )
+	{
+		GpuGeometry_Destroy( context, &scene->geometry[i] );
+	}
+
+	for ( int i = 0; i < MAX_SCENE_FRAGMENT_LEVELS; i++ )
+	{
+		GpuGraphicsProgram_Destroy( context, &scene->program[i] );
+	}
+
+	GpuBuffer_Destroy( context, &scene->sceneMatrices );
+
+	GpuTexture_Destroy( context, &scene->diffuseTexture );
+	GpuTexture_Destroy( context, &scene->specularTexture );
+	GpuTexture_Destroy( context, &scene->normalTexture );
+
+	FreeAlignedMemory( scene->modelMatrix );
+	scene->modelMatrix = NULL;
+}
+
+static void PerfScene_Simulate( PerfScene_t * scene, ViewState_t * viewState, const Microseconds_t time )
+{
+	// Must recreate the scene if multi-view is enabled/disabled.
+	assert( scene->settings.useMultiView == scene->newSettings->useMultiView );
+	scene->settings = *scene->newSettings;
+
+	ViewState_HandleHmd( viewState, time );
+
+	if ( !scene->settings.simulationPaused )
+	{
+		const float offset = time * ( MATH_PI / 1000.0f / 1000.0f );
+		scene->bigRotationX = 20.0f * offset;
+		scene->bigRotationY = 10.0f * offset;
+		scene->smallRotationX = -60.0f * offset;
+		scene->smallRotationY = -40.0f * offset;
+	}
+}
+
+static void PerfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, PerfScene_t * scene, ViewState_t * viewState, const int eye )
+{
+	void * sceneMatrices = NULL;
+	GpuBuffer_t * sceneMatricesBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &scene->sceneMatrices, &sceneMatrices );
+	const int numMatrices = scene->settings.useMultiView ? 2 : 1;
+	memcpy( (char *)sceneMatrices + 0 * numMatrices * sizeof( Matrix4x4f_t ), &viewState->viewMatrix[eye], numMatrices * sizeof( Matrix4x4f_t ) );
+	memcpy( (char *)sceneMatrices + 1 * numMatrices * sizeof( Matrix4x4f_t ), &viewState->projectionMatrix[eye], numMatrices * sizeof( Matrix4x4f_t ) );
+	GpuCommandBuffer_UnmapBuffer( commandBuffer, &scene->sceneMatrices, sceneMatricesBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
+}
+
+static void PerfScene_Render( GpuCommandBuffer_t * commandBuffer, PerfScene_t * scene )
+{
+	const int dimension = 2 * ( 1 << scene->settings.drawCallLevel );
+	const float cubeOffset = ( dimension - 1.0f ) * 0.5f;
+	const float cubeScale = 2.0f;
+
+	Matrix4x4f_t bigRotationMatrix;
+	Matrix4x4f_CreateRotation( &bigRotationMatrix, scene->bigRotationX, scene->bigRotationY, 0.0f );
+
+	Matrix4x4f_t bigTranslationMatrix;
+	Matrix4x4f_CreateTranslation( &bigTranslationMatrix, 0.0f, 0.0f, - 2.5f * dimension );
+
+	Matrix4x4f_t bigTransformMatrix;
+	Matrix4x4f_Multiply( &bigTransformMatrix, &bigTranslationMatrix, &bigRotationMatrix );
+
+	Matrix4x4f_t smallRotationMatrix;
+	Matrix4x4f_CreateRotation( &smallRotationMatrix, scene->smallRotationX, scene->smallRotationY, 0.0f );
+
+	GpuGraphicsCommand_t command;
+	GpuGraphicsCommand_Init( &command );
+	GpuGraphicsCommand_SetPipeline( &command, &scene->pipelines[scene->settings.triangleLevel][scene->settings.fragmentLevel] );
+	GpuGraphicsCommand_SetParmBufferUniform( &command, PROGRAM_UNIFORM_SCENE_MATRICES, &scene->sceneMatrices );
+	GpuGraphicsCommand_SetParmTextureSampled( &command, PROGRAM_TEXTURE_0, ( scene->settings.fragmentLevel >= 1 ) ? &scene->diffuseTexture : NULL );
+	GpuGraphicsCommand_SetParmTextureSampled( &command, PROGRAM_TEXTURE_1, ( scene->settings.fragmentLevel >= 1 ) ? &scene->specularTexture : NULL );
+	GpuGraphicsCommand_SetParmTextureSampled( &command, PROGRAM_TEXTURE_2, ( scene->settings.fragmentLevel >= 1 ) ? &scene->normalTexture : NULL );
+
+	for ( int x = 0; x < dimension; x++ )
+	{
+		for ( int y = 0; y < dimension; y++ )
+		{
+			for ( int z = 0; z < dimension; z++ )
+			{
+				Matrix4x4f_t smallTranslationMatrix;
+				Matrix4x4f_CreateTranslation( &smallTranslationMatrix, cubeScale * ( x - cubeOffset ), cubeScale * ( y - cubeOffset ), cubeScale * ( z - cubeOffset ) );
+
+				Matrix4x4f_t smallTransformMatrix;
+				Matrix4x4f_Multiply( &smallTransformMatrix, &smallTranslationMatrix, &smallRotationMatrix );
+
+				Matrix4x4f_t * modelMatrix = &scene->modelMatrix[( x * dimension + y ) * dimension + z];
+				Matrix4x4f_Multiply( modelMatrix, &bigTransformMatrix, &smallTransformMatrix );
+
+				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, PROGRAM_UNIFORM_MODEL_MATRIX, modelMatrix );
+
+				GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
+			}
+		}
+	}
+}
+
 #if USE_GLTF == 1
 
 /*
@@ -11436,9 +14105,9 @@ GltfScene_t
 
 static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scene, const char * fileName, GpuRenderPass_t * renderPass );
 static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene );
-static void GltfScene_Simulate( GltfScene_t * scene, ViewState_t * viewState, GpuWindowInput_t * input );
-static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState );
-static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState );
+static void GltfScene_Simulate( GltfScene_t * scene, ViewState_t * viewState, GpuWindowInput_t * input, const Microseconds_t time );
+static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState, const int eye );
+static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState, const int eye );
 
 ================================================================================================================================
 */
@@ -11448,9 +14117,9 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 
 static GpuProgramParm_t unitCubeFlatShadeProgramParms[] =
 {
-	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	0,		"ModelMatrix",		0 },
-	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	1,		"ViewMatrix",		0 },
-	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	2,		"ProjectionMatrix",	0 }
+	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	0,	"ModelMatrix",		0 },
+	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	1,	"ViewMatrix",		0 },
+	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	2,	"ProjectionMatrix",	0 }
 };
 
 static const char unitCubeFlatShadeVertexProgramGLSL[] =
@@ -13264,6 +15933,8 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 
 static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 {
+	GpuContext_WaitIdle( context );
+
 	{
 		for ( int i = 0; i < scene->bufferCount; i++ )
 		{
@@ -13504,7 +16175,10 @@ static void GltfScene_Simulate( GltfScene_t * scene, ViewState_t * viewState, Gp
 	{
 		GetHmdViewMatrixForTime( &viewState->hmdViewMatrix, time );
 
-		Matrix4x4f_Invert( &viewState->centerViewMatrix, &cameraNode->globalTransform );
+		Matrix4x4f_t cameraViewMatrix;
+		Matrix4x4f_Invert( &cameraViewMatrix, &cameraNode->globalTransform );
+
+		Matrix4x4f_Multiply( &viewState->centerViewMatrix, &viewState->hmdViewMatrix, &cameraViewMatrix );
 
 		for ( int eye = 0; eye < NUM_EYES; eye++ )
 		{
@@ -13562,7 +16236,7 @@ static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const G
 			}
 		}
 
-		// Only update the joints buffer if the skin bounds are not culled.
+		// Only update the joint buffer if the skin bounds are not culled.
 		{
 			Matrix4x4f_t modelViewProjectionCullMatrix;
 			Matrix4x4f_Multiply( &modelViewProjectionCullMatrix, &viewState->combinedViewProjectionMatrix, &skin->parent->globalTransform );
@@ -13636,14 +16310,14 @@ typedef struct
 	Matrix3x3f_t	modelViewInverseTransposeMatrix;
 } GltfBuiltinUniforms_t;
 
-static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState )
+static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState, const int eye )
 {
 	GltfBuiltinUniforms_t builtin;
 
-	builtin.viewMatrix = viewState->viewMatrix[0];
-	builtin.projectionMatrix = viewState->projectionMatrix[0];
-	builtin.viewInverseMatrix = viewState->viewInverseMatrix[0];
-	builtin.projectionInverseMatrix = viewState->projectionInverseMatrix[0];
+	builtin.viewMatrix = viewState->viewMatrix[eye];
+	builtin.projectionMatrix = viewState->projectionMatrix[eye];
+	builtin.viewInverseMatrix = viewState->viewInverseMatrix[eye];
+	builtin.projectionInverseMatrix = viewState->projectionInverseMatrix[eye];
 	builtin.viewport.x = viewState->viewport.x;
 	builtin.viewport.y = viewState->viewport.y;
 	builtin.viewport.z = viewState->viewport.z;
@@ -13757,2653 +16431,6 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 }
 
 #endif // USE_GLTF == 1
-
-/*
-================================================================================================================================
-
-Bar graph.
-
-Real-time bar graph where new bars scroll in on the right and old bars scroll out on the left.
-Optionally supports stacking of bars. A bar value is in the range [0, 1] where 1 is a full height bar.
-The bar graph position x,y,width,height is specified in clip coordinates in the range [-1, 1].
-
-BarGraph_t
-
-static void BarGraph_Create( GpuContext_t * context, BarGraph_t * barGraph, GpuRenderPass_t * renderPass,
-								const float x, const float y, const float width, const float height,
-								const int numBars, const int numStacked, const Vector4f_t * backgroundColor );
-static void BarGraph_Destroy( GpuContext_t * context, BarGraph_t * barGraph );
-static void BarGraph_AddBar( BarGraph_t * barGraph, const int stackedBar, const float value, const Vector4f_t * color, const bool advance );
-
-static void BarGraph_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph );
-static void BarGraph_RenderGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph );
-
-static void BarGraph_UpdateCompute( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph );
-static void BarGraph_RenderCompute( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph, GpuFramebuffer_t * framebuffer );
-
-================================================================================================================================
-*/
-
-typedef struct
-{
-	ClipRect_t			clipRect;
-	int					numBars;
-	int					numStacked;
-	int					barIndex;
-	float *				barValues;
-	Vector4f_t *		barColors;
-	Vector4f_t			backgroundColor;
-	struct
-	{
-		GpuGeometry_t			quad;
-		GpuGraphicsProgram_t	program;
-		GpuGraphicsPipeline_t	pipeline;
-		int						numInstances;
-	} graphics;
-#if OPENGL_COMPUTE_ENABLED == 1
-	struct
-	{
-		GpuBuffer_t				barValueBuffer;
-		GpuBuffer_t				barColorBuffer;
-		Vector2i_t				barGraphOffset;
-		GpuComputeProgram_t		program;
-		GpuComputePipeline_t	pipeline;
-	} compute;
-#endif
-} BarGraph_t;
-
-static const GpuProgramParm_t barGraphGraphicsProgramParms[] =
-{
-	{ 0 }
-};
-
-static const char barGraphVertexProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"in vec3 vertexPosition;\n"
-	"in mat4 vertexTransform;\n"
-	"out vec4 fragmentColor;\n"
-	"out gl_PerVertex { vec4 gl_Position; };\n"
-	"vec3 multiply4x3( mat4 m, vec3 v )\n"
-	"{\n"
-	"	return vec3(\n"
-	"		m[0].x * v.x + m[1].x * v.y + m[2].x * v.z + m[3].x,\n"
-	"		m[0].y * v.x + m[1].y * v.y + m[2].y * v.z + m[3].y,\n"
-	"		m[0].z * v.x + m[1].z * v.y + m[2].z * v.z + m[3].z );\n"
-	"}\n"
-	"void main( void )\n"
-	"{\n"
-	"	gl_Position.xyz = multiply4x3( vertexTransform, vertexPosition );\n"
-	"	gl_Position.w = 1.0;\n"
-	"	fragmentColor.r = vertexTransform[0][3];\n"
-	"	fragmentColor.g = vertexTransform[1][3];\n"
-	"	fragmentColor.b = vertexTransform[2][3];\n"
-	"	fragmentColor.a = vertexTransform[3][3];\n"
-	"}\n";
-
-static const char barGraphFragmentProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"in lowp vec4 fragmentColor;\n"
-	"out lowp vec4 outColor;\n"
-	"void main()\n"
-	"{\n"
-	"	outColor = fragmentColor;\n"
-	"}\n";
-
-#if OPENGL_COMPUTE_ENABLED == 1
-
-enum
-{
-	COMPUTE_PROGRAM_TEXTURE_BAR_GRAPH_DEST,
-	COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_VALUES,
-	COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_COLORS,
-	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_BARS,
-	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_STACKED,
-	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_INDEX,
-	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_GRAPH_OFFSET,
-	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BACK_GROUND_COLOR
-};
-
-static const GpuProgramParm_t barGraphComputeProgramParms[] =
-{
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,				GPU_PROGRAM_PARM_ACCESS_WRITE_ONLY,	COMPUTE_PROGRAM_TEXTURE_BAR_GRAPH_DEST,					"dest",				0 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_BUFFER_STORAGE,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_VALUES,			"barValueBuffer",	0 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_BUFFER_STORAGE,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_COLORS,			"barColorBuffer",	1 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BACK_GROUND_COLOR,	"backgroundColor",	0 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_GRAPH_OFFSET,		"barGraphOffset",	1 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_BARS,				"numBars",			2 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_STACKED,			"numStacked",		3 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_INDEX,			"barIndex",			4 }
-};
-
-#define BARGRAPH_LOCAL_SIZE_X	8
-#define BARGRAPH_LOCAL_SIZE_Y	8
-
-static const char barGraphComputeProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"\n"
-	"layout( local_size_x = " STRINGIFY( BARGRAPH_LOCAL_SIZE_X ) ", local_size_y = " STRINGIFY( BARGRAPH_LOCAL_SIZE_Y ) " ) in;\n"
-	"\n"
-	"layout( rgba8, binding = 0 ) uniform writeonly " ES_HIGHP " image2D dest;\n"
-	"layout( std430, binding = 0 ) buffer barValueBuffer { float barValues[]; };\n"
-	"layout( std430, binding = 1 ) buffer barColorBuffer { vec4 barColors[]; };\n"
-	"uniform lowp vec4 backgroundColor;\n"
-	"uniform ivec2 barGraphOffset;\n"
-	"uniform int numBars;\n"
-	"uniform int numStacked;\n"
- 	"uniform int barIndex;\n"
-	"\n"
-	"void main()\n"
-	"{\n"
-	"	ivec2 barGraph = ivec2( gl_GlobalInvocationID.xy );\n"
-	"	ivec2 barGraphSize = ivec2( gl_NumWorkGroups.xy * gl_WorkGroupSize.xy );\n"
-	"\n"
-	"	int index = barGraph.x * numBars / barGraphSize.x;\n"
-	"	int barOffset = ( ( barIndex + index ) % numBars ) * numStacked;\n"
-	"	float barColorScale = ( ( index & 1 ) != 0 ) ? 0.75f : 1.0f;\n"
-	"\n"
-	"	vec4 rgba = backgroundColor;\n"
-	"	float localY = float( barGraph.y );\n"
-	"	float stackedBarValue = 0.0f;\n"
-	"	for ( int i = 0; i < numStacked; i++ )\n"
-	"	{\n"
-	"		stackedBarValue += barValues[barOffset + i];\n"
-	"		if ( localY < stackedBarValue * float( barGraphSize.y ) )\n"
-	"		{\n"
-	"			rgba = barColors[barOffset + i] * barColorScale;\n"
-	"			break;\n"
-	"		}\n"
-	"	}\n"
-	"\n"
-	"	imageStore( dest, barGraphOffset + barGraph, rgba );\n"
-	"}\n";
-
-#endif
-
-static void BarGraph_Create( GpuContext_t * context, BarGraph_t * barGraph, GpuRenderPass_t * renderPass,
-								const float x, const float y, const float width, const float height,
-								const int numBars, const int numStacked, const Vector4f_t * backgroundColor )
-{
-	barGraph->clipRect.x = x;
-	barGraph->clipRect.y = y;
-	barGraph->clipRect.width = width;
-	barGraph->clipRect.height = height;
-	barGraph->numBars = numBars;
-	barGraph->numStacked = numStacked;
-	barGraph->barIndex = 0;
-	barGraph->barValues = (float *) AllocAlignedMemory( numBars * numStacked * sizeof( barGraph->barValues[0] ), sizeof( void * ) );
-	barGraph->barColors = (Vector4f_t *) AllocAlignedMemory( numBars * numStacked * sizeof( barGraph->barColors[0] ), sizeof( Vector4f_t ) );
-
-	for ( int i = 0; i < numBars * numStacked; i++ )
-	{
-		barGraph->barValues[i] = 0.0f;
-		barGraph->barColors[i] = colorGreen;
-	}
-
-	barGraph->backgroundColor = *backgroundColor;
-
-	// graphics
-	{
-		GpuGeometry_CreateQuad( context, &barGraph->graphics.quad, 1.0f, 0.5f );
-		GpuGeometry_AddInstanceAttributes( context, &barGraph->graphics.quad, numBars * numStacked + 1, VERTEX_ATTRIBUTE_FLAG_TRANSFORM );
-
-		GpuGraphicsProgram_Create( context, &barGraph->graphics.program,
-									PROGRAM( barGraphVertexProgram ), sizeof( PROGRAM( barGraphVertexProgram ) ),
-									PROGRAM( barGraphFragmentProgram ), sizeof( PROGRAM( barGraphFragmentProgram ) ),
-									barGraphGraphicsProgramParms, 0,
-									barGraph->graphics.quad.layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_TRANSFORM );
-
-		GpuGraphicsPipelineParms_t pipelineParms;
-		GpuGraphicsPipelineParms_Init( &pipelineParms );
-
-		pipelineParms.rop.depthTestEnable = false;
-		pipelineParms.rop.depthWriteEnable = false;
-		pipelineParms.renderPass = renderPass;
-		pipelineParms.program = &barGraph->graphics.program;
-		pipelineParms.geometry = &barGraph->graphics.quad;
-
-		GpuGraphicsPipeline_Create( context, &barGraph->graphics.pipeline, &pipelineParms );
-
-		barGraph->graphics.numInstances = 0;
-	}
-
-#if OPENGL_COMPUTE_ENABLED == 1
-	// compute
-	{
-		GpuBuffer_Create( context, &barGraph->compute.barValueBuffer, GPU_BUFFER_TYPE_STORAGE,
-							barGraph->numBars * barGraph->numStacked * sizeof( barGraph->barValues[0] ), NULL, false );
-		GpuBuffer_Create( context, &barGraph->compute.barColorBuffer, GPU_BUFFER_TYPE_STORAGE,
-							barGraph->numBars * barGraph->numStacked * sizeof( barGraph->barColors[0] ), NULL, false );
-
-		GpuComputeProgram_Create( context, &barGraph->compute.program,
-									PROGRAM( barGraphComputeProgram ), sizeof( PROGRAM( barGraphComputeProgram ) ),
-									barGraphComputeProgramParms, ARRAY_SIZE( barGraphComputeProgramParms ) );
-
-		GpuComputePipeline_Create( context, &barGraph->compute.pipeline, &barGraph->compute.program );
-	}
-#endif
-}
-
-static void BarGraph_Destroy( GpuContext_t * context, BarGraph_t * barGraph )
-{
-	FreeAlignedMemory( barGraph->barValues );
-	FreeAlignedMemory( barGraph->barColors );
-
-	// graphics
-	{
-		GpuGraphicsPipeline_Destroy( context, &barGraph->graphics.pipeline );
-		GpuGraphicsProgram_Destroy( context, &barGraph->graphics.program );
-		GpuGeometry_Destroy( context, &barGraph->graphics.quad );
-	}
-
-#if OPENGL_COMPUTE_ENABLED == 1
-	// compute
-	{
-		GpuComputePipeline_Destroy( context, &barGraph->compute.pipeline );
-		GpuComputeProgram_Destroy( context, &barGraph->compute.program );
-		GpuBuffer_Destroy( context, &barGraph->compute.barValueBuffer );
-		GpuBuffer_Destroy( context, &barGraph->compute.barColorBuffer );
-	}
-#endif
-}
-
-static void BarGraph_AddBar( BarGraph_t * barGraph, const int stackedBar, const float value, const Vector4f_t * color, const bool advance )
-{
-	assert( stackedBar >= 0 && stackedBar < barGraph->numStacked );
-	barGraph->barValues[barGraph->barIndex * barGraph->numStacked + stackedBar] = value;
-	barGraph->barColors[barGraph->barIndex * barGraph->numStacked + stackedBar] = *color;
-	if ( advance )
-	{
-		barGraph->barIndex = ( barGraph->barIndex + 1 ) % barGraph->numBars;
-	}
-}
-
-static void BarGraph_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph )
-{
-	GpuVertexAttributeArrays_t attribs;
-	GpuBuffer_t * instanceBuffer = GpuCommandBuffer_MapInstanceAttributes( commandBuffer, &barGraph->graphics.quad, &attribs.base );
-
-#if defined( GRAPHICS_API_VULKAN )
-	const float flipY = -1.0f;
-#else
-	const float flipY = 1.0f;
-#endif
-
-	int numInstances = 0;
-	Matrix4x4f_t * backgroundMatrix = &attribs.transform[numInstances++];
-
-	// Write in order to write-combined memory.
-	backgroundMatrix->m[0][0] = barGraph->clipRect.width;
-	backgroundMatrix->m[0][1] = 0.0f;
-	backgroundMatrix->m[0][2] = 0.0f;
-	backgroundMatrix->m[0][3] = barGraph->backgroundColor.x;
-
-	backgroundMatrix->m[1][0] = 0.0f;
-	backgroundMatrix->m[1][1] = barGraph->clipRect.height * flipY;
-	backgroundMatrix->m[1][2] = 0.0f;
-	backgroundMatrix->m[1][3] = barGraph->backgroundColor.y;
-
-	backgroundMatrix->m[2][0] = 0.0f;
-	backgroundMatrix->m[2][1] = 0.0f;
-	backgroundMatrix->m[2][2] = 0.0f;
-	backgroundMatrix->m[2][3] = barGraph->backgroundColor.z;
-
-	backgroundMatrix->m[3][0] = barGraph->clipRect.x;
-	backgroundMatrix->m[3][1] = barGraph->clipRect.y * flipY;
-	backgroundMatrix->m[3][2] = 0.0f;
-	backgroundMatrix->m[3][3] = barGraph->backgroundColor.w;
-
-	const float barWidth = barGraph->clipRect.width / barGraph->numBars;
-
-	for ( int i = 0; i < barGraph->numBars; i++ )
-	{
-		const int barIndex = ( ( barGraph->barIndex + i ) % barGraph->numBars ) * barGraph->numStacked;
-		const float barColorScale = ( i & 1 ) ? 0.75f : 1.0f;
-
-		float stackedBarValue = 0.0f;
-		for ( int j = 0; j < barGraph->numStacked; j++ )
-		{
-			float value = barGraph->barValues[barIndex + j];
-			if ( stackedBarValue + value > 1.0f )
-			{
-				value = 1.0f - stackedBarValue;
-			}
-			if ( value <= 0.0f )
-			{
-				continue;
-			}
-
-			Matrix4x4f_t * barMatrix = &attribs.transform[numInstances++];
-
-			// Write in order to write-combined memory.
-			barMatrix->m[0][0] = barWidth;
-			barMatrix->m[0][1] = 0.0f;
-			barMatrix->m[0][2] = 0.0f;
-			barMatrix->m[0][3] = barGraph->barColors[barIndex + j].x * barColorScale;
-
-			barMatrix->m[1][0] = 0.0f;
-			barMatrix->m[1][1] = value * barGraph->clipRect.height * flipY;
-			barMatrix->m[1][2] = 0.0f;
-			barMatrix->m[1][3] = barGraph->barColors[barIndex + j].y * barColorScale;
-
-			barMatrix->m[2][0] = 0.0f;
-			barMatrix->m[2][1] = 0.0f;
-			barMatrix->m[2][2] = 1.0f;
-			barMatrix->m[2][3] = barGraph->barColors[barIndex + j].z * barColorScale;
-
-			barMatrix->m[3][0] = barGraph->clipRect.x + i * barWidth;
-			barMatrix->m[3][1] = ( barGraph->clipRect.y + stackedBarValue * barGraph->clipRect.height ) * flipY;
-			barMatrix->m[3][2] = 0.0f;
-			barMatrix->m[3][3] = barGraph->barColors[barIndex + j].w;
-
-			stackedBarValue += value;
-		}
-	}
-
-	GpuCommandBuffer_UnmapInstanceAttributes( commandBuffer, &barGraph->graphics.quad, instanceBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
-
-	assert( numInstances <= barGraph->numBars * barGraph->numStacked + 1 );
-	barGraph->graphics.numInstances = numInstances;
-}
-
-static void BarGraph_RenderGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph )
-{
-	GpuGraphicsCommand_t command;
-	GpuGraphicsCommand_Init( &command );
-	GpuGraphicsCommand_SetPipeline( &command, &barGraph->graphics.pipeline );
-	GpuGraphicsCommand_SetNumInstances( &command, barGraph->graphics.numInstances );
-
-	GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
-}
-
-static void BarGraph_UpdateCompute( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph )
-{
-#if OPENGL_COMPUTE_ENABLED == 1
-	void * barValues = NULL;
-	GpuBuffer_t * mappedBarValueBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &barGraph->compute.barValueBuffer, &barValues );
-	memcpy( barValues, barGraph->barValues, barGraph->numBars * barGraph->numStacked * sizeof( barGraph->barValues[0] ) );
-	GpuCommandBuffer_UnmapBuffer( commandBuffer, &barGraph->compute.barValueBuffer, mappedBarValueBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
-
-	void * barColors = NULL;
-	GpuBuffer_t * mappedBarColorBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &barGraph->compute.barColorBuffer, &barColors );
-	memcpy( barColors, barGraph->barColors, barGraph->numBars * barGraph->numStacked * sizeof( barGraph->barColors[0] ) );
-	GpuCommandBuffer_UnmapBuffer( commandBuffer, &barGraph->compute.barColorBuffer, mappedBarColorBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
-#else
-	UNUSED_PARM( commandBuffer );
-	UNUSED_PARM( barGraph );
-#endif
-}
-
-static void BarGraph_RenderCompute( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph, GpuFramebuffer_t * framebuffer )
-{
-#if OPENGL_COMPUTE_ENABLED == 1
-	const int screenWidth = GpuFramebuffer_GetWidth( framebuffer );
-	const int screenHeight = GpuFramebuffer_GetHeight( framebuffer );
-	ScreenRect_t screenRect = ClipRect_ToScreenRect( &barGraph->clipRect, screenWidth, screenHeight );
-	barGraph->compute.barGraphOffset.x = screenRect.x;
-#if defined( GRAPHICS_API_VULKAN )
-	barGraph->compute.barGraphOffset.y = screenHeight - 1 - screenRect.y;
-#else
-	barGraph->compute.barGraphOffset.y = screenRect.y;
-#endif
-
-	screenRect.width = ROUNDUP( screenRect.width, 8 );
-	screenRect.height = ROUNDUP( screenRect.height, 8 );
-
-	assert( screenRect.width % BARGRAPH_LOCAL_SIZE_X == 0 );
-	assert( screenRect.height % BARGRAPH_LOCAL_SIZE_Y == 0 );
-
-	GpuComputeCommand_t command;
-	GpuComputeCommand_Init( &command );
-	GpuComputeCommand_SetPipeline( &command, &barGraph->compute.pipeline );
-	GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_BAR_GRAPH_DEST, GpuFramebuffer_GetColorTexture( framebuffer ) );
-	GpuComputeCommand_SetParmBufferStorage( &command, COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_VALUES, &barGraph->compute.barValueBuffer );
-	GpuComputeCommand_SetParmBufferStorage( &command, COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_COLORS, &barGraph->compute.barColorBuffer );
-	GpuComputeCommand_SetParmFloatVector4( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BACK_GROUND_COLOR, &barGraph->backgroundColor );
-	GpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_GRAPH_OFFSET, &barGraph->compute.barGraphOffset );
-	GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_BARS, &barGraph->numBars );
-	GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_STACKED, &barGraph->numStacked );
-	GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_INDEX, &barGraph->barIndex );
-	GpuComputeCommand_SetDimensions( &command, screenRect.width / BARGRAPH_LOCAL_SIZE_X, screenRect.height / BARGRAPH_LOCAL_SIZE_Y, 1 );
-
-	GpuCommandBuffer_SubmitComputeCommand( commandBuffer, &command );
-#else
-	UNUSED_PARM( commandBuffer );
-	UNUSED_PARM( barGraph );
-	UNUSED_PARM( framebuffer );
-#endif
-}
-
-/*
-================================================================================================================================
-
-Time warp bar graphs.
-
-TimeWarpBarGraphs_t
-
-static void TimeWarpBarGraphs_Create( GpuContext_t * context, TimeWarpBarGraphs_t * bargraphs, GpuFramebuffer_t * framebuffer );
-static void TimeWarpBarGraphs_Destroy( GpuContext_t * context, TimeWarpBarGraphs_t * bargraphs );
-
-static void TimeWarpBarGraphs_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs );
-static void TimeWarpBarGraphs_RenderGraphics( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs );
-
-static void TimeWarpBarGraphs_UpdateCompute( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs );
-static void TimeWarpBarGraphs_RenderCompute( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs, GpuFramebuffer_t * framebuffer );
-
-static float TimeWarpBarGraphs_GetGpuMillisecondsGraphics( TimeWarpBarGraphs_t * bargraphs );
-static float TimeWarpBarGraphs_GetGpuMillisecondsCompute( TimeWarpBarGraphs_t * bargraphs );
-
-================================================================================================================================
-*/
-
-#define BARGRAPH_VIRTUAL_PIXELS_WIDE		1920
-#define BARGRAPH_VIRTUAL_PIXELS_HIGH		1080
-
-#if defined( OS_ANDROID )
-#define BARGRAPH_INSET						64
-#else
-#define BARGRAPH_INSET						16
-#endif
-
-static const ScreenRect_t eyeTextureFrameRateBarGraphRect			= { BARGRAPH_INSET + 0 * 264, BARGRAPH_INSET, 256, 128 };
-static const ScreenRect_t timeWarpFrameRateBarGraphRect				= { BARGRAPH_INSET + 1 * 264, BARGRAPH_INSET, 256, 128 };
-static const ScreenRect_t frameCpuTimeBarGraphRect					= { BARGRAPH_INSET + 2 * 264, BARGRAPH_INSET, 256, 128 };
-static const ScreenRect_t frameGpuTimeBarGraphRect					= { BARGRAPH_INSET + 3 * 264, BARGRAPH_INSET, 256, 128 };
-
-static const ScreenRect_t multiViewBarGraphRect						= { 3 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 4 + 0 * 40, BARGRAPH_INSET, 32, 32 };
-static const ScreenRect_t correctChromaticAberrationBarGraphRect	= { 3 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 4 + 1 * 40, BARGRAPH_INSET, 32, 32 };
-static const ScreenRect_t timeWarpImplementationBarGraphRect		= { 3 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 4 + 2 * 40, BARGRAPH_INSET, 32, 32 };
-
-static const ScreenRect_t sceneDrawCallLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 4 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
-static const ScreenRect_t sceneTriangleLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 3 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
-static const ScreenRect_t sceneFragmentLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 2 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
-static const ScreenRect_t sceneSamplesLevelBarGraphRect				= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 1 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
-
-typedef enum
-{
-	BAR_GRAPH_HIDDEN,
-	BAR_GRAPH_VISIBLE,
-	BAR_GRAPH_PAUSED
-} BarGraphState_t;
-
-typedef struct
-{
-	BarGraphState_t	barGraphState;
-
-	BarGraph_t		eyeTexturesFrameRateGraph;
-	BarGraph_t		timeWarpFrameRateGraph;
-	BarGraph_t		frameCpuTimeBarGraph;
-	BarGraph_t		frameGpuTimeBarGraph;
-
-	BarGraph_t		multiViewBarGraph;
-	BarGraph_t		correctChromaticAberrationBarGraph;
-	BarGraph_t		timeWarpImplementationBarGraph;
-
-	BarGraph_t		sceneDrawCallLevelBarGraph;
-	BarGraph_t		sceneTriangleLevelBarGraph;
-	BarGraph_t		sceneFragmentLevelBarGraph;
-	BarGraph_t		sceneSamplesLevelBarGraph;
-
-	GpuTimer_t		barGraphTimer;
-} TimeWarpBarGraphs_t;
-
-enum
-{
-	PROFILE_TIME_EYE_TEXTURES,
-	PROFILE_TIME_TIME_WARP,
-	PROFILE_TIME_BAR_GRAPHS,
-	PROFILE_TIME_BLIT,
-	PROFILE_TIME_OVERFLOW,
-	PROFILE_TIME_MAX
-};
-
-static const Vector4f_t * profileTimeBarColors[] =
-{
-	&colorPurple,
-	&colorGreen,
-	&colorYellow,
-	&colorBlue,
-	&colorRed
-};
-
-static void BarGraph_CreateVirtualRect( GpuContext_t * context, BarGraph_t * barGraph, GpuRenderPass_t * renderPass,
-						const ScreenRect_t * virtualRect, const int numBars, const int numStacked, const Vector4f_t * backgroundColor )
-{
-	const ClipRect_t clipRect = ScreenRect_ToClipRect( virtualRect, BARGRAPH_VIRTUAL_PIXELS_WIDE, BARGRAPH_VIRTUAL_PIXELS_HIGH );
-	BarGraph_Create( context, barGraph, renderPass, clipRect.x, clipRect.y, clipRect.width, clipRect.height, numBars, numStacked, backgroundColor );
-}
-
-static void TimeWarpBarGraphs_Create( GpuContext_t * context, TimeWarpBarGraphs_t * bargraphs, GpuRenderPass_t * renderPass )
-{
-	bargraphs->barGraphState = BAR_GRAPH_VISIBLE;
-
-	BarGraph_CreateVirtualRect( context, &bargraphs->eyeTexturesFrameRateGraph, renderPass, &eyeTextureFrameRateBarGraphRect, 64, 1, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->timeWarpFrameRateGraph, renderPass, &timeWarpFrameRateBarGraphRect, 64, 1, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->frameCpuTimeBarGraph, renderPass, &frameCpuTimeBarGraphRect, 64, PROFILE_TIME_MAX, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->frameGpuTimeBarGraph, renderPass, &frameGpuTimeBarGraphRect, 64, PROFILE_TIME_MAX, &colorDarkGrey );
-
-	BarGraph_CreateVirtualRect( context, &bargraphs->multiViewBarGraph, renderPass, &multiViewBarGraphRect, 1, 1, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->correctChromaticAberrationBarGraph, renderPass, &correctChromaticAberrationBarGraphRect, 1, 1, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->timeWarpImplementationBarGraph, renderPass, &timeWarpImplementationBarGraphRect, 1, 1, &colorDarkGrey );
-
-	BarGraph_CreateVirtualRect( context, &bargraphs->sceneDrawCallLevelBarGraph, renderPass, &sceneDrawCallLevelBarGraphRect, 1, 4, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->sceneTriangleLevelBarGraph, renderPass, &sceneTriangleLevelBarGraphRect, 1, 4, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->sceneFragmentLevelBarGraph, renderPass, &sceneFragmentLevelBarGraphRect, 1, 4, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->sceneSamplesLevelBarGraph, renderPass, &sceneSamplesLevelBarGraphRect, 1, 4, &colorDarkGrey );
-
-	BarGraph_AddBar( &bargraphs->sceneDrawCallLevelBarGraph, 0, 0.25f, &colorBlue, false );
-	BarGraph_AddBar( &bargraphs->sceneTriangleLevelBarGraph, 0, 0.25f, &colorBlue, false );
-	BarGraph_AddBar( &bargraphs->sceneFragmentLevelBarGraph, 0, 0.25f, &colorBlue, false );
-	BarGraph_AddBar( &bargraphs->sceneSamplesLevelBarGraph, 0, 0.25f, &colorBlue, false );
-
-	GpuTimer_Create( context, &bargraphs->barGraphTimer );
-}
-
-static void TimeWarpBarGraphs_Destroy( GpuContext_t * context, TimeWarpBarGraphs_t * bargraphs )
-{
-	BarGraph_Destroy( context, &bargraphs->eyeTexturesFrameRateGraph );
-	BarGraph_Destroy( context, &bargraphs->timeWarpFrameRateGraph );
-	BarGraph_Destroy( context, &bargraphs->frameCpuTimeBarGraph );
-	BarGraph_Destroy( context, &bargraphs->frameGpuTimeBarGraph );
-
-	BarGraph_Destroy( context, &bargraphs->multiViewBarGraph );
-	BarGraph_Destroy( context, &bargraphs->correctChromaticAberrationBarGraph );
-	BarGraph_Destroy( context, &bargraphs->timeWarpImplementationBarGraph );
-
-	BarGraph_Destroy( context, &bargraphs->sceneDrawCallLevelBarGraph );
-	BarGraph_Destroy( context, &bargraphs->sceneTriangleLevelBarGraph );
-	BarGraph_Destroy( context, &bargraphs->sceneFragmentLevelBarGraph );
-	BarGraph_Destroy( context, &bargraphs->sceneSamplesLevelBarGraph );
-
-	GpuTimer_Destroy( context, &bargraphs->barGraphTimer );
-}
-
-static void TimeWarpBarGraphs_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs )
-{
-	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
-	{
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
-
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->multiViewBarGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
-
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph );
-	}
-}
-
-static void TimeWarpBarGraphs_RenderGraphics( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs )
-{
-	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
-	{
-		GpuCommandBuffer_BeginTimer( commandBuffer, &bargraphs->barGraphTimer );
-
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
-
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->multiViewBarGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
-
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph );
-
-		GpuCommandBuffer_EndTimer( commandBuffer, &bargraphs->barGraphTimer );
-	}
-}
-
-static void TimeWarpBarGraphs_UpdateCompute( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs )
-{
-	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
-	{
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
-
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->multiViewBarGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
-
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph );
-	}
-}
-
-static void TimeWarpBarGraphs_RenderCompute( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs, GpuFramebuffer_t * framebuffer )
-{
-	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
-	{
-		GpuCommandBuffer_BeginTimer( commandBuffer, &bargraphs->barGraphTimer );
-
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->timeWarpFrameRateGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->frameCpuTimeBarGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->frameGpuTimeBarGraph, framebuffer );
-
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->multiViewBarGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->timeWarpImplementationBarGraph, framebuffer );
-
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph, framebuffer );
-
-		GpuCommandBuffer_EndTimer( commandBuffer, &bargraphs->barGraphTimer );
-	}
-}
-
-static float TimeWarpBarGraphs_GetGpuMillisecondsGraphics( TimeWarpBarGraphs_t * bargraphs )
-{
-	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
-	{
-		return GpuTimer_GetMilliseconds( &bargraphs->barGraphTimer );
-	}
-	return 0.0f;
-}
-
-static float TimeWarpBarGraphs_GetGpuMillisecondsCompute( TimeWarpBarGraphs_t * bargraphs )
-{
-	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
-	{
-		return GpuTimer_GetMilliseconds( &bargraphs->barGraphTimer );
-	}
-	return 0.0f;
-}
-
-/*
-================================================================================================================================
-
-Distortion meshes.
-
-MeshCoord_t
-
-================================================================================================================================
-*/
-
-typedef struct
-{
-	float x;
-	float y;
-} MeshCoord_t;
-
-static float MaxFloat( float x, float y ) { return ( x > y ) ? x : y; }
-static float MinFloat( float x, float y ) { return ( x < y ) ? x : y; }
-
-// A Catmull-Rom spline through the values K[0], K[1], K[2] ... K[numKnots-1] evenly spaced from 0.0 to 1.0
-static float EvaluateCatmullRomSpline( const float value, float const * K, const int numKnots )
-{
-	const float scaledValue = (float)( numKnots - 1 ) * value;
-	const float scaledValueFloor = MaxFloat( 0.0f, MinFloat( (float)( numKnots - 1 ), floorf( scaledValue ) ) );
-	const float t = scaledValue - scaledValueFloor;
-	const int k = (int)scaledValueFloor;
-
-	float p0 = 0.0f;
-	float p1 = 0.0f;
-	float m0 = 0.0f;
-	float m1 = 0.0f;
-
-	if ( k == 0 )
-	{
-		p0 = K[0];
-		m0 = K[1] - K[0];
-		p1 = K[1];
-		m1 = 0.5f * ( K[2] - K[0] );
-	}
-	else if ( k < numKnots - 2 )
-	{
-		p0 = K[k];
-		m0 = 0.5f * ( K[k+1] - K[k-1] );
-		p1 = K[k+1];
-		m1 = 0.5f * ( K[k+2] - K[k] );
-	}
-	else if ( k == numKnots - 2 )
-	{
-		p0 = K[k];
-		m0 = 0.5f * ( K[k+1] - K[k-1] );
-		p1 = K[k+1];
-		m1 = K[k+1] - K[k];
-	}
-	else if ( k == numKnots - 1 )
-	{
-		p0 = K[k];
-		m0 = K[k] - K[k-1];
-		p1 = p0 + m0;
-		m1 = m0;
-	}
-
-	const float omt = 1.0f - t;
-	const float res = ( p0 * ( 1.0f + 2.0f *   t ) + m0 *   t ) * omt * omt
-					+ ( p1 * ( 1.0f + 2.0f * omt ) - m1 * omt ) *   t *   t;
-	return res;
-}
-
-static void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS], const int eyeTilesWide, const int eyeTilesHigh, const HmdInfo_t * hmdInfo )
-{
-	const float horizontalShiftMeters = ( hmdInfo->lensSeparationInMeters / 2 ) - ( hmdInfo->widthInMeters / 4 );
-	const float horizontalShiftView = horizontalShiftMeters / ( hmdInfo->widthInMeters / 2 );
-
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
-	{
-		for ( int y = 0; y <= eyeTilesHigh; y++ )
-		{
-			const float yf = 1.0f - (float)y / (float)eyeTilesHigh;
-
-			for ( int x = 0; x <= eyeTilesWide; x++ )
-			{
-				const float xf = (float)x / (float)eyeTilesWide;
-
-				const float in[2] = { ( eye ? -horizontalShiftView : horizontalShiftView ) + xf, yf };
-				const float ndcToPixels[2] = { hmdInfo->widthInPixels * 0.25f, hmdInfo->heightInPixels * 0.5f };
-				const float pixelsToMeters[2] = { hmdInfo->widthInMeters / hmdInfo->widthInPixels, hmdInfo->heightInMeters / hmdInfo->heightInPixels };
-
-				float theta[2];
-				for ( int i = 0; i < 2; i++ )
-				{
-					const float unit = in[i];
-					const float ndc = 2.0f * unit - 1.0f;
-					const float pixels = ndc * ndcToPixels[i];
-					const float meters = pixels * pixelsToMeters[i];
-					const float tanAngle = meters / hmdInfo->metersPerTanAngleAtCenter;
-					theta[i] = tanAngle;
-				}
-
-				const float rsq = theta[0] * theta[0] + theta[1] * theta[1];
-				const float scale = EvaluateCatmullRomSpline( rsq, hmdInfo->K, hmdInfo->numKnots );
-				const float chromaScale[NUM_COLOR_CHANNELS] =
-				{
-					scale * ( 1.0f + hmdInfo->chromaticAberration[0] + rsq * hmdInfo->chromaticAberration[1] ),
-					scale,
-					scale * ( 1.0f + hmdInfo->chromaticAberration[2] + rsq * hmdInfo->chromaticAberration[3] )
-				};
-
-				const int vertNum = y * ( eyeTilesWide + 1 ) + x;
-				for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
-				{
-					meshCoords[eye][channel][vertNum].x = chromaScale[channel] * theta[0];
-					meshCoords[eye][channel][vertNum].y = chromaScale[channel] * theta[1];
-				}
-			}
-		}
-	}
-}
-
-/*
-================================================================================================================================
-
-Time warp graphics rendering.
-
-TimeWarpGraphics_t
-
-static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics, GpuRenderPass_t * renderPass );
-static void TimeWarpGraphics_Destroy( GpuContext_t * context, TimeWarpGraphics_t * graphics );
-static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpGraphics_t * graphics,
-									GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
-									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
-									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
-									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
-									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
-									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] );
-
-================================================================================================================================
-*/
-
-typedef struct
-{
-	GpuGeometry_t			distortionMesh[NUM_EYES];
-	GpuGraphicsProgram_t	timeWarpSpatialProgram;
-	GpuGraphicsProgram_t	timeWarpChromaticProgram;
-	GpuGraphicsPipeline_t	timeWarpSpatialPipeline[NUM_EYES];
-	GpuGraphicsPipeline_t	timeWarpChromaticPipeline[NUM_EYES];
-	GpuTimer_t				timeWarpGpuTime;
-} TimeWarpGraphics_t;
-
-enum
-{
-	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,
-	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,
-	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER,
-	GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE
-};
-
-static const GpuProgramParm_t timeWarpSpatialGraphicsProgramParms[] =
-{
-	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"TimeWarpStartTransform",	0 },
-	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,	"TimeWarpEndTransform",		1 },
-	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER,		"ArrayLayer",				2 },
-	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE,			"Texture",					0 }
-};
-
-static const char timeWarpSpatialVertexProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"uniform highp mat3x4 TimeWarpStartTransform;\n"
-	"uniform highp mat3x4 TimeWarpEndTransform;\n"
-	"in highp vec3 vertexPosition;\n"
-	"in highp vec2 vertexUv1;\n"
-	"out mediump vec2 fragmentUv1;\n"
-	"out gl_PerVertex { vec4 gl_Position; };\n"
-	"void main( void )\n"
-	"{\n"
-	"	gl_Position = vec4( vertexPosition, 1.0 );\n"
-	"\n"
-	"	float displayFraction = vertexPosition.x * 0.5 + 0.5;\n"	// landscape left-to-right
-	"\n"
-	"	vec3 startUv1 = vec4( vertexUv1, -1, 1 ) * TimeWarpStartTransform;\n"
-	"	vec3 endUv1 = vec4( vertexUv1, -1, 1 ) * TimeWarpEndTransform;\n"
-	"	vec3 curUv1 = mix( startUv1, endUv1, displayFraction );\n"
-	"	fragmentUv1 = curUv1.xy * ( 1.0 / max( curUv1.z, 0.00001 ) );\n"
-	"}\n";
-
-static const char timeWarpSpatialFragmentProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"uniform int ArrayLayer;\n"
-	"uniform highp sampler2DArray Texture;\n"
-	"in mediump vec2 fragmentUv1;\n"
-	"out lowp vec4 outColor;\n"
-	"void main()\n"
-	"{\n"
-	"	outColor = texture( Texture, vec3( fragmentUv1, ArrayLayer ) );\n"
-	"}\n";
-
-static const GpuProgramParm_t timeWarpChromaticGraphicsProgramParms[] =
-{
-	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"TimeWarpStartTransform",	0 },
-	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,	"TimeWarpEndTransform",		1 },
-	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER,		"ArrayLayer",				2 },
-	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE,			"Texture",					0 }
-};
-
-static const char timeWarpChromaticVertexProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"uniform highp mat3x4 TimeWarpStartTransform;\n"
-	"uniform highp mat3x4 TimeWarpEndTransform;\n"
-	"in highp vec3 vertexPosition;\n"
-	"in highp vec2 vertexUv0;\n"
-	"in highp vec2 vertexUv1;\n"
-	"in highp vec2 vertexUv2;\n"
-	"out mediump vec2 fragmentUv0;\n"
-	"out mediump vec2 fragmentUv1;\n"
-	"out mediump vec2 fragmentUv2;\n"
-	"out gl_PerVertex { vec4 gl_Position; };\n"
-	"void main( void )\n"
-	"{\n"
-	"	gl_Position = vec4( vertexPosition, 1.0 );\n"
-	"\n"
-	"	float displayFraction = vertexPosition.x * 0.5 + 0.5;\n"	// landscape left-to-right
-	"\n"
-	"	vec3 startUv0 = vec4( vertexUv0, -1, 1 ) * TimeWarpStartTransform;\n"
-	"	vec3 startUv1 = vec4( vertexUv1, -1, 1 ) * TimeWarpStartTransform;\n"
-	"	vec3 startUv2 = vec4( vertexUv2, -1, 1 ) * TimeWarpStartTransform;\n"
-	"\n"
-	"	vec3 endUv0 = vec4( vertexUv0, -1, 1 ) * TimeWarpEndTransform;\n"
-	"	vec3 endUv1 = vec4( vertexUv1, -1, 1 ) * TimeWarpEndTransform;\n"
-	"	vec3 endUv2 = vec4( vertexUv2, -1, 1 ) * TimeWarpEndTransform;\n"
-	"\n"
-	"	vec3 curUv0 = mix( startUv0, endUv0, displayFraction );\n"
-	"	vec3 curUv1 = mix( startUv1, endUv1, displayFraction );\n"
-	"	vec3 curUv2 = mix( startUv2, endUv2, displayFraction );\n"
-	"\n"
-	"	fragmentUv0 = curUv0.xy * ( 1.0 / max( curUv0.z, 0.00001 ) );\n"
-	"	fragmentUv1 = curUv1.xy * ( 1.0 / max( curUv1.z, 0.00001 ) );\n"
-	"	fragmentUv2 = curUv2.xy * ( 1.0 / max( curUv2.z, 0.00001 ) );\n"
-	"}\n";
-
-static const char timeWarpChromaticFragmentProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"uniform int ArrayLayer;\n"
-	"uniform highp sampler2DArray Texture;\n"
-	"in mediump vec2 fragmentUv0;\n"
-	"in mediump vec2 fragmentUv1;\n"
-	"in mediump vec2 fragmentUv2;\n"
-	"out lowp vec4 outColor;\n"
-	"void main()\n"
-	"{\n"
-	"	outColor.r = texture( Texture, vec3( fragmentUv0, ArrayLayer ) ).r;\n"
-	"	outColor.g = texture( Texture, vec3( fragmentUv1, ArrayLayer ) ).g;\n"
-	"	outColor.b = texture( Texture, vec3( fragmentUv2, ArrayLayer ) ).b;\n"
-	"	outColor.a = 1.0;\n"
-	"}\n";
-
-static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics, GpuRenderPass_t * renderPass )
-{
-	const int numVertices = ( EYE_TILES_HIGH + 1 ) * ( EYE_TILES_WIDE + 1 );
-	const int numIndices = EYE_TILES_HIGH * EYE_TILES_WIDE * 6;
-
-	GpuTriangleIndex_t * indices = (GpuTriangleIndex_t *) malloc( numIndices * sizeof( indices[0] ) );
-	for ( int y = 0; y < EYE_TILES_HIGH; y++ )
-	{
-		for ( int x = 0; x < EYE_TILES_WIDE; x++ )
-		{
-			const int offset = ( y * EYE_TILES_WIDE + x ) * 6;
-
-			indices[offset + 0] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
-			indices[offset + 1] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
-			indices[offset + 2] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
-
-			indices[offset + 3] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
-			indices[offset + 4] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
-			indices[offset + 5] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
-		}
-	}
-
-	GpuVertexAttributeArrays_t vertexAttribs;
-	GpuVertexAttributeArrays_Alloc( &vertexAttribs.base,
-									DefaultVertexAttributeLayout, numVertices,
-									VERTEX_ATTRIBUTE_FLAG_POSITION |
-									VERTEX_ATTRIBUTE_FLAG_UV0 |
-									VERTEX_ATTRIBUTE_FLAG_UV1 |
-									VERTEX_ATTRIBUTE_FLAG_UV2 );
-
-	const int numMeshCoords = ( EYE_TILES_WIDE + 1 ) * ( EYE_TILES_HIGH + 1 );
-	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t ) );
-	MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
-	{
-		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
-		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
-	};
-	BuildDistortionMeshes( meshCoords, EYE_TILES_WIDE, EYE_TILES_HIGH, GetDefaultHmdInfo() );
-
-#if defined( GRAPHICS_API_VULKAN )
-	const float flipY = -1.0f;
-#else
-	const float flipY = 1.0f;
-#endif
-
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
-	{
-		for ( int y = 0; y <= EYE_TILES_HIGH; y++ )
-		{
-			for ( int x = 0; x <= EYE_TILES_WIDE; x++ )
-			{
-				const int index = y * ( EYE_TILES_WIDE + 1 ) + x;
-				vertexAttribs.position[index].x = ( -1.0f + eye + ( (float)x / EYE_TILES_WIDE ) );
-				vertexAttribs.position[index].y = ( -1.0f + 2.0f * ( ( EYE_TILES_HIGH - (float)y ) / EYE_TILES_HIGH ) *
-													( (float)( EYE_TILES_HIGH * TILE_PIXELS_HIGH ) / DISPLAY_PIXELS_HIGH ) ) * flipY;
-				vertexAttribs.position[index].z = 0.0f;
-				vertexAttribs.uv0[index].x = meshCoords[eye][0][index].x;
-				vertexAttribs.uv0[index].y = meshCoords[eye][0][index].y;
-				vertexAttribs.uv1[index].x = meshCoords[eye][1][index].x;
-				vertexAttribs.uv1[index].y = meshCoords[eye][1][index].y;
-				vertexAttribs.uv2[index].x = meshCoords[eye][2][index].x;
-				vertexAttribs.uv2[index].y = meshCoords[eye][2][index].y;
-			}
-		}
-
-		GpuGeometry_Create( context, &graphics->distortionMesh[eye], &vertexAttribs.base, numVertices, indices, numIndices );
-	}
-
-	free( meshCoordsBasePtr );
-	GpuVertexAttributeArrays_Free( &vertexAttribs.base );
-	free( indices );
-
-	GpuGraphicsProgram_Create( context, &graphics->timeWarpSpatialProgram,
-								PROGRAM( timeWarpSpatialVertexProgram ), sizeof( PROGRAM( timeWarpSpatialVertexProgram ) ),
-								PROGRAM( timeWarpSpatialFragmentProgram ), sizeof( PROGRAM( timeWarpSpatialFragmentProgram ) ),
-								timeWarpSpatialGraphicsProgramParms, ARRAY_SIZE( timeWarpSpatialGraphicsProgramParms ),
-								graphics->distortionMesh[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV1 );
-	GpuGraphicsProgram_Create( context, &graphics->timeWarpChromaticProgram,
-								PROGRAM( timeWarpChromaticVertexProgram ), sizeof( PROGRAM( timeWarpChromaticVertexProgram ) ),
-								PROGRAM( timeWarpChromaticFragmentProgram ), sizeof( PROGRAM( timeWarpChromaticFragmentProgram ) ),
-								timeWarpChromaticGraphicsProgramParms, ARRAY_SIZE( timeWarpChromaticGraphicsProgramParms ),
-								graphics->distortionMesh[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV0 |
-								VERTEX_ATTRIBUTE_FLAG_UV1 | VERTEX_ATTRIBUTE_FLAG_UV2 );
-
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
-	{
-		GpuGraphicsPipelineParms_t pipelineParms;
-		GpuGraphicsPipelineParms_Init( &pipelineParms );
-
-		pipelineParms.rop.depthTestEnable = false;
-		pipelineParms.rop.depthWriteEnable = false;
-		pipelineParms.renderPass = renderPass;
-		pipelineParms.program = &graphics->timeWarpSpatialProgram;
-		pipelineParms.geometry = &graphics->distortionMesh[eye];
-
-		GpuGraphicsPipeline_Create( context, &graphics->timeWarpSpatialPipeline[eye], &pipelineParms );
-
-		pipelineParms.program = &graphics->timeWarpChromaticProgram;
-		pipelineParms.geometry = &graphics->distortionMesh[eye];
-
-		GpuGraphicsPipeline_Create( context, &graphics->timeWarpChromaticPipeline[eye], &pipelineParms );
-	}
-
-	GpuTimer_Create( context, &graphics->timeWarpGpuTime );
-}
-
-static void TimeWarpGraphics_Destroy( GpuContext_t * context, TimeWarpGraphics_t * graphics )
-{
-	GpuTimer_Destroy( context, &graphics->timeWarpGpuTime );
-
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
-	{
-		GpuGraphicsPipeline_Destroy( context, &graphics->timeWarpSpatialPipeline[eye] );
-		GpuGraphicsPipeline_Destroy( context, &graphics->timeWarpChromaticPipeline[eye] );
-	}
-
-	GpuGraphicsProgram_Destroy( context, &graphics->timeWarpSpatialProgram );
-	GpuGraphicsProgram_Destroy( context, &graphics->timeWarpChromaticProgram );
-
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
-	{
-		GpuGeometry_Destroy( context, &graphics->distortionMesh[eye] );
-	}
-}
-
-static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpGraphics_t * graphics,
-									GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
-									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
-									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
-									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
-									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
-									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] )
-{
-	const Microseconds_t t0 = GetTimeMicroseconds();
-
-	Matrix4x4f_t displayRefreshStartViewMatrix;
-	Matrix4x4f_t displayRefreshEndViewMatrix;
-	GetHmdViewMatrixForTime( &displayRefreshStartViewMatrix, refreshStartTime );
-	GetHmdViewMatrixForTime( &displayRefreshEndViewMatrix, refreshEndTime );
-
-	Matrix4x4f_t timeWarpStartTransform;
-	Matrix4x4f_t timeWarpEndTransform;
-	CalculateTimeWarpTransform( &timeWarpStartTransform, projectionMatrix, viewMatrix, &displayRefreshStartViewMatrix );
-	CalculateTimeWarpTransform( &timeWarpEndTransform, projectionMatrix, viewMatrix, &displayRefreshEndViewMatrix );
-
-	Matrix3x4f_t timeWarpStartTransform3x4;
-	Matrix3x4f_t timeWarpEndTransform3x4;
-	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpStartTransform3x4, &timeWarpStartTransform );
-	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpEndTransform3x4, &timeWarpEndTransform );
-
-	const ScreenRect_t screenRect = GpuFramebuffer_GetRect( framebuffer );
-
-	GpuCommandBuffer_BeginPrimary( commandBuffer );
-	GpuCommandBuffer_BeginFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
-
-	TimeWarpBarGraphs_UpdateGraphics( commandBuffer, bargraphs );
-
-	GpuCommandBuffer_BeginTimer( commandBuffer, &graphics->timeWarpGpuTime );
-	GpuCommandBuffer_BeginRenderPass( commandBuffer, renderPass, framebuffer, &screenRect );
-
-	GpuCommandBuffer_SetViewport( commandBuffer, &screenRect );
-	GpuCommandBuffer_SetScissor( commandBuffer, &screenRect );
-
-	for ( int eye = 0; eye < NUM_EYES; eye ++ )
-	{
-		GpuGraphicsCommand_t command;
-		GpuGraphicsCommand_Init( &command );
-		GpuGraphicsCommand_SetPipeline( &command, correctChromaticAberration ? &graphics->timeWarpChromaticPipeline[eye] : &graphics->timeWarpSpatialPipeline[eye] );
-		GpuGraphicsCommand_SetParmFloatMatrix3x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform3x4 );
-		GpuGraphicsCommand_SetParmFloatMatrix3x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform3x4 );
-		GpuGraphicsCommand_SetParmInt( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER, &eyeArrayLayer[eye] );
-		GpuGraphicsCommand_SetParmTextureSampled( &command, GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE, eyeTexture[eye] );
-
-		GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
-	}
-
-	const Microseconds_t t1 = GetTimeMicroseconds();
-
-	TimeWarpBarGraphs_RenderGraphics( commandBuffer, bargraphs );
-
-	GpuCommandBuffer_EndRenderPass( commandBuffer, renderPass );
-	GpuCommandBuffer_EndTimer( commandBuffer, &graphics->timeWarpGpuTime );
-
-	GpuCommandBuffer_EndFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_PRESENTATION );
-	GpuCommandBuffer_EndPrimary( commandBuffer );
-
-	GpuCommandBuffer_SubmitPrimary( commandBuffer );
-
-	const Microseconds_t t2 = GetTimeMicroseconds();
-
-	cpuTimes[PROFILE_TIME_TIME_WARP] = ( t1 - t0 ) * ( 1.0f / 1000.0f );
-	cpuTimes[PROFILE_TIME_BAR_GRAPHS] = ( t2 - t1 ) * ( 1.0f / 1000.0f );
-	cpuTimes[PROFILE_TIME_BLIT] = 0.0f;
-
-	const float barGraphGpuTime = TimeWarpBarGraphs_GetGpuMillisecondsGraphics( bargraphs );
-
-	gpuTimes[PROFILE_TIME_TIME_WARP] = GpuTimer_GetMilliseconds( &graphics->timeWarpGpuTime ) - barGraphGpuTime;
-	gpuTimes[PROFILE_TIME_BAR_GRAPHS] = barGraphGpuTime;
-	gpuTimes[PROFILE_TIME_BLIT] = 0.0f;
-
-#if GL_FINISH_SYNC == 1
-	GL( glFinish() );
-#endif
-}
-
-/*
-================================================================================================================================
-
-Time warp compute rendering.
-
-TimeWarpCompute_t
-
-static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, GpuRenderPass_t * renderPass, GpuWindow_t * window );
-static void TimeWarpCompute_Destroy( GpuContext_t * context, TimeWarpCompute_t * compute );
-static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpCompute_t * compute,
-									GpuFramebuffer_t * framebuffer,
-									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
-									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
-									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
-									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
-									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] );
-
-================================================================================================================================
-*/
-
-#if OPENGL_COMPUTE_ENABLED == 1
-
-typedef struct
-{
-	GpuTexture_t			distortionImage[NUM_EYES][NUM_COLOR_CHANNELS];
-	GpuTexture_t			timeWarpImage[NUM_EYES][NUM_COLOR_CHANNELS];
-	GpuComputeProgram_t		timeWarpTransformProgram;
-	GpuComputeProgram_t		timeWarpSpatialProgram;
-	GpuComputeProgram_t		timeWarpChromaticProgram;
-	GpuComputePipeline_t	timeWarpTransformPipeline;
-	GpuComputePipeline_t	timeWarpSpatialPipeline;
-	GpuComputePipeline_t	timeWarpChromaticPipeline;
-	GpuTimer_t				timeWarpGpuTime;
-	GpuFramebuffer_t		framebuffer;
-} TimeWarpCompute_t;
-
-enum
-{
-	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_DST,
-	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_SRC,
-	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_DIMENSIONS,
-	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE,
-	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,
-	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM
-};
-
-static const GpuProgramParm_t timeWarpTransformComputeProgramParms[] =
-{
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,					GPU_PROGRAM_PARM_ACCESS_WRITE_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_DST,		"dst",						0 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_SRC,		"src",						1 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,		GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_DIMENSIONS,		"dimensions",				0 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE,				"eye",						1 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"timeWarpStartTransform",	2 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,		"timeWarpEndTransform",		3 }
-};
-
-#define TRANSFORM_LOCAL_SIZE_X		8
-#define TRANSFORM_LOCAL_SIZE_Y		8
-
-static const char timeWarpTransformComputeProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"\n"
-	"layout( local_size_x = " STRINGIFY( TRANSFORM_LOCAL_SIZE_X ) ", local_size_y = " STRINGIFY( TRANSFORM_LOCAL_SIZE_Y ) " ) in;\n"
-	"\n"
-	"layout( rgba16f, binding = 0 ) uniform writeonly " ES_HIGHP " image2D dst;\n"
-	"layout( rgba32f, binding = 1 ) uniform readonly " ES_HIGHP " image2D src;\n"
-	"uniform highp mat3x4 timeWarpStartTransform;\n"
- 	"uniform highp mat3x4 timeWarpEndTransform;\n"
-	"uniform ivec2 dimensions;\n"
-	"uniform int eye;\n"
-	"\n"
-	"void main()\n"
-	"{\n"
-	"	ivec2 mesh = ivec2( gl_GlobalInvocationID.xy );\n"
-	"	if ( mesh.x >= dimensions.x || mesh.y >= dimensions.y )\n"
-	"	{\n"
-	"		return;\n"
-	"	}\n"
-	"	int eyeTilesWide = int( gl_NumWorkGroups.x * gl_WorkGroupSize.x ) - 1;\n"
-	"	int eyeTilesHigh = int( gl_NumWorkGroups.y * gl_WorkGroupSize.y ) - 1;\n"
-	"\n"
-	"	vec2 coords = imageLoad( src, mesh ).xy;\n"
-	"\n"
-	"	float displayFraction = float( eye * eyeTilesWide + mesh.x ) / ( float( eyeTilesWide ) * 2.0f );\n"		// landscape left-to-right
-	"	vec3 start = vec4( coords, -1.0f, 1.0f ) * timeWarpStartTransform;\n"
-	"	vec3 end = vec4( coords, -1.0f, 1.0f ) * timeWarpEndTransform;\n"
-	"	vec3 cur = start + displayFraction * ( end - start );\n"
-	"	float rcpZ = 1.0f / cur.z;\n"
-	"\n"
-	"	imageStore( dst, mesh, vec4( cur.xy * rcpZ, 0.0f, 0.0f ) );\n"
-	"}\n";
-
-enum
-{
-	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_DEST,
-	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_EYE_IMAGE,
-	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_R,
-	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_G,
-	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_B,
-	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE,
-	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS,
-	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER,
-	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET
-};
-
-static const GpuProgramParm_t timeWarpSpatialComputeProgramParms[] =
-{
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,				GPU_PROGRAM_PARM_ACCESS_WRITE_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_DEST,				"dest",				0 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_EYE_IMAGE,			"eyeImage",			0 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_G,		"warpImageG",		1 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE,		"imageScale",		0 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS,		"imageBias",		1 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET,	"eyePixelOffset",	3 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER,		"imageLayer",		2 }
-};
-
-#define SPATIAL_LOCAL_SIZE_X		8
-#define SPATIAL_LOCAL_SIZE_Y		8
-
-static const char timeWarpSpatialComputeProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"\n"
-	"layout( local_size_x = " STRINGIFY( SPATIAL_LOCAL_SIZE_X ) ", local_size_y = " STRINGIFY( SPATIAL_LOCAL_SIZE_Y ) " ) in;\n"
-	"\n"
-	"// imageScale = {	eyeTilesWide / ( eyeTilesWide + 1 ) / eyePixelsWide,\n"
-	"//					eyeTilesHigh / ( eyeTilesHigh + 1 ) / eyePixelsHigh };\n"
-	"// imageBias  = {	0.5f / ( eyeTilesWide + 1 ),\n"
-	"//					0.5f / ( eyeTilesHigh + 1 ) };\n"
-	"layout( rgba8, binding = 0 ) uniform writeonly " ES_HIGHP " image2D dest;\n"
-	"uniform highp sampler2DArray eyeImage;\n"
-	"uniform highp sampler2D warpImageG;\n"
-	"uniform highp vec2 imageScale;\n"
-	"uniform highp vec2 imageBias;\n"
-	"uniform ivec2 eyePixelOffset;\n"
-	"uniform int imageLayer;\n"
-	"\n"
-	"void main()\n"
-	"{\n"
-	"	vec2 tile = ( vec2( gl_GlobalInvocationID.xy ) + vec2( 0.5f ) ) * imageScale + imageBias;\n"
-	"\n"
-	"	vec2 eyeCoords = texture( warpImageG, tile ).xy;\n"
-	"\n"
-	"	vec4 rgba = texture( eyeImage, vec3( eyeCoords, imageLayer ) );\n"
-	"\n"
-	"	imageStore( dest, ivec2( int( gl_GlobalInvocationID.x ) + eyePixelOffset.x, eyePixelOffset.y - 1 - int( gl_GlobalInvocationID.y ) ), rgba );\n"
-	"}\n";
-
-static const GpuProgramParm_t timeWarpChromaticComputeProgramParms[] =
-{
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,				GPU_PROGRAM_PARM_ACCESS_WRITE_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_DEST,				"dest",				0 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_EYE_IMAGE,			"eyeImage",			0 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_R,		"warpImageR",		1 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_G,		"warpImageG",		2 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_B,		"warpImageB",		3 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE,		"imageScale",		0 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS,		"imageBias",		1 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET,	"eyePixelOffset",	3 },
-	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT,			GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER,		"imageLayer",		2 }
-};
-
-#define CHROMATIC_LOCAL_SIZE_X		8
-#define CHROMATIC_LOCAL_SIZE_Y		8
-
-static const char timeWarpChromaticComputeProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"\n"
-	"layout( local_size_x = " STRINGIFY( CHROMATIC_LOCAL_SIZE_X ) ", local_size_y = " STRINGIFY( CHROMATIC_LOCAL_SIZE_Y ) " ) in;\n"
-	"\n"
-	"// imageScale = {	eyeTilesWide / ( eyeTilesWide + 1 ) / eyePixelsWide,\n"
-	"//					eyeTilesHigh / ( eyeTilesHigh + 1 ) / eyePixelsHigh };\n"
-	"// imageBias  = {	0.5f / ( eyeTilesWide + 1 ),\n"
-	"//					0.5f / ( eyeTilesHigh + 1 ) };\n"
-	"layout( rgba8, binding = 0 ) uniform writeonly " ES_HIGHP " image2D dest;\n"
-	"uniform highp sampler2DArray eyeImage;\n"
-	"uniform highp sampler2D warpImageR;\n"
-	"uniform highp sampler2D warpImageG;\n"
-	"uniform highp sampler2D warpImageB;\n"
-	"uniform highp vec2 imageScale;\n"
-	"uniform highp vec2 imageBias;\n"
-	"uniform ivec2 eyePixelOffset;\n"
-	"uniform int imageLayer;\n"
-	"\n"
-	"void main()\n"
-	"{\n"
-	"	vec2 tile = ( vec2( gl_GlobalInvocationID.xy ) + vec2( 0.5f ) ) * imageScale + imageBias;\n"
-	"\n"
-	"	vec2 eyeCoordsR = texture( warpImageR, tile ).xy;\n"
-	"	vec2 eyeCoordsG = texture( warpImageG, tile ).xy;\n"
-	"	vec2 eyeCoordsB = texture( warpImageB, tile ).xy;\n"
-	"\n"
-	"	vec4 rgba;\n"
-	"	rgba.x = texture( eyeImage, vec3( eyeCoordsR, imageLayer ) ).x;\n"
-	"	rgba.y = texture( eyeImage, vec3( eyeCoordsG, imageLayer ) ).y;\n"
-	"	rgba.z = texture( eyeImage, vec3( eyeCoordsB, imageLayer ) ).z;\n"
-	"	rgba.w = 1.0f;\n"
-	"\n"
-	"	imageStore( dest, ivec2( int( gl_GlobalInvocationID.x ) + eyePixelOffset.x, eyePixelOffset.y - 1 - int( gl_GlobalInvocationID.y ) ), rgba );\n"
-	"}\n";
-
-static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, GpuRenderPass_t * renderPass, GpuWindow_t * window )
-{
-	memset( compute, 0, sizeof( TimeWarpCompute_t ) );
-
-	const int numMeshCoords = ( EYE_TILES_WIDE + 1 ) * ( EYE_TILES_HIGH + 1 );
-	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t ) );
-	MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
-	{
-		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
-		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
-	};
-	BuildDistortionMeshes( meshCoords, EYE_TILES_WIDE, EYE_TILES_HIGH, GetDefaultHmdInfo() );
-
-	float * rgbaFloat = (float *) malloc( numMeshCoords * 4 * sizeof( float ) );
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
-	{
-		for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
-		{
-			for ( int i = 0; i < numMeshCoords; i++ )
-			{
-				rgbaFloat[i * 4 + 0] = meshCoords[eye][channel][i].x;
-				rgbaFloat[i * 4 + 1] = meshCoords[eye][channel][i].y;
-				rgbaFloat[i * 4 + 2] = 0.0f;
-				rgbaFloat[i * 4 + 3] = 0.0f;
-			}
-			const size_t rgbaSize = numMeshCoords * 4 * sizeof( float );
-			GpuTexture_Create2D( context, &compute->distortionImage[eye][channel],
-								GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT, GPU_SAMPLE_COUNT_1,
-								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, GPU_TEXTURE_USAGE_STORAGE, rgbaFloat, rgbaSize );
-			GpuTexture_Create2D( context, &compute->timeWarpImage[eye][channel],
-								GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT, GPU_SAMPLE_COUNT_1,
-								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, GPU_TEXTURE_USAGE_STORAGE | GPU_TEXTURE_USAGE_SAMPLED, NULL, 0 );
-		}
-	}
-	free( rgbaFloat );
-
-	free( meshCoordsBasePtr );
-
-	GpuComputeProgram_Create( context, &compute->timeWarpTransformProgram,
-								PROGRAM( timeWarpTransformComputeProgram ), sizeof( PROGRAM( timeWarpTransformComputeProgram ) ),
-								timeWarpTransformComputeProgramParms, ARRAY_SIZE( timeWarpTransformComputeProgramParms ) );
-	GpuComputeProgram_Create( context, &compute->timeWarpSpatialProgram,
-								PROGRAM( timeWarpSpatialComputeProgram ), sizeof( PROGRAM( timeWarpSpatialComputeProgram ) ),
-								timeWarpSpatialComputeProgramParms, ARRAY_SIZE( timeWarpSpatialComputeProgramParms ) );
-	GpuComputeProgram_Create( context, &compute->timeWarpChromaticProgram,
-								PROGRAM( timeWarpChromaticComputeProgram ), sizeof( PROGRAM( timeWarpChromaticComputeProgram ) ),
-								timeWarpChromaticComputeProgramParms, ARRAY_SIZE( timeWarpChromaticComputeProgramParms ) );
-
-	GpuComputePipeline_Create( context, &compute->timeWarpTransformPipeline, &compute->timeWarpTransformProgram );
-	GpuComputePipeline_Create( context, &compute->timeWarpSpatialPipeline, &compute->timeWarpSpatialProgram );
-	GpuComputePipeline_Create( context, &compute->timeWarpChromaticPipeline, &compute->timeWarpChromaticProgram );
-
-	GpuTimer_Create( context, &compute->timeWarpGpuTime );
-
-	GpuFramebuffer_CreateFromTextures( context, &compute->framebuffer, renderPass, window->windowWidth, window->windowHeight, 1 );
-}
-
-static void TimeWarpCompute_Destroy( GpuContext_t * context, TimeWarpCompute_t * compute )
-{
-	GpuFramebuffer_Destroy( context, &compute->framebuffer );
-
-	GpuTimer_Destroy( context, &compute->timeWarpGpuTime );
-
-	GpuComputePipeline_Destroy( context, &compute->timeWarpTransformPipeline );
-	GpuComputePipeline_Destroy( context, &compute->timeWarpSpatialPipeline );
-	GpuComputePipeline_Destroy( context, &compute->timeWarpChromaticPipeline );
-
-	GpuComputeProgram_Destroy( context, &compute->timeWarpTransformProgram );
-	GpuComputeProgram_Destroy( context, &compute->timeWarpSpatialProgram );
-	GpuComputeProgram_Destroy( context, &compute->timeWarpChromaticProgram );
-
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
-	{
-		for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
-		{
-			GpuTexture_Destroy( context, &compute->distortionImage[eye][channel] );
-			GpuTexture_Destroy( context, &compute->timeWarpImage[eye][channel] );
-		}
-	}
-
-	memset( compute, 0, sizeof( TimeWarpCompute_t ) );
-}
-
-static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpCompute_t * compute,
-									GpuFramebuffer_t * framebuffer,
-									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
-									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
-									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
-									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
-									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] )
-{
-	const Microseconds_t t0 = GetTimeMicroseconds();
-
-	Matrix4x4f_t displayRefreshStartViewMatrix;
-	Matrix4x4f_t displayRefreshEndViewMatrix;
-	GetHmdViewMatrixForTime( &displayRefreshStartViewMatrix, refreshStartTime );
-	GetHmdViewMatrixForTime( &displayRefreshEndViewMatrix, refreshEndTime );
-
-	Matrix4x4f_t timeWarpStartTransform;
-	Matrix4x4f_t timeWarpEndTransform;
-	CalculateTimeWarpTransform( &timeWarpStartTransform, projectionMatrix, viewMatrix, &displayRefreshStartViewMatrix );
-	CalculateTimeWarpTransform( &timeWarpEndTransform, projectionMatrix, viewMatrix, &displayRefreshEndViewMatrix );
-
-	Matrix3x4f_t timeWarpStartTransform3x4;
-	Matrix3x4f_t timeWarpEndTransform3x4;
-	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpStartTransform3x4, &timeWarpStartTransform );
-	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpEndTransform3x4, &timeWarpEndTransform );
-
-	GpuCommandBuffer_BeginPrimary( commandBuffer );
-	GpuCommandBuffer_BeginFramebuffer( commandBuffer, &compute->framebuffer, 0, GPU_TEXTURE_USAGE_STORAGE );
-
-	GpuCommandBuffer_BeginTimer( commandBuffer, &compute->timeWarpGpuTime );
-
-	for ( int eye = 0; eye < NUM_EYES; eye ++ )
-	{
-		for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
-		{
-			GpuCommandBuffer_ChangeTextureUsage( commandBuffer, &compute->timeWarpImage[eye][channel], GPU_TEXTURE_USAGE_STORAGE );
-			GpuCommandBuffer_ChangeTextureUsage( commandBuffer, &compute->distortionImage[eye][channel], GPU_TEXTURE_USAGE_STORAGE );
-		}
-	}
-
-	const Vector2i_t dimensions = { EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1 };
-	const int eyeIndex[NUM_EYES] = { 0, 1 };
-
-	for ( int eye = 0; eye < NUM_EYES; eye ++ )
-	{
-		for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
-		{
-			GpuComputeCommand_t command;
-			GpuComputeCommand_Init( &command );
-			GpuComputeCommand_SetPipeline( &command, &compute->timeWarpTransformPipeline );
-			GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_DST, &compute->timeWarpImage[eye][channel] );
-			GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_SRC, &compute->distortionImage[eye][channel] );
-			GpuComputeCommand_SetParmFloatMatrix3x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform3x4 );
-			GpuComputeCommand_SetParmFloatMatrix3x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform3x4 );
-			GpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_DIMENSIONS, &dimensions );
-			GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE, &eyeIndex[eye] );
-			GpuComputeCommand_SetDimensions( &command, ( dimensions.x + TRANSFORM_LOCAL_SIZE_X - 1 ) / TRANSFORM_LOCAL_SIZE_X, 
-														( dimensions.y + TRANSFORM_LOCAL_SIZE_Y - 1 ) / TRANSFORM_LOCAL_SIZE_Y, 1 );
-
-			GpuCommandBuffer_SubmitComputeCommand( commandBuffer, &command );
-		}
-	}
-
-	for ( int eye = 0; eye < NUM_EYES; eye ++ )
-	{
-		for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
-		{
-			GpuCommandBuffer_ChangeTextureUsage( commandBuffer, &compute->timeWarpImage[eye][channel], GPU_TEXTURE_USAGE_SAMPLED );
-		}
-	}
-	GpuCommandBuffer_ChangeTextureUsage( commandBuffer, GpuFramebuffer_GetColorTexture( &compute->framebuffer ), GPU_TEXTURE_USAGE_STORAGE );
-
-	const int screenWidth = GpuFramebuffer_GetWidth( &compute->framebuffer );
-	const int screenHeight = GpuFramebuffer_GetHeight( &compute->framebuffer );
-	const int eyePixelsWide = screenWidth / NUM_EYES;
-	const int eyePixelsHigh = screenHeight * EYE_TILES_HIGH * TILE_PIXELS_HIGH / DISPLAY_PIXELS_HIGH;
-	const Vector2f_t imageScale =
-	{
-		(float)EYE_TILES_WIDE / ( EYE_TILES_WIDE + 1 ) / eyePixelsWide,
-		(float)EYE_TILES_HIGH / ( EYE_TILES_HIGH + 1 ) / eyePixelsHigh
-	};
-	const Vector2f_t imageBias =
-	{
-		0.5f / ( EYE_TILES_WIDE + 1 ),
-		0.5f / ( EYE_TILES_HIGH + 1 )
-	};
-	const Vector2i_t eyePixelOffset[NUM_EYES] =
-	{
-#if defined( GRAPHICS_API_VULKAN )
-		{ 0 * eyePixelsWide, screenHeight - eyePixelsHigh },
-		{ 1 * eyePixelsWide, screenHeight - eyePixelsHigh }
-#else
-		{ 0 * eyePixelsWide, eyePixelsHigh },
-		{ 1 * eyePixelsWide, eyePixelsHigh }
-#endif
-	};
-
-	for ( int eye = 0; eye < NUM_EYES; eye ++ )
-	{
-		assert( screenWidth % ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_X : SPATIAL_LOCAL_SIZE_X ) == 0 );
-		assert( screenHeight % ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_Y : SPATIAL_LOCAL_SIZE_Y ) == 0 );
-
-		GpuComputeCommand_t command;
-		GpuComputeCommand_Init( &command );
-		GpuComputeCommand_SetPipeline( &command, correctChromaticAberration ? &compute->timeWarpChromaticPipeline : &compute->timeWarpSpatialPipeline );
-		GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_DEST, GpuFramebuffer_GetColorTexture( &compute->framebuffer ) );
-		GpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_EYE_IMAGE, eyeTexture[eye] );
-		GpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_R, &compute->timeWarpImage[eye][0] );
-		GpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_G, &compute->timeWarpImage[eye][1] );
-		GpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_B, &compute->timeWarpImage[eye][2] );
-		GpuComputeCommand_SetParmFloatVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE, &imageScale );
-		GpuComputeCommand_SetParmFloatVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS, &imageBias );
-		GpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET, &eyePixelOffset[eye] );
-		GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER, &eyeArrayLayer[eye] );
-		GpuComputeCommand_SetDimensions( &command, screenWidth / ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_X : SPATIAL_LOCAL_SIZE_X ) / 2,
-													screenHeight / ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_Y : SPATIAL_LOCAL_SIZE_Y ), 1 );
-
-		GpuCommandBuffer_SubmitComputeCommand( commandBuffer, &command );
-	}
-
-	const Microseconds_t t1 = GetTimeMicroseconds();
-
-	TimeWarpBarGraphs_UpdateCompute( commandBuffer, bargraphs );
-	TimeWarpBarGraphs_RenderCompute( commandBuffer, bargraphs, &compute->framebuffer );
-
-	const Microseconds_t t2 = GetTimeMicroseconds();
-
-	GpuCommandBuffer_Blit( commandBuffer, &compute->framebuffer, framebuffer );
-
-	GpuCommandBuffer_EndTimer( commandBuffer, &compute->timeWarpGpuTime );
-
-	GpuCommandBuffer_EndFramebuffer( commandBuffer, &compute->framebuffer, 0, GPU_TEXTURE_USAGE_PRESENTATION );
-	GpuCommandBuffer_EndPrimary( commandBuffer );
-
-	GpuCommandBuffer_SubmitPrimary( commandBuffer );
-
-	const Microseconds_t t3 = GetTimeMicroseconds();
-
-	cpuTimes[PROFILE_TIME_TIME_WARP] = ( t1 - t0 ) * ( 1.0f / 1000.0f );
-	cpuTimes[PROFILE_TIME_BAR_GRAPHS] = ( t2 - t1 ) * ( 1.0f / 1000.0f );
-	cpuTimes[PROFILE_TIME_BLIT] = ( t3 - t2 ) * ( 1.0f / 1000.0f );
-
-	const float barGraphGpuTime = TimeWarpBarGraphs_GetGpuMillisecondsCompute( bargraphs );
-
-	gpuTimes[PROFILE_TIME_TIME_WARP] = GpuTimer_GetMilliseconds( &compute->timeWarpGpuTime ) - barGraphGpuTime;
-	gpuTimes[PROFILE_TIME_BAR_GRAPHS] = barGraphGpuTime;
-	gpuTimes[PROFILE_TIME_BLIT] = 0.0f;
-
-#if GL_FINISH_SYNC == 1
-	GL( glFinish() );
-#endif
-}
-
-#else
-
-typedef struct
-{
-	int		empty;
-} TimeWarpCompute_t;
-
-static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, GpuRenderPass_t * renderPass, GpuWindow_t * window )
-{
-	UNUSED_PARM( context );
-	UNUSED_PARM( compute );
-	UNUSED_PARM( renderPass );
-	UNUSED_PARM( window );
-}
-
-static void TimeWarpCompute_Destroy( GpuContext_t * context, TimeWarpCompute_t * compute )
-{
-	UNUSED_PARM( context );
-	UNUSED_PARM( compute );
-}
-
-static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpCompute_t * compute,
-									GpuFramebuffer_t * framebuffer,
-									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
-									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
-									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
-									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
-									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] )
-{
-	UNUSED_PARM( commandBuffer );
-	UNUSED_PARM( compute );
-	UNUSED_PARM( framebuffer );
-	UNUSED_PARM( refreshStartTime );
-	UNUSED_PARM( refreshEndTime );
-	UNUSED_PARM( viewMatrix );
-	UNUSED_PARM( eyeTexture );
-	UNUSED_PARM( eyeArrayLayer );
-	UNUSED_PARM( correctChromaticAberration );
-	UNUSED_PARM( bargraphs );
-	UNUSED_PARM( cpuTimes );
-	UNUSED_PARM( gpuTimes );
-}
-
-#endif
-
-/*
-================================================================================================================================
-
-Time warp rendering.
-
-TimeWarp_t
-
-static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window );
-static void TimeWarp_Destroy( TimeWarp_t * timeWarp, GpuWindow_t * window );
-
-static void TimeWarp_SetBarGraphState( TimeWarp_t * timeWarp, const BarGraphState_t state );
-static void TimeWarp_CycleBarGraphState( TimeWarp_t * timeWarp );
-static void TimeWarp_SetImplementation( TimeWarp_t * timeWarp, const TimeWarpImplementation_t implementation );
-static void TimeWarp_CycleImplementation( TimeWarp_t * timeWarp );
-static void TimeWarp_SetChromaticAberrationCorrection( TimeWarp_t * timeWarp, const bool set );
-static void TimeWarp_ToggleChromaticAberrationCorrection( TimeWarp_t * timeWarp );
-static void TimeWarp_SetMultiView( TimeWarp_t * timeWarp, const bool enabled );
-static void TimeWarp_SetDrawCallLevel( TimeWarp_t * timeWarp, const int level );
-static void TimeWarp_SetTriangleLevel( TimeWarp_t * timeWarp, const int level );
-static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level );
-static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level );
-
-static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp, const Microseconds_t displayTime,
-											const Matrix4x4f_t * viewMatrix, const Matrix4x4_t * projectionMatrix,
-											GpuTexture_t * eyeTexture[2], GpuFence_t * eyeCompletionFence[2],
-											int eyeArrayLayer[2], float eyeTexturesCpuTime, float eyeTexturesGpuTime );
-static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window );
-
-================================================================================================================================
-*/
-
-#define AVARGE_FRAME_RATE_FRAMES		20
-
-typedef enum
-{
-	TIMEWARP_IMPLEMENTATION_GRAPHICS,
-	TIMEWARP_IMPLEMENTATION_COMPUTE,
-	TIMEWARP_IMPLEMENTATION_MAX
-} TimeWarpImplementation_t;
-
-typedef struct
-{
-	int							index;
-	Microseconds_t				displayTime;
-	Matrix4x4f_t				viewMatrix;
-	Matrix4x4f_t				projectionMatrix;
-	GpuTexture_t *				texture[NUM_EYES];
-	GpuFence_t *				completionFence[NUM_EYES];
-	int							arrayLayer[NUM_EYES];
-	float						cpuTime;
-	float						gpuTime;
-} EyeTextures_t;
-
-typedef struct
-{
-	GpuTexture_t				defaultTexture;
-	Microseconds_t				displayTime;
-	Matrix4x4f_t				viewMatrix;
-	Matrix4x4f_t				projectionMatrix;
-	GpuTexture_t *				eyeTexture[NUM_EYES];
-	int							eyeArrayLayer[NUM_EYES];
-
-	Mutex_t						newEyeTexturesMutex;
-	Signal_t					newEyeTexturesConsumed;
-	EyeTextures_t				newEyeTextures;
-	int							eyeTexturesPresentIndex;
-	int							eyeTexturesConsumedIndex;
-
-	float						refreshRate;
-	Microseconds_t				frameCpuTime[AVARGE_FRAME_RATE_FRAMES];
-	int							eyeTexturesFrames[AVARGE_FRAME_RATE_FRAMES];
-	int							timeWarpFrames;
-	float						cpuTimes[PROFILE_TIME_MAX];
-	float						gpuTimes[PROFILE_TIME_MAX];
-
-	GpuRenderPass_t				renderPass;
-	GpuFramebuffer_t			framebuffer;
-	GpuCommandBuffer_t			commandBuffer;
-	bool						correctChromaticAberration;
-	TimeWarpImplementation_t	implementation;
-	TimeWarpGraphics_t			graphics;
-	TimeWarpCompute_t			compute;
-	TimeWarpBarGraphs_t			bargraphs;
-} TimeWarp_t;
-
-static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
-{
-	GpuTexture_CreateDefault( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_DEFAULT_CIRCLES, 1024, 1024, 1, 2, 1, false, true );
-	GpuTexture_SetWrapMode( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
-
-	Mutex_Create( &timeWarp->newEyeTexturesMutex );
-	Signal_Create( &timeWarp->newEyeTexturesConsumed, true );
-	Signal_Raise( &timeWarp->newEyeTexturesConsumed );
-
-	timeWarp->newEyeTextures.index = 0;
-	timeWarp->newEyeTextures.displayTime = 0;
-	Matrix4x4f_CreateIdentity( &timeWarp->newEyeTextures.viewMatrix );
-	Matrix4x4f_CreateProjectionFov( &timeWarp->newEyeTextures.projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
-	{
-		timeWarp->newEyeTextures.texture[eye] = &timeWarp->defaultTexture;
-		timeWarp->newEyeTextures.completionFence[eye] = NULL;
-		timeWarp->newEyeTextures.arrayLayer[eye] = eye;
-	}
-	timeWarp->newEyeTextures.cpuTime = 0.0f;
-	timeWarp->newEyeTextures.gpuTime = 0.0f;
-
-	timeWarp->displayTime = 0;
-	timeWarp->viewMatrix = timeWarp->newEyeTextures.viewMatrix;
-	timeWarp->projectionMatrix = timeWarp->newEyeTextures.projectionMatrix;
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
-	{
-		timeWarp->eyeTexture[eye] = timeWarp->newEyeTextures.texture[eye];
-		timeWarp->eyeArrayLayer[eye] = timeWarp->newEyeTextures.arrayLayer[eye];
-	}
-
-	timeWarp->eyeTexturesPresentIndex = 1;
-	timeWarp->eyeTexturesConsumedIndex = 0;
-
-	timeWarp->refreshRate = window->windowRefreshRate;
-	for ( int i = 0; i < AVARGE_FRAME_RATE_FRAMES; i++ )
-	{
-		timeWarp->frameCpuTime[i] = 0;
-		timeWarp->eyeTexturesFrames[i] = 0;
-	}
-	timeWarp->timeWarpFrames = 0;
-
-	GpuRenderPass_Create( &window->context, &timeWarp->renderPass, window->colorFormat, window->depthFormat,
-							GPU_SAMPLE_COUNT_1, GPU_RENDERPASS_TYPE_INLINE,
-							GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER );
-	GpuFramebuffer_CreateFromSwapchain( window, &timeWarp->framebuffer, &timeWarp->renderPass );
-	GpuCommandBuffer_Create( &window->context, &timeWarp->commandBuffer, GPU_COMMAND_BUFFER_TYPE_PRIMARY, GpuFramebuffer_GetBufferCount( &timeWarp->framebuffer ) );
-
-	timeWarp->correctChromaticAberration = false;
-	timeWarp->implementation = TIMEWARP_IMPLEMENTATION_GRAPHICS;
-	TimeWarpGraphics_Create( &window->context, &timeWarp->graphics, &timeWarp->renderPass );
-	TimeWarpCompute_Create( &window->context, &timeWarp->compute, &timeWarp->renderPass, window );
-	TimeWarpBarGraphs_Create( &window->context, &timeWarp->bargraphs, &timeWarp->renderPass );
-
-	memset( timeWarp->cpuTimes, 0, sizeof( timeWarp->cpuTimes ) );
-	memset( timeWarp->gpuTimes, 0, sizeof( timeWarp->gpuTimes ) );
-}
-
-static void TimeWarp_Destroy( TimeWarp_t * timeWarp, GpuWindow_t * window )
-{
-	GpuContext_WaitIdle( &window->context );
-
-	TimeWarpGraphics_Destroy( &window->context, &timeWarp->graphics );
-	TimeWarpCompute_Destroy( &window->context, &timeWarp->compute );
-	TimeWarpBarGraphs_Destroy( &window->context, &timeWarp->bargraphs );
-
-	GpuCommandBuffer_Destroy( &window->context, &timeWarp->commandBuffer );
-	GpuFramebuffer_Destroy( &window->context, &timeWarp->framebuffer );
-	GpuRenderPass_Destroy( &window->context, &timeWarp->renderPass );
-
-	Signal_Destroy( &timeWarp->newEyeTexturesConsumed );
-	Mutex_Destroy( &timeWarp->newEyeTexturesMutex );
-
-	GpuTexture_Destroy( &window->context, &timeWarp->defaultTexture );
-}
-
-static void TimeWarp_SetBarGraphState( TimeWarp_t * timeWarp, const BarGraphState_t state )
-{
-	timeWarp->bargraphs.barGraphState = state;
-}
-
-static void TimeWarp_CycleBarGraphState( TimeWarp_t * timeWarp )
-{
-	timeWarp->bargraphs.barGraphState = (BarGraphState_t)( ( timeWarp->bargraphs.barGraphState + 1 ) % 3 );
-}
-
-static void TimeWarp_SetImplementation( TimeWarp_t * timeWarp, const TimeWarpImplementation_t implementation )
-{
-	timeWarp->implementation = implementation;
-	const float delta = ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS ) ? 0.0f : 1.0f;
-	BarGraph_AddBar( &timeWarp->bargraphs.timeWarpImplementationBarGraph, 0, delta, &colorRed, false );
-}
-
-static void TimeWarp_CycleImplementation( TimeWarp_t * timeWarp )
-{
-	timeWarp->implementation = (TimeWarpImplementation_t)( ( timeWarp->implementation + 1 ) % TIMEWARP_IMPLEMENTATION_MAX );
-#if OPENGL_COMPUTE_ENABLED == 0
-	if ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_COMPUTE )
-	{
-		timeWarp->implementation = (TimeWarpImplementation_t)( ( timeWarp->implementation + 1 ) % TIMEWARP_IMPLEMENTATION_MAX );
-	}
-#endif
-	const float delta = ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS ) ? 0.0f : 1.0f;
-	BarGraph_AddBar( &timeWarp->bargraphs.timeWarpImplementationBarGraph, 0, delta, &colorRed, false );
-}
-
-static void TimeWarp_SetChromaticAberrationCorrection( TimeWarp_t * timeWarp, const bool set )
-{
-	timeWarp->correctChromaticAberration = set;
-	BarGraph_AddBar( &timeWarp->bargraphs.correctChromaticAberrationBarGraph, 0, timeWarp->correctChromaticAberration ? 1.0f : 0.0f, &colorRed, false );
-}
-
-static void TimeWarp_ToggleChromaticAberrationCorrection( TimeWarp_t * timeWarp )
-{
-	timeWarp->correctChromaticAberration = !timeWarp->correctChromaticAberration;
-	BarGraph_AddBar( &timeWarp->bargraphs.correctChromaticAberrationBarGraph, 0, timeWarp->correctChromaticAberration ? 1.0f : 0.0f, &colorRed, false );
-}
-
-static void TimeWarp_SetMultiView( TimeWarp_t * timeWarp, const bool enabled )
-{
-	BarGraph_AddBar( &timeWarp->bargraphs.multiViewBarGraph, 0, enabled ? 1.0f : 0.0f, &colorRed, false );
-}
-
-static void TimeWarp_SetDrawCallLevel( TimeWarp_t * timeWarp, const int level )
-{
-	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
-	for ( int i = 0; i < 4; i++ )
-	{
-		BarGraph_AddBar( &timeWarp->bargraphs.sceneDrawCallLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
-	}
-}
-
-static void TimeWarp_SetTriangleLevel( TimeWarp_t * timeWarp, const int level )
-{
-	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
-	for ( int i = 0; i < 4; i++ )
-	{
-		BarGraph_AddBar( &timeWarp->bargraphs.sceneTriangleLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
-	}
-}
-
-static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level )
-{
-	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
-	for ( int i = 0; i < 4; i++ )
-	{
-		BarGraph_AddBar( &timeWarp->bargraphs.sceneFragmentLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
-	}
-}
-
-static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level )
-{
-	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
-	for ( int i = 0; i < 4; i++ )
-	{
-		BarGraph_AddBar( &timeWarp->bargraphs.sceneSamplesLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
-	}
-}
-
-static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp, const Microseconds_t displayTime,
-											const Matrix4x4f_t * viewMatrix, const Matrix4x4f_t * projectionMatrix,
-											GpuTexture_t * eyeTexture[2], GpuFence_t * eyeCompletionFence[2],
-											int eyeArrayLayer[2], float eyeTexturesCpuTime, float eyeTexturesGpuTime )
-{
-	EyeTextures_t newEyeTextures;
-	newEyeTextures.index = timeWarp->eyeTexturesPresentIndex++;
-	newEyeTextures.displayTime = displayTime;
-	newEyeTextures.viewMatrix = *viewMatrix;
-	newEyeTextures.projectionMatrix = *projectionMatrix;
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
-	{
-		newEyeTextures.texture[eye] = eyeTexture[eye];
-		newEyeTextures.completionFence[eye] = eyeCompletionFence[eye];
-		newEyeTextures.arrayLayer[eye] = eyeArrayLayer[eye];
-	}
-	newEyeTextures.cpuTime = eyeTexturesCpuTime;
-	newEyeTextures.gpuTime = eyeTexturesGpuTime;
-
-	Signal_Wait( &timeWarp->newEyeTexturesConsumed, -1 );
-
-	Mutex_Lock( &timeWarp->newEyeTexturesMutex, true );
-	timeWarp->newEyeTextures = newEyeTextures;
-	Mutex_Unlock( &timeWarp->newEyeTexturesMutex );
-}
-
-static void TimeWarp_ConsumeNewEyeTextures( GpuContext_t * context, TimeWarp_t * timeWarp )
-{
-	timeWarp->eyeTexturesFrames[timeWarp->timeWarpFrames % AVARGE_FRAME_RATE_FRAMES] = 0;
-
-	// Never block the time warp thread.
-	if ( !Mutex_Lock( &timeWarp->newEyeTexturesMutex, false ) )
-	{
-		return;
-	}
-	EyeTextures_t newEyeTextures = timeWarp->newEyeTextures;
-	Mutex_Unlock( &timeWarp->newEyeTexturesMutex );
-
-	if ( newEyeTextures.index > timeWarp->eyeTexturesConsumedIndex &&
-			GpuFence_IsSignalled( context, newEyeTextures.completionFence[0] ) &&
-				GpuFence_IsSignalled( context, newEyeTextures.completionFence[1] ) )
-	{
-		assert( newEyeTextures.index == timeWarp->eyeTexturesConsumedIndex + 1 );
-		timeWarp->eyeTexturesConsumedIndex = newEyeTextures.index;
-		timeWarp->displayTime = newEyeTextures.displayTime;
-		timeWarp->projectionMatrix = newEyeTextures.projectionMatrix;
-		timeWarp->viewMatrix = newEyeTextures.viewMatrix;
-		for ( int eye = 0; eye < NUM_EYES; eye++ )
-		{
-			timeWarp->eyeTexture[eye] = newEyeTextures.texture[eye];
-			timeWarp->eyeArrayLayer[eye] = newEyeTextures.arrayLayer[eye];
-		}
-		timeWarp->cpuTimes[PROFILE_TIME_EYE_TEXTURES] = newEyeTextures.cpuTime;
-		timeWarp->gpuTimes[PROFILE_TIME_EYE_TEXTURES] = newEyeTextures.gpuTime;
-		timeWarp->eyeTexturesFrames[timeWarp->timeWarpFrames % AVARGE_FRAME_RATE_FRAMES] = 1;
-		Signal_Raise( &timeWarp->newEyeTexturesConsumed );
-	}
-}
-
-static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window )
-{
-	TimeWarp_ConsumeNewEyeTextures( &window->context, timeWarp );
-
-	// Calculate the eye texture and time warp frame rates.
-	float timeWarpFrameRate = timeWarp->refreshRate;
-	float eyeTexturesFrameRate = timeWarp->refreshRate;
-	{
-		Microseconds_t lastTime = timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVARGE_FRAME_RATE_FRAMES];
-		Microseconds_t time = GpuWindow_GetNextSwapTime( window, 0 );
-		timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVARGE_FRAME_RATE_FRAMES] = time;
-		timeWarp->timeWarpFrames++;
-		if ( timeWarp->timeWarpFrames > AVARGE_FRAME_RATE_FRAMES )
-		{
-			int timeWarpFrames = AVARGE_FRAME_RATE_FRAMES;
-			int eyeTexturesFrames = 0;
-			for ( int i = 0; i < AVARGE_FRAME_RATE_FRAMES; i++ )
-			{
-				eyeTexturesFrames += timeWarp->eyeTexturesFrames[i];
-			}
-
-			timeWarpFrameRate = timeWarpFrames * 1000.0f * 1000.0f / ( time - lastTime );
-			eyeTexturesFrameRate = eyeTexturesFrames * 1000.0f * 1000.0f / ( time - lastTime );
-		}
-	}
-
-	// Update the bar graphs if not paused.
-	if ( timeWarp->bargraphs.barGraphState == BAR_GRAPH_VISIBLE )
-	{
-		const Vector4f_t * eyeTexturesFrameRateColor = ( eyeTexturesFrameRate > timeWarp->refreshRate - 0.5f ) ? &colorPurple : &colorRed;
-		const Vector4f_t * timeWarpFrameRateColor = ( timeWarpFrameRate > timeWarp->refreshRate - 0.5f ) ? &colorGreen : &colorRed;
-
-		BarGraph_AddBar( &timeWarp->bargraphs.eyeTexturesFrameRateGraph, 0, eyeTexturesFrameRate / timeWarp->refreshRate, eyeTexturesFrameRateColor, true );
-		BarGraph_AddBar( &timeWarp->bargraphs.timeWarpFrameRateGraph, 0, timeWarpFrameRate / timeWarp->refreshRate, timeWarpFrameRateColor, true );
-
-		for ( int i = 0; i < 2; i++ )
-		{
-			const float * times = ( i == 0 ) ? timeWarp->cpuTimes : timeWarp->gpuTimes;
-			float barHeights[PROFILE_TIME_MAX];
-			float totalBarHeight = 0.0f;
-			for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
-			{
-				barHeights[p] = times[p] * timeWarp->refreshRate * ( 1.0f / 1000.0f );
-				totalBarHeight += barHeights[p];
-			}
-
-			const float limit = 0.9f;
-			if ( totalBarHeight > limit )
-			{
-				totalBarHeight = 0.0f;
-				for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
-				{
-					barHeights[p] = ( totalBarHeight + barHeights[p] > limit ) ? ( limit - totalBarHeight ) : barHeights[p];
-					totalBarHeight += barHeights[p];
-				}
-				barHeights[PROFILE_TIME_OVERFLOW] = 1.0f - limit;
-			}
-
-			BarGraph_t * barGraph = ( i == 0 ) ? &timeWarp->bargraphs.frameCpuTimeBarGraph : &timeWarp->bargraphs.frameGpuTimeBarGraph;
-			for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
-			{
-				BarGraph_AddBar( barGraph, p, barHeights[p], profileTimeBarColors[p], ( p == PROFILE_TIME_MAX - 1 ) );
-			}
-		}
-	}
-
-	FrameLog_BeginFrame();
-
-	const Microseconds_t refreshStartTime = GpuWindow_GetNextSwapTime( window, 0 );
-	const Microseconds_t refreshEndTime = refreshStartTime /* + refresh time for incremental display refresh */;
-
-	if ( refreshStartTime != timeWarp->displayTime )
-	{
-		int i = 0;
-		i++;
-	}
-
-	if ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS )
-	{
-		TimeWarpGraphics_Render( &timeWarp->commandBuffer, &timeWarp->graphics, &timeWarp->framebuffer, &timeWarp->renderPass,
-								refreshStartTime, refreshEndTime,
-								&timeWarp->projectionMatrix, &timeWarp->viewMatrix,
-								timeWarp->eyeTexture, timeWarp->eyeArrayLayer, timeWarp->correctChromaticAberration,
-								&timeWarp->bargraphs, timeWarp->cpuTimes, timeWarp->gpuTimes );
-	}
-	else if ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_COMPUTE )
-	{
-		TimeWarpCompute_Render( &timeWarp->commandBuffer, &timeWarp->compute, &timeWarp->framebuffer,
-								refreshStartTime, refreshEndTime,
-								&timeWarp->projectionMatrix, &timeWarp->viewMatrix,
-								timeWarp->eyeTexture, timeWarp->eyeArrayLayer, timeWarp->correctChromaticAberration,
-								&timeWarp->bargraphs, timeWarp->cpuTimes, timeWarp->gpuTimes );
-	}
-
-	const int gpuTimeFramesDelayed = ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS ) ? GPU_TIMER_FRAMES_DELAYED : 0;
-
-	FrameLog_EndFrame(	timeWarp->cpuTimes[PROFILE_TIME_TIME_WARP] +
-						timeWarp->cpuTimes[PROFILE_TIME_BAR_GRAPHS] +
-						timeWarp->cpuTimes[PROFILE_TIME_BLIT],
-						timeWarp->gpuTimes[PROFILE_TIME_TIME_WARP] +
-						timeWarp->gpuTimes[PROFILE_TIME_BAR_GRAPHS] +
-						timeWarp->gpuTimes[PROFILE_TIME_BLIT], gpuTimeFramesDelayed );
-}
-
-/*
-================================================================================================================================
-
-Scene rendering.
-
-Scene_t
-SceneSettings_t
-
-static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings_t * settings, GpuRenderPass_t * renderPass );
-static void Scene_Destroy( GpuContext_t * context, Scene_t * scene );
-static void Scene_Simulate( Scene_t * scene, ViewState_t * viewState, const Microseconds_t time );
-static void Scene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, Scene_t * scene, ViewState_t * viewState );
-static void Scene_Render( GpuCommandBuffer_t * commandBuffer, Scene_t * scene, ViewState_t * viewState );
-
-static void SceneSettings_ToggleSimulationPaused( SceneSettings_t * settings );
-static void SceneSettings_ToggleMultiView( SceneSettings_t * settings );
-static void SceneSettings_SetSimulationPaused( SceneSettings_t * settings, const bool set );
-static void SceneSettings_SetMultiView( SceneSettings_t * settings, const bool set );
-static bool SceneSettings_GetSimulationPaused( SceneSettings_t * settings );
-static bool SceneSettings_GetMultiView( SceneSettings_t * settings );
-static void SceneSettings_CycleDrawCallLevel( SceneSettings_t * settings );
-static void SceneSettings_CycleTriangleLevel( SceneSettings_t * settings );
-static void SceneSettings_CycleFragmentLevel( SceneSettings_t * settings );
-static void SceneSettings_CycleSamplesLevel( SceneSettings_t * settings );
-static void SceneSettings_SetDrawCallLevel( SceneSettings_t * settings, const int level );
-static void SceneSettings_SetTriangleLevel( SceneSettings_t * settings, const int level );
-static void SceneSettings_SetFragmentLevel( SceneSettings_t * settings, const int level );
-static void SceneSettings_SetSamplesLevel( SceneSettings_t * settings, const int level );
-static int SceneSettings_GetDrawCallLevel( const SceneSettings_t * settings );
-static int SceneSettings_GetTriangleLevel( const SceneSettings_t * settings );
-static int SceneSettings_GetFragmentLevel( const SceneSettings_t * settings );
-static int SceneSettings_GetSamplesLevel( const SceneSettings_t * settings );
-
-================================================================================================================================
-*/
-
-#define MAX_SCENE_DRAWCALL_LEVELS	4
-#define MAX_SCENE_TRIANGLE_LEVELS	4
-#define MAX_SCENE_FRAGMENT_LEVELS	4
-#define MAX_SCENE_SAMPLES_LEVELS	4
-
-typedef struct
-{
-	bool	simulationPaused;
-	bool	useMultiView;
-	int		drawCallLevel;
-	int		triangleLevel;
-	int		fragmentLevel;
-	int		samplesLevel;
-	int		maxSamplesLevels;
-} SceneSettings_t;
-
-static void SceneSettings_Init( GpuContext_t * context, SceneSettings_t * settings )
-{
-	settings->simulationPaused = false;
-	settings->useMultiView = false;
-	settings->drawCallLevel = 0;
-	settings->triangleLevel = 0;
-	settings->fragmentLevel = 0;
-	settings->samplesLevel = 0;
-
-	const int maxSamplesLevels = IntegerLog2( glGetInteger( GL_MAX_SAMPLES ) + 1 );
-	settings->maxSamplesLevels = ( maxSamplesLevels < MAX_SCENE_SAMPLES_LEVELS ) ? maxSamplesLevels : MAX_SCENE_SAMPLES_LEVELS;
-
-	UNUSED_PARM( context );
-}
-
-static void CycleLevel( int * x, const int max ) { (*x) = ( (*x) + 1 ) % max; }
-
-static void SceneSettings_ToggleSimulationPaused( SceneSettings_t * settings ) { settings->simulationPaused = !settings->simulationPaused; }
-static void SceneSettings_ToggleMultiView( SceneSettings_t * settings ) { settings->useMultiView = !settings->useMultiView; }
-
-static void SceneSettings_SetSimulationPaused( SceneSettings_t * settings, const bool set ) { settings->simulationPaused = set; }
-static void SceneSettings_SetMultiView( SceneSettings_t * settings, const bool set ) { settings->useMultiView = set; }
-
-static bool SceneSettings_GetSimulationPaused( SceneSettings_t * settings ) { return settings->simulationPaused; }
-static bool SceneSettings_GetMultiView( SceneSettings_t * settings ) { return settings->useMultiView; }
-
-static void SceneSettings_CycleDrawCallLevel( SceneSettings_t * settings ) { CycleLevel( &settings->drawCallLevel, MAX_SCENE_DRAWCALL_LEVELS ); }
-static void SceneSettings_CycleTriangleLevel( SceneSettings_t * settings ) { CycleLevel( &settings->triangleLevel, MAX_SCENE_TRIANGLE_LEVELS ); }
-static void SceneSettings_CycleFragmentLevel( SceneSettings_t * settings ) { CycleLevel( &settings->fragmentLevel, MAX_SCENE_FRAGMENT_LEVELS ); }
-static void SceneSettings_CycleSamplesLevel( SceneSettings_t * settings ) { CycleLevel( &settings->samplesLevel, settings->maxSamplesLevels ); }
-
-static void SceneSettings_SetDrawCallLevel( SceneSettings_t * settings, const int level ) { settings->drawCallLevel = level; }
-static void SceneSettings_SetTriangleLevel( SceneSettings_t * settings, const int level ) { settings->triangleLevel = level; }
-static void SceneSettings_SetFragmentLevel( SceneSettings_t * settings, const int level ) { settings->fragmentLevel = level; }
-static void SceneSettings_SetSamplesLevel( SceneSettings_t * settings, const int level ) { settings->samplesLevel = ( level < settings->maxSamplesLevels ) ? level : settings->maxSamplesLevels; }
-
-static int SceneSettings_GetDrawCallLevel( const SceneSettings_t * settings ) { return settings->drawCallLevel; }
-static int SceneSettings_GetTriangleLevel( const SceneSettings_t * settings ) { return settings->triangleLevel; }
-static int SceneSettings_GetFragmentLevel( const SceneSettings_t * settings ) { return settings->fragmentLevel; }
-static int SceneSettings_GetSamplesLevel( const SceneSettings_t * settings ) { return settings->samplesLevel; }
-
-typedef struct
-{
-	// assets
-	GpuGeometry_t			geometry[MAX_SCENE_TRIANGLE_LEVELS];
-	GpuGraphicsProgram_t	program[MAX_SCENE_FRAGMENT_LEVELS];
-	GpuGraphicsPipeline_t	pipelines[MAX_SCENE_TRIANGLE_LEVELS][MAX_SCENE_FRAGMENT_LEVELS];
-	GpuBuffer_t				sceneMatrices;
-	GpuTexture_t			diffuseTexture;
-	GpuTexture_t			specularTexture;
-	GpuTexture_t			normalTexture;
-	SceneSettings_t			settings;
-	SceneSettings_t *		newSettings;
-	// simulation state
-	float					bigRotationX;
-	float					bigRotationY;
-	float					smallRotationX;
-	float					smallRotationY;
-	Matrix4x4f_t *			modelMatrix;
-} Scene_t;
-
-enum
-{
-	PROGRAM_UNIFORM_MODEL_MATRIX,
-	PROGRAM_UNIFORM_SCENE_MATRICES,
-	PROGRAM_TEXTURE_0,
-	PROGRAM_TEXTURE_1,
-	PROGRAM_TEXTURE_2
-};
-
-static GpuProgramParm_t flatShadedProgramParms[] =
-{
-	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_MODEL_MATRIX,		"ModelMatrix",		0 },
-	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_SCENE_MATRICES,		"SceneMatrices",	0 }
-};
-
-static const char flatShadedVertexProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"uniform mat4 ModelMatrix;\n"
-	"uniform SceneMatrices\n"
-	"{\n"
-	"	mat4 ViewMatrix;\n"
-	"	mat4 ProjectionMatrix;\n"
-	"} ub;\n"
-	"in vec3 vertexPosition;\n"
-	"in vec3 vertexNormal;\n"
-	"out vec3 fragmentEyeDir;\n"
-	"out vec3 fragmentNormal;\n"
-	"out gl_PerVertex { vec4 gl_Position; };\n"
-	"vec3 multiply3x3( mat4 m, vec3 v )\n"
-	"{\n"
-	"	return vec3(\n"
-	"		m[0].x * v.x + m[1].x * v.y + m[2].x * v.z,\n"
-	"		m[0].y * v.x + m[1].y * v.y + m[2].y * v.z,\n"
-	"		m[0].z * v.x + m[1].z * v.y + m[2].z * v.z );\n"
-	"}\n"
-	"vec3 transposeMultiply3x3( mat4 m, vec3 v )\n"
-	"{\n"
-	"	return vec3(\n"
-	"		m[0].x * v.x + m[0].y * v.y + m[0].z * v.z,\n"
-	"		m[1].x * v.x + m[1].y * v.y + m[1].z * v.z,\n"
-	"		m[2].x * v.x + m[2].y * v.y + m[2].z * v.z );\n"
-	"}\n"
-	"void main( void )\n"
-	"{\n"
-	"	vec4 vertexWorldPos = ModelMatrix * vec4( vertexPosition, 1.0 );\n"
-	"	vec3 eyeWorldPos = transposeMultiply3x3( ub.ViewMatrix, -vec3( ub.ViewMatrix[3] ) );\n"
-	"	gl_Position = ub.ProjectionMatrix * ( ub.ViewMatrix * vertexWorldPos );\n"
-	"	fragmentEyeDir = eyeWorldPos - vec3( vertexWorldPos );\n"
-	"	fragmentNormal = multiply3x3( ModelMatrix, vertexNormal );\n"
-	"}\n";
-
-static const char flatShadedMultiViewVertexProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"#define NUM_VIEWS 2\n"
-	"#define VIEW_ID gl_ViewID_OVR\n"
-	"#extension GL_OVR_multiview2 : require\n"
-	"layout( num_views = NUM_VIEWS ) in;\n"
-	"\n"
-	"uniform mat4 ModelMatrix;\n"
-	"uniform SceneMatrices\n"
-	"{\n"
-	"	mat4 ViewMatrix[NUM_VIEWS];\n"
-	"	mat4 ProjectionMatrix[NUM_VIEWS];\n"
-	"} ub;\n"
-	"in vec3 vertexPosition;\n"
-	"in vec3 vertexNormal;\n"
-	"out vec3 fragmentEyeDir;\n"
-	"out vec3 fragmentNormal;\n"
-	"vec3 multiply3x3( mat4 m, vec3 v )\n"
-	"{\n"
-	"	return vec3(\n"
-	"		m[0].x * v.x + m[1].x * v.y + m[2].x * v.z,\n"
-	"		m[0].y * v.x + m[1].y * v.y + m[2].y * v.z,\n"
-	"		m[0].z * v.x + m[1].z * v.y + m[2].z * v.z );\n"
-	"}\n"
-	"vec3 transposeMultiply3x3( mat4 m, vec3 v )\n"
-	"{\n"
-	"	return vec3(\n"
-	"		m[0].x * v.x + m[0].y * v.y + m[0].z * v.z,\n"
-	"		m[1].x * v.x + m[1].y * v.y + m[1].z * v.z,\n"
-	"		m[2].x * v.x + m[2].y * v.y + m[2].z * v.z );\n"
-	"}\n"
-	"void main( void )\n"
-	"{\n"
-	"	vec4 vertexWorldPos = ModelMatrix * vec4( vertexPosition, 1.0 );\n"
-	"	vec3 eyeWorldPos = transposeMultiply3x3( ub.ViewMatrix[VIEW_ID], -vec3( ub.ViewMatrix[VIEW_ID][3] ) );\n"
-	"	gl_Position = ub.ProjectionMatrix[VIEW_ID] * ( ub.ViewMatrix[VIEW_ID] * vertexWorldPos );\n"
-	"	fragmentEyeDir = eyeWorldPos - vec3( vertexWorldPos );\n"
-	"	fragmentNormal = multiply3x3( ModelMatrix, vertexNormal );\n"
-	"}\n";
-
-static const char flatShadedFragmentProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"in lowp vec3 fragmentEyeDir;\n"
-	"in lowp vec3 fragmentNormal;\n"
-	"out lowp vec4 outColor;\n"
-	"void main()\n"
-	"{\n"
-	"	lowp vec3 diffuseMap = vec3( 0.2, 0.2, 1.0 );\n"
-	"	lowp vec3 specularMap = vec3( 0.5, 0.5, 0.5 );\n"
-	"	lowp float specularPower = 10.0;\n"
-	"	lowp vec3 eyeDir = normalize( fragmentEyeDir );\n"
-	"	lowp vec3 normal = normalize( fragmentNormal );\n"
-	"\n"
-	"	lowp vec3 lightDir = normalize( vec3( -1.0, 1.0, 1.0 ) );\n"
-	"	lowp vec3 lightReflection = normalize( 2.0 * dot( lightDir, normal ) * normal - lightDir );\n"
-	"	lowp vec3 lightDiffuse = diffuseMap * ( max( dot( normal, lightDir ), 0.0 ) * 0.5 + 0.5 );\n"
-	"	lowp vec3 lightSpecular = specularMap * pow( max( dot( lightReflection, eyeDir ), 0.0 ), specularPower );\n"
-	"\n"
-	"	outColor.xyz = lightDiffuse + lightSpecular;\n"
-	"	outColor.w = 1.0;\n"
-	"}\n";
-
-static GpuProgramParm_t normalMappedProgramParms[] =
-{
-	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_MODEL_MATRIX,		"ModelMatrix",		0 },
-	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_SCENE_MATRICES,		"SceneMatrices",	0 },
-	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_TEXTURE_0,					"Texture0",			0 },
-	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_TEXTURE_1,					"Texture1",			1 },
-	{ GPU_PROGRAM_STAGE_FRAGMENT,	GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_TEXTURE_2,					"Texture2",			2 }
-};
-
-static const char normalMappedVertexProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"uniform mat4 ModelMatrix;\n"
-	"uniform SceneMatrices\n"
-	"{\n"
-	"	mat4 ViewMatrix;\n"
-	"	mat4 ProjectionMatrix;\n"
-	"} ub;\n"
-	"in vec3 vertexPosition;\n"
-	"in vec3 vertexNormal;\n"
-	"in vec3 vertexTangent;\n"
-	"in vec3 vertexBinormal;\n"
-	"in vec2 vertexUv0;\n"
-	"out vec3 fragmentEyeDir;\n"
-	"out vec3 fragmentNormal;\n"
-	"out vec3 fragmentTangent;\n"
-	"out vec3 fragmentBinormal;\n"
-	"out vec2 fragmentUv0;\n"
-	"out gl_PerVertex { vec4 gl_Position; };\n"
-	"vec3 multiply3x3( mat4 m, vec3 v )\n"
-	"{\n"
-	"	return vec3(\n"
-	"		m[0].x * v.x + m[1].x * v.y + m[2].x * v.z,\n"
-	"		m[0].y * v.x + m[1].y * v.y + m[2].y * v.z,\n"
-	"		m[0].z * v.x + m[1].z * v.y + m[2].z * v.z );\n"
-	"}\n"
-	"vec3 transposeMultiply3x3( mat4 m, vec3 v )\n"
-	"{\n"
-	"	return vec3(\n"
-	"		m[0].x * v.x + m[0].y * v.y + m[0].z * v.z,\n"
-	"		m[1].x * v.x + m[1].y * v.y + m[1].z * v.z,\n"
-	"		m[2].x * v.x + m[2].y * v.y + m[2].z * v.z );\n"
-	"}\n"
-	"void main( void )\n"
-	"{\n"
-	"	vec4 vertexWorldPos = ModelMatrix * vec4( vertexPosition, 1.0 );\n"
-	"	vec3 eyeWorldPos = transposeMultiply3x3( ub.ViewMatrix, -vec3( ub.ViewMatrix[3] ) );\n"
-	"	gl_Position = ub.ProjectionMatrix * ( ub.ViewMatrix * vertexWorldPos );\n"
-	"	fragmentEyeDir = eyeWorldPos - vec3( vertexWorldPos );\n"
-	"	fragmentNormal = multiply3x3( ModelMatrix, vertexNormal );\n"
-	"	fragmentTangent = multiply3x3( ModelMatrix, vertexTangent );\n"
-	"	fragmentBinormal = multiply3x3( ModelMatrix, vertexBinormal );\n"
-	"	fragmentUv0 = vertexUv0;\n"
-	"}\n";
-
-static const char normalMappedMultiViewVertexProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"#define NUM_VIEWS 2\n"
-	"#define VIEW_ID gl_ViewID_OVR\n"
-	"#extension GL_OVR_multiview2 : require\n"
-	"layout( num_views = NUM_VIEWS ) in;\n"
-	"\n"
-	"uniform mat4 ModelMatrix;\n"
-	"uniform SceneMatrices\n"
-	"{\n"
-	"	mat4 ViewMatrix[NUM_VIEWS];\n"
-	"	mat4 ProjectionMatrix[NUM_VIEWS];\n"
-	"} ub;\n"
-	"in vec3 vertexPosition;\n"
-	"in vec3 vertexNormal;\n"
-	"in vec3 vertexTangent;\n"
-	"in vec3 vertexBinormal;\n"
-	"in vec2 vertexUv0;\n"
-	"out vec3 fragmentEyeDir;\n"
-	"out vec3 fragmentNormal;\n"
-	"out vec3 fragmentTangent;\n"
-	"out vec3 fragmentBinormal;\n"
-	"out vec2 fragmentUv0;\n"
-	"vec3 multiply3x3( mat4 m, vec3 v )\n"
-	"{\n"
-	"	return vec3(\n"
-	"		m[0].x * v.x + m[1].x * v.y + m[2].x * v.z,\n"
-	"		m[0].y * v.x + m[1].y * v.y + m[2].y * v.z,\n"
-	"		m[0].z * v.x + m[1].z * v.y + m[2].z * v.z );\n"
-	"}\n"
-	"vec3 transposeMultiply3x3( mat4 m, vec3 v )\n"
-	"{\n"
-	"	return vec3(\n"
-	"		m[0].x * v.x + m[0].y * v.y + m[0].z * v.z,\n"
-	"		m[1].x * v.x + m[1].y * v.y + m[1].z * v.z,\n"
-	"		m[2].x * v.x + m[2].y * v.y + m[2].z * v.z );\n"
-	"}\n"
-	"void main( void )\n"
-	"{\n"
-	"	vec4 vertexWorldPos = ModelMatrix * vec4( vertexPosition, 1.0 );\n"
-	"	vec3 eyeWorldPos = transposeMultiply3x3( ub.ViewMatrix[VIEW_ID], -vec3( ub.ViewMatrix[VIEW_ID][3] ) );\n"
-	"	gl_Position = ub.ProjectionMatrix[VIEW_ID] * ( ub.ViewMatrix[VIEW_ID] * vertexWorldPos );\n"
-	"	fragmentEyeDir = eyeWorldPos - vec3( vertexWorldPos );\n"
-	"	fragmentNormal = multiply3x3( ModelMatrix, vertexNormal );\n"
-	"	fragmentTangent = multiply3x3( ModelMatrix, vertexTangent );\n"
-	"	fragmentBinormal = multiply3x3( ModelMatrix, vertexBinormal );\n"
-	"	fragmentUv0 = vertexUv0;\n"
-	"}\n";
-
-static const char normalMapped100LightsFragmentProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"uniform sampler2D Texture0;\n"
-	"uniform sampler2D Texture1;\n"
-	"uniform sampler2D Texture2;\n"
-	"in lowp vec3 fragmentEyeDir;\n"
-	"in lowp vec3 fragmentNormal;\n"
-	"in lowp vec3 fragmentTangent;\n"
-	"in lowp vec3 fragmentBinormal;\n"
-	"in lowp vec2 fragmentUv0;\n"
-	"out lowp vec4 outColor;\n"
-	"void main()\n"
-	"{\n"
-	"	lowp vec3 diffuseMap = texture( Texture0, fragmentUv0 ).xyz;\n"
-	"	lowp vec3 specularMap = texture( Texture1, fragmentUv0 ).xyz * 2.0;\n"
-	"	lowp vec3 normalMap = texture( Texture2, fragmentUv0 ).xyz * 2.0 - 1.0;\n"
-	"	lowp float specularPower = 10.0;\n"
-	"	lowp vec3 eyeDir = normalize( fragmentEyeDir );\n"
-	"	lowp vec3 normal = normalize( normalMap.x * fragmentTangent + normalMap.y * fragmentBinormal + normalMap.z * fragmentNormal );\n"
-	"\n"
-	"	lowp vec3 color = vec3( 0 );\n"
-	"	for ( int i = 0; i < 100; i++ )\n"
-	"	{\n"
-	"		lowp vec3 lightDir = normalize( vec3( -1.0, 1.0, 1.0 ) );\n"
-	"		lowp vec3 lightReflection = normalize( 2.0 * dot( lightDir, normal ) * normal - lightDir );\n"
-	"		lowp vec3 lightDiffuse = diffuseMap * ( max( dot( normal, lightDir ), 0.0 ) * 0.5 + 0.5 );\n"
-	"		lowp vec3 lightSpecular = specularMap * pow( max( dot( lightReflection, eyeDir ), 0.0 ), specularPower );\n"
-	"		color += ( lightDiffuse + lightSpecular ) * ( 1.0 / 100.0 );\n"
-	"	}\n"
-	"\n"
-	"	outColor.xyz = color;\n"
-	"	outColor.w = 1.0;\n"
-	"}\n";
-
-static const char normalMapped1000LightsFragmentProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"uniform sampler2D Texture0;\n"
-	"uniform sampler2D Texture1;\n"
-	"uniform sampler2D Texture2;\n"
-	"in lowp vec3 fragmentEyeDir;\n"
-	"in lowp vec3 fragmentNormal;\n"
-	"in lowp vec3 fragmentTangent;\n"
-	"in lowp vec3 fragmentBinormal;\n"
-	"in lowp vec2 fragmentUv0;\n"
-	"out lowp vec4 outColor;\n"
-	"void main()\n"
-	"{\n"
-	"	lowp vec3 diffuseMap = texture( Texture0, fragmentUv0 ).xyz;\n"
-	"	lowp vec3 specularMap = texture( Texture1, fragmentUv0 ).xyz * 2.0;\n"
-	"	lowp vec3 normalMap = texture( Texture2, fragmentUv0 ).xyz * 2.0 - 1.0;\n"
-	"	lowp float specularPower = 10.0;\n"
-	"	lowp vec3 eyeDir = normalize( fragmentEyeDir );\n"
-	"	lowp vec3 normal = normalize( normalMap.x * fragmentTangent + normalMap.y * fragmentBinormal + normalMap.z * fragmentNormal );\n"
-	"\n"
-	"	lowp vec3 color = vec3( 0 );\n"
-	"	for ( int i = 0; i < 1000; i++ )\n"
-	"	{\n"
-	"		lowp vec3 lightDir = normalize( vec3( -1.0, 1.0, 1.0 ) );\n"
-	"		lowp vec3 lightReflection = normalize( 2.0 * dot( lightDir, normal ) * normal - lightDir );\n"
-	"		lowp vec3 lightDiffuse = diffuseMap * ( max( dot( normal, lightDir ), 0.0 ) * 0.5 + 0.5 );\n"
-	"		lowp vec3 lightSpecular = specularMap * pow( max( dot( lightReflection, eyeDir ), 0.0 ), specularPower );\n"
-	"		color += ( lightDiffuse + lightSpecular ) * ( 1.0 / 1000.0 );\n"
-	"	}\n"
-	"\n"
-	"	outColor.xyz = color;\n"
-	"	outColor.w = 1.0;\n"
-	"}\n";
-
-static const char normalMapped2000LightsFragmentProgramGLSL[] =
-	"#version " GLSL_PROGRAM_VERSION "\n"
-	GLSL_EXTENSIONS
-	"uniform sampler2D Texture0;\n"
-	"uniform sampler2D Texture1;\n"
-	"uniform sampler2D Texture2;\n"
-	"in lowp vec3 fragmentEyeDir;\n"
-	"in lowp vec3 fragmentNormal;\n"
-	"in lowp vec3 fragmentTangent;\n"
-	"in lowp vec3 fragmentBinormal;\n"
-	"in lowp vec2 fragmentUv0;\n"
-	"out lowp vec4 outColor;\n"
-	"void main()\n"
-	"{\n"
-	"	lowp vec3 diffuseMap = texture( Texture0, fragmentUv0 ).xyz;\n"
-	"	lowp vec3 specularMap = texture( Texture1, fragmentUv0 ).xyz * 2.0;\n"
-	"	lowp vec3 normalMap = texture( Texture2, fragmentUv0 ).xyz * 2.0 - 1.0;\n"
-	"	lowp float specularPower = 10.0;\n"
-	"	lowp vec3 eyeDir = normalize( fragmentEyeDir );\n"
-	"	lowp vec3 normal = normalize( normalMap.x * fragmentTangent + normalMap.y * fragmentBinormal + normalMap.z * fragmentNormal );\n"
-	"\n"
-	"	lowp vec3 color = vec3( 0 );\n"
-	"	for ( int i = 0; i < 2000; i++ )\n"
-	"	{\n"
-	"		lowp vec3 lightDir = normalize( vec3( -1.0, 1.0, 1.0 ) );\n"
-	"		lowp vec3 lightReflection = normalize( 2.0 * dot( lightDir, normal ) * normal - lightDir );\n"
-	"		lowp vec3 lightDiffuse = diffuseMap * ( max( dot( normal, lightDir ), 0.0 ) * 0.5 + 0.5 );\n"
-	"		lowp vec3 lightSpecular = specularMap * pow( max( dot( lightReflection, eyeDir ), 0.0 ), specularPower );\n"
-	"		color += ( lightDiffuse + lightSpecular ) * ( 1.0 / 2000.0 );\n"
-	"	}\n"
-	"\n"
-	"	outColor.xyz = color;\n"
-	"	outColor.w = 1.0;\n"
-	"}\n";
-
-static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings_t * settings, GpuRenderPass_t * renderPass )
-{
-	memset( scene, 0, sizeof( Scene_t ) );
-
-	GpuGeometry_CreateCube( context, &scene->geometry[0], 0.0f, 0.5f );			// 12 triangles
-	GpuGeometry_CreateTorus( context, &scene->geometry[1], 8, 0.0f, 1.0f );		// 128 triangles
-	GpuGeometry_CreateTorus( context, &scene->geometry[2], 16, 0.0f, 1.0f );	// 512 triangles
-	GpuGeometry_CreateTorus( context, &scene->geometry[3], 32, 0.0f, 1.0f );	// 2048 triangles
-
-	GpuGraphicsProgram_Create( context, &scene->program[0],
-								settings->useMultiView ? PROGRAM( flatShadedMultiViewVertexProgram ) : PROGRAM( flatShadedVertexProgram ),
-								settings->useMultiView ? sizeof( PROGRAM( flatShadedMultiViewVertexProgram ) ) : sizeof( PROGRAM( flatShadedVertexProgram ) ),
-								PROGRAM( flatShadedFragmentProgram ),
-								sizeof( PROGRAM( flatShadedFragmentProgram ) ),
-								flatShadedProgramParms, ARRAY_SIZE( flatShadedProgramParms ),
-								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL );
-	GpuGraphicsProgram_Create( context, &scene->program[1],
-								settings->useMultiView ? PROGRAM( normalMappedMultiViewVertexProgram ) : PROGRAM( normalMappedVertexProgram ),
-								settings->useMultiView ? sizeof( PROGRAM( normalMappedMultiViewVertexProgram ) ) : sizeof( PROGRAM( normalMappedVertexProgram ) ),
-								PROGRAM( normalMapped100LightsFragmentProgram ),
-								sizeof( PROGRAM( normalMapped100LightsFragmentProgram ) ),
-								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
-								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
-								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
-								VERTEX_ATTRIBUTE_FLAG_UV0 );
-	GpuGraphicsProgram_Create( context, &scene->program[2],
-								settings->useMultiView ? PROGRAM( normalMappedMultiViewVertexProgram ) : PROGRAM( normalMappedVertexProgram ),
-								settings->useMultiView ? sizeof( PROGRAM( normalMappedMultiViewVertexProgram ) ) : sizeof( PROGRAM( normalMappedVertexProgram ) ),
-								PROGRAM( normalMapped1000LightsFragmentProgram ),
-								sizeof( PROGRAM( normalMapped1000LightsFragmentProgram ) ),
-								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
-								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
-								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
-								VERTEX_ATTRIBUTE_FLAG_UV0 );
-	GpuGraphicsProgram_Create( context, &scene->program[3],
-								settings->useMultiView ? PROGRAM( normalMappedMultiViewVertexProgram ) : PROGRAM( normalMappedVertexProgram ),
-								settings->useMultiView ? sizeof( PROGRAM( normalMappedMultiViewVertexProgram ) ) : sizeof( PROGRAM( normalMappedVertexProgram ) ),
-								PROGRAM( normalMapped2000LightsFragmentProgram ),
-								sizeof( PROGRAM( normalMapped2000LightsFragmentProgram ) ),
-								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
-								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
-								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
-								VERTEX_ATTRIBUTE_FLAG_UV0 );
-
-	for ( int i = 0; i < MAX_SCENE_TRIANGLE_LEVELS; i++ )
-	{
-		for ( int j = 0; j < MAX_SCENE_FRAGMENT_LEVELS; j++ )
-		{
-			GpuGraphicsPipelineParms_t pipelineParms;
-			GpuGraphicsPipelineParms_Init( &pipelineParms );
-
-			pipelineParms.renderPass = renderPass;
-			pipelineParms.program = &scene->program[j];
-			pipelineParms.geometry = &scene->geometry[i];
-
-			GpuGraphicsPipeline_Create( context, &scene->pipelines[i][j], &pipelineParms );
-		}
-	}
-
-	GpuBuffer_Create( context, &scene->sceneMatrices, GPU_BUFFER_TYPE_UNIFORM, ( settings->useMultiView ? 4 : 2 ) * sizeof( Matrix4x4f_t ), NULL, false );
-
-	GpuTexture_CreateDefault( context, &scene->diffuseTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 1, 1, 1, true, false );
-	GpuTexture_CreateDefault( context, &scene->specularTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 1, 1, 1, true, false );
-	GpuTexture_CreateDefault( context, &scene->normalTexture, GPU_TEXTURE_DEFAULT_PYRAMIDS, 256, 256, 1, 1, 1, true, false );
-
-	scene->settings = *settings;
-	scene->newSettings = settings;
-
-	const int maxDimension = 2 * ( 1 << ( MAX_SCENE_DRAWCALL_LEVELS - 1 ) );
-
-	scene->bigRotationX = 0.0f;
-	scene->bigRotationY = 0.0f;
-	scene->smallRotationX = 0.0f;
-	scene->smallRotationY = 0.0f;
-
-	scene->modelMatrix = (Matrix4x4f_t *) AllocAlignedMemory( maxDimension * maxDimension * maxDimension * sizeof( Matrix4x4f_t ), sizeof( Matrix4x4f_t ) );
-}
-
-static void Scene_Destroy( GpuContext_t * context, Scene_t * scene )
-{
-	GpuContext_WaitIdle( context );
-
-	for ( int i = 0; i < MAX_SCENE_TRIANGLE_LEVELS; i++ )
-	{
-		for ( int j = 0; j < MAX_SCENE_FRAGMENT_LEVELS; j++ )
-		{
-			GpuGraphicsPipeline_Destroy( context, &scene->pipelines[i][j] );
-		}
-	}
-
-	for ( int i = 0; i < MAX_SCENE_TRIANGLE_LEVELS; i++ )
-	{
-		GpuGeometry_Destroy( context, &scene->geometry[i] );
-	}
-
-	for ( int i = 0; i < MAX_SCENE_FRAGMENT_LEVELS; i++ )
-	{
-		GpuGraphicsProgram_Destroy( context, &scene->program[i] );
-	}
-
-	GpuBuffer_Destroy( context, &scene->sceneMatrices );
-
-	GpuTexture_Destroy( context, &scene->diffuseTexture );
-	GpuTexture_Destroy( context, &scene->specularTexture );
-	GpuTexture_Destroy( context, &scene->normalTexture );
-
-	FreeAlignedMemory( scene->modelMatrix );
-	scene->modelMatrix = NULL;
-}
-
-static void Scene_Simulate( Scene_t * scene, ViewState_t * viewState, const Microseconds_t time )
-{
-	// Must recreate the scene if multi-view is enabled/disabled.
-	assert( scene->settings.useMultiView == scene->newSettings->useMultiView );
-	scene->settings = *scene->newSettings;
-
-	if ( scene->settings.simulationPaused )
-	{
-		return;
-	}
-
-	const float offset = time * ( MATH_PI / 1000.0f / 1000.0f );
-	scene->bigRotationX = 20.0f * offset;
-	scene->bigRotationY = 10.0f * offset;
-	scene->smallRotationX = -60.0f * offset;
-	scene->smallRotationY = -40.0f * offset;
-
-	ViewState_HandleHmd( viewState, time );
-}
-
-static void Scene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, Scene_t * scene, ViewState_t * viewState, const int eye )
-{
-	void * sceneMatrices = NULL;
-	GpuBuffer_t * sceneMatricesBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &scene->sceneMatrices, &sceneMatrices );
-	const int numMatrices = scene->settings.useMultiView ? 2 : 1;
-	memcpy( (char *)sceneMatrices + 0 * numMatrices * sizeof( Matrix4x4f_t ), &viewState->viewMatrix[eye], numMatrices * sizeof( Matrix4x4f_t ) );
-	memcpy( (char *)sceneMatrices + 1 * numMatrices * sizeof( Matrix4x4f_t ), &viewState->projectionMatrix[eye], numMatrices * sizeof( Matrix4x4f_t ) );
-	GpuCommandBuffer_UnmapBuffer( commandBuffer, &scene->sceneMatrices, sceneMatricesBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
-}
-
-static void Scene_Render( GpuCommandBuffer_t * commandBuffer, Scene_t * scene )
-{
-	const int dimension = 2 * ( 1 << scene->settings.drawCallLevel );
-	const float cubeOffset = ( dimension - 1.0f ) * 0.5f;
-	const float cubeScale = 2.0f;
-
-	Matrix4x4f_t bigRotationMatrix;
-	Matrix4x4f_CreateRotation( &bigRotationMatrix, scene->bigRotationX, scene->bigRotationY, 0.0f );
-
-	Matrix4x4f_t bigTranslationMatrix;
-	Matrix4x4f_CreateTranslation( &bigTranslationMatrix, 0.0f, 0.0f, - 2.5f * dimension );
-
-	Matrix4x4f_t bigTransformMatrix;
-	Matrix4x4f_Multiply( &bigTransformMatrix, &bigTranslationMatrix, &bigRotationMatrix );
-
-	Matrix4x4f_t smallRotationMatrix;
-	Matrix4x4f_CreateRotation( &smallRotationMatrix, scene->smallRotationX, scene->smallRotationY, 0.0f );
-
-	GpuGraphicsCommand_t command;
-	GpuGraphicsCommand_Init( &command );
-	GpuGraphicsCommand_SetPipeline( &command, &scene->pipelines[scene->settings.triangleLevel][scene->settings.fragmentLevel] );
-	GpuGraphicsCommand_SetParmBufferUniform( &command, PROGRAM_UNIFORM_SCENE_MATRICES, &scene->sceneMatrices );
-	GpuGraphicsCommand_SetParmTextureSampled( &command, PROGRAM_TEXTURE_0, ( scene->settings.fragmentLevel >= 1 ) ? &scene->diffuseTexture : NULL );
-	GpuGraphicsCommand_SetParmTextureSampled( &command, PROGRAM_TEXTURE_1, ( scene->settings.fragmentLevel >= 1 ) ? &scene->specularTexture : NULL );
-	GpuGraphicsCommand_SetParmTextureSampled( &command, PROGRAM_TEXTURE_2, ( scene->settings.fragmentLevel >= 1 ) ? &scene->normalTexture : NULL );
-
-	for ( int x = 0; x < dimension; x++ )
-	{
-		for ( int y = 0; y < dimension; y++ )
-		{
-			for ( int z = 0; z < dimension; z++ )
-			{
-				Matrix4x4f_t smallTranslationMatrix;
-				Matrix4x4f_CreateTranslation( &smallTranslationMatrix, cubeScale * ( x - cubeOffset ), cubeScale * ( y - cubeOffset ), cubeScale * ( z - cubeOffset ) );
-
-				Matrix4x4f_t smallTransformMatrix;
-				Matrix4x4f_Multiply( &smallTransformMatrix, &smallTranslationMatrix, &smallRotationMatrix );
-
-				Matrix4x4f_t * modelMatrix = &scene->modelMatrix[( x * dimension + y ) * dimension + z];
-				Matrix4x4f_Multiply( modelMatrix, &bigTransformMatrix, &smallTransformMatrix );
-
-				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, PROGRAM_UNIFORM_MODEL_MATRIX, modelMatrix );
-
-				GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
-			}
-		}
-	}
-}
 
 /*
 ================================================================================================================================
@@ -16596,7 +16623,6 @@ typedef struct
 	SceneSettings_t *		sceneSettings;
 	GpuWindowInput_t *		input;
 
-	volatile Microseconds_t	nextDisplayTime;
 	volatile bool			terminate;
 	volatile bool			openFrameLog;
 } SceneThreadData_t;
@@ -16651,11 +16677,13 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 	GltfScene_t scene;
 	GltfScene_CreateFromFile( &context, &scene, "models.gltf", &renderPass );
 #else
-	Scene_t scene;
-	Scene_Create( &context, &scene, threadData->sceneSettings, &renderPass );
+	PerfScene_t scene;
+	PerfScene_Create( &context, &scene, threadData->sceneSettings, &renderPass );
 #endif
 
 	Signal_Raise( &threadData->initialized );
+
+	Microseconds_t nextDisplayTime = GetTimeMicroseconds();
 
 	while ( !threadData->terminate )
 	{
@@ -16666,9 +16694,9 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 		}
 
 #if USE_GLTF == 1
-		GltfScene_Simulate( &scene, &viewState, threadData->input, threadData->nextDisplayTime );
+		GltfScene_Simulate( &scene, &viewState, threadData->input, nextDisplayTime );
 #else
-		Scene_Simulate( &scene, &viewState, threadData->nextDisplayTime );
+		PerfScene_Simulate( &scene, &viewState, nextDisplayTime );
 #endif
 
 		FrameLog_BeginFrame();
@@ -16689,7 +16717,7 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 #if USE_GLTF == 1
 			GltfScene_UpdateBuffers( &eyeCommandBuffer[eye], &scene, &viewState, eye );
 #else
-			Scene_UpdateBuffers( &eyeCommandBuffer[eye], &scene, &viewState, eye );
+			PerfScene_UpdateBuffers( &eyeCommandBuffer[eye], &scene, &viewState, eye );
 #endif
 
 			GpuCommandBuffer_BeginTimer( &eyeCommandBuffer[eye], &eyeTimer[eye] );
@@ -16699,9 +16727,9 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 			GpuCommandBuffer_SetScissor( &eyeCommandBuffer[eye], &screenRect );
 
 #if USE_GLTF == 1
-			GltfScene_Render( &eyeCommandBuffer[eye], &scene, &viewState );
+			GltfScene_Render( &eyeCommandBuffer[eye], &scene, &viewState, eye );
 #else
-			Scene_Render( &eyeCommandBuffer[eye], &scene );
+			PerfScene_Render( &eyeCommandBuffer[eye], &scene );
 #endif
 
 			GpuCommandBuffer_EndRenderPass( &eyeCommandBuffer[eye], &renderPass );
@@ -16730,10 +16758,10 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 		Matrix4x4f_t projectionMatrix;
 		Matrix4x4f_CreateProjectionFov( &projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 
-		TimeWarp_PresentNewEyeTextures( threadData->timeWarp, threadData->nextDisplayTime,
-										&viewState.hmdViewMatrix, &projectionMatrix,
-										eyeTexture, eyeCompletionFence, eyeArrayLayer,
-										eyeTexturesCpuTime, eyeTexturesGpuTime );
+		nextDisplayTime = TimeWarp_PresentNewEyeTextures( threadData->timeWarp, nextDisplayTime,
+															&viewState.hmdViewMatrix, &projectionMatrix,
+															eyeTexture, eyeCompletionFence, eyeArrayLayer,
+															eyeTexturesCpuTime, eyeTexturesGpuTime );
 	}
 
 	GpuContext_WaitIdle( &context );
@@ -16741,7 +16769,7 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 #if USE_GLTF == 1
 	GltfScene_Destroy( &context, &scene );
 #else
-	Scene_Destroy( &context, &scene );
+	PerfScene_Destroy( &context, &scene );
 #endif
 
 	for ( int eye = 0; eye < numPasses; eye++ )
@@ -16763,7 +16791,6 @@ void SceneThread_Create( Thread_t * sceneThread, SceneThreadData_t * sceneThread
 	sceneThreadData->timeWarp = timeWarp;
 	sceneThreadData->sceneSettings = sceneSettings;
 	sceneThreadData->input = &window->input;
-	sceneThreadData->nextDisplayTime = GetTimeMicroseconds();
 	sceneThreadData->terminate = false;
 	sceneThreadData->openFrameLog = false;
 
@@ -16988,8 +17015,6 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 		{
 			TimeWarp_Render( &timeWarp, &window );
 			GpuWindow_SwapBuffers( &window );
-
-			sceneThreadData.nextDisplayTime = GpuWindow_GetNextSwapTime( &window, 2 );
 		}
 	}
 
@@ -17210,8 +17235,8 @@ bool RenderScene( StartupSettings_t * startupSettings )
 	GltfScene_t scene;
 	GltfScene_CreateFromFile( &window.context, &scene, "models.gltf", &renderPass );
 #else
-	Scene_t scene;
-	Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
+	PerfScene_t scene;
+	PerfScene_Create( &window.context, &scene, &sceneSettings, &renderPass );
 #endif
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
@@ -17301,7 +17326,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 #if USE_GLTF == 1
 			GltfScene_Destroy( &window.context, &scene );
 #else
-			Scene_Destroy( &window.context, &scene );
+			PerfScene_Destroy( &window.context, &scene );
 #endif
 			BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
 			BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
@@ -17327,17 +17352,19 @@ bool RenderScene( StartupSettings_t * startupSettings )
 #if USE_GLTF == 1
 			GltfScene_CreateFromFile( &window.context, &scene, "models.gltf", &renderPass );
 #else
-			Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
+			PerfScene_Create( &window.context, &scene, &sceneSettings, &renderPass );
 #endif
 			recreate = false;
 		}
 
 		if ( window.windowActive )
 		{
+			const Microseconds_t nextSwapTime = GpuWindow_GetNextSwapTime( &window );
+
 #if USE_GLTF == 1
-			GltfScene_Simulate( &scene, &viewState, &window.input, GpuWindow_GetNextSwapTime( &window, 0 ) );
+			GltfScene_Simulate( &scene, &viewState, &window.input, nextSwapTime );
 #else
-			Scene_Simulate( &scene, &viewState, GpuWindow_GetNextSwapTime( &window, 0 ) );
+			PerfScene_Simulate( &scene, &viewState, nextSwapTime );
 #endif
 
 			FrameLog_BeginFrame();
@@ -17352,7 +17379,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 #if USE_GLTF == 1
 			GltfScene_UpdateBuffers( &commandBuffer, &scene, &viewState, 0 );
 #else
-			Scene_UpdateBuffers( &commandBuffer, &scene, &viewState, 0 );
+			PerfScene_UpdateBuffers( &commandBuffer, &scene, &viewState, 0 );
 #endif
 
 			BarGraph_UpdateGraphics( &commandBuffer, &frameCpuTimeBarGraph );
@@ -17363,10 +17390,11 @@ bool RenderScene( StartupSettings_t * startupSettings )
 
 			GpuCommandBuffer_SetViewport( &commandBuffer, &screenRect );
 			GpuCommandBuffer_SetScissor( &commandBuffer, &screenRect );
+
 #if USE_GLTF == 1
-			GltfScene_Render( &commandBuffer, &scene, &viewState );
+			GltfScene_Render( &commandBuffer, &scene, &viewState, 0 );
 #else
-			Scene_Render( &commandBuffer, &scene );
+			PerfScene_Render( &commandBuffer, &scene );
 #endif
 
 			BarGraph_RenderGraphics( &commandBuffer, &frameCpuTimeBarGraph );
@@ -17397,7 +17425,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 #if USE_GLTF == 1
 	GltfScene_Destroy( &window.context, &scene );
 #else
-	Scene_Destroy( &window.context, &scene );
+	PerfScene_Destroy( &window.context, &scene );
 #endif
 	BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
 	BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
