@@ -108,8 +108,8 @@ full precision.
 
 Integer values less than INT64_MIN or greater than UINT64_MAX are
 stored as floating-point. JSON does not support floating-point values
-like infinity and NaN. Therefore floating-point values greater than
-DBL_MAX are represented as DBL_MAX.
+like infinity and NaN. Therefore floating-point values are clamped
+to the range [-DBL_MAX, DBL_MAX].
 
 The JSON specification allows an implementation to set limits on the
 length and character contents of strings. This implementation supports
@@ -351,7 +351,7 @@ nlohmann   yes     yes     yes      no     std::map     yes        yes       yes
   Supports int64_t   = Can this implementation represent the full 64-bit signed integer range?
   Supports uint64_t  = Can this implementation represent the full 64-bit unsigned integer range?
   <= 4u double       = Are all 64-bit floating-point values in the range [DBL_MIN, DBL_MAX] accurately represented within 4 ulps?
-  Clamp double       = Are numbers clamped to the range [DBL_MIN, DBL_MAX] to avoid infinity?
+  Clamp double       = Are numbers clamped to the range [-DBL_MAX, DBL_MAX] to avoid infinity?
   Robust             = Is looking up a missing value, or value of the wrong type,
                        safe without causing a fatal run-time exception?
 
