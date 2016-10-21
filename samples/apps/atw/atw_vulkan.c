@@ -220,6 +220,26 @@ Supported platforms are:
 	- Android 5.0 or later
 
 
+GRAPHICS API WRAPPER
+====================
+
+The code wraps the Vulkan API with a convenient wrapper that takes care of all
+the complications of memory synchronization and memory barriers. This wrapper
+does not expose the full Vulkan API but can be easily extended to support more
+features. Some of the current limitations are:
+
+- The wrapper is setup for forward rendering with a single render pass. This
+  can be easily extended if more complex rendering algorithms are desired.
+
+- A pipeline can only use 256 bytes worth of plain integer and floating-point
+  uniforms, including vectors and matrices. If more uniforms are needed then 
+  it is advised to use a uniform buffer, which is the preferred approach for
+  exposing large amounts of data anyway.
+
+- Graphics programs currently consist of only of a vertex and fragment shader.
+  This can be easily extended if there is a need for geometry shaders etc.
+
+
 COMMAND-LINE COMPILATION
 ========================
 
@@ -318,9 +338,12 @@ Platform headers / declarations
 	#ifdef _MSC_VER
 		#pragma warning( disable : 4204 )	// nonstandard extension used : non-constant aggregate initializer
 		#pragma warning( disable : 4255 )	// '<name>' : no function prototype given: converting '()' to '(void)'
+		#pragma warning( disable : 4464	)	// relative include path contains '..'
 		#pragma warning( disable : 4668 )	// '__cplusplus' is not defined as a preprocessor macro, replacing with '0' for '#if/#elif'
+		#pragma warning( disable : 4710	)	// 'int printf(const char *const ,...)': function not inlined
 		#pragma warning( disable : 4711 )	// function '<name>' selected for automatic inline expansion
 		#pragma warning( disable : 4738 )	// storing 32-bit float result in memory, possible loss of performance
+		#pragma warning( disable : 4774	)	// 'printf' : format string expected in argument 1 is not a string literal
 		#pragma warning( disable : 4820 )	// '<name>' : 'X' bytes padding added after data member '<member>'
 	#endif
 
@@ -530,6 +553,8 @@ Common defines
 #define SIZEOF_MEMBER( type, member )	sizeof( ((type *)0)->member )
 #define BIT( x )						( 1 << (x) )
 #define ROUNDUP( x, granularity )		( ( (x) + (granularity) - 1 ) & ~( (granularity) - 1 ) )
+#define MAX( x, y )						( ( x > y ) ? ( x ) : ( y ) )
+#define MIN( x, y )						( ( x < y ) ? ( x ) : ( y ) )
 #define CLAMP( x, min, max )			( ( (x) < (min) ) ? (min) : ( ( (x) > (max) ) ? (max) : (x) ) )
 #define STRINGIFY_EXPANDED( a )			#a
 #define STRINGIFY( a )					STRINGIFY_EXPANDED(a)
@@ -541,6 +566,7 @@ Common defines
 
 #define VK_ALLOCATOR					NULL
 
+#define USE_GLTF						1
 #define USE_SPIRV						1
 #define USE_PM_MULTIVIEW				1
 #define USE_API_DUMP					0	// place vk_layer_settings.txt in the executable folder and change APIDumpFile = TRUE
@@ -552,7 +578,7 @@ Common defines
 	#define PROGRAM( name )				name##GLSL
 #endif
 
-#define GLSL_PROGRAM_VERSION			"310 es"	// maintain precision decorations "440 core"
+#define GLSL_PROGRAM_VERSION			"440 core"	// maintain precision decorations: "310 es"
 #define GLSL_EXTENSIONS					"#extension GL_EXT_shader_io_blocks : enable\n"	\
 										"#extension GL_ARB_enhanced_layouts : enable\n"
 
@@ -1592,7 +1618,7 @@ The CPU and GPU times for the recorded frames will be listed at the end of the l
 
 FrameLog_t
 
-static void FrameLog_Open( const char * fileName, const int numFrames );
+static void FrameLog_Open( const char * fileName, const int frameCount );
 static void FrameLog_Write( const char * fileName, const int lineNumber, const char * function );
 static void FrameLog_BeginFrame();
 static void FrameLog_EndFrame( const float cpuTimeMilliseconds, const float gpuTimeMilliseconds, const int gpuTimeFramesDelayed );
@@ -1605,7 +1631,7 @@ typedef struct
 	FILE *		fp;
 	float *		frameCpuTimes;
 	float *		frameGpuTimes;
-	int			numFrames;
+	int			frameCount;
 	int			frame;
 } FrameLog_t;
 
@@ -1623,7 +1649,7 @@ static FrameLog_t * FrameLog_Get()
 	return l;
 }
 
-static void FrameLog_Open( const char * fileName, const int numFrames )
+static void FrameLog_Open( const char * fileName, const int frameCount )
 {
 	FrameLog_t * l = FrameLog_Get();
 	if ( l != NULL && l->fp == NULL )
@@ -1635,12 +1661,12 @@ static void FrameLog_Open( const char * fileName, const int numFrames )
 		}
 		else
 		{
-			Print( "Opened frame log %s for %d frames.\n", fileName, numFrames );
-			l->frameCpuTimes = (float *) malloc( numFrames * sizeof( l->frameCpuTimes[0] ) );
-			l->frameGpuTimes = (float *) malloc( numFrames * sizeof( l->frameGpuTimes[0] ) );
-			memset( l->frameCpuTimes, 0, numFrames * sizeof( l->frameCpuTimes[0] ) );
-			memset( l->frameGpuTimes, 0, numFrames * sizeof( l->frameGpuTimes[0] ) );
-			l->numFrames = numFrames;
+			Print( "Opened frame log %s for %d frames.\n", fileName, frameCount );
+			l->frameCpuTimes = (float *) malloc( frameCount * sizeof( l->frameCpuTimes[0] ) );
+			l->frameGpuTimes = (float *) malloc( frameCount * sizeof( l->frameGpuTimes[0] ) );
+			memset( l->frameCpuTimes, 0, frameCount * sizeof( l->frameCpuTimes[0] ) );
+			memset( l->frameGpuTimes, 0, frameCount * sizeof( l->frameGpuTimes[0] ) );
+			l->frameCount = frameCount;
 			l->frame = 0;
 		}
 	}
@@ -1651,7 +1677,7 @@ static void FrameLog_Write( const char * fileName, const int lineNumber, const c
 	FrameLog_t * l = FrameLog_Get();
 	if ( l != NULL && l->fp != NULL )
 	{
-		if ( l->frame < l->numFrames )
+		if ( l->frame < l->frameCount )
 		{
 			fprintf( l->fp, "%s(%d): %s\r\n", fileName, lineNumber, function );
 		}
@@ -1663,7 +1689,7 @@ static void FrameLog_BeginFrame()
 	FrameLog_t * l = FrameLog_Get();
 	if ( l != NULL && l->fp != NULL )
 	{
-		if ( l->frame < l->numFrames )
+		if ( l->frame < l->frameCount )
 		{
 #if defined( _DEBUG )
 			fprintf( l->fp, "================ BEGIN FRAME %d ================\r\n", l->frame );
@@ -1677,28 +1703,28 @@ static void FrameLog_EndFrame( const float cpuTimeMilliseconds, const float gpuT
 	FrameLog_t * l = FrameLog_Get();
 	if ( l != NULL && l->fp != NULL )
 	{
-		if ( l->frame < l->numFrames )
+		if ( l->frame < l->frameCount )
 		{
 			l->frameCpuTimes[l->frame] = cpuTimeMilliseconds;
 #if defined( _DEBUG )
 			fprintf( l->fp, "================ END FRAME %d ================\r\n", l->frame );
 #endif
 		}
-		if ( l->frame >= gpuTimeFramesDelayed && l->frame < l->numFrames + gpuTimeFramesDelayed )
+		if ( l->frame >= gpuTimeFramesDelayed && l->frame < l->frameCount + gpuTimeFramesDelayed )
 		{
 			l->frameGpuTimes[l->frame - gpuTimeFramesDelayed] = gpuTimeMilliseconds;
 		}
 
 		l->frame++;
 
-		if ( l->frame >= l->numFrames + gpuTimeFramesDelayed )
+		if ( l->frame >= l->frameCount + gpuTimeFramesDelayed )
 		{
-			for ( int i = 0; i < l->numFrames; i++ )
+			for ( int i = 0; i < l->frameCount; i++ )
 			{
 				fprintf( l->fp, "frame %d: CPU = %1.1f ms, GPU = %1.1f ms\r\n", i, l->frameCpuTimes[i], l->frameGpuTimes[i] );
 			}
 
-			Print( "Closing frame log file (%d frames).\n", l->numFrames );
+			Print( "Closing frame log file (%d frames).\n", l->frameCount );
 			fclose( l->fp );
 			free( l->frameCpuTimes );
 			free( l->frameGpuTimes );
@@ -1710,7 +1736,7 @@ static void FrameLog_EndFrame( const float cpuTimeMilliseconds, const float gpuT
 /*
 ================================================================================================================================
 
-Vectors and matrices.
+Vectors and matrices. All matrices are column-major.
 
 Vector2i_t
 Vector3i_t
@@ -1718,22 +1744,62 @@ Vector4i_t
 Vector2f_t
 Vector3f_t
 Vector4f_t
-Matrix3x4f_t		// This is a column-major matrix.
-Matrix4x4f_t		// This is a column-major matrix.
+Quatf_t
+Matrix2x2f_t
+Matrix2x3f_t
+Matrix2x4f_t
+Matrix3x2f_t
+Matrix3x3f_t
+Matrix3x4f_t
+Matrix4x2f_t
+Matrix4x3f_t
+Matrix4x4f_t
 
-static void Vector3f_Zero( Vector3f_t * v );
+static void Vector3f_Set( Vector3f_t * v, const float value );
+static void Vector3f_Add( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
+static void Vector3f_Sub( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
+static void Vector3f_Min( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
+static void Vector3f_Max( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
+static void Vector3f_Decay( Vector3f_t * result, const Vector3f_t * a, const float value );
+static void Vector3f_Lerp( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b, const float fraction );
 static void Vector3f_Normalize( Vector3f_t * v );
 
-static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * matrix );
-static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * matrix, const float x, const float y, const float z );
-static void Matrix4x4f_CreateRotation( Matrix4x4f_t * matrix, const float degreesX, const float degreesY, const float degreesZ );
-static void Matrix4x4f_CreateProjection( Matrix4x4f_t * matrix, const float minX, const float maxX,
+static void Quatf_Lerp( Quatf_t * result, const Quatf_t * a, const Quatf_t * b, const float fraction );
+
+static void Matrix3x3f_CreateTransposeFromMatrix4x4f( Matrix3x3f_t * result, const Matrix4x4f_t * src );
+static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * result, const Matrix4x4f_t * src );
+
+static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * result );
+static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * result, const float x, const float y, const float z );
+static void Matrix4x4f_CreateRotation( Matrix4x4f_t * result, const float degreesX, const float degreesY, const float degreesZ );
+static void Matrix4x4f_CreateScale( Matrix4x4f_t * result, const float x, const float y, const float z );
+static void Matrix4x4f_CreateTranslationRotationScale( Matrix4x4f_t * result, const Vector3f_t * scale, const Quatf_t * rotation, const Vector3f_t * translation );
+static void Matrix4x4f_CreateProjection( Matrix4x4f_t * result, const float minX, const float maxX,
 											float const minY, const float maxY, const float nearZ, const float farZ );
-static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float fovDegreesX, const float fovDegreesY,
+static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * result, const float fovDegreesX, const float fovDegreesY,
 											const float offsetX, const float offsetY, const float nearZ, const float farZ );
-static void Matrix4x4f_Multiply( Matrix4x4f_t * out, const Matrix4x4f_t * a, const Matrix4x4f_t * b );
+static void Matrix4x4f_CreateFromQuaternion( Matrix3x4f_t * result, const Quatf_t * src );
+static void Matrix4x4f_CreateOffsetScaleForBounds( Matrix4x4f_t * result, const Matrix4x4f_t * matrix, const Vector3f_t * mins, const Vector3f_t * maxs );
+
+static bool Matrix4x4f_IsAffine( const Matrix4x4f_t * matrix, const float epsilon );
+static bool Matrix4x4f_IsOrthogonal( const Matrix4x4f_t * matrix, const float epsilon );
+static bool Matrix4x4f_IsOrthonormal( const Matrix4x4f_t * matrix, const float epsilon );
+static bool Matrix4x4f_IsHomogeneous( const Matrix4x4f_t * matrix, const float epsilon );
+
+static void Matrix4x4f_GetTranslation( Vector3f_t * result, const Matrix4x4f_t * src );
+static void Matrix4x4f_GetRotation( Quatf_t * result, const Matrix4x4f_t * src );
+static void Matrix4x4f_GetScale( Vector3f_t * result, const Matrix4x4f_t * src );
+
+static void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, const Matrix4x4f_t * b );
+static void Matrix4x4f_Transpose( Matrix4x4f_t * result, const Matrix4x4f_t * src );
 static void Matrix4x4f_Invert( Matrix4x4f_t * result, const Matrix4x4f_t * src );
 static void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4f_t * src );
+
+static void Matrix4x4f_TransformVector3f( Vector3f_t * result, const Matrix4x4f_t * m, const Vector3f_t * v );
+static void Matrix4x4f_TransformVector4f( Vector4f_t * result, const Matrix4x4f_t * m, const Vector4f_t * v );
+
+static void Matrix4x4f_TransformBounds( Vector3f_t * resultMins, Vector3f_t * resultMaxs, const Matrix4x4f_t * matrix, const Vector3f_t * mins, const Vector3f_t * maxs );
+static bool Matrix4x4f_CullBounds( const Matrix4x4f_t * mvp, const Vector3f_t * mins, const Vector3f_t * maxs );
 
 ================================================================================================================================
 */
@@ -1786,11 +1852,62 @@ typedef struct
 	float w;
 } Vector4f_t;
 
+// Quaternion
+typedef struct
+{
+	float x;
+	float y;
+	float z;
+	float w;
+} Quatf_t;
+
+// Column-major 2x2 matrix
+typedef struct
+{
+	float m[2][2];
+} Matrix2x2f_t;
+
+// Column-major 2x3 matrix
+typedef struct
+{
+	float m[2][3];
+} Matrix2x3f_t;
+
+// Column-major 2x4 matrix
+typedef struct
+{
+	float m[2][4];
+} Matrix2x4f_t;
+
+// Column-major 3x2 matrix
+typedef struct
+{
+	float m[3][2];
+} Matrix3x2f_t;
+
+// Column-major 3x3 matrix
+typedef struct
+{
+	float m[3][3];
+} Matrix3x3f_t;
+
 // Column-major 3x4 matrix
 typedef struct
 {
 	float m[3][4];
 } Matrix3x4f_t;
+
+// Column-major 4x2 matrix
+typedef struct
+{
+	float m[4][2];
+} Matrix4x2f_t;
+
+// Column-major 4x3 matrix
+typedef struct
+{
+	float m[4][3];
+} Matrix4x3f_t;
 
 // Column-major 4x4 matrix
 typedef struct
@@ -1807,69 +1924,171 @@ static const Vector4f_t colorCyan		= { 0.0f, 1.0f, 1.0f, 1.0f };
 static const Vector4f_t colorLightGrey	= { 0.7f, 0.7f, 0.7f, 1.0f };
 static const Vector4f_t colorDarkGrey	= { 0.3f, 0.3f, 0.3f, 1.0f };
 
-static void Vector3f_Zero( Vector3f_t * v )
+static float RcpSqrt( const float x )
 {
-	v->x = 0.0f;
-	v->y = 0.0f;
-	v->z = 0.0f;
+	const float SMALLEST_NON_DENORMAL = 1.1754943508222875e-038f;	// ( 1U << 23 )
+	const float rcp = ( x >= SMALLEST_NON_DENORMAL ) ? 1.0f / sqrtf( x ) : 1.0f;
+	return rcp;
+}
+
+static void Vector3f_Set( Vector3f_t * v, const float value )
+{
+	v->x = value;
+	v->y = value;
+	v->z = value;
+}
+
+static void Vector3f_Add( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b )
+{
+	result->x = a->x + b->x;
+	result->y = a->y + b->y;
+	result->z = a->z + b->z;
+}
+
+static void Vector3f_Sub( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b )
+{
+	result->x = a->x - b->x;
+	result->y = a->y - b->y;
+	result->z = a->z - b->z;
+}
+
+static void Vector3f_Min( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b )
+{
+	result->x = ( a->x < b->x ) ? a->x : b->x;
+	result->y = ( a->y < b->y ) ? a->y : b->y;
+	result->z = ( a->z < b->z ) ? a->z : b->z;
+}
+
+static void Vector3f_Max( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b )
+{
+	result->x = ( a->x > b->x ) ? a->x : b->x;
+	result->y = ( a->y > b->y ) ? a->y : b->y;
+	result->z = ( a->z > b->z ) ? a->z : b->z;
+}
+
+static void Vector3f_Decay( Vector3f_t * result, const Vector3f_t * a, const float value )
+{
+	result->x = ( fabsf( a->x ) > value ) ? ( ( a->x > 0.0f ) ? ( a->x - value ) : ( a->x + value ) ) : 0.0f;
+	result->y = ( fabsf( a->y ) > value ) ? ( ( a->y > 0.0f ) ? ( a->y - value ) : ( a->y + value ) ) : 0.0f;
+	result->z = ( fabsf( a->z ) > value ) ? ( ( a->z > 0.0f ) ? ( a->z - value ) : ( a->z + value ) ) : 0.0f;
+}
+
+static void Vector3f_Lerp( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b, const float fraction )
+{
+	result->x = a->x + fraction * ( b->x - a->x );
+	result->y = a->y + fraction * ( b->y - a->y );
+	result->z = a->z + fraction * ( b->z - a->z );
 }
 
 static void Vector3f_Normalize( Vector3f_t * v )
 {
-	const float SMALLEST_NON_DENORMAL = 1.1754943508222875e-038f;	// ( 1U << 23 )
-	const float lengthSqr = v->x * v->x + v->y * v->y + v->z * v->z;
-	const float lengthRcp = ( lengthSqr >= SMALLEST_NON_DENORMAL ) ? 1.0f / sqrtf( lengthSqr ) : 1.0f;
+	const float lengthRcp = RcpSqrt( v->x * v->x + v->y * v->y + v->z * v->z );
 	v->x *= lengthRcp;
 	v->y *= lengthRcp;
 	v->z *= lengthRcp;
 }
 
-static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * dest, const Matrix4x4f_t * source )
+static void Quatf_Lerp( Quatf_t * result, const Quatf_t * a, const Quatf_t * b, const float fraction )
 {
-	dest->m[0][0] = source->m[0][0];
-	dest->m[0][1] = source->m[1][0];
-	dest->m[0][2] = source->m[2][0];
-	dest->m[0][3] = source->m[3][0];
-	dest->m[1][0] = source->m[0][1];
-	dest->m[1][1] = source->m[1][1];
-	dest->m[1][2] = source->m[2][1];
-	dest->m[1][3] = source->m[3][1];
-	dest->m[2][0] = source->m[0][2];
-	dest->m[2][1] = source->m[1][2];
-	dest->m[2][2] = source->m[2][2];
-	dest->m[2][3] = source->m[3][2];
+	const float s = a->x * b->x + a->y * b->y + a->z * b->z + a->w * b->w;
+	const float fa = 1.0f - fraction;
+	const float fb = ( s < 0.0f ) ? -fraction : fraction;
+	const float x = a->x * fa + b->x * fb;
+	const float y = a->y * fa + b->y * fb;
+	const float z = a->z * fa + b->z * fb;
+	const float w = a->w * fa + b->w * fb;
+	const float lengthRcp = RcpSqrt( x * x + y * y + z * z + w * w );
+	result->x = x * lengthRcp;
+	result->y = y * lengthRcp;
+	result->z = z * lengthRcp;
+	result->w = w * lengthRcp;
+}
+
+static void Matrix3x3f_CreateTransposeFromMatrix4x4f( Matrix3x3f_t * result, const Matrix4x4f_t * src )
+{
+	result->m[0][0] = src->m[0][0];
+	result->m[0][1] = src->m[1][0];
+	result->m[0][2] = src->m[2][0];
+
+	result->m[1][0] = src->m[0][1];
+	result->m[1][1] = src->m[1][1];
+	result->m[1][2] = src->m[2][1];
+
+	result->m[2][0] = src->m[0][2];
+	result->m[2][1] = src->m[1][2];
+	result->m[2][2] = src->m[2][2];
+}
+
+static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * result, const Matrix4x4f_t * src )
+{
+	result->m[0][0] = src->m[0][0];
+	result->m[0][1] = src->m[1][0];
+	result->m[0][2] = src->m[2][0];
+	result->m[0][3] = src->m[3][0];
+	result->m[1][0] = src->m[0][1];
+	result->m[1][1] = src->m[1][1];
+	result->m[1][2] = src->m[2][1];
+	result->m[1][3] = src->m[3][1];
+	result->m[2][0] = src->m[0][2];
+	result->m[2][1] = src->m[1][2];
+	result->m[2][2] = src->m[2][2];
+	result->m[2][3] = src->m[3][2];
 }
 
 // Use left-multiplication to accumulate transformations.
-static void Matrix4x4f_Multiply( Matrix4x4f_t * out, const Matrix4x4f_t * a, const Matrix4x4f_t * b )
+static void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, const Matrix4x4f_t * b )
 {
-	out->m[0][0] = a->m[0][0] * b->m[0][0] + a->m[1][0] * b->m[0][1] + a->m[2][0] * b->m[0][2] + a->m[3][0] * b->m[0][3];
-	out->m[0][1] = a->m[0][1] * b->m[0][0] + a->m[1][1] * b->m[0][1] + a->m[2][1] * b->m[0][2] + a->m[3][1] * b->m[0][3];
-	out->m[0][2] = a->m[0][2] * b->m[0][0] + a->m[1][2] * b->m[0][1] + a->m[2][2] * b->m[0][2] + a->m[3][2] * b->m[0][3];
-	out->m[0][3] = a->m[0][3] * b->m[0][0] + a->m[1][3] * b->m[0][1] + a->m[2][3] * b->m[0][2] + a->m[3][3] * b->m[0][3];
+	result->m[0][0] = a->m[0][0] * b->m[0][0] + a->m[1][0] * b->m[0][1] + a->m[2][0] * b->m[0][2] + a->m[3][0] * b->m[0][3];
+	result->m[0][1] = a->m[0][1] * b->m[0][0] + a->m[1][1] * b->m[0][1] + a->m[2][1] * b->m[0][2] + a->m[3][1] * b->m[0][3];
+	result->m[0][2] = a->m[0][2] * b->m[0][0] + a->m[1][2] * b->m[0][1] + a->m[2][2] * b->m[0][2] + a->m[3][2] * b->m[0][3];
+	result->m[0][3] = a->m[0][3] * b->m[0][0] + a->m[1][3] * b->m[0][1] + a->m[2][3] * b->m[0][2] + a->m[3][3] * b->m[0][3];
 
-	out->m[1][0] = a->m[0][0] * b->m[1][0] + a->m[1][0] * b->m[1][1] + a->m[2][0] * b->m[1][2] + a->m[3][0] * b->m[1][3];
-	out->m[1][1] = a->m[0][1] * b->m[1][0] + a->m[1][1] * b->m[1][1] + a->m[2][1] * b->m[1][2] + a->m[3][1] * b->m[1][3];
-	out->m[1][2] = a->m[0][2] * b->m[1][0] + a->m[1][2] * b->m[1][1] + a->m[2][2] * b->m[1][2] + a->m[3][2] * b->m[1][3];
-	out->m[1][3] = a->m[0][3] * b->m[1][0] + a->m[1][3] * b->m[1][1] + a->m[2][3] * b->m[1][2] + a->m[3][3] * b->m[1][3];
+	result->m[1][0] = a->m[0][0] * b->m[1][0] + a->m[1][0] * b->m[1][1] + a->m[2][0] * b->m[1][2] + a->m[3][0] * b->m[1][3];
+	result->m[1][1] = a->m[0][1] * b->m[1][0] + a->m[1][1] * b->m[1][1] + a->m[2][1] * b->m[1][2] + a->m[3][1] * b->m[1][3];
+	result->m[1][2] = a->m[0][2] * b->m[1][0] + a->m[1][2] * b->m[1][1] + a->m[2][2] * b->m[1][2] + a->m[3][2] * b->m[1][3];
+	result->m[1][3] = a->m[0][3] * b->m[1][0] + a->m[1][3] * b->m[1][1] + a->m[2][3] * b->m[1][2] + a->m[3][3] * b->m[1][3];
 
-	out->m[2][0] = a->m[0][0] * b->m[2][0] + a->m[1][0] * b->m[2][1] + a->m[2][0] * b->m[2][2] + a->m[3][0] * b->m[2][3];
-	out->m[2][1] = a->m[0][1] * b->m[2][0] + a->m[1][1] * b->m[2][1] + a->m[2][1] * b->m[2][2] + a->m[3][1] * b->m[2][3];
-	out->m[2][2] = a->m[0][2] * b->m[2][0] + a->m[1][2] * b->m[2][1] + a->m[2][2] * b->m[2][2] + a->m[3][2] * b->m[2][3];
-	out->m[2][3] = a->m[0][3] * b->m[2][0] + a->m[1][3] * b->m[2][1] + a->m[2][3] * b->m[2][2] + a->m[3][3] * b->m[2][3];
+	result->m[2][0] = a->m[0][0] * b->m[2][0] + a->m[1][0] * b->m[2][1] + a->m[2][0] * b->m[2][2] + a->m[3][0] * b->m[2][3];
+	result->m[2][1] = a->m[0][1] * b->m[2][0] + a->m[1][1] * b->m[2][1] + a->m[2][1] * b->m[2][2] + a->m[3][1] * b->m[2][3];
+	result->m[2][2] = a->m[0][2] * b->m[2][0] + a->m[1][2] * b->m[2][1] + a->m[2][2] * b->m[2][2] + a->m[3][2] * b->m[2][3];
+	result->m[2][3] = a->m[0][3] * b->m[2][0] + a->m[1][3] * b->m[2][1] + a->m[2][3] * b->m[2][2] + a->m[3][3] * b->m[2][3];
 
-	out->m[3][0] = a->m[0][0] * b->m[3][0] + a->m[1][0] * b->m[3][1] + a->m[2][0] * b->m[3][2] + a->m[3][0] * b->m[3][3];
-	out->m[3][1] = a->m[0][1] * b->m[3][0] + a->m[1][1] * b->m[3][1] + a->m[2][1] * b->m[3][2] + a->m[3][1] * b->m[3][3];
-	out->m[3][2] = a->m[0][2] * b->m[3][0] + a->m[1][2] * b->m[3][1] + a->m[2][2] * b->m[3][2] + a->m[3][2] * b->m[3][3];
-	out->m[3][3] = a->m[0][3] * b->m[3][0] + a->m[1][3] * b->m[3][1] + a->m[2][3] * b->m[3][2] + a->m[3][3] * b->m[3][3];
+	result->m[3][0] = a->m[0][0] * b->m[3][0] + a->m[1][0] * b->m[3][1] + a->m[2][0] * b->m[3][2] + a->m[3][0] * b->m[3][3];
+	result->m[3][1] = a->m[0][1] * b->m[3][0] + a->m[1][1] * b->m[3][1] + a->m[2][1] * b->m[3][2] + a->m[3][1] * b->m[3][3];
+	result->m[3][2] = a->m[0][2] * b->m[3][0] + a->m[1][2] * b->m[3][1] + a->m[2][2] * b->m[3][2] + a->m[3][2] * b->m[3][3];
+	result->m[3][3] = a->m[0][3] * b->m[3][0] + a->m[1][3] * b->m[3][1] + a->m[2][3] * b->m[3][2] + a->m[3][3] * b->m[3][3];
+}
+
+// Creates the transpose of the given matrix.
+static void Matrix4x4f_Transpose( Matrix4x4f_t * result, const Matrix4x4f_t * src )
+{
+	result->m[0][0] = src->m[0][0];
+	result->m[0][1] = src->m[1][0];
+	result->m[0][2] = src->m[2][0];
+	result->m[0][3] = src->m[3][0];
+
+	result->m[1][0] = src->m[0][1];
+	result->m[1][1] = src->m[1][1];
+	result->m[1][2] = src->m[2][1];
+	result->m[1][3] = src->m[3][1];
+
+	result->m[2][0] = src->m[0][2];
+	result->m[2][1] = src->m[1][2];
+	result->m[2][2] = src->m[2][2];
+	result->m[2][3] = src->m[3][2];
+
+	result->m[3][0] = src->m[0][3];
+	result->m[3][1] = src->m[1][3];
+	result->m[3][2] = src->m[2][3];
+	result->m[3][3] = src->m[3][3];
 }
 
 // Returns a 3x3 minor of a 4x4 matrix.
-static float Matrix4x4f_Minor( const Matrix4x4f_t * src, int r0, int r1, int r2, int c0, int c1, int c2 )
+static float Matrix4x4f_Minor( const Matrix4x4f_t * matrix, int r0, int r1, int r2, int c0, int c1, int c2 )
 {
-	return	src->m[r0][c0] * ( src->m[r1][c1] * src->m[r2][c2] - src->m[r2][c1] * src->m[r1][c2] ) -
-			src->m[r0][c1] * ( src->m[r1][c0] * src->m[r2][c2] - src->m[r2][c0] * src->m[r1][c2] ) +
-			src->m[r0][c2] * ( src->m[r1][c0] * src->m[r2][c1] - src->m[r2][c0] * src->m[r1][c1] );
+	return	matrix->m[r0][c0] * ( matrix->m[r1][c1] * matrix->m[r2][c2] - matrix->m[r2][c1] * matrix->m[r1][c2] ) -
+			matrix->m[r0][c1] * ( matrix->m[r1][c0] * matrix->m[r2][c2] - matrix->m[r2][c0] * matrix->m[r1][c2] ) +
+			matrix->m[r0][c2] * ( matrix->m[r1][c0] * matrix->m[r2][c1] - matrix->m[r2][c0] * matrix->m[r1][c1] );
 }
  
 // Calculates the inverse of a 4x4 matrix.
@@ -1920,26 +2139,26 @@ static void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4
 }
 
 // Creates an identity matrix.
-static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * matrix )
+static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * result )
 {
-	matrix->m[0][0] = 1.0f; matrix->m[0][1] = 0.0f; matrix->m[0][2] = 0.0f; matrix->m[0][3] = 0.0f;
-	matrix->m[1][0] = 0.0f; matrix->m[1][1] = 1.0f; matrix->m[1][2] = 0.0f; matrix->m[1][3] = 0.0f;
-	matrix->m[2][0] = 0.0f; matrix->m[2][1] = 0.0f; matrix->m[2][2] = 1.0f; matrix->m[2][3] = 0.0f;
-	matrix->m[3][0] = 0.0f; matrix->m[3][1] = 0.0f; matrix->m[3][2] = 0.0f; matrix->m[3][3] = 1.0f;
+	result->m[0][0] = 1.0f; result->m[0][1] = 0.0f; result->m[0][2] = 0.0f; result->m[0][3] = 0.0f;
+	result->m[1][0] = 0.0f; result->m[1][1] = 1.0f; result->m[1][2] = 0.0f; result->m[1][3] = 0.0f;
+	result->m[2][0] = 0.0f; result->m[2][1] = 0.0f; result->m[2][2] = 1.0f; result->m[2][3] = 0.0f;
+	result->m[3][0] = 0.0f; result->m[3][1] = 0.0f; result->m[3][2] = 0.0f; result->m[3][3] = 1.0f;
 }
 
 // Creates a translation matrix.
-static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * matrix, const float x, const float y, const float z )
+static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * result, const float x, const float y, const float z )
 {
-	matrix->m[0][0] = 1.0f; matrix->m[0][1] = 0.0f; matrix->m[0][2] = 0.0f; matrix->m[0][3] = 0.0f;
-	matrix->m[1][0] = 0.0f; matrix->m[1][1] = 1.0f; matrix->m[1][2] = 0.0f; matrix->m[1][3] = 0.0f;
-	matrix->m[2][0] = 0.0f; matrix->m[2][1] = 0.0f; matrix->m[2][2] = 1.0f; matrix->m[2][3] = 0.0f;
-	matrix->m[3][0] =    x; matrix->m[3][1] =    y; matrix->m[3][2] =    z; matrix->m[3][3] = 1.0f;
+	result->m[0][0] = 1.0f; result->m[0][1] = 0.0f; result->m[0][2] = 0.0f; result->m[0][3] = 0.0f;
+	result->m[1][0] = 0.0f; result->m[1][1] = 1.0f; result->m[1][2] = 0.0f; result->m[1][3] = 0.0f;
+	result->m[2][0] = 0.0f; result->m[2][1] = 0.0f; result->m[2][2] = 1.0f; result->m[2][3] = 0.0f;
+	result->m[3][0] =    x; result->m[3][1] =    y; result->m[3][2] =    z; result->m[3][3] = 1.0f;
 }
 
 // Creates a rotation matrix.
 // If -Z=forward, +Y=up, +X=right, then degreesX=pitch, degreesY=yaw, degreesZ=roll.
-static void Matrix4x4f_CreateRotation( Matrix4x4f_t * matrix, const float degreesX, const float degreesY, const float degreesZ )
+static void Matrix4x4f_CreateRotation( Matrix4x4f_t * result, const float degreesX, const float degreesY, const float degreesZ )
 {
 	const float sinX = sinf( degreesX * ( MATH_PI / 180.0f ) );
 	const float cosX = cosf( degreesX * ( MATH_PI / 180.0f ) );
@@ -1970,7 +2189,72 @@ static void Matrix4x4f_CreateRotation( Matrix4x4f_t * matrix, const float degree
 	} };
 	Matrix4x4f_t rotationXY;
 	Matrix4x4f_Multiply( &rotationXY, &rotationY, &rotationX );
-	Matrix4x4f_Multiply( matrix, &rotationZ, &rotationXY );
+	Matrix4x4f_Multiply( result, &rotationZ, &rotationXY );
+}
+
+// Creates a scale matrix.
+static void Matrix4x4f_CreateScale( Matrix4x4f_t * result, const float x, const float y, const float z )
+{
+	result->m[0][0] =    x; result->m[0][1] = 0.0f; result->m[0][2] = 0.0f; result->m[0][3] = 0.0f;
+	result->m[1][0] = 0.0f; result->m[1][1] =    y; result->m[1][2] = 0.0f; result->m[1][3] = 0.0f;
+	result->m[2][0] = 0.0f; result->m[2][1] = 0.0f; result->m[2][2] =    z; result->m[2][3] = 0.0f;
+	result->m[3][0] = 0.0f; result->m[3][1] = 0.0f; result->m[3][2] = 0.0f; result->m[3][3] = 1.0f;
+}
+
+// Creates a matrix from a quaternion.
+static void Matrix4x4f_CreateFromQuaternion( Matrix4x4f_t * result, const Quatf_t * quat )
+{
+	const float x2 = quat->x + quat->x;
+	const float y2 = quat->y + quat->y;
+	const float z2 = quat->z + quat->z;
+
+	const float xx2 = quat->x * x2;
+	const float yy2 = quat->y * y2;
+	const float zz2 = quat->z * z2;
+
+	const float yz2 = quat->y * z2;
+	const float wx2 = quat->w * x2;
+	const float xy2 = quat->x * y2;
+	const float wz2 = quat->w * z2;
+	const float xz2 = quat->x * z2;
+	const float wy2 = quat->w * y2;
+
+	result->m[0][0] = 1.0f - yy2 - zz2;
+	result->m[0][1] = xy2 + wz2;
+	result->m[0][2] = xz2 - wy2;
+	result->m[0][3] = 0.0f;
+
+	result->m[1][0] = xy2 - wz2;
+	result->m[1][1] = 1.0f - xx2 - zz2;
+	result->m[1][2] = yz2 + wx2;
+	result->m[1][3] = 0.0f;
+
+	result->m[2][0] = xz2 + wy2;
+	result->m[2][1] = yz2 - wx2;
+	result->m[2][2] = 1.0f - xx2 - yy2;
+	result->m[2][3] = 0.0f;
+
+	result->m[3][0] = 0.0f;
+	result->m[3][1] = 0.0f;
+	result->m[3][2] = 0.0f;
+	result->m[3][3] = 1.0f;
+}
+
+// Creates a combined translation(rotation(scale(object))) matrix.
+static void Matrix4x4f_CreateTranslationRotationScale( Matrix4x4f_t * result, const Vector3f_t * scale, const Quatf_t * rotation, const Vector3f_t * translation )
+{
+	Matrix4x4f_t scaleMatrix;
+	Matrix4x4f_CreateScale( &scaleMatrix, scale->x, scale->y, scale->z );
+
+	Matrix4x4f_t rotationMatrix;
+	Matrix4x4f_CreateFromQuaternion( &rotationMatrix, rotation );
+
+	Matrix4x4f_t translationMatrix;
+	Matrix4x4f_CreateTranslation( &translationMatrix, translation->x, translation->y, translation->z );
+
+	Matrix4x4f_t combinedMatrix;
+	Matrix4x4f_Multiply( &combinedMatrix, &rotationMatrix, &scaleMatrix );
+	Matrix4x4f_Multiply( result, &translationMatrix, &combinedMatrix );
 }
 
 // Creates a projection matrix based on the specified dimensions.
@@ -1981,7 +2265,7 @@ static void Matrix4x4f_CreateRotation( Matrix4x4f_t * matrix, const float degree
 //		"Tightening the Precision of Perspective Rendering"
 //		Paul Upchurch, Mathieu Desbrun
 //		Journal of Graphics Tools, Volume 16, Issue 1, 2012
-static void Matrix4x4f_CreateProjection( Matrix4x4f_t * matrix, const float minX, const float maxX,
+static void Matrix4x4f_CreateProjection( Matrix4x4f_t * result, const float minX, const float maxX,
 											float const minY, const float maxY, const float nearZ, const float farZ )
 {
 	const float width = maxX - minX;
@@ -2005,53 +2289,53 @@ static void Matrix4x4f_CreateProjection( Matrix4x4f_t * matrix, const float minX
 	if ( farZ <= nearZ )
 	{
 		// place the far plane at infinity
-		matrix->m[0][0] = 2 * nearZ / width;
-		matrix->m[1][0] = 0;
-		matrix->m[2][0] = ( maxX + minX ) / width;
-		matrix->m[3][0] = 0;
+		result->m[0][0] = 2 * nearZ / width;
+		result->m[1][0] = 0;
+		result->m[2][0] = ( maxX + minX ) / width;
+		result->m[3][0] = 0;
 
-		matrix->m[0][1] = 0;
-		matrix->m[1][1] = 2 * nearZ / height;
-		matrix->m[2][1] = ( maxY + minY ) / height;
-		matrix->m[3][1] = 0;
+		result->m[0][1] = 0;
+		result->m[1][1] = 2 * nearZ / height;
+		result->m[2][1] = ( maxY + minY ) / height;
+		result->m[3][1] = 0;
 
-		matrix->m[0][2] = 0;
-		matrix->m[1][2] = 0;
-		matrix->m[2][2] = -1;
-		matrix->m[3][2] = -( nearZ + offsetZ );
+		result->m[0][2] = 0;
+		result->m[1][2] = 0;
+		result->m[2][2] = -1;
+		result->m[3][2] = -( nearZ + offsetZ );
 
-		matrix->m[0][3] = 0;
-		matrix->m[1][3] = 0;
-		matrix->m[2][3] = -1;
-		matrix->m[3][3] = 0;
+		result->m[0][3] = 0;
+		result->m[1][3] = 0;
+		result->m[2][3] = -1;
+		result->m[3][3] = 0;
 	}
 	else
 	{
 		// normal projection
-		matrix->m[0][0] = 2 * nearZ / width;
-		matrix->m[1][0] = 0;
-		matrix->m[2][0] = ( maxX + minX ) / width;
-		matrix->m[3][0] = 0;
+		result->m[0][0] = 2 * nearZ / width;
+		result->m[1][0] = 0;
+		result->m[2][0] = ( maxX + minX ) / width;
+		result->m[3][0] = 0;
 
-		matrix->m[0][1] = 0;
-		matrix->m[1][1] = 2 * nearZ / height;
-		matrix->m[2][1] = ( maxY + minY ) / height;
-		matrix->m[3][1] = 0;
+		result->m[0][1] = 0;
+		result->m[1][1] = 2 * nearZ / height;
+		result->m[2][1] = ( maxY + minY ) / height;
+		result->m[3][1] = 0;
 
-		matrix->m[0][2] = 0;
-		matrix->m[1][2] = 0;
-		matrix->m[2][2] = -( farZ + offsetZ ) / ( farZ - nearZ );
-		matrix->m[3][2] = -( farZ * ( nearZ + offsetZ ) ) / ( farZ - nearZ );
+		result->m[0][2] = 0;
+		result->m[1][2] = 0;
+		result->m[2][2] = -( farZ + offsetZ ) / ( farZ - nearZ );
+		result->m[3][2] = -( farZ * ( nearZ + offsetZ ) ) / ( farZ - nearZ );
 
-		matrix->m[0][3] = 0;
-		matrix->m[1][3] = 0;
-		matrix->m[2][3] = -1;
-		matrix->m[3][3] = 0;
+		result->m[0][3] = 0;
+		result->m[1][3] = 0;
+		result->m[2][3] = -1;
+		result->m[3][3] = 0;
 	}
 }
 
 // Creates a projection matrix based on the specified FOV.
-static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float fovDegreesX, const float fovDegreesY,
+static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * result, const float fovDegreesX, const float fovDegreesY,
 												const float offsetX, const float offsetY, const float nearZ, const float farZ )
 {
 	const float halfWidth = nearZ * tanf( fovDegreesX * ( 0.5f * MATH_PI / 180.0f ) );
@@ -2063,7 +2347,303 @@ static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float f
 	const float minY = offsetY - halfHeight;
 	const float maxY = offsetY + halfHeight;
 
-	Matrix4x4f_CreateProjection( matrix, minX, maxX, minY, maxY, nearZ, farZ );
+	Matrix4x4f_CreateProjection( result, minX, maxX, minY, maxY, nearZ, farZ );
+}
+
+// Creates a matrix that transforms the -1 to 1 cube to cover the given 'mins' and 'maxs' transformed with the given 'matrix'.
+static void Matrix4x4f_CreateOffsetScaleForBounds( Matrix4x4f_t * result, const Matrix4x4f_t * matrix, const Vector3f_t * mins, const Vector3f_t * maxs )
+{
+	const Vector3f_t offset = { ( maxs->x + mins->x ) * 0.5f, ( maxs->y + mins->y ) * 0.5f, ( maxs->z + mins->z ) * 0.5f };
+	const Vector3f_t scale = { ( maxs->x - mins->x ) * 0.5f, ( maxs->y - mins->y ) * 0.5f, ( maxs->z - mins->z ) * 0.5f };
+
+	result->m[0][0] = matrix->m[0][0] * scale.x;
+	result->m[0][1] = matrix->m[0][1] * scale.x;
+	result->m[0][2] = matrix->m[0][2] * scale.x;
+	result->m[0][3] = matrix->m[0][3] * scale.x;
+
+	result->m[1][0] = matrix->m[1][0] * scale.y;
+	result->m[1][1] = matrix->m[1][1] * scale.y;
+	result->m[1][2] = matrix->m[1][2] * scale.y;
+	result->m[1][3] = matrix->m[1][3] * scale.y;
+
+	result->m[2][0] = matrix->m[2][0] * scale.z;
+	result->m[2][1] = matrix->m[2][1] * scale.z;
+	result->m[2][2] = matrix->m[2][2] * scale.z;
+	result->m[2][3] = matrix->m[2][3] * scale.z;
+
+	result->m[3][0] = matrix->m[3][0] + matrix->m[0][0] * offset.x + matrix->m[1][0] * offset.y + matrix->m[2][0] * offset.z;
+	result->m[3][1] = matrix->m[3][1] + matrix->m[0][1] * offset.x + matrix->m[1][1] * offset.y + matrix->m[2][1] * offset.z;
+	result->m[3][2] = matrix->m[3][2] + matrix->m[0][2] * offset.x + matrix->m[1][2] * offset.y + matrix->m[2][2] * offset.z;
+	result->m[3][3] = matrix->m[3][3] + matrix->m[0][3] * offset.x + matrix->m[1][3] * offset.y + matrix->m[2][3] * offset.z;
+}
+
+// Returns true if the given matrix is affine.
+static bool Matrix4x4f_IsAffine( const Matrix4x4f_t * matrix, const float epsilon )
+{
+	return	fabsf( matrix->m[0][3] ) <= epsilon &&
+			fabsf( matrix->m[1][3] ) <= epsilon &&
+			fabsf( matrix->m[2][3] ) <= epsilon &&
+			fabsf( matrix->m[3][3] - 1.0f ) <= epsilon;
+}
+
+// Returns true if the given matrix is orthogonal.
+static bool Matrix4x4f_IsOrthogonal( const Matrix4x4f_t * matrix, const float epsilon )
+{
+	for ( int i = 0; i < 3; i++ )
+	{
+		for ( int j = 0; j < 3; j++ )
+		{
+			if ( i != j )
+			{
+				if ( fabsf( matrix->m[i][0] * matrix->m[j][0] + matrix->m[i][1] * matrix->m[j][1] + matrix->m[i][2] * matrix->m[j][2] ) > epsilon )
+				{
+					return false;
+				}
+				if ( fabsf( matrix->m[0][i] * matrix->m[0][j] + matrix->m[1][i] * matrix->m[1][j] + matrix->m[2][i] * matrix->m[2][j] ) > epsilon )
+				{
+					return false;
+				}
+			}
+		}
+	}
+	return true;
+}
+
+// Returns true if the given matrix is orthonormal.
+static bool Matrix4x4f_IsOrthonormal( const Matrix4x4f_t * matrix, const float epsilon )
+{
+	for ( int i = 0; i < 3; i++ )
+	{
+		for ( int j = 0; j < 3; j++ )
+		{
+			const float kd = ( i == j ) ? 1.0f : 0.0f;	// Kronecker delta
+			if ( fabsf( kd - ( matrix->m[i][0] * matrix->m[j][0] + matrix->m[i][1] * matrix->m[j][1] + matrix->m[i][2] * matrix->m[j][2] ) ) > epsilon )
+			{
+				return false;
+			}
+			if ( fabsf( kd - ( matrix->m[0][i] * matrix->m[0][j] + matrix->m[1][i] * matrix->m[1][j] + matrix->m[2][i] * matrix->m[2][j] ) ) > epsilon )
+			{
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+// Returns true if the given matrix is homogeneous.
+static bool Matrix4x4f_IsHomogeneous( const Matrix4x4f_t * matrix, const float epsilon )
+{
+	return Matrix4x4f_IsAffine( matrix, epsilon ) && Matrix4x4f_IsOrthonormal( matrix, epsilon );
+}
+
+// Get the translation from a combined translation(rotation(scale(object))) matrix.
+static void Matrix4x4f_GetTranslation( Vector3f_t * result, const Matrix4x4f_t * src )
+{
+	assert( Matrix4x4f_IsAffine( src, 1e-4f ) );
+	assert( Matrix4x4f_IsOrthogonal( src, 1e-4f ) );
+
+	result->x = src->m[3][0];
+	result->y = src->m[3][1];
+	result->z = src->m[3][2];
+}
+
+// Get the rotation from a combined translation(rotation(scale(object))) matrix.
+static void Matrix4x4f_GetRotation( Quatf_t * result, const Matrix4x4f_t * src )
+{
+	assert( Matrix4x4f_IsAffine( src, 1e-4f ) );
+	assert( Matrix4x4f_IsOrthogonal( src, 1e-4f ) );
+
+	const float scaleX = RcpSqrt( src->m[0][0] * src->m[0][0] + src->m[0][1] * src->m[0][1] + src->m[0][2] * src->m[0][2] );
+	const float scaleY = RcpSqrt( src->m[1][0] * src->m[1][0] + src->m[1][1] * src->m[1][1] + src->m[1][2] * src->m[1][2] );
+	const float scaleZ = RcpSqrt( src->m[2][0] * src->m[2][0] + src->m[2][1] * src->m[2][1] + src->m[2][2] * src->m[2][2] );
+	const float m[9] =
+	{
+		src->m[0][0] * scaleX, src->m[0][1] * scaleX, src->m[0][2] * scaleX,
+		src->m[1][0] * scaleY, src->m[1][1] * scaleY, src->m[1][2] * scaleY,
+		src->m[2][0] * scaleZ, src->m[2][1] * scaleZ, src->m[2][2] * scaleZ
+	};
+	if ( m[0 * 3 + 0] + m[1 * 3 + 1] + m[2 * 3 + 2] > 0.0f )
+	{
+		float t = + m[0 * 3 + 0] + m[1 * 3 + 1] + m[2 * 3 + 2] + 1.0f;
+		float s = RcpSqrt( t ) * 0.5f;
+		result->w = s * t;
+		result->z = ( m[0 * 3 + 1] - m[1 * 3 + 0] ) * s;
+		result->y = ( m[2 * 3 + 0] - m[0 * 3 + 2] ) * s;
+		result->x = ( m[1 * 3 + 2] - m[2 * 3 + 1] ) * s;
+	}
+	else if ( m[0 * 3 + 0] > m[1 * 3 + 1] && m[0 * 3 + 0] > m[2 * 3 + 2] )
+	{
+		float t = + m[0 * 3 + 0] - m[1 * 3 + 1] - m[2 * 3 + 2] + 1.0f;
+		float s = RcpSqrt( t ) * 0.5f;
+		result->x = s * t;
+		result->y = ( m[0 * 3 + 1] + m[1 * 3 + 0] ) * s; 
+		result->z = ( m[2 * 3 + 0] + m[0 * 3 + 2] ) * s;
+		result->w = ( m[1 * 3 + 2] - m[2 * 3 + 1] ) * s;
+	}
+	else if ( m[1 * 3 + 1] > m[2 * 3 + 2] )
+	{
+		float t = - m[0 * 3 + 0] + m[1 * 3 + 1] - m[2 * 3 + 2] + 1.0f;
+		float s = RcpSqrt( t ) * 0.5f;
+		result->y = s * t;
+		result->x = ( m[0 * 3 + 1] + m[1 * 3 + 0] ) * s;
+		result->w = ( m[2 * 3 + 0] - m[0 * 3 + 2] ) * s;
+		result->z = ( m[1 * 3 + 2] + m[2 * 3 + 1] ) * s;
+	}
+	else
+	{
+		float t = - m[0 * 3 + 0] - m[1 * 3 + 1] + m[2 * 3 + 2] + 1.0f;
+		float s = RcpSqrt( t ) * 0.5f;
+		result->z = s * t;
+		result->w = ( m[0 * 3 + 1] - m[1 * 3 + 0] ) * s;
+		result->x = ( m[2 * 3 + 0] + m[0 * 3 + 2] ) * s;
+		result->y = ( m[1 * 3 + 2] + m[2 * 3 + 1] ) * s;
+	}
+}
+
+// Get the scale from a combined translation(rotation(scale(object))) matrix.
+static void Matrix4x4f_GetScale( Vector3f_t * result, const Matrix4x4f_t * src )
+{
+	assert( Matrix4x4f_IsAffine( src, 1e-4f ) );
+	assert( Matrix4x4f_IsOrthogonal( src, 1e-4f ) );
+
+	result->x = sqrtf( src->m[0][0] * src->m[0][0] + src->m[0][1] * src->m[0][1] + src->m[0][2] * src->m[0][2] );
+	result->y = sqrtf( src->m[1][0] * src->m[1][0] + src->m[1][1] * src->m[1][1] + src->m[1][2] * src->m[1][2] );
+	result->z = sqrtf( src->m[2][0] * src->m[2][0] + src->m[2][1] * src->m[2][1] + src->m[2][2] * src->m[2][2] );
+}
+
+// Transforms a 3D vector.
+static void Matrix4x4f_TransformVector3f( Vector3f_t * result, const Matrix4x4f_t * m, const Vector3f_t * v )
+{
+	const float w = m->m[0][3] * v->x + m->m[1][3] * v->y + m->m[2][3] * v->z + m->m[3][3];
+	const float rcpW = 1.0f / w;
+	result->x = ( m->m[0][0] * v->x + m->m[1][0] * v->y + m->m[2][0] * v->z + m->m[3][0] ) * rcpW;
+	result->y = ( m->m[0][1] * v->x + m->m[1][1] * v->y + m->m[2][1] * v->z + m->m[3][1] ) * rcpW;
+	result->z = ( m->m[0][2] * v->x + m->m[1][2] * v->y + m->m[2][2] * v->z + m->m[3][2] ) * rcpW;
+}
+
+// Transforms a 4D vector.
+static void Matrix4x4f_TransformVector4f( Vector4f_t * result, const Matrix4x4f_t * m, const Vector4f_t * v )
+{
+	result->x = m->m[0][0] * v->x + m->m[1][0] * v->y + m->m[2][0] * v->z + m->m[3][0];
+	result->y = m->m[0][1] * v->x + m->m[1][1] * v->y + m->m[2][1] * v->z + m->m[3][1];
+	result->z = m->m[0][2] * v->x + m->m[1][2] * v->y + m->m[2][2] * v->z + m->m[3][2];
+	result->w = m->m[0][3] * v->x + m->m[1][3] * v->y + m->m[2][3] * v->z + m->m[3][3];
+}
+
+// Transforms the 'mins' and 'maxs' bounds with the given 'matrix'.
+static void Matrix4x4f_TransformBounds( Vector3f_t * resultMins, Vector3f_t * resultMaxs, const Matrix4x4f_t * matrix, const Vector3f_t * mins, const Vector3f_t * maxs )
+{
+	assert( Matrix4x4f_IsAffine( matrix, 1e-4f ) );
+
+	const Vector3f_t center = { ( mins->x + maxs->x ) * 0.5f, ( mins->y + maxs->y ) * 0.5f, ( mins->z + maxs->z ) * 0.5f };
+	const Vector3f_t extents = { maxs->x - center.x, maxs->y - center.y, maxs->z - center.z };
+	const Vector3f_t newCenter =
+	{
+		matrix->m[0][0] * center.x + matrix->m[1][0] * center.y + matrix->m[2][0] * center.z + matrix->m[3][0],
+		matrix->m[0][1] * center.x + matrix->m[1][1] * center.y + matrix->m[2][1] * center.z + matrix->m[3][1],
+		matrix->m[0][2] * center.x + matrix->m[1][2] * center.y + matrix->m[2][2] * center.z + matrix->m[3][2]
+	};
+	const Vector3f_t newExtents =
+	{
+		fabsf( extents.x * matrix->m[0][0] ) + fabsf( extents.y * matrix->m[1][0] ) + fabsf( extents.z * matrix->m[2][0] ),
+		fabsf( extents.x * matrix->m[0][1] ) + fabsf( extents.y * matrix->m[1][1] ) + fabsf( extents.z * matrix->m[2][1] ),
+		fabsf( extents.x * matrix->m[0][2] ) + fabsf( extents.y * matrix->m[1][2] ) + fabsf( extents.z * matrix->m[2][2] )
+	};
+	Vector3f_Sub( resultMins, &newCenter, &newExtents );
+	Vector3f_Add( resultMaxs, &newCenter, &newExtents );
+}
+
+// Returns true if the 'mins' and 'maxs' bounds is completely off to one side of the projection matrix.
+static bool Matrix4x4f_CullBounds( const Matrix4x4f_t * mvp, const Vector3f_t * mins, const Vector3f_t * maxs )
+{
+	if ( maxs->x <= mins->x && maxs->y <= mins->y && maxs->z <= mins->z )
+	{
+		return false;
+	}
+
+	Vector4f_t c[8];
+	for ( int i = 0; i < 8; i++ )
+	{
+		const Vector4f_t corner =
+		{
+			( i & 1 ) ? maxs->x : mins->x,
+			( i & 2 ) ? maxs->y : mins->y,
+			( i & 4 ) ? maxs->z : mins->z,
+			1.0f
+		};
+		Matrix4x4f_TransformVector4f( &c[i], mvp, &corner );
+	}
+
+	int i;
+	for ( i = 0; i < 8; i++ )
+	{
+		if ( c[i].x > -c[i].w )
+		{
+			break;
+		}
+	}
+	if ( i == 8 )
+	{
+		return true;
+	}
+	for ( i = 0; i < 8; i++ )
+	{
+		if ( c[i].x < c[i].w )
+		{
+			break;
+		}
+	}
+	if ( i == 8 )
+	{
+		return true;
+	}
+
+	for ( i = 0; i < 8; i++ )
+	{
+		if ( c[i].y > -c[i].w )
+		{
+			break;
+		}
+	}
+	if ( i == 8 )
+	{
+		return true;
+	}
+	for ( i = 0; i < 8; i++ )
+	{
+		if ( c[i].y < c[i].w )
+		{
+			break;
+		}
+	}
+	if ( i == 8 )
+	{
+		return true;
+	}
+	for ( i = 0; i < 8; i++ )
+	{
+		if ( c[i].z > -c[i].w )
+		{
+			break;
+		}
+	}
+	if ( i == 8 )
+	{
+		return true;
+	}
+	for ( i = 0; i < 8; i++ )
+	{
+		if ( c[i].z < c[i].w )
+		{
+			break;
+		}
+	}
+	if ( i == 8 )
+	{
+		return true;
+	}
+
+	return false;
 }
 
 /*
@@ -2504,7 +3084,12 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 			VkDebugReportCallbackCreateInfoEXT debugReportCallbackCreateInfo;
 			debugReportCallbackCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
 			debugReportCallbackCreateInfo.pNext = NULL;
-			debugReportCallbackCreateInfo.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT;
+			debugReportCallbackCreateInfo.flags =
+					VK_DEBUG_REPORT_ERROR_BIT_EXT |
+					VK_DEBUG_REPORT_WARNING_BIT_EXT |
+					VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT;
+					//VK_DEBUG_REPORT_INFORMATION_BIT_EXT;
+					//VK_DEBUG_REPORT_DEBUG_BIT_EXT;
 			debugReportCallbackCreateInfo.pfnCallback = (PFN_vkDebugReportCallbackEXT)DebugReportCallback;
 			debugReportCallbackCreateInfo.pUserData = NULL;
 
@@ -3977,9 +4562,11 @@ static void GpuWindow_Exit( GpuWindow_t * window );
 static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window );
 static void GpuWindow_SwapInterval( GpuWindow_t * window, const int swapInterval );
 static void GpuWindow_SwapBuffers( GpuWindow_t * window );
-static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window );
-static bool GpuWindow_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
-static bool GpuWindow_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button );
+static Microseconds_t GpuWindow_GetNextSwapTimeMicroseconds( GpuWindow_t * window );
+static Microseconds_t GpuWindow_GetFrameTimeMicroseconds( GpuWindow_t * window );
+static bool GpuWindowInput_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
+static bool GpuWindowInput_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button );
+static bool GpuWindowInput_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
 
 ================================================================================================================================
 */
@@ -3991,6 +4578,14 @@ typedef enum
 	GPU_WINDOW_EVENT_DEACTIVATED,
 	GPU_WINDOW_EVENT_EXIT
 } GpuWindowEvent_t;
+
+typedef struct
+{
+	bool					keyInput[256];
+	bool					mouseInput[8];
+	int						mouseInputX[8];
+	int						mouseInputY[8];
+} GpuWindowInput_t;
 
 typedef struct
 {
@@ -4006,10 +4601,7 @@ typedef struct
 	bool					windowFullscreen;
 	bool					windowActive;
 	bool					windowExit;
-	bool					keyInput[256];
-	bool					mouseInput[8];
-	int						mouseInputX[8];
-	int						mouseInputY[8];
+	GpuWindowInput_t		input;
 	Microseconds_t			lastSwapTime;
 
 	// The swapchain and depth buffer could be stored on the context like OpenGL but this makes more sense.
@@ -4084,33 +4676,42 @@ static void GpuWindow_DestroySurface( GpuWindow_t * window )
 
 typedef enum
 {
-	KEY_ESCAPE		= 0x1B,
-	KEY_A			= 0x61,
-	KEY_B			= 0x62,
-	KEY_C			= 0x63,
-	KEY_D			= 0x64,
-	KEY_E			= 0x65,
-	KEY_F			= 0x66,
-	KEY_G			= 0x67,
-	KEY_H			= 0x68,
-	KEY_I			= 0x69,
-	KEY_J			= 0x6A,
-	KEY_K			= 0x6B,
-	KEY_L			= 0x6C,
-	KEY_M			= 0x6D,
-	KEY_N			= 0x6E,
-	KEY_O			= 0x6F,
-	KEY_P			= 0x70,
-	KEY_Q			= 0x71,
-	KEY_R			= 0x72,
-	KEY_S			= 0x73,
-	KEY_T			= 0x74,
-	KEY_U			= 0x75,
-	KEY_V			= 0x76,
-	KEY_W			= 0x77,
-	KEY_X			= 0x78,
-	KEY_Y			= 0x79,
-	KEY_Z			= 0x7A
+	KEY_A				= 0x41,
+	KEY_B				= 0x42,
+	KEY_C				= 0x43,
+	KEY_D				= 0x44,
+	KEY_E				= 0x45,
+	KEY_F				= 0x46,
+	KEY_G				= 0x47,
+	KEY_H				= 0x48,
+	KEY_I				= 0x49,
+	KEY_J				= 0x4A,
+	KEY_K				= 0x4B,
+	KEY_L				= 0x4C,
+	KEY_M				= 0x4D,
+	KEY_N				= 0x4E,
+	KEY_O				= 0x4F,
+	KEY_P				= 0x50,
+	KEY_Q				= 0x51,
+	KEY_R				= 0x52,
+	KEY_S				= 0x53,
+	KEY_T				= 0x54,
+	KEY_U				= 0x55,
+	KEY_V				= 0x56,
+	KEY_W				= 0x57,
+	KEY_X				= 0x58,
+	KEY_Y				= 0x59,
+	KEY_Z				= 0x5A,
+	KEY_RETURN			= VK_RETURN,
+	KEY_TAB				= VK_TAB,
+	KEY_ESCAPE			= VK_ESCAPE,
+	KEY_SHIFT_LEFT		= VK_LSHIFT,
+	KEY_CTRL_LEFT		= VK_LCONTROL,
+	KEY_ALT_LEFT		= VK_LMENU,
+	KEY_CURSOR_UP		= VK_UP,
+	KEY_CURSOR_DOWN		= VK_DOWN,
+	KEY_CURSOR_LEFT		= VK_LEFT,
+	KEY_CURSOR_RIGHT	= VK_RIGHT
 } KeyboardKey_t;
 
 typedef enum
@@ -4151,29 +4752,38 @@ LRESULT APIENTRY WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 			PostQuitMessage( 0 );
 			return 0;
 		}
-		case WM_CHAR:
+		case WM_KEYDOWN:
 		{
 			if ( window != NULL )
 			{
 				if ( (int)wParam >= 0 && (int)wParam < 256 )
 				{
-					window->keyInput[(int)wParam] = true;
+					if ( 	(int)wParam != KEY_SHIFT_LEFT &&
+							(int)wParam != KEY_CTRL_LEFT &&
+							(int)wParam != KEY_ALT_LEFT &&
+							(int)wParam != KEY_CURSOR_UP &&
+							(int)wParam != KEY_CURSOR_DOWN &&
+							(int)wParam != KEY_CURSOR_LEFT &&
+							(int)wParam != KEY_CURSOR_RIGHT )
+					{
+						window->input.keyInput[(int)wParam] = true;
+					}
 				}
 			}
 			break;
 		}
 		case WM_LBUTTONDOWN:
 		{
-			window->mouseInput[MOUSE_LEFT] = true;
-			window->mouseInputX[MOUSE_LEFT] = LOWORD( lParam );
-			window->mouseInputY[MOUSE_LEFT] = window->windowHeight - HIWORD( lParam );
+			window->input.mouseInput[MOUSE_LEFT] = true;
+			window->input.mouseInputX[MOUSE_LEFT] = LOWORD( lParam );
+			window->input.mouseInputY[MOUSE_LEFT] = window->windowHeight - HIWORD( lParam );
 			break;
 		}
 		case WM_RBUTTONDOWN:
 		{
-			window->mouseInput[MOUSE_RIGHT] = true;
-			window->mouseInputX[MOUSE_RIGHT] = LOWORD( lParam );
-			window->mouseInputY[MOUSE_RIGHT] = window->windowHeight - HIWORD( lParam );
+			window->input.mouseInput[MOUSE_RIGHT] = true;
+			window->input.mouseInputX[MOUSE_RIGHT] = LOWORD( lParam );
+			window->input.mouseInputY[MOUSE_RIGHT] = window->windowHeight - HIWORD( lParam );
 			break;
 		}
 	}
@@ -4366,8 +4976,6 @@ static void GpuWindow_Exit( GpuWindow_t * window )
 
 static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 {
-	UNUSED_PARM( window );
-
 	MSG msg;
 	while ( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) > 0 )
 	{
@@ -4381,6 +4989,14 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 			DispatchMessage( &msg );
 		}
 	}
+
+	window->input.keyInput[KEY_SHIFT_LEFT]	= GetAsyncKeyState( KEY_SHIFT_LEFT );
+	window->input.keyInput[KEY_CTRL_LEFT]		= GetAsyncKeyState( KEY_CTRL_LEFT );
+	window->input.keyInput[KEY_ALT_LEFT]		= GetAsyncKeyState( KEY_ALT_LEFT );
+	window->input.keyInput[KEY_CURSOR_UP]		= GetAsyncKeyState( KEY_CURSOR_UP );
+	window->input.keyInput[KEY_CURSOR_DOWN]	= GetAsyncKeyState( KEY_CURSOR_DOWN );
+	window->input.keyInput[KEY_CURSOR_LEFT]	= GetAsyncKeyState( KEY_CURSOR_LEFT );
+	window->input.keyInput[KEY_CURSOR_RIGHT]	= GetAsyncKeyState( KEY_CURSOR_RIGHT );
 
 	if ( window->windowExit )
 	{
@@ -4398,7 +5014,6 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 typedef enum
 {
-	KEY_ESCAPE			= 0x35,
 	KEY_A				= 0x00,
 	KEY_B				= 0x0B,
 	KEY_C				= 0x08,
@@ -4425,6 +5040,16 @@ typedef enum
 	KEY_X				= 0x07,
 	KEY_Y				= 0x10,
 	KEY_Z				= 0x06,
+	KEY_RETURN			= 0x24,
+	KEY_TAB				= 0x30,
+	KEY_ESCAPE			= 0x35,
+	KEY_SHIFT_LEFT		= 0x38,
+	KEY_CTRL_LEFT		= 0x3B,
+	KEY_ALT_LEFT		= 0x3A,
+	KEY_CURSOR_UP		= 0x7E,
+	KEY_CURSOR_DOWN		= 0x7D,
+	KEY_CURSOR_LEFT		= 0x7B,
+	KEY_CURSOR_RIGHT	= 0x7C
 } KeyboardKey_t;
 
 typedef enum
@@ -4548,7 +5173,6 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 typedef enum
 {
-	KEY_ESCAPE			= 0x35,
 	KEY_A				= 0x00,
 	KEY_B				= 0x0B,
 	KEY_C				= 0x08,
@@ -4575,6 +5199,16 @@ typedef enum
 	KEY_X				= 0x07,
 	KEY_Y				= 0x10,
 	KEY_Z				= 0x06,
+	KEY_RETURN			= 0x24,
+	KEY_TAB				= 0x30,
+	KEY_ESCAPE			= 0x35,
+	KEY_SHIFT_LEFT		= 0x38,
+	KEY_CTRL_LEFT		= 0x3B,
+	KEY_ALT_LEFT		= 0x3A,
+	KEY_CURSOR_UP		= 0x7E,
+	KEY_CURSOR_DOWN		= 0x7D,
+	KEY_CURSOR_LEFT		= 0x7B,
+	KEY_CURSOR_RIGHT	= 0x7C
 } KeyboardKey_t;
 
 typedef enum
@@ -4826,22 +5460,22 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 			unsigned short key = [event keyCode];
 			if ( key >= 0 && key < 256 )
 			{
-				window->keyInput[key] = true;
+				window->input.keyInput[key] = true;
 			}
 		}
 		else if ( event.type == NSLeftMouseDown )
 		{
 			NSPoint point = [event locationInWindow];
-			window->mouseInput[MOUSE_LEFT] = true;
-			window->mouseInputX[MOUSE_LEFT] = point.x;
-			window->mouseInputY[MOUSE_LEFT] = point.y - 1;	// change to zero-based
+			window->input.mouseInput[MOUSE_LEFT] = true;
+			window->input.mouseInputX[MOUSE_LEFT] = point.x;
+			window->input.mouseInputY[MOUSE_LEFT] = point.y - 1;	// change to zero-based
 		}
 		else if ( event.type == NSRightMouseDown )
 		{
 			NSPoint point = [event locationInWindow];
-			window->mouseInput[MOUSE_RIGHT] = true;
-			window->mouseInputX[MOUSE_RIGHT] = point.x;
-			window->mouseInputY[MOUSE_RIGHT] = point.y - 1;	// change to zero-based
+			window->input.mouseInput[MOUSE_RIGHT] = true;
+			window->input.mouseInputX[MOUSE_RIGHT] = point.x;
+			window->input.mouseInputY[MOUSE_RIGHT] = point.y - 1;	// change to zero-based
 		}
 
 		[NSApp sendEvent:event];
@@ -4865,33 +5499,42 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 typedef enum	// keysym.h
 {
-	KEY_ESCAPE		= ( XK_Escape & 255 ),
-	KEY_A			= XK_a,
-	KEY_B			= XK_b,
-	KEY_C			= XK_c,
-	KEY_D			= XK_d,
-	KEY_E			= XK_e,
-	KEY_F			= XK_f,
-	KEY_G			= XK_g,
-	KEY_H			= XK_h,
-	KEY_I			= XK_i,
-	KEY_J			= XK_j,
-	KEY_K			= XK_k,
-	KEY_L			= XK_l,
-	KEY_M			= XK_m,
-	KEY_N			= XK_n,
-	KEY_O			= XK_o,
-	KEY_P			= XK_p,
-	KEY_Q			= XK_q,
-	KEY_R			= XK_r,
-	KEY_S			= XK_s,
-	KEY_T			= XK_t,
-	KEY_U			= XK_u,
-	KEY_V			= XK_v,
-	KEY_W			= XK_w,
-	KEY_X			= XK_x,
-	KEY_Y			= XK_y,
-	KEY_Z			= XK_z
+	KEY_A				= XK_a,
+	KEY_B				= XK_b,
+	KEY_C				= XK_c,
+	KEY_D				= XK_d,
+	KEY_E				= XK_e,
+	KEY_F				= XK_f,
+	KEY_G				= XK_g,
+	KEY_H				= XK_h,
+	KEY_I				= XK_i,
+	KEY_J				= XK_j,
+	KEY_K				= XK_k,
+	KEY_L				= XK_l,
+	KEY_M				= XK_m,
+	KEY_N				= XK_n,
+	KEY_O				= XK_o,
+	KEY_P				= XK_p,
+	KEY_Q				= XK_q,
+	KEY_R				= XK_r,
+	KEY_S				= XK_s,
+	KEY_T				= XK_t,
+	KEY_U				= XK_u,
+	KEY_V				= XK_v,
+	KEY_W				= XK_w,
+	KEY_X				= XK_x,
+	KEY_Y				= XK_y,
+	KEY_Z				= XK_z,
+	KEY_RETURN			= ( XK_Return & 0xFF ),
+	KEY_TAB				= ( XK_Tab & 0xFF ),
+	KEY_ESCAPE			= ( XK_Escape & 0xFF ),
+	KEY_SHIFT_LEFT		= ( XK_Shift_L & 0xFF ),
+	KEY_CTRL_LEFT		= ( XK_Control_L & 0xFF ),
+	KEY_ALT_LEFT		= ( XK_Alt_L & 0xFF ),
+	KEY_CURSOR_UP		= ( XK_Up & 0xFF ),
+	KEY_CURSOR_DOWN		= ( XK_Down & 0xFF ),
+	KEY_CURSOR_LEFT		= ( XK_Left & 0xFF ),
+	KEY_CURSOR_RIGHT	= ( XK_Right & 0xFF )
 } KeyboardKey_t;
 
 typedef enum
@@ -5431,7 +6074,7 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 				KeySym key = XLookupKeysym( &event.xkey, 0 );
 				if ( key < 256 || key == XK_Escape )
 				{
-					window->keyInput[key & 255] = true;
+					window->input.keyInput[key & 255] = true;
 				}
 				break;
 			}
@@ -5441,9 +6084,9 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 			}
 			case ButtonPress:
 			{
-				window->mouseInput[event.xbutton.button] = true;
-				window->mouseInputX[event.xbutton.button] = event.xbutton.x;
-				window->mouseInputY[event.xbutton.button] = event.xbutton.y;
+				window->input.mouseInput[event.xbutton.button] = true;
+				window->input.mouseInputX[event.xbutton.button] = event.xbutton.x;
+				window->input.mouseInputY[event.xbutton.button] = event.xbutton.y;
 			}
 			case ButtonRelease:
 			{
@@ -5492,33 +6135,42 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 typedef enum	// keysym.h
 {
-	KEY_ESCAPE		= ( XK_Escape & 255 ),
-	KEY_A			= XK_a,
-	KEY_B			= XK_b,
-	KEY_C			= XK_c,
-	KEY_D			= XK_d,
-	KEY_E			= XK_e,
-	KEY_F			= XK_f,
-	KEY_G			= XK_g,
-	KEY_H			= XK_h,
-	KEY_I			= XK_i,
-	KEY_J			= XK_j,
-	KEY_K			= XK_k,
-	KEY_L			= XK_l,
-	KEY_M			= XK_m,
-	KEY_N			= XK_n,
-	KEY_O			= XK_o,
-	KEY_P			= XK_p,
-	KEY_Q			= XK_q,
-	KEY_R			= XK_r,
-	KEY_S			= XK_s,
-	KEY_T			= XK_t,
-	KEY_U			= XK_u,
-	KEY_V			= XK_v,
-	KEY_W			= XK_w,
-	KEY_X			= XK_x,
-	KEY_Y			= XK_y,
-	KEY_Z			= XK_z
+	KEY_A				= XK_a,
+	KEY_B				= XK_b,
+	KEY_C				= XK_c,
+	KEY_D				= XK_d,
+	KEY_E				= XK_e,
+	KEY_F				= XK_f,
+	KEY_G				= XK_g,
+	KEY_H				= XK_h,
+	KEY_I				= XK_i,
+	KEY_J				= XK_j,
+	KEY_K				= XK_k,
+	KEY_L				= XK_l,
+	KEY_M				= XK_m,
+	KEY_N				= XK_n,
+	KEY_O				= XK_o,
+	KEY_P				= XK_p,
+	KEY_Q				= XK_q,
+	KEY_R				= XK_r,
+	KEY_S				= XK_s,
+	KEY_T				= XK_t,
+	KEY_U				= XK_u,
+	KEY_V				= XK_v,
+	KEY_W				= XK_w,
+	KEY_X				= XK_x,
+	KEY_Y				= XK_y,
+	KEY_Z				= XK_z,
+	KEY_RETURN			= ( XK_Return & 0xFF ),
+	KEY_TAB				= ( XK_Tab & 0xFF ),
+	KEY_ESCAPE			= ( XK_Escape & 0xFF ),
+	KEY_SHIFT_LEFT		= ( XK_Shift_L & 0xFF ),
+	KEY_CTRL_LEFT		= ( XK_Control_L & 0xFF ),
+	KEY_ALT_LEFT		= ( XK_Alt_L & 0xFF ),
+	KEY_CURSOR_UP		= ( XK_Up & 0xFF ),
+	KEY_CURSOR_DOWN		= ( XK_Down & 0xFF ),
+	KEY_CURSOR_LEFT		= ( XK_Left & 0xFF ),
+	KEY_CURSOR_RIGHT	= ( XK_Right & 0xFF )
 } KeyboardKey_t;
 
 typedef enum
@@ -5907,7 +6559,7 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 				const xcb_keysym_t keysym = xcb_key_press_lookup_keysym( window->key_symbols, key_press_event, 0 );
 				if ( keysym < 256 || keysym == XK_Escape )
 				{
-					window->keyInput[keysym & 255] = true;
+					window->input.keyInput[keysym & 255] = true;
 				}
 				break;
 			}
@@ -5919,9 +6571,9 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 				{
 					if ( ( button_press_event->state & masks[i] ) != 0 )
 					{
-						window->mouseInput[i] = true;
-						window->mouseInputX[i] = button_press_event->event_x;
-						window->mouseInputY[i] = button_press_event->event_y;
+						window->input.mouseInput[i] = true;
+						window->input.mouseInputX[i] = button_press_event->event_x;
+						window->input.mouseInputY[i] = button_press_event->event_y;
 					}
 				}
 				break;
@@ -5950,35 +6602,44 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 #elif defined( OS_ANDROID )
 
-typedef enum
+typedef enum	// https://developer.android.com/ndk/reference/group___input.html
 {
-	KEY_ESCAPE		= AKEYCODE_ESCAPE,
-	KEY_A			= AKEYCODE_A,
-	KEY_B			= AKEYCODE_B,
-	KEY_C			= AKEYCODE_C,
-	KEY_D			= AKEYCODE_D,
-	KEY_E			= AKEYCODE_E,
-	KEY_F			= AKEYCODE_F,
-	KEY_G			= AKEYCODE_G,
-	KEY_H			= AKEYCODE_H,
-	KEY_I			= AKEYCODE_I,
-	KEY_J			= AKEYCODE_J,
-	KEY_K			= AKEYCODE_K,
-	KEY_L			= AKEYCODE_L,
-	KEY_M			= AKEYCODE_M,
-	KEY_N			= AKEYCODE_N,
-	KEY_O			= AKEYCODE_O,
-	KEY_P			= AKEYCODE_P,
-	KEY_Q			= AKEYCODE_Q,
-	KEY_R			= AKEYCODE_R,
-	KEY_S			= AKEYCODE_S,
-	KEY_T			= AKEYCODE_T,
-	KEY_U			= AKEYCODE_U,
-	KEY_V			= AKEYCODE_V,
-	KEY_W			= AKEYCODE_W,
-	KEY_X			= AKEYCODE_X,
-	KEY_Y			= AKEYCODE_Y,
-	KEY_Z			= AKEYCODE_Z
+	KEY_A				= AKEYCODE_A,
+	KEY_B				= AKEYCODE_B,
+	KEY_C				= AKEYCODE_C,
+	KEY_D				= AKEYCODE_D,
+	KEY_E				= AKEYCODE_E,
+	KEY_F				= AKEYCODE_F,
+	KEY_G				= AKEYCODE_G,
+	KEY_H				= AKEYCODE_H,
+	KEY_I				= AKEYCODE_I,
+	KEY_J				= AKEYCODE_J,
+	KEY_K				= AKEYCODE_K,
+	KEY_L				= AKEYCODE_L,
+	KEY_M				= AKEYCODE_M,
+	KEY_N				= AKEYCODE_N,
+	KEY_O				= AKEYCODE_O,
+	KEY_P				= AKEYCODE_P,
+	KEY_Q				= AKEYCODE_Q,
+	KEY_R				= AKEYCODE_R,
+	KEY_S				= AKEYCODE_S,
+	KEY_T				= AKEYCODE_T,
+	KEY_U				= AKEYCODE_U,
+	KEY_V				= AKEYCODE_V,
+	KEY_W				= AKEYCODE_W,
+	KEY_X				= AKEYCODE_X,
+	KEY_Y				= AKEYCODE_Y,
+	KEY_Z				= AKEYCODE_Z,
+	KEY_RETURN			= AKEYCODE_ENTER,
+	KEY_TAB				= AKEYCODE_TAB,
+	KEY_ESCAPE			= AKEYCODE_ESCAPE,
+	KEY_SHIFT_LEFT		= AKEYCODE_SHIFT_LEFT,
+	KEY_CTRL_LEFT		= AKEYCODE_CTRL_LEFT,
+	KEY_ALT_LEFT		= AKEYCODE_ALT_LEFT
+	KEY_CURSOR_UP		= AKEYCODE_DPAD_UP,
+	KEY_CURSOR_DOWN		= AKEYCODE_DPAD_DOWN,
+	KEY_CURSOR_LEFT		= AKEYCODE_DPAD_LEFT,
+	KEY_CURSOR_RIGHT	= AKEYCODE_DPAD_RIGHT
 } KeyboardKey_t;
 
 typedef enum
@@ -6069,7 +6730,7 @@ static int32_t app_handle_input( struct android_app * app, AInputEvent * event )
 			}
 			if ( keyCode >= 0 && keyCode < 256 )
 			{
-				window->keyInput[keyCode] = true;
+				window->input.keyInput[keyCode] = true;
 				return 1;
 			}
 		}
@@ -6087,9 +6748,9 @@ static int32_t app_handle_input( struct android_app * app, AInputEvent * event )
 			const float y = AMotionEvent_getRawY( event, 0 );
 			if ( action == AMOTION_EVENT_ACTION_UP )
 			{
-				window->mouseInput[MOUSE_LEFT] = true;
-				window->mouseInputX[MOUSE_LEFT] = (int)x;
-				window->mouseInputY[MOUSE_LEFT] = (int)y;
+				window->input.mouseInput[MOUSE_LEFT] = true;
+				window->input.mouseInputX[MOUSE_LEFT] = (int)x;
+				window->input.mouseInputY[MOUSE_LEFT] = (int)y;
 				return 1;
 			}
 			return 0;
@@ -6296,30 +6957,47 @@ static void GpuWindow_SwapBuffers( GpuWindow_t * window )
 	window->lastSwapTime = newTimeMicroseconds;
 }
 
-static Microseconds_t GpuWindow_GetNextSwapTime( GpuWindow_t * window )
+static Microseconds_t GpuWindow_GetNextSwapTimeMicroseconds( GpuWindow_t * window )
 {
 	const float frameTimeMicroseconds = 1000.0f * 1000.0f / window->windowRefreshRate;
 	return window->lastSwapTime + (Microseconds_t)( frameTimeMicroseconds );
 }
 
-static bool GpuWindow_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key )
+static Microseconds_t GpuWindow_GetFrameTimeMicroseconds( GpuWindow_t * window )
 {
-	if ( window->keyInput[key] )
+	const float frameTimeMicroseconds = 1000.0f * 1000.0f / window->windowRefreshRate;
+	return (Microseconds_t)( frameTimeMicroseconds );
+}
+
+static void GpuWindow_DelayBeforeSwap( GpuWindow_t * window, const Microseconds_t delay )
+{
+	UNUSED_PARM( window );
+	UNUSED_PARM( delay );
+}
+
+static bool GpuWindowInput_ConsumeKeyboardKey( GpuWindowInput_t * input, const KeyboardKey_t key )
+{
+	if ( input->keyInput[key] )
 	{
-		window->keyInput[key] = false;
+		input->keyInput[key] = false;
 		return true;
 	}
 	return false;
 }
 
-static bool GpuWindow_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button )
+static bool GpuWindowInput_ConsumeMouseButton( GpuWindowInput_t * input, const MouseButton_t button )
 {
-	if ( window->mouseInput[button] )
+	if ( input->mouseInput[button] )
 	{
-		window->mouseInput[button] = false;
+		input->mouseInput[button] = false;
 		return true;
 	}
 	return false;
+}
+
+static bool GpuWindowInput_CheckKeyboardKey( GpuWindowInput_t * input, const KeyboardKey_t key )
+{
+	return ( input->keyInput[key] != false );
 }
 
 /*
@@ -6433,34 +7111,34 @@ static bool GpuBuffer_Create( GpuContext_t * context, GpuBuffer_t * buffer, cons
 		}
 		else
 		{
-			VkBufferCreateInfo bufferCreateInfo;
-			bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-			bufferCreateInfo.pNext = NULL;
-			bufferCreateInfo.flags = 0;
-			bufferCreateInfo.size = dataSize;
-			bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-			bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-			bufferCreateInfo.queueFamilyIndexCount = 0;
-			bufferCreateInfo.pQueueFamilyIndices = NULL;
+			VkBufferCreateInfo stagingBufferCreateInfo;
+			stagingBufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+			stagingBufferCreateInfo.pNext = NULL;
+			stagingBufferCreateInfo.flags = 0;
+			stagingBufferCreateInfo.size = dataSize;
+			stagingBufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+			stagingBufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+			stagingBufferCreateInfo.queueFamilyIndexCount = 0;
+			stagingBufferCreateInfo.pQueueFamilyIndices = NULL;
 
 			VkBuffer srcBuffer;
-			VK( context->device->vkCreateBuffer( context->device->device, &bufferCreateInfo, VK_ALLOCATOR, &srcBuffer ) );
+			VK( context->device->vkCreateBuffer( context->device->device, &stagingBufferCreateInfo, VK_ALLOCATOR, &srcBuffer ) );
 
-			VkMemoryRequirements memoryRequirements;
-			VC( context->device->vkGetBufferMemoryRequirements( context->device->device, srcBuffer, &memoryRequirements ) );
+			VkMemoryRequirements stagingMemoryRequirements;
+			VC( context->device->vkGetBufferMemoryRequirements( context->device->device, srcBuffer, &stagingMemoryRequirements ) );
 
-			VkMemoryAllocateInfo memoryAllocateInfo;
-			memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-			memoryAllocateInfo.pNext = NULL;
-			memoryAllocateInfo.allocationSize = memoryRequirements.size;
-			memoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
+			VkMemoryAllocateInfo stagingMemoryAllocateInfo;
+			stagingMemoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+			stagingMemoryAllocateInfo.pNext = NULL;
+			stagingMemoryAllocateInfo.allocationSize = stagingMemoryRequirements.size;
+			stagingMemoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, stagingMemoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
 
 			VkDeviceMemory srcMemory;
-			VK( context->device->vkAllocateMemory( context->device->device, &memoryAllocateInfo, VK_ALLOCATOR, &srcMemory ) );
+			VK( context->device->vkAllocateMemory( context->device->device, &stagingMemoryAllocateInfo, VK_ALLOCATOR, &srcMemory ) );
 			VK( context->device->vkBindBufferMemory( context->device->device, srcBuffer, srcMemory, 0 ) );
 
 			void * mapped;
-			VK( context->device->vkMapMemory( context->device->device, srcMemory, 0, memoryRequirements.size, 0, &mapped ) );
+			VK( context->device->vkMapMemory( context->device->device, srcMemory, 0, stagingMemoryRequirements.size, 0, &mapped ) );
 			memcpy( mapped, data, dataSize );
 			VC( context->device->vkUnmapMemory( context->device->device, srcMemory ) );
 
@@ -6520,16 +7198,15 @@ GpuTexture_t
 
 static bool GpuTexture_Create2D( GpuContext_t * context, GpuTexture_t * texture,
 								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
-								const int width, const int height, const int numberOfMipmapLevels,
+								const int width, const int height, const int mipCount,
 								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize );
 static bool GpuTexture_Create2DArray( GpuContext_t * context, GpuTexture_t * texture,
 								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
-								const int width, const int height, const int numberOfArrayElements, const int numberOfMipmapLevels,
+								const int width, const int height, const int layerCount, const int mipCount,
 								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize );
 static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureDefault_t defaultType,
 								const int width, const int height, const int depth,
-								const int numberOfArrayElements, const int numberOfFaces,
-								const bool mipmaps, const bool border );
+								const int layerCount, const int faceCount, const bool mipmaps, const bool border );
 static bool GpuTexture_CreateFromSwapChain( GpuContext_t * context, GpuTexture_t * texture, const GpuWindow_t * window, int index );
 static bool GpuTexture_CreateFromFile( GpuContext_t * context, GpuTexture_t * texture, const char * fileName );
 static void GpuTexture_Destroy( GpuContext_t * context, GpuTexture_t * texture );
@@ -6849,20 +7526,20 @@ static int IntegerLog2( int i )
 
 // 'width' must be >= 1 and <= 32768.
 // 'height' must be >= 1 and <= 32768.
-// 'depth' must be >= 1 and <= 32768.
-// 'numberOfArrayElements' must be >= 1.
-// 'numberOfFaces' must be either 1 or 6.
-// 'numberOfMipmapLevels' must be -1 or >= 1.
-// 'numberOfMipmapLevels' includes the finest level.
-// 'numberOfMipmapLevels' set to -1 will allocate the full mip chain.
+// 'depth' must be >= 0 and <= 32768.
+// 'layerCount' must be >= 0.
+// 'faceCount' must be either 1 or 6.
+// 'mipCount' must be -1 or >= 1.
+// 'mipCount' includes the finest level.
+// 'mipCount' set to -1 will allocate the full mip chain.
 // 'data' may be NULL to allocate a texture without initialization.
 // 'dataSize' is the full data size in bytes.
 // The 'data' is expected to be stored packed on a per mip level basis.
-// If 'data' != NULL and 'numberOfMipmapLevels' == -1, then the full mip chain will be generated from the finest data level.
+// If 'data' != NULL and 'mipCount' <= 0, then the full mip chain will be generated from the finest data level.
 static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * texture, const char * fileName,
 										const VkFormat format, const GpuSampleCount_t sampleCount,
 										const int width, const int height, const int depth,
-										const int numberOfArrayElements, const int numberOfFaces, const int numberOfMipmapLevels,
+										const int layerCount, const int faceCount, const int mipCount,
 										const GpuTextureUsageFlags_t usageFlags,
 										const void * data, const size_t dataSize, const bool mipSizeStored )
 {
@@ -6870,29 +7547,29 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 
 	memset( texture, 0, sizeof( GpuTexture_t ) );
 
-	assert( depth >= 1 );
-	assert( numberOfFaces >= 1 );
-	assert( numberOfArrayElements >= 1 );
+	assert( depth >= 0 );
+	assert( layerCount >= 0 );
+	assert( faceCount == 1 || faceCount == 6 );
 
-	if ( width < 1 || width > 32768 || height < 1 || height > 32768 || depth < 1 || depth > 32768 )
+	if ( width < 1 || width > 32768 || height < 1 || height > 32768 || depth < 0 || depth > 32768 )
 	{
 		Error( "%s: Invalid texture size (%dx%dx%d)", fileName, width, height, depth );
 		return false;
 	}
 
-	if ( numberOfFaces != 1 && numberOfFaces != 6 )
+	if ( faceCount != 1 && faceCount != 6 )
 	{
-		Error( "%s: Cube maps must have 6 faces (%d)", fileName, numberOfFaces );
+		Error( "%s: Cube maps must have 6 faces (%d)", fileName, faceCount );
 		return false;
 	}
 
-	if ( numberOfFaces != 1 && width != height )
+	if ( faceCount == 6 && width != height )
 	{
 		Error( "%s: Cube maps must be square (%dx%d)", fileName, width, height );
 		return false;
 	}
 
-	if ( depth > 1 && numberOfArrayElements > 1 )
+	if ( depth > 0 && layerCount > 0 )
 	{
 		Error( "%s: 3D array textures not supported", fileName );
 		return false;
@@ -6901,9 +7578,9 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	const int maxDimension = width > height ? ( width > depth ? width : depth ) : ( height > depth ? height : depth );
 	const int maxMipLevels = ( 1 + IntegerLog2( maxDimension ) );
 
-	if ( numberOfMipmapLevels > maxMipLevels )
+	if ( mipCount > maxMipLevels )
 	{
-		Error( "%s: Too many mip levels (%d > %d)", fileName, numberOfMipmapLevels, maxMipLevels );
+		Error( "%s: Too many mip levels (%d > %d)", fileName, mipCount, maxMipLevels );
 		return false;
 	}
 
@@ -6938,8 +7615,8 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 		}
 	}
 
-	const int numStorageLevels = ( numberOfMipmapLevels >= 1 ) ? numberOfMipmapLevels : maxMipLevels;
-	const int arrayLayerCount = numberOfFaces * numberOfArrayElements;
+	const int numStorageLevels = ( mipCount >= 1 ) ? mipCount : maxMipLevels;
+	const int arrayLayerCount = faceCount * MAX( layerCount, 1 );
 
 	texture->width = width;
 	texture->height = height;
@@ -6958,7 +7635,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 		// Must be able to copy to the image for initialization.
 		( ( usageFlags & GPU_TEXTURE_USAGE_TRANSFER_DST ) != 0 || data != NULL ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0 ) |
 		// Must be able to blit from the image to create mip maps.
-		( ( usageFlags & GPU_TEXTURE_USAGE_TRANSFER_SRC ) != 0 || ( data != NULL && numberOfMipmapLevels < 1 ) ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0 ) |
+		( ( usageFlags & GPU_TEXTURE_USAGE_TRANSFER_SRC ) != 0 || ( data != NULL && mipCount < 1 ) ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0 ) |
 		// If this image is sampled.
 		( ( usageFlags & GPU_TEXTURE_USAGE_SAMPLED ) != 0 ? VK_IMAGE_USAGE_SAMPLED_BIT : 0 ) |
 		// If this image is rendered to.
@@ -6970,12 +7647,12 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	VkImageCreateInfo imageCreateInfo;
 	imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imageCreateInfo.pNext = NULL;
-	imageCreateInfo.flags = ( numberOfFaces == 6 ) ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
-	imageCreateInfo.imageType = ( depth > 1 ) ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
+	imageCreateInfo.flags = ( faceCount == 6 ) ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
+	imageCreateInfo.imageType = ( depth > 0 ) ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
 	imageCreateInfo.format = format;
 	imageCreateInfo.extent.width = width;
 	imageCreateInfo.extent.height = height;
-	imageCreateInfo.extent.depth = depth;
+	imageCreateInfo.extent.depth = MAX( depth, 1 );
 	imageCreateInfo.mipLevels = numStorageLevels;
 	imageCreateInfo.arrayLayers = arrayLayerCount;
 	imageCreateInfo.samples = (VkSampleCountFlagBits)sampleCount;
@@ -7062,38 +7739,38 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 			VC( context->device->vkCmdPipelineBarrier( context->setupCommandBuffer, src_stages, dst_stages, flags, 0, NULL, 0, NULL, 1, &imageMemoryBarrier ) );
 		}
 
-		const int numDataLevels = ( numberOfMipmapLevels >= 1 ) ? numberOfMipmapLevels : 1;
+		const int numDataLevels = ( mipCount >= 1 ) ? mipCount : 1;
 		bool compressed = false;
 
 		// Using a staging buffer to initialize the tiled image.
-		VkBufferCreateInfo bufferCreateInfo;
-		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferCreateInfo.pNext = NULL;
-		bufferCreateInfo.flags = 0;
-		bufferCreateInfo.size = dataSize;
-		bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		bufferCreateInfo.queueFamilyIndexCount = 0;
-		bufferCreateInfo.pQueueFamilyIndices = NULL;
+		VkBufferCreateInfo stagingBufferCreateInfo;
+		stagingBufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		stagingBufferCreateInfo.pNext = NULL;
+		stagingBufferCreateInfo.flags = 0;
+		stagingBufferCreateInfo.size = dataSize;
+		stagingBufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		stagingBufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		stagingBufferCreateInfo.queueFamilyIndexCount = 0;
+		stagingBufferCreateInfo.pQueueFamilyIndices = NULL;
 
 		VkBuffer stagingBuffer;
-		VK( context->device->vkCreateBuffer( context->device->device, &bufferCreateInfo, VK_ALLOCATOR, &stagingBuffer ) );
+		VK( context->device->vkCreateBuffer( context->device->device, &stagingBufferCreateInfo, VK_ALLOCATOR, &stagingBuffer ) );
 
-		VkMemoryRequirements memoryRequirements;
-		VC( context->device->vkGetBufferMemoryRequirements( context->device->device, stagingBuffer, &memoryRequirements ) );
+		VkMemoryRequirements stagingMemoryRequirements;
+		VC( context->device->vkGetBufferMemoryRequirements( context->device->device, stagingBuffer, &stagingMemoryRequirements ) );
 
-		VkMemoryAllocateInfo memoryAllocateInfo;
-		memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		memoryAllocateInfo.pNext = NULL;
-		memoryAllocateInfo.allocationSize = memoryRequirements.size;
-		memoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
+		VkMemoryAllocateInfo stagingMemoryAllocateInfo;
+		stagingMemoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		stagingMemoryAllocateInfo.pNext = NULL;
+		stagingMemoryAllocateInfo.allocationSize = stagingMemoryRequirements.size;
+		stagingMemoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, stagingMemoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
 
 		VkDeviceMemory stagingMemory;
-		VK( context->device->vkAllocateMemory( context->device->device, &memoryAllocateInfo, VK_ALLOCATOR, &stagingMemory ) );
+		VK( context->device->vkAllocateMemory( context->device->device, &stagingMemoryAllocateInfo, VK_ALLOCATOR, &stagingMemory ) );
 		VK( context->device->vkBindBufferMemory( context->device->device, stagingBuffer, stagingMemory, 0 ) );
 
 		uint8_t * mapped;
-		VK( context->device->vkMapMemory( context->device->device, stagingMemory, 0, memoryRequirements.size, 0, (void **)&mapped ) );
+		VK( context->device->vkMapMemory( context->device->device, stagingMemory, 0, stagingMemoryRequirements.size, 0, (void **)&mapped ) );
 		memcpy( mapped, data, dataSize );
 		VC( context->device->vkUnmapMemory( context->device->device, stagingMemory ) );
 
@@ -7117,7 +7794,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 			VC( context->device->vkCmdPipelineBarrier( context->setupCommandBuffer, src_stages, dst_stages, flags, 0, NULL, 1, &bufferMemoryBarrier, 0, NULL ) );
 		}
 
-		VkBufferImageCopy * bufferImageCopy = (VkBufferImageCopy *) malloc( numDataLevels * arrayLayerCount * depth * sizeof( VkBufferImageCopy ) );
+		VkBufferImageCopy * bufferImageCopy = (VkBufferImageCopy *) malloc( numDataLevels * arrayLayerCount * MAX( depth, 1 ) * sizeof( VkBufferImageCopy ) );
 		uint32_t bufferImageCopyIndex = 0;
 		uint32_t dataOffset = 0;
 		for ( int mipLevel = 0; mipLevel < numDataLevels; mipLevel++ )
@@ -7299,14 +7976,14 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 
 					totalMipSize += mipSize;
 					dataOffset += mipSize;
-					if ( mipSizeStored && ( depth <= 1 && numberOfArrayElements <= 1 ) )
+					if ( mipSizeStored && ( depth <= 0 && layerCount <= 0 ) )
 					{
 						assert( mipSize == storedMipSize );
 						dataOffset += 3 - ( ( mipSize + 3 ) % 4 );
 					}
 				}
 			}
-			if ( mipSizeStored && ( depth > 1 || numberOfArrayElements > 1 ) )
+			if ( mipSizeStored && ( depth > 0 || layerCount > 0 ) )
 			{
 				assert( totalMipSize == storedMipSize );
 				dataOffset += 3 - ( ( totalMipSize + 3 ) % 4 );
@@ -7316,9 +7993,9 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 		assert( dataOffset == dataSize );
 
 		VC( context->device->vkCmdCopyBufferToImage( context->setupCommandBuffer, stagingBuffer, texture->image,
-					VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, numDataLevels * arrayLayerCount * depth, bufferImageCopy ) );
+					VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, numDataLevels * arrayLayerCount * MAX( depth, 1 ), bufferImageCopy ) );
 
-		if ( numberOfMipmapLevels < 1 )
+		if ( mipCount < 1 )
 		{
 			assert( !compressed );
 			UNUSED_PARM( compressed );
@@ -7391,9 +8068,9 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 			VkImageMemoryBarrier imageMemoryBarrier;
 			imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 			imageMemoryBarrier.pNext = NULL;
-			imageMemoryBarrier.srcAccessMask = ( numberOfMipmapLevels >= 1 ) ? VK_ACCESS_TRANSFER_WRITE_BIT : VK_ACCESS_TRANSFER_READ_BIT;
+			imageMemoryBarrier.srcAccessMask = ( mipCount >= 1 ) ? VK_ACCESS_TRANSFER_WRITE_BIT : VK_ACCESS_TRANSFER_READ_BIT;
 			imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
-			imageMemoryBarrier.oldLayout = ( numberOfMipmapLevels >= 1 ) ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+			imageMemoryBarrier.oldLayout = ( mipCount >= 1 ) ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 			imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 			imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -7421,10 +8098,10 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	texture->usage = GPU_TEXTURE_USAGE_SAMPLED;
 	texture->imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-	const VkImageViewType viewType =	( ( depth > 1 ) ? VK_IMAGE_VIEW_TYPE_3D :
-										( ( numberOfFaces > 1 ) ?
-										( ( numberOfArrayElements > 1 ) ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_CUBE ) :
-										( ( numberOfArrayElements > 1 ) ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D ) ) );
+	const VkImageViewType viewType =	( ( depth > 0 ) ? VK_IMAGE_VIEW_TYPE_3D :
+										( ( faceCount == 6 ) ?
+										( ( layerCount > 0 ) ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_CUBE ) :
+										( ( layerCount > 0 ) ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D ) ) );
 
 	VkImageViewCreateInfo imageViewCreateInfo;
 	imageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -7452,43 +8129,43 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 
 static bool GpuTexture_Create2D( GpuContext_t * context, GpuTexture_t * texture,
 								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
-								const int width, const int height, const int numberOfMipmapLevels,
+								const int width, const int height, const int mipCount,
 								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize )
 {
-	const int depth = 1;
-	const int numberOfArrayElements = 1;
-	const int numberOfFaces = 1;
+	const int depth = 0;
+	const int layerCount = 0;
+	const int faceCount = 1;
 	return GpuTexture_CreateInternal( context, texture, "data", (VkFormat)format, sampleCount, width, height, depth,
-										numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
+										layerCount, faceCount, mipCount,
 										usageFlags, data, dataSize, false );
 }
 
 static bool GpuTexture_Create2DArray( GpuContext_t * context, GpuTexture_t * texture,
 								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
-								const int width, const int height, const int numberOfArrayElements, const int numberOfMipmapLevels,
+								const int width, const int height, const int layerCount, const int mipCount,
 								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize )
 {
-	const int depth = 1;
-	const int numberOfFaces = 1;
+	const int depth = 0;
+	const int faceCount = 1;
 	return GpuTexture_CreateInternal( context, texture, "data", (VkFormat)format, sampleCount, width, height, depth,
-										numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
+										layerCount, faceCount, mipCount,
 										usageFlags, data, dataSize, false );
 }
 
 static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureDefault_t defaultType,
 										const int width, const int height, const int depth,
-										const int numberOfArrayElements, const int numberOfFaces,
+										const int layerCount, const int faceCount,
 										const bool mipmaps, const bool border )
 {
 	const int TEXEL_SIZE = 4;
 	const int layerSize = width * height * TEXEL_SIZE;
-	const int dataSize = depth * numberOfArrayElements * numberOfFaces * layerSize;
+	const int dataSize = MAX( depth, 1 ) * MAX( layerCount, 1 ) * faceCount * layerSize;
 	unsigned char * data = (unsigned char *) malloc( dataSize );
 
 	if ( defaultType == GPU_TEXTURE_DEFAULT_CHECKERBOARD )
 	{
 		const int blockSize = 32;	// must be a power of two
-		for ( int layer = 0; layer < depth * numberOfArrayElements * numberOfFaces; layer++ )
+		for ( int layer = 0; layer < MAX( depth, 1 ) * MAX( layerCount, 1 ) * faceCount; layer++ )
 		{
 			for ( int y = 0; y < height; y++ )
 			{
@@ -7514,7 +8191,7 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 	else if ( defaultType == GPU_TEXTURE_DEFAULT_PYRAMIDS )
 	{
 		const int blockSize = 32;	// must be a power of two
-		for ( int layer = 0; layer < depth * numberOfArrayElements * numberOfFaces; layer++ )
+		for ( int layer = 0; layer < MAX( depth, 1 ) * MAX( layerCount, 1 ) * faceCount; layer++ )
 		{
 			for ( int y = 0; y < height; y++ )
 			{
@@ -7555,7 +8232,7 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 			{ 0x00, 0x00, 0xFF, 0xFF },
 			{ 0xFF, 0xFF, 0x00, 0xFF }
 		};
-		for ( int layer = 0; layer < depth * numberOfArrayElements * numberOfFaces; layer++ )
+		for ( int layer = 0; layer < MAX( depth, 1 ) * MAX( layerCount, 1 ) * faceCount; layer++ )
 		{
 			for ( int y = 0; y < height; y++ )
 			{
@@ -7583,7 +8260,7 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 
 	if ( border )
 	{
-		for ( int layer = 0; layer < depth * numberOfArrayElements * numberOfFaces; layer++ )
+		for ( int layer = 0; layer < MAX( depth, 1 ) * MAX( layerCount, 1 ) * faceCount; layer++ )
 		{
 			for ( int x = 0; x < width; x++ )
 			{
@@ -7612,10 +8289,10 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 		}
 	}
 
-	const int numberOfMipmapLevels = ( mipmaps ) ? -1 : 1;
+	const int mipCount = ( mipmaps ) ? -1 : 1;
 	bool success = GpuTexture_CreateInternal( context, texture, "data", VK_FORMAT_R8G8B8A8_UNORM, GPU_SAMPLE_COUNT_1,
 												width, height, depth,
-												numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
+												layerCount, faceCount, mipCount,
 												GPU_TEXTURE_USAGE_SAMPLED, data, dataSize, false );
 
 	free( data );
@@ -7713,7 +8390,7 @@ static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * tex
 	UNUSED_PARM( derivedFormat );
 	UNUSED_PARM( derivedType );
 
-	// The glFormat and glType must be either both be zero or both be non-zero.
+	// The glFormat and glType must either both be zero or both be non-zero.
 	assert( ( header->glFormat == 0 ) == ( header->glType == 0 ) );
 	// Uncompressed glTypeSize must be 1, 2, 4 or 8.
 	assert( header->glFormat == 0 || header->glTypeSize == 1 || header->glTypeSize == 2 || header->glTypeSize == 4 || header->glTypeSize == 8 );
@@ -7728,16 +8405,13 @@ static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * tex
 	// Compressed glBaseInternalFormat must match the format drived from glInternalFormat.
 	assert( header->glFormat != 0 || header->glBaseInternalFormat == derivedFormat );
 
-	const int numberOfArrayElements = ( header->numberOfArrayElements >= 1 ) ? header->numberOfArrayElements : 1;
 	const int numberOfFaces = ( header->numberOfFaces >= 1 ) ? header->numberOfFaces : 1;
-	const int numberOfMipmapLevels = header->numberOfMipmapLevels;
-	const int depth = ( header->pixelDepth >= 1 ) ? header->pixelDepth : 1;
 	const VkFormat format = vkGetFormatFromOpenGLInternalFormat( header->glInternalFormat );
 
 	return GpuTexture_CreateInternal( context, texture, fileName,
 									format, GPU_SAMPLE_COUNT_1,
-									header->pixelWidth, header->pixelHeight, depth,
-									numberOfArrayElements, numberOfFaces, numberOfMipmapLevels,
+									header->pixelWidth, header->pixelHeight, header->pixelDepth,
+									header->numberOfArrayElements, numberOfFaces, header->numberOfMipmapLevels,
 									GPU_TEXTURE_USAGE_SAMPLED, buffer + startTex, bufferSize - startTex, true );
 }
 
@@ -7810,119 +8484,51 @@ static void GpuTexture_SetAniso( GpuContext_t * context, GpuTexture_t * texture,
 /*
 ================================================================================================================================
 
-GPU geometry.
+GPU vertex attributes.
 
-For optimal performance geometry should only be created at load time, not at runtime.
-The vertex, index and instance buffers are placed in device memory for optimal performance.
-The vertex attributes are not packed. Each attribute is stored in a separate array for
-optimal binning on tiling GPUs that only transform the vertex position for the binning pass.
-Storing each attribute in a saparate array is preferred even on immediate-mode GPUs to avoid
-wasting cache space for attributes that are not used by a particular vertex shader.
-
-GpuVertexAttributeFlags_t
-GpuVertexAttributeArrays_t
 GpuTriangleIndex_t
-GpuGeometry_t
-
-static void GpuVertexAttributeArrays_Alloc( GpuVertexAttributeArrays_t * attribs, const int numVertices, const int attribsFlags );
-static void GpuVertexAttributeArrays_Free( GpuVertexAttributeArrays_t * attribs );
-static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays_t * attribs, const int numVertices,
-														const GpuTriangleIndex_t * indices, const int numIndices );
-
-static void GpuGeometry_Create( GpuContext_t * context, GpuGeometry_t * geometry,
-								const GpuVertexAttributeArrays_t * attribs, const int numVertices,
-								const GpuTriangleIndex_t * indices, const int numIndices );
-static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale );
-static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale );
-static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geometry, const int tesselation, const float offset, const float scale );
-static void GpuGeometry_Destroy( GpuContext_t * context, GpuGeometry_t * geometry );
-
-static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeometry_t * geometry, const int numInstances, const int instanceAttribsFlags );
+GpuVertexAttribute_t
+GpuVertexAttributeArraysBase_t
 
 ================================================================================================================================
 */
 
+typedef unsigned short GpuTriangleIndex_t;
+
 typedef struct
 {
 	int				attributeFlag;		// VERTEX_ATTRIBUTE_FLAG_
-	size_t			attributeOffset;	// Offset in bytes to the pointer in GpuVertexAttributeArrays_t
+	size_t			attributeOffset;	// Offset in bytes to the pointer in GpuVertexAttributeArraysBase_t
 	size_t			attributeSize;		// Size in bytes of a single attribute
 	int				attributeFormat;	// VkFormat of the attribute
 	int				locationCount;		// Number of attribute locations
+	const char *	name;				// Name in vertex program
 } GpuVertexAttribute_t;
 
-typedef enum
-{
-	VERTEX_ATTRIBUTE_FLAG_POSITION	= BIT( 0 ),		// vec3 vertexPosition
-	VERTEX_ATTRIBUTE_FLAG_NORMAL	= BIT( 1 ),		// vec3 vertexNormal
-	VERTEX_ATTRIBUTE_FLAG_TANGENT	= BIT( 2 ),		// vec3 vertexTangent
-	VERTEX_ATTRIBUTE_FLAG_BINORMAL	= BIT( 3 ),		// vec3 vertexBinormal
-	VERTEX_ATTRIBUTE_FLAG_COLOR		= BIT( 4 ),		// vec4 vertexColor
-	VERTEX_ATTRIBUTE_FLAG_UV0		= BIT( 5 ),		// vec2 vertexUv0
-	VERTEX_ATTRIBUTE_FLAG_UV1		= BIT( 6 ),		// vec2 vertexUv1
-	VERTEX_ATTRIBUTE_FLAG_UV2		= BIT( 7 ),		// vec2 vertexUv2
-	VERTEX_ATTRIBUTE_FLAG_TRANSFORM	= BIT( 8 )		// mat4 vertexTransform (NOTE this mat4 takes up 4 attribute locations)
-} GpuVertexAttributeFlags_t;
-
 typedef struct
 {
-	Vector3f_t *	position;
-	Vector3f_t *	normal;
-	Vector3f_t *	tangent;
-	Vector3f_t *	binormal;
-	Vector4f_t *	color;
-	Vector2f_t *	uv0;
-	Vector2f_t *	uv1;
-	Vector2f_t *	uv2;
-	Matrix4x4f_t *	transform;
-} GpuVertexAttributeArrays_t;
+	const GpuVertexAttribute_t *	layout;
+} GpuVertexAttributeArraysBase_t;
 
-static const GpuVertexAttribute_t VertexAttributeLayout[] =
-{
-	{ VERTEX_ATTRIBUTE_FLAG_POSITION,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, position ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, position[0] ),	VK_FORMAT_R32G32B32_SFLOAT,		1 },
-	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, normal ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, normal[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1 },
-	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, tangent ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, tangent[0] ),	VK_FORMAT_R32G32B32_SFLOAT,		1 },
-	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, binormal ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, binormal[0] ),	VK_FORMAT_R32G32B32_SFLOAT,		1 },
-	{ VERTEX_ATTRIBUTE_FLAG_COLOR,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, color ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, color[0] ),		VK_FORMAT_R32G32B32A32_SFLOAT,	1 },
-	{ VERTEX_ATTRIBUTE_FLAG_UV0,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv0 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv0[0] ),		VK_FORMAT_R32G32_SFLOAT,		1 },
-	{ VERTEX_ATTRIBUTE_FLAG_UV1,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv1 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv1[0] ),		VK_FORMAT_R32G32_SFLOAT,		1 },
-	{ VERTEX_ATTRIBUTE_FLAG_UV2,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv2 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv2[0] ),		VK_FORMAT_R32G32_SFLOAT,		1 },
-	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, transform ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, transform[0] ),	VK_FORMAT_R32G32B32A32_SFLOAT,	4 }
-};
-
-typedef unsigned int GpuTriangleIndex_t;
-
-typedef struct
-{
-	int			vertexCount;
-	int			instanceCount;
-	int 		indexCount;
-	int			vertexAttribsFlags;
-	int			instanceAttribsFlags;
-	GpuBuffer_t	vertexBuffer;
-	GpuBuffer_t	instanceBuffer;
-	GpuBuffer_t	indexBuffer;
-} GpuGeometry_t;
-
-static size_t GpuVertexAttributeArrays_GetDataSize( const int numVertices, const int attribsFlags )
+static size_t GpuVertexAttributeArrays_GetDataSize( const GpuVertexAttribute_t * layout, const int vertexCount, const int attribsFlags )
 {
 	size_t totalSize = 0;
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &layout[i];
 		if ( ( v->attributeFlag & attribsFlags ) != 0 )
 		{
 			totalSize += v->attributeSize;
 		}
 	}
-	return numVertices * totalSize;
+	return vertexCount * totalSize;
 }
 
-static void * GpuVertexAttributeArrays_GetDataPointer( const GpuVertexAttributeArrays_t * attribs )
+static void * GpuVertexAttributeArrays_GetDataPointer( const GpuVertexAttributeArraysBase_t * attribs )
 {
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &attribs->layout[i];
 		void * attribPtr = *(void **) ( ((char *)attribs) + v->attributeOffset );
 		if ( attribPtr != NULL )
 		{
@@ -7932,12 +8538,12 @@ static void * GpuVertexAttributeArrays_GetDataPointer( const GpuVertexAttributeA
 	return NULL;
 }
 
-static int GpuVertexAttributeArrays_GetAttribsFlags( const GpuVertexAttributeArrays_t * attribs )
+static int GpuVertexAttributeArrays_GetAttribsFlags( const GpuVertexAttributeArraysBase_t * attribs )
 {
 	int attribsFlags = 0;
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &attribs->layout[i];
 		void * attribPtr = *(void **) ( ((char *)attribs) + v->attributeOffset );
 		if ( attribPtr != NULL )
 		{
@@ -7947,21 +8553,23 @@ static int GpuVertexAttributeArrays_GetAttribsFlags( const GpuVertexAttributeArr
 	return attribsFlags;
 }
 
-static void GpuVertexAttributeArrays_Map( GpuVertexAttributeArrays_t * attribs, void * data, const size_t dataSize, const int numVertices, const int attribsFlags )
+static void GpuVertexAttributeArrays_Map( GpuVertexAttributeArraysBase_t * attribs, void * data, const size_t dataSize, const int vertexCount, const int attribsFlags )
 {
-	memset( attribs, 0, sizeof( GpuVertexAttributeArrays_t ) );
-
 	unsigned char * dataBytePtr = (unsigned char *) data;
 	size_t offset = 0;
 
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &attribs->layout[i];
+		void ** attribPtr = (void **) ( ((char *)attribs) + v->attributeOffset );
 		if ( ( v->attributeFlag & attribsFlags ) != 0 )
 		{
-			void ** attribPtr = (void **) ( ((char *)attribs) + v->attributeOffset );
 			*attribPtr = ( dataBytePtr + offset );
-			offset += numVertices * v->attributeSize;
+			offset += vertexCount * v->attributeSize;
+		}
+		else
+		{
+			*attribPtr = NULL;
 		}
 	}
 
@@ -7969,41 +8577,59 @@ static void GpuVertexAttributeArrays_Map( GpuVertexAttributeArrays_t * attribs, 
 	UNUSED_PARM( dataSize );
 }
 
-static void GpuVertexAttributeArrays_Alloc( GpuVertexAttributeArrays_t * attribs, const int numVertices, const int attribsFlags )
+static void GpuVertexAttributeArrays_Alloc( GpuVertexAttributeArraysBase_t * attribs, const GpuVertexAttribute_t * layout, const int vertexCount, const int attribsFlags )
 {
-	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( numVertices, attribsFlags );
+	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( layout, vertexCount, attribsFlags );
 	void * data = malloc( dataSize );
-
-	GpuVertexAttributeArrays_Map( attribs, data, dataSize, numVertices, attribsFlags );
+	attribs->layout = layout;
+	GpuVertexAttributeArrays_Map( attribs, data, dataSize, vertexCount, attribsFlags );
 }
 
-static void GpuVertexAttributeArrays_Free( GpuVertexAttributeArrays_t * attribs )
+static void GpuVertexAttributeArrays_Free( GpuVertexAttributeArraysBase_t * attribs )
 {
 	void * data = GpuVertexAttributeArrays_GetDataPointer( attribs );
 	free( data );
-	memset( attribs, 0, sizeof( GpuVertexAttributeArrays_t ) );
 }
 
-static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays_t * attribs, const int numVertices,
-												const GpuTriangleIndex_t * indices, const int numIndices )
+static void * GpuVertexAttributeArrays_FindAtribute( GpuVertexAttributeArraysBase_t * attribs, const char * name )
 {
-	assert( attribs->position != NULL );
-	assert( attribs->normal != NULL );
-	assert( attribs->tangent != NULL );
-	assert( attribs->binormal != NULL );
-	assert( attribs->uv0 != NULL );
-
-	for ( int i = 0; i < numVertices; i++ )
+	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
 	{
-		Vector3f_Zero( &attribs->tangent[i] );
-		Vector3f_Zero( &attribs->binormal[i] );
+		const GpuVertexAttribute_t * v = &attribs->layout[i];
+		if ( strcmp( v->name, name ) == 0 ) 
+		{
+			void ** attribPtr = (void **) ( ((char *)attribs) + v->attributeOffset );
+			return *attribPtr;
+		}
+	}
+	return NULL;
+}
+
+static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArraysBase_t * attribs, const int vertexCount,
+														const GpuTriangleIndex_t * indices, const int indexCount )
+{
+	Vector3f_t * vertexPosition	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexPosition" );
+	Vector3f_t * vertexNormal	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexNormal" );
+	Vector3f_t * vertexTangent	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexTangent" );
+	Vector3f_t * vertexBinormal	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexBinormal" );
+	Vector2f_t * vertexUv0		= (Vector2f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexUv0" );
+
+	if ( vertexPosition == NULL || vertexNormal == NULL || vertexTangent == NULL || vertexBinormal == NULL || vertexUv0 == NULL )
+	{
+		return;
 	}
 
-	for ( int i = 0; i < numIndices; i += 3 )
+	for ( int i = 0; i < vertexCount; i++ )
+	{
+		Vector3f_Set( &vertexTangent[i], 0.0f );
+		Vector3f_Set( &vertexBinormal[i], 0.0f );
+	}
+
+	for ( int i = 0; i < indexCount; i += 3 )
 	{
 		const GpuTriangleIndex_t * v = indices + i;
-		const Vector3f_t * pos = attribs->position;
-		const Vector2f_t * uv0 = attribs->uv0;
+		const Vector3f_t * pos = vertexPosition;
+		const Vector2f_t * uv0 = vertexUv0;
 
 		const Vector3f_t delta0 = { pos[v[1]].x - pos[v[0]].x, pos[v[1]].y - pos[v[0]].y, pos[v[1]].z - pos[v[0]].z };
 		const Vector3f_t delta1 = { pos[v[2]].x - pos[v[1]].x, pos[v[2]].y - pos[v[1]].y, pos[v[2]].z - pos[v[1]].z };
@@ -8033,38 +8659,137 @@ static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays
 
 		for ( int j = 0; j < 3; j++ )
 		{
-			attribs->tangent[v[j]].x += tangent.x;
-			attribs->tangent[v[j]].y += tangent.y;
-			attribs->tangent[v[j]].z += tangent.z;
+			vertexTangent[v[j]].x += tangent.x;
+			vertexTangent[v[j]].y += tangent.y;
+			vertexTangent[v[j]].z += tangent.z;
 
-			attribs->binormal[v[j]].x += binormal.x;
-			attribs->binormal[v[j]].y += binormal.y;
-			attribs->binormal[v[j]].z += binormal.z;
+			vertexBinormal[v[j]].x += binormal.x;
+			vertexBinormal[v[j]].y += binormal.y;
+			vertexBinormal[v[j]].z += binormal.z;
 		}
 	}
 
-	for ( int i = 0; i < numVertices; i++ )
+	for ( int i = 0; i < vertexCount; i++ )
 	{
-		Vector3f_Normalize( &attribs->tangent[i] );
-		Vector3f_Normalize( &attribs->binormal[i] );
+		Vector3f_Normalize( &vertexTangent[i] );
+		Vector3f_Normalize( &vertexBinormal[i] );
 	}
 }
 
+/*
+================================================================================================================================
+
+GPU default vertex attribute layout.
+
+GpuVertexAttributeFlags_t
+GpuVertexAttributeArrays_t
+
+================================================================================================================================
+*/
+
+typedef enum
+{
+	VERTEX_ATTRIBUTE_FLAG_POSITION		= BIT( 0 ),		// vec3 vertexPosition
+	VERTEX_ATTRIBUTE_FLAG_NORMAL		= BIT( 1 ),		// vec3 vertexNormal
+	VERTEX_ATTRIBUTE_FLAG_TANGENT		= BIT( 2 ),		// vec3 vertexTangent
+	VERTEX_ATTRIBUTE_FLAG_BINORMAL		= BIT( 3 ),		// vec3 vertexBinormal
+	VERTEX_ATTRIBUTE_FLAG_COLOR			= BIT( 4 ),		// vec4 vertexColor
+	VERTEX_ATTRIBUTE_FLAG_UV0			= BIT( 5 ),		// vec2 vertexUv0
+	VERTEX_ATTRIBUTE_FLAG_UV1			= BIT( 6 ),		// vec2 vertexUv1
+	VERTEX_ATTRIBUTE_FLAG_UV2			= BIT( 7 ),		// vec2 vertexUv2
+	VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES	= BIT( 8 ),		// vec4 jointIndices
+	VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS	= BIT( 9 ),		// vec4 jointWeights
+	VERTEX_ATTRIBUTE_FLAG_TRANSFORM		= BIT( 10 )		// mat4 vertexTransform (NOTE this mat4 takes up 4 attribute locations)
+} GpuVertexAttributeFlags_t;
+
+typedef struct
+{
+	GpuVertexAttributeArraysBase_t	base;
+	Vector3f_t *					position;
+	Vector3f_t *					normal;
+	Vector3f_t *					tangent;
+	Vector3f_t *					binormal;
+	Vector4f_t *					color;
+	Vector2f_t *					uv0;
+	Vector2f_t *					uv1;
+	Vector2f_t *					uv2;
+	Vector4f_t *					jointIndices;
+	Vector4f_t *					jointWeights;
+	Matrix4x4f_t *					transform;
+} GpuVertexAttributeArrays_t;
+
+static const GpuVertexAttribute_t DefaultVertexAttributeLayout[] =
+{
+	{ VERTEX_ATTRIBUTE_FLAG_POSITION,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, position ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, position[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexPosition" },
+	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, normal ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, normal[0] ),			VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexNormal" },
+	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, tangent ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, tangent[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexTangent" },
+	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, binormal ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, binormal[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexBinormal" },
+	{ VERTEX_ATTRIBUTE_FLAG_COLOR,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, color ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, color[0] ),			VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexColor" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV0,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv0 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv0[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv0" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV1,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv1 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv1[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv1" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV2,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv2 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv2[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv2" },
+	{ VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, jointIndices ),SIZEOF_MEMBER( GpuVertexAttributeArrays_t, jointIndices[0] ),	VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointIndices" },
+	{ VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, jointWeights ),SIZEOF_MEMBER( GpuVertexAttributeArrays_t, jointWeights[0] ),	VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointWeights" },
+	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, transform ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, transform[0] ),		VK_FORMAT_R32G32B32A32_SFLOAT,	4,	"vertexTransform" },
+	{ 0, 0, 0, 0, 0, "" }
+};
+
+/*
+================================================================================================================================
+
+GPU geometry.
+
+For optimal performance geometry should only be created at load time, not at runtime.
+The vertex, index and instance buffers are placed in device memory for optimal performance.
+The vertex attributes are not packed. Each attribute is stored in a separate array for
+optimal binning on tiling GPUs that only transform the vertex position for the binning pass.
+Storing each attribute in a saparate array is preferred even on immediate-mode GPUs to avoid
+wasting cache space for attributes that are not used by a particular vertex shader.
+
+GpuGeometry_t
+
 static void GpuGeometry_Create( GpuContext_t * context, GpuGeometry_t * geometry,
-								const GpuVertexAttributeArrays_t * attribs, const int numVertices,
-								const GpuTriangleIndex_t * indices, const int numIndices )
+								const GpuVertexAttributeArraysBase_t * attribs, const int vertexCount,
+								const GpuTriangleIndex_t * indices, const int indexCount );
+static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale );
+static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale );
+static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geometry, const int tesselation, const float offset, const float scale );
+static void GpuGeometry_Destroy( GpuContext_t * context, GpuGeometry_t * geometry );
+
+static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeometry_t * geometry, const int numInstances, const int instanceAttribsFlags );
+
+================================================================================================================================
+*/
+
+typedef struct
+{
+	const GpuVertexAttribute_t *	layout;
+	int								vertexCount;
+	int								instanceCount;
+	int 							indexCount;
+	int								vertexAttribsFlags;
+	int								instanceAttribsFlags;
+	GpuBuffer_t						vertexBuffer;
+	GpuBuffer_t						instanceBuffer;
+	GpuBuffer_t						indexBuffer;
+} GpuGeometry_t;
+
+static void GpuGeometry_Create( GpuContext_t * context, GpuGeometry_t * geometry,
+								const GpuVertexAttributeArraysBase_t * attribs, const int vertexCount,
+								const GpuTriangleIndex_t * indices, const int indexCount )
 {
 	memset( geometry, 0, sizeof( GpuGeometry_t ) );
 
-	geometry->vertexCount = numVertices;
-	geometry->indexCount = numIndices;
+	geometry->layout = attribs->layout;
+	geometry->vertexCount = vertexCount;
+	geometry->indexCount = indexCount;
 	geometry->vertexAttribsFlags = GpuVertexAttributeArrays_GetAttribsFlags( attribs );
 
 	const void * data = GpuVertexAttributeArrays_GetDataPointer( attribs );
-	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( geometry->vertexCount, geometry->vertexAttribsFlags );
+	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( attribs->layout, geometry->vertexCount, geometry->vertexAttribsFlags );
 
 	GpuBuffer_Create( context, &geometry->vertexBuffer, GPU_BUFFER_TYPE_VERTEX, dataSize, data, false );
-	GpuBuffer_Create( context, &geometry->indexBuffer, GPU_BUFFER_TYPE_INDEX, numIndices * sizeof( indices[0] ), indices, false );
+	GpuBuffer_Create( context, &geometry->indexBuffer, GPU_BUFFER_TYPE_INDEX, indexCount * sizeof( indices[0] ), indices, false );
 }
 
 // The quad is centered about the origin and without offset/scale spans the [-1, 1] X-Y range.
@@ -8091,7 +8816,8 @@ static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geom
 	};
 
 	GpuVertexAttributeArrays_t quadAttribs;
-	GpuVertexAttributeArrays_Alloc( &quadAttribs, 4,
+	GpuVertexAttributeArrays_Alloc( &quadAttribs.base,
+									DefaultVertexAttributeLayout, 4,
 									VERTEX_ATTRIBUTE_FLAG_POSITION |
 									VERTEX_ATTRIBUTE_FLAG_NORMAL |
 									VERTEX_ATTRIBUTE_FLAG_TANGENT |
@@ -8110,11 +8836,11 @@ static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geom
 		quadAttribs.uv0[i].y = quadUvs[i].y;
 	}
 
-	GpuVertexAttributeArrays_CalculateTangents( &quadAttribs, 4, quadIndices, 6 );
+	GpuVertexAttributeArrays_CalculateTangents( &quadAttribs.base, 4, quadIndices, 6 );
 
-	GpuGeometry_Create( context, geometry, &quadAttribs, 4, quadIndices, 6 );
+	GpuGeometry_Create( context, geometry, &quadAttribs.base, 4, quadIndices, 6 );
 
-	GpuVertexAttributeArrays_Free( &quadAttribs );
+	GpuVertexAttributeArrays_Free( &quadAttribs.base );
 }
 
 // The cube is centered about the origin and without offset/scale spans the [-1, 1] X-Y-Z range.
@@ -8167,7 +8893,8 @@ static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geom
 	};
 
 	GpuVertexAttributeArrays_t cubeAttribs;
-	GpuVertexAttributeArrays_Alloc( &cubeAttribs, 24,
+	GpuVertexAttributeArrays_Alloc( &cubeAttribs.base,
+									DefaultVertexAttributeLayout, 24,
 									VERTEX_ATTRIBUTE_FLAG_POSITION |
 									VERTEX_ATTRIBUTE_FLAG_NORMAL |
 									VERTEX_ATTRIBUTE_FLAG_TANGENT |
@@ -8186,11 +8913,11 @@ static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geom
 		cubeAttribs.uv0[i].y = cubeUvs[i].y;
 	}
 
-	GpuVertexAttributeArrays_CalculateTangents( &cubeAttribs, 24, cubeIndices, 36 );
+	GpuVertexAttributeArrays_CalculateTangents( &cubeAttribs.base, 24, cubeIndices, 36 );
 
-	GpuGeometry_Create( context, geometry, &cubeAttribs, 24, cubeIndices, 36 );
+	GpuGeometry_Create( context, geometry, &cubeAttribs.base, 24, cubeIndices, 36 );
 
-	GpuVertexAttributeArrays_Free( &cubeAttribs );
+	GpuVertexAttributeArrays_Free( &cubeAttribs.base );
 }
 
 // The torus is centered about the origin and without offset/scale spans the [-1, 1] X-Y range and the [-0.3, 0.3] Z range.
@@ -8200,18 +8927,19 @@ static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geo
 	const int majorTesselation = tesselation;
 	const float tubeRadius = 0.3f;
 	const float tubeCenter = 0.7f;
-	const int numVertices = ( majorTesselation + 1 ) * ( minorTesselation + 1 );
-	const int numIndices = majorTesselation * minorTesselation * 6;
+	const int vertexCount = ( majorTesselation + 1 ) * ( minorTesselation + 1 );
+	const int indexCount = majorTesselation * minorTesselation * 6;
 
 	GpuVertexAttributeArrays_t torusAttribs;
-	GpuVertexAttributeArrays_Alloc( &torusAttribs, numVertices,
+	GpuVertexAttributeArrays_Alloc( &torusAttribs.base,
+									DefaultVertexAttributeLayout, vertexCount,
 									VERTEX_ATTRIBUTE_FLAG_POSITION |
 									VERTEX_ATTRIBUTE_FLAG_NORMAL |
 									VERTEX_ATTRIBUTE_FLAG_TANGENT |
 									VERTEX_ATTRIBUTE_FLAG_BINORMAL |
 									VERTEX_ATTRIBUTE_FLAG_UV0 );
 
-	GpuTriangleIndex_t * torusIndices = (GpuTriangleIndex_t *) malloc( numIndices * sizeof( torusIndices[0] ) );
+	GpuTriangleIndex_t * torusIndices = (GpuTriangleIndex_t *) malloc( indexCount * sizeof( torusIndices[0] ) );
 
 	for ( int u = 0; u <= majorTesselation; u++ )
 	{
@@ -8245,20 +8973,20 @@ static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geo
 		for ( int v = 0; v < minorTesselation; v++ )
 		{
 			const int index = ( u * minorTesselation + v ) * 6;
-			torusIndices[index + 0] = ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 );
-			torusIndices[index + 1] = ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 0 );
-			torusIndices[index + 2] = ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 );
-			torusIndices[index + 3] = ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 );
-			torusIndices[index + 4] = ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 1 );
-			torusIndices[index + 5] = ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 );
+			torusIndices[index + 0] = (GpuTriangleIndex_t)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
+			torusIndices[index + 1] = (GpuTriangleIndex_t)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
+			torusIndices[index + 2] = (GpuTriangleIndex_t)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
+			torusIndices[index + 3] = (GpuTriangleIndex_t)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
+			torusIndices[index + 4] = (GpuTriangleIndex_t)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
+			torusIndices[index + 5] = (GpuTriangleIndex_t)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
 		}
 	}
 
-	GpuVertexAttributeArrays_CalculateTangents( &torusAttribs, numVertices, torusIndices, numIndices );
+	GpuVertexAttributeArrays_CalculateTangents( &torusAttribs.base, vertexCount, torusIndices, indexCount );
 
-	GpuGeometry_Create( context, geometry, &torusAttribs, numVertices, torusIndices, numIndices );
+	GpuGeometry_Create( context, geometry, &torusAttribs.base, vertexCount, torusIndices, indexCount );
 
-	GpuVertexAttributeArrays_Free( &torusAttribs );
+	GpuVertexAttributeArrays_Free( &torusAttribs.base );
 	free( torusIndices );
 }
 
@@ -8276,12 +9004,13 @@ static void GpuGeometry_Destroy( GpuContext_t * context, GpuGeometry_t * geometr
 
 static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeometry_t * geometry, const int numInstances, const int instanceAttribsFlags )
 {
+	assert( geometry->layout != NULL );
 	assert( ( geometry->vertexAttribsFlags & instanceAttribsFlags ) == 0 );
 
 	geometry->instanceCount = numInstances;
 	geometry->instanceAttribsFlags = instanceAttribsFlags;
 
-	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( numInstances, geometry->instanceAttribsFlags );
+	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( geometry->layout, numInstances, geometry->instanceAttribsFlags );
 
 	GpuBuffer_Create( context, &geometry->instanceBuffer, GPU_BUFFER_TYPE_VERTEX, dataSize, NULL, false );
 }
@@ -8896,7 +9625,14 @@ typedef enum
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2,		// float[2]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3,		// float[3]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4,		// float[4]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2,	// float[2][2]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3,	// float[2][3]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4,	// float[2][4]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2,	// float[3][2]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3,	// float[3][3]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	// float[3][4]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2,	// float[4][2]
+	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3,	// float[4][3]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	// float[4][4]
 	GPU_PROGRAM_PARM_TYPE_MAX
 } GpuProgramParmType_t;
@@ -8916,8 +9652,8 @@ typedef struct
 	int							index;		// index into GpuProgramParmState_t::parms
 	const char * 				name;		// GLSL name
 	int							binding;	// texture/buffer binding, or push constant offset
-											// Note that Vulkan bindings must be unique per descriptor set across the whole pipeline.
-											// Note that Vulkan push constant ranges must be unique across the whole pipeline.
+											// Note that Vulkan bindings must be unique per descriptor set across all stages of the pipeline.
+											// Note that Vulkan push constant ranges must be unique across all stages of the pipeline.
 } GpuProgramParm_t;
 
 typedef struct
@@ -8968,9 +9704,17 @@ static int GpuProgramParm_GetPushConstantSize( GpuProgramParmType_t type )
 		(unsigned int)sizeof( float[2] ),
 		(unsigned int)sizeof( float[3] ),
 		(unsigned int)sizeof( float[4] ),
+		(unsigned int)sizeof( float[2][2] ),
+		(unsigned int)sizeof( float[2][3] ),
+		(unsigned int)sizeof( float[2][4] ),
+		(unsigned int)sizeof( float[3][2] ),
+		(unsigned int)sizeof( float[3][3] ),
 		(unsigned int)sizeof( float[3][4] ),
+		(unsigned int)sizeof( float[4][2] ),
+		(unsigned int)sizeof( float[4][3] ),
 		(unsigned int)sizeof( float[4][4] )
 	};
+	assert( ARRAY_SIZE( parmSize ) == GPU_PROGRAM_PARM_TYPE_MAX );
 	return parmSize[type];
 }
 
@@ -9153,7 +9897,7 @@ static bool GpuGraphicsProgram_Create( GpuContext_t * context, GpuGraphicsProgra
 										const void * vertexSourceData, const size_t vertexSourceSize,
 										const void * fragmentSourceData, const size_t fragmentSourceSize,
 										const GpuProgramParm_t * parms, const int numParms,
-										const int vertexAttribsFlags );
+										const GpuVertexAttribute_t * vertexLayout, const int vertexAttribsFlags );
 static void GpuGraphicsProgram_Destroy( GpuContext_t * context, GpuGraphicsProgram_t * program );
 
 ================================================================================================================================
@@ -9172,8 +9916,10 @@ static bool GpuGraphicsProgram_Create( GpuContext_t * context, GpuGraphicsProgra
 										const void * vertexSourceData, const size_t vertexSourceSize,
 										const void * fragmentSourceData, const size_t fragmentSourceSize,
 										const GpuProgramParm_t * parms, const int numParms,
-										const int vertexAttribsFlags )
+										const GpuVertexAttribute_t * vertexLayout, const int vertexAttribsFlags )
 {
+	UNUSED_PARM( vertexLayout );
+
 	program->vertexAttribsFlags = vertexAttribsFlags;
 
 	GpuDevice_CreateShader( context->device, &program->vertexShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertexSourceData, vertexSourceSize );
@@ -9269,9 +10015,11 @@ The vertex attribute locations are assigned here, when both the geometry and pro
 to avoid binding vertex attributes that are not used by the vertex shader, and to avoid binding
 to a discontinuous set of vertex attribute locations.
 
-GpuBlendFactor_t
-GpuBlendOp_t
+GpuFrontFace_t
+GpuCullMode_t
 GpuCompareOp_t
+GpuBlendOp_t
+GpuBlendFactor_t
 GpuRasterOperations_t
 GpuGraphicsPipelineParms_t
 GpuGraphicsPipeline_t
@@ -9284,52 +10032,76 @@ static void GpuGraphicsPipeline_Destroy( GpuContext_t * context, GpuGraphicsPipe
 
 typedef enum
 {
-	GPU_BLEND_FACTOR_ZERO					= VK_BLEND_FACTOR_ZERO,
-	GPU_BLEND_FACTOR_ONE					= VK_BLEND_FACTOR_ONE,
-	GPU_BLEND_FACTOR_SRC_COLOR				= VK_BLEND_FACTOR_SRC_COLOR,
-	GPU_BLEND_FACTOR_ONE_MINUS_SRC_COLOR	= VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
-	GPU_BLEND_FACTOR_DST_COLOR				= VK_BLEND_FACTOR_DST_COLOR,
-	GPU_BLEND_FACTOR_ONE_MINUS_DST_COLOR	= VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR,
-	GPU_BLEND_FACTOR_SRC_ALPHA				= VK_BLEND_FACTOR_SRC_ALPHA,
-	GPU_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA	= VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-	GPU_BLEND_FACTOR_DST_ALPHA				= VK_BLEND_FACTOR_DST_ALPHA,
-	GPU_BLEND_FACTOR_ONE_MINUS_DST_ALPHA	= VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA
-} GpuBlendFactor_t;
+	GPU_FRONT_FACE_COUNTER_CLOCKWISE			= VK_FRONT_FACE_COUNTER_CLOCKWISE,
+    GPU_FRONT_FACE_CLOCKWISE					= VK_FRONT_FACE_CLOCKWISE
+} GpuFrontFace_t;
 
 typedef enum
 {
-	GPU_BLEND_OP_ADD						= VK_BLEND_OP_ADD,
-	GPU_BLEND_OP_SUBTRACT					= VK_BLEND_OP_SUBTRACT,
-	GPU_BLEND_OP_REVERSE_SUBTRACT			= VK_BLEND_OP_REVERSE_SUBTRACT,
-	GPU_BLEND_OP_MIN						= VK_BLEND_OP_MIN,
-	GPU_BLEND_OP_MAX						= VK_BLEND_OP_MAX
+	GPU_CULL_MODE_NONE							= 0,
+	GPU_CULL_MODE_FRONT							= VK_CULL_MODE_FRONT_BIT,
+	GPU_CULL_MODE_BACK							= VK_CULL_MODE_BACK_BIT
+} GpuCullMode_t;
+
+typedef enum
+{
+	GPU_COMPARE_OP_NEVER						= VK_COMPARE_OP_NEVER,
+	GPU_COMPARE_OP_LESS							= VK_COMPARE_OP_LESS,
+	GPU_COMPARE_OP_EQUAL						= VK_COMPARE_OP_EQUAL,
+	GPU_COMPARE_OP_LESS_OR_EQUAL				= VK_COMPARE_OP_LESS_OR_EQUAL,
+	GPU_COMPARE_OP_GREATER						= VK_COMPARE_OP_GREATER,
+	GPU_COMPARE_OP_NOT_EQUAL					= VK_COMPARE_OP_NOT_EQUAL,
+	GPU_COMPARE_OP_GREATER_OR_EQUAL				= VK_COMPARE_OP_GREATER_OR_EQUAL,
+	GPU_COMPARE_OP_ALWAYS						= VK_COMPARE_OP_ALWAYS
+} GpuCompareOp_t;
+
+typedef enum
+{
+	GPU_BLEND_OP_ADD							= VK_BLEND_OP_ADD,
+	GPU_BLEND_OP_SUBTRACT						= VK_BLEND_OP_SUBTRACT,
+	GPU_BLEND_OP_REVERSE_SUBTRACT				= VK_BLEND_OP_REVERSE_SUBTRACT,
+	GPU_BLEND_OP_MIN							= VK_BLEND_OP_MIN,
+	GPU_BLEND_OP_MAX							= VK_BLEND_OP_MAX
 } GpuBlendOp_t;
 
 typedef enum
 {
-	GPU_COMPARE_OP_NEVER					= VK_COMPARE_OP_NEVER,
-	GPU_COMPARE_OP_LESS						= VK_COMPARE_OP_LESS,
-	GPU_COMPARE_OP_EQUAL					= VK_COMPARE_OP_EQUAL,
-	GPU_COMPARE_OP_LESS_OR_EQUAL			= VK_COMPARE_OP_LESS_OR_EQUAL,
-	GPU_COMPARE_OP_GREATER					= VK_COMPARE_OP_GREATER,
-	GPU_COMPARE_OP_NOT_EQUAL				= VK_COMPARE_OP_NOT_EQUAL,
-	GPU_COMPARE_OP_GREATER_OR_EQUAL			= VK_COMPARE_OP_GREATER_OR_EQUAL,
-	GPU_COMPARE_OP_ALWAYS					= VK_COMPARE_OP_ALWAYS
-} GpuCompareOp_t;
+	GPU_BLEND_FACTOR_ZERO						= VK_BLEND_FACTOR_ZERO,
+	GPU_BLEND_FACTOR_ONE						= VK_BLEND_FACTOR_ONE,
+	GPU_BLEND_FACTOR_SRC_COLOR					= VK_BLEND_FACTOR_SRC_COLOR,
+	GPU_BLEND_FACTOR_ONE_MINUS_SRC_COLOR		= VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
+	GPU_BLEND_FACTOR_DST_COLOR					= VK_BLEND_FACTOR_DST_COLOR,
+	GPU_BLEND_FACTOR_ONE_MINUS_DST_COLOR		= VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR,
+	GPU_BLEND_FACTOR_SRC_ALPHA					= VK_BLEND_FACTOR_SRC_ALPHA,
+	GPU_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA		= VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+	GPU_BLEND_FACTOR_DST_ALPHA					= VK_BLEND_FACTOR_DST_ALPHA,
+	GPU_BLEND_FACTOR_ONE_MINUS_DST_ALPHA		= VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA,
+	GPU_BLEND_FACTOR_CONSTANT_COLOR				= VK_BLEND_FACTOR_CONSTANT_COLOR,				
+	GPU_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR	= VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR,
+	GPU_BLEND_FACTOR_CONSTANT_ALPHA				= VK_BLEND_FACTOR_CONSTANT_ALPHA,
+	GPU_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA	= VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA,
+	GPU_BLEND_FACTOR_SRC_ALPHA_SATURAT			= VK_BLEND_FACTOR_SRC_ALPHA_SATURATE
+} GpuBlendFactor_t;
 
 typedef struct
 {
 	bool							blendEnable;
+	bool							redWriteEnable;
+	bool							blueWriteEnable;
+	bool							greenWriteEnable;
 	bool							alphaWriteEnable;
 	bool							depthTestEnable;
 	bool							depthWriteEnable;
+	GpuFrontFace_t					frontFace;
+	GpuCullMode_t					cullMode;
+	GpuCompareOp_t					depthCompare;
+	Vector4f_t						blendColor;
+	GpuBlendOp_t					blendOpColor;
 	GpuBlendFactor_t				blendSrcColor;
 	GpuBlendFactor_t				blendDstColor;
-	GpuBlendOp_t					blendOpColor;
+	GpuBlendOp_t					blendOpAlpha;
 	GpuBlendFactor_t				blendSrcAlpha;
 	GpuBlendFactor_t				blendDstAlpha;
-	GpuBlendOp_t					blendOpAlpha;
-	GpuCompareOp_t					depthCompare;
 } GpuRasterOperations_t;
 
 typedef struct
@@ -9361,41 +10133,51 @@ typedef struct
 static void GpuGraphicsPipelineParms_Init( GpuGraphicsPipelineParms_t * parms )
 {
 	parms->rop.blendEnable = false;
+	parms->rop.redWriteEnable = true;
+	parms->rop.blueWriteEnable = true;
+	parms->rop.greenWriteEnable = true;
 	parms->rop.alphaWriteEnable = false;
 	parms->rop.depthTestEnable = true;
 	parms->rop.depthWriteEnable = true;
+	parms->rop.frontFace = GPU_FRONT_FACE_COUNTER_CLOCKWISE;
+	parms->rop.cullMode = GPU_CULL_MODE_BACK;
+	parms->rop.depthCompare = GPU_COMPARE_OP_LESS_OR_EQUAL;
+	parms->rop.blendColor.x = 0.0f;
+	parms->rop.blendColor.y = 0.0f;
+	parms->rop.blendColor.z = 0.0f;
+	parms->rop.blendColor.w = 0.0f;
+	parms->rop.blendOpColor = GPU_BLEND_OP_ADD;
 	parms->rop.blendSrcColor = GPU_BLEND_FACTOR_ONE;
 	parms->rop.blendDstColor = GPU_BLEND_FACTOR_ZERO;
-	parms->rop.blendOpColor = GPU_BLEND_OP_ADD;
+	parms->rop.blendOpAlpha = GPU_BLEND_OP_ADD;
 	parms->rop.blendSrcAlpha = GPU_BLEND_FACTOR_ONE;
 	parms->rop.blendDstAlpha = GPU_BLEND_FACTOR_ZERO;
-	parms->rop.blendOpAlpha = GPU_BLEND_OP_ADD;
-	parms->rop.depthCompare = GPU_COMPARE_OP_LESS_OR_EQUAL;
 	parms->renderPass = NULL;
 	parms->program = NULL;
 	parms->geometry = NULL;
 }
 
-static void InitVertexAttributes( const bool instance, const int numAttribs,
+static void InitVertexAttributes( const bool instance,
+								const GpuVertexAttribute_t * vertexLayout, const int numAttribs,
 								const int storedAttribsFlags, const int usedAttribsFlags,
 								VkVertexInputAttributeDescription * attributes, int * attributeCount,
 								VkVertexInputBindingDescription * bindings, int * bindingCount,
 								VkDeviceSize * bindingOffsets )
 {
 	size_t offset = 0;
-	for ( int i = 0; i < (int)( ARRAY_SIZE( VertexAttributeLayout ) ); i++ )
+	for ( int i = 0; i < vertexLayout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &VertexAttributeLayout[i];
+		const GpuVertexAttribute_t * v = &vertexLayout[i];
 		if ( ( v->attributeFlag & storedAttribsFlags ) != 0 )
 		{
 			if ( ( v->attributeFlag & usedAttribsFlags ) != 0 )
 			{
-				for ( int i = 0; i < v->locationCount; i++ )
+				for ( int location = 0; location < v->locationCount; location++ )
 				{
-					attributes[*attributeCount + i].location = *attributeCount + i;
-					attributes[*attributeCount + i].binding = *bindingCount;
-					attributes[*attributeCount + i].format = v->attributeFormat;
-					attributes[*attributeCount + i].offset = (uint32_t)( i * v->attributeSize / v->locationCount );	// limited offset used for packed vertex data
+					attributes[*attributeCount + location].location = *attributeCount + location;
+					attributes[*attributeCount + location].binding = *bindingCount;
+					attributes[*attributeCount + location].format = v->attributeFormat;
+					attributes[*attributeCount + location].offset = (uint32_t)( location * v->attributeSize / v->locationCount );	// limited offset used for packed vertex data
 				}
 
 				bindings[*bindingCount].binding = *bindingCount;
@@ -9414,22 +10196,25 @@ static void InitVertexAttributes( const bool instance, const int numAttribs,
 
 static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipeline_t * pipeline, const GpuGraphicsPipelineParms_t * parms )
 {
+	// Make sure the geometry provides all the attributes needed by the program.
+	assert( ( ( parms->geometry->vertexAttribsFlags | parms->geometry->instanceAttribsFlags ) & parms->program->vertexAttribsFlags ) == parms->program->vertexAttribsFlags );
+
 	pipeline->rop = parms->rop;
 	pipeline->program = parms->program;
 	pipeline->geometry = parms->geometry;
 	pipeline->vertexAttributeCount = 0;
 	pipeline->vertexBindingCount = 0;
 
-	InitVertexAttributes( false, parms->geometry->vertexCount, parms->geometry->vertexAttribsFlags,
-							parms->program->vertexAttribsFlags,
+	InitVertexAttributes( false, parms->geometry->layout, parms->geometry->vertexCount,
+							parms->geometry->vertexAttribsFlags, parms->program->vertexAttribsFlags,
 							pipeline->vertexAttributes, &pipeline->vertexAttributeCount,
 							pipeline->vertexBindings, &pipeline->vertexBindingCount,
 							pipeline->vertexBindingOffsets );
 
 	pipeline->firstInstanceBinding = pipeline->vertexBindingCount;
 
-	InitVertexAttributes( true, parms->geometry->instanceCount, parms->geometry->instanceAttribsFlags,
-							parms->program->vertexAttribsFlags,
+	InitVertexAttributes( true, parms->geometry->layout, parms->geometry->instanceCount,
+							parms->geometry->instanceAttribsFlags, parms->program->vertexAttribsFlags,
 							pipeline->vertexAttributes, &pipeline->vertexAttributeCount,
 							pipeline->vertexBindings, &pipeline->vertexBindingCount,
 							pipeline->vertexBindingOffsets );
@@ -9470,8 +10255,8 @@ static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipel
 	rasterizationStateCreateInfo.depthClampEnable				= VK_TRUE;
 	rasterizationStateCreateInfo.rasterizerDiscardEnable		= VK_FALSE;
 	rasterizationStateCreateInfo.polygonMode					= VK_POLYGON_MODE_FILL;
-	rasterizationStateCreateInfo.cullMode						= VK_CULL_MODE_BACK_BIT;
-	rasterizationStateCreateInfo.frontFace						= VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	rasterizationStateCreateInfo.cullMode						= (VkCullModeFlags)parms->rop.cullMode;
+	rasterizationStateCreateInfo.frontFace						= (VkFrontFace)parms->rop.frontFace;
 	rasterizationStateCreateInfo.depthBiasEnable				= VK_FALSE;
 	rasterizationStateCreateInfo.depthBiasConstantFactor		= 0.0f;
 	rasterizationStateCreateInfo.depthBiasClamp					= 0.0f;
@@ -9517,9 +10302,9 @@ static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipel
 	colorBlendAttachementState[0].srcAlphaBlendFactor			= (VkBlendFactor)parms->rop.blendSrcAlpha;
 	colorBlendAttachementState[0].dstAlphaBlendFactor			= (VkBlendFactor)parms->rop.blendDstAlpha;
 	colorBlendAttachementState[0].alphaBlendOp					= (VkBlendOp)parms->rop.blendOpAlpha;
-	colorBlendAttachementState[0].colorWriteMask				=	VK_COLOR_COMPONENT_R_BIT |
-																	VK_COLOR_COMPONENT_G_BIT |
-																	VK_COLOR_COMPONENT_B_BIT |
+	colorBlendAttachementState[0].colorWriteMask				=	( parms->rop.redWriteEnable ? VK_COLOR_COMPONENT_R_BIT : 0 ) |
+																	( parms->rop.blueWriteEnable ? VK_COLOR_COMPONENT_G_BIT : 0 ) |
+																	( parms->rop.greenWriteEnable ? VK_COLOR_COMPONENT_B_BIT : 0 ) |
 																	( parms->rop.alphaWriteEnable ? VK_COLOR_COMPONENT_A_BIT : 0 );
 
 	VkPipelineColorBlendStateCreateInfo colorBlendStateCreateInfo;
@@ -9530,10 +10315,10 @@ static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipel
 	colorBlendStateCreateInfo.logicOp							= VK_LOGIC_OP_CLEAR;
 	colorBlendStateCreateInfo.attachmentCount					= 1;
 	colorBlendStateCreateInfo.pAttachments						= colorBlendAttachementState;
-	colorBlendStateCreateInfo.blendConstants[0]					= 1.0f;
-	colorBlendStateCreateInfo.blendConstants[1]					= 1.0f;
-	colorBlendStateCreateInfo.blendConstants[2]					= 1.0f;
-	colorBlendStateCreateInfo.blendConstants[3]					= 1.0f;
+	colorBlendStateCreateInfo.blendConstants[0]					= parms->rop.blendColor.x;
+	colorBlendStateCreateInfo.blendConstants[1]					= parms->rop.blendColor.y;
+	colorBlendStateCreateInfo.blendConstants[2]					= parms->rop.blendColor.z;
+	colorBlendStateCreateInfo.blendConstants[3]					= parms->rop.blendColor.w;
 
 	VkDynamicState dynamicStateEnables[] =
 	{
@@ -9800,6 +10585,7 @@ static void GpuProgramParmState_SetParm( GpuProgramParmState_t * parmState, cons
 	const int pushConstantSize = GpuProgramParm_GetPushConstantSize( parmType );
 	if ( pushConstantSize > 0 )
 	{
+		assert( parmLayout->offsetForIndex[index] >= 0 );
 		assert( parmLayout->offsetForIndex[index] + pushConstantSize <= MAX_PROGRAM_PARMS * sizeof( float[4] ) );
 		memcpy( &parmState->data[parmLayout->offsetForIndex[index]], pointer, pushConstantSize );
 	}
@@ -9891,7 +10677,14 @@ static void GpuGraphicsCommand_SetParmFloat( GpuGraphicsCommand_t * command, con
 static void GpuGraphicsCommand_SetParmFloatVector2( GpuGraphicsCommand_t * command, const int index, const Vector2f_t * value );
 static void GpuGraphicsCommand_SetParmFloatVector3( GpuGraphicsCommand_t * command, const int index, const Vector3f_t * value );
 static void GpuGraphicsCommand_SetParmFloatVector4( GpuGraphicsCommand_t * command, const int index, const Vector3f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix2x2( GpuGraphicsCommand_t * command, const int index, const Matrix2x2f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix2x3( GpuGraphicsCommand_t * command, const int index, const Matrix2x3f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix2x4( GpuGraphicsCommand_t * command, const int index, const Matrix2x4f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix3x2( GpuGraphicsCommand_t * command, const int index, const Matrix3x2f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix3x3( GpuGraphicsCommand_t * command, const int index, const Matrix3x3f_t * value );
 static void GpuGraphicsCommand_SetParmFloatMatrix3x4( GpuGraphicsCommand_t * command, const int index, const Matrix3x4f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix4x2( GpuGraphicsCommand_t * command, const int index, const Matrix4x2f_t * value );
+static void GpuGraphicsCommand_SetParmFloatMatrix4x3( GpuGraphicsCommand_t * command, const int index, const Matrix4x3f_t * value );
 static void GpuGraphicsCommand_SetParmFloatMatrix4x4( GpuGraphicsCommand_t * command, const int index, const Matrix4x4f_t * value );
 static void GpuGraphicsCommand_SetNumInstances( GpuGraphicsCommand_t * command, const int numInstances );
 
@@ -9991,9 +10784,44 @@ static void GpuGraphicsCommand_SetParmFloatVector4( GpuGraphicsCommand_t * comma
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4, value );
 }
 
+static void GpuGraphicsCommand_SetParmFloatMatrix2x2( GpuGraphicsCommand_t * command, const int index, const Matrix2x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix2x3( GpuGraphicsCommand_t * command, const int index, const Matrix2x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix2x4( GpuGraphicsCommand_t * command, const int index, const Matrix2x4f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix3x2( GpuGraphicsCommand_t * command, const int index, const Matrix3x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix3x3( GpuGraphicsCommand_t * command, const int index, const Matrix3x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3, value );
+}
+
 static void GpuGraphicsCommand_SetParmFloatMatrix3x4( GpuGraphicsCommand_t * command, const int index, const Matrix3x4f_t * value )
 {
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix4x2( GpuGraphicsCommand_t * command, const int index, const Matrix4x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2, value );
+}
+
+static void GpuGraphicsCommand_SetParmFloatMatrix4x3( GpuGraphicsCommand_t * command, const int index, const Matrix4x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3, value );
 }
 
 static void GpuGraphicsCommand_SetParmFloatMatrix4x4( GpuGraphicsCommand_t * command, const int index, const Matrix4x4f_t * value )
@@ -10033,7 +10861,14 @@ static void GpuComputeCommand_SetParmFloat( GpuComputeCommand_t * command, const
 static void GpuComputeCommand_SetParmFloatVector2( GpuComputeCommand_t * command, const int index, const Vector2f_t * value );
 static void GpuComputeCommand_SetParmFloatVector3( GpuComputeCommand_t * command, const int index, const Vector3f_t * value );
 static void GpuComputeCommand_SetParmFloatVector4( GpuComputeCommand_t * command, const int index, const Vector3f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix2x2( GpuComputeCommand_t * command, const int index, const Matrix2x2f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix2x3( GpuComputeCommand_t * command, const int index, const Matrix2x3f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix2x4( GpuComputeCommand_t * command, const int index, const Matrix2x4f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix3x2( GpuComputeCommand_t * command, const int index, const Matrix3x2f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix3x3( GpuComputeCommand_t * command, const int index, const Matrix3x3f_t * value );
 static void GpuComputeCommand_SetParmFloatMatrix3x4( GpuComputeCommand_t * command, const int index, const Matrix3x4f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix4x2( GpuComputeCommand_t * command, const int index, const Matrix4x2f_t * value );
+static void GpuComputeCommand_SetParmFloatMatrix4x3( GpuComputeCommand_t * command, const int index, const Matrix4x3f_t * value );
 static void GpuComputeCommand_SetParmFloatMatrix4x4( GpuComputeCommand_t * command, const int index, const Matrix4x4f_t * value );
 static void GpuComputeCommand_SetDimensions( GpuComputeCommand_t * command, const int x, const int y, const int z );
 
@@ -10123,9 +10958,44 @@ static void GpuComputeCommand_SetParmFloatVector4( GpuComputeCommand_t * command
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4, value );
 }
 
+static void GpuComputeCommand_SetParmFloatMatrix2x2( GpuComputeCommand_t * command, const int index, const Matrix2x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix2x3( GpuComputeCommand_t * command, const int index, const Matrix2x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix2x4( GpuComputeCommand_t * command, const int index, const Matrix2x4f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix3x2( GpuComputeCommand_t * command, const int index, const Matrix3x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix3x3( GpuComputeCommand_t * command, const int index, const Matrix3x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3, value );
+}
+
 static void GpuComputeCommand_SetParmFloatMatrix3x4( GpuComputeCommand_t * command, const int index, const Matrix3x4f_t * value )
 {
 	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix4x2( GpuComputeCommand_t * command, const int index, const Matrix4x2f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2, value );
+}
+
+static void GpuComputeCommand_SetParmFloatMatrix4x3( GpuComputeCommand_t * command, const int index, const Matrix4x3f_t * value )
+{
+	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3, value );
 }
 
 static void GpuComputeCommand_SetParmFloatMatrix4x4( GpuComputeCommand_t * command, const int index, const Matrix4x4f_t * value )
@@ -10357,10 +11227,10 @@ static void GpuCommandBuffer_SubmitComputeCommand( GpuCommandBuffer_t * commandB
 static GpuBuffer_t * GpuCommandBuffer_MapBuffer( GpuCommandBuffer_t * commandBuffer, GpuBuffer_t * buffer, void ** data );
 static void GpuCommandBuffer_UnmapBuffer( GpuCommandBuffer_t * commandBuffer, GpuBuffer_t * buffer, GpuBuffer_t * mappedBuffer, const GpuBufferUnmapType_t type );
 
-static GpuBuffer_t * GpuCommandBuffer_MapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArrays_t * attribs );
+static GpuBuffer_t * GpuCommandBuffer_MapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs );
 static void GpuCommandBuffer_UnmapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuBuffer_t * mappedVertexBuffer, const GpuBufferUnmapType_t type );
 
-static GpuBuffer_t * GpuCommandBuffer_MapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArrays_t * attribs );
+static GpuBuffer_t * GpuCommandBuffer_MapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs );
 static void GpuCommandBuffer_UnmapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuBuffer_t * mappedInstanceBuffer, const GpuBufferUnmapType_t type );
 
 ================================================================================================================================
@@ -10983,7 +11853,6 @@ static void GpuCommandBuffer_UpdateProgramParms( GpuCommandBuffer_t * commandBuf
 			const VkShaderStageFlags stageFlags = GpuProgramParm_GetShaderStageFlags( newParm->stage );
 			const uint32_t offset = (uint32_t) newParm->binding;
 			const uint32_t size = (uint32_t) GpuProgramParm_GetPushConstantSize( newParm->type );
-			const void * data = newParmState->parms[newParm->index];
 			VC( device->vkCmdPushConstants( cmdBuffer, newLayout->pipelineLayout, stageFlags, offset, size, data ) );
 		}
 	}
@@ -11187,11 +12056,12 @@ static void GpuCommandBuffer_UnmapBuffer( GpuCommandBuffer_t * commandBuffer, Gp
 	}
 }
 
-static GpuBuffer_t * GpuCommandBuffer_MapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArrays_t * attribs )
+static GpuBuffer_t * GpuCommandBuffer_MapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs )
 {
 	void * data = NULL;
 	GpuBuffer_t * buffer = GpuCommandBuffer_MapBuffer( commandBuffer, &geometry->vertexBuffer, &data );
 
+	attribs->layout = geometry->layout;
 	GpuVertexAttributeArrays_Map( attribs, data, buffer->size, geometry->vertexCount, geometry->vertexAttribsFlags );
 
 	return buffer;
@@ -11202,11 +12072,12 @@ static void GpuCommandBuffer_UnmapVertexAttributes( GpuCommandBuffer_t * command
 	GpuCommandBuffer_UnmapBuffer( commandBuffer, &geometry->vertexBuffer, mappedVertexBuffer, type );
 }
 
-static GpuBuffer_t * GpuCommandBuffer_MapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArrays_t * attribs )
+static GpuBuffer_t * GpuCommandBuffer_MapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs )
 {
 	void * data = NULL;
 	GpuBuffer_t * buffer = GpuCommandBuffer_MapBuffer( commandBuffer, &geometry->instanceBuffer, &data );
 
+	attribs->layout = geometry->layout;
 	GpuVertexAttributeArrays_Map( attribs, data, buffer->size, geometry->instanceCount, geometry->instanceAttribsFlags );
 
 	return buffer;
@@ -11449,7 +12320,7 @@ static const char barGraphComputeProgramGLSL[] =
 	"\n"
 	"layout( local_size_x = " STRINGIFY( BARGRAPH_LOCAL_SIZE_X ) ", local_size_y = " STRINGIFY( BARGRAPH_LOCAL_SIZE_Y ) " ) in;\n"
 	"\n"
-	"layout( rgba8, binding = 0 ) uniform writeonly image2D dest;\n"
+	"layout( rgba8, binding = 0 ) uniform highp writeonly image2D dest;\n"
 	"layout( std430, binding = 1 ) buffer barValueBuffer { float barValues[]; };\n"
 	"layout( std430, binding = 2 ) buffer barColorBuffer { vec4 barColors[]; };\n"
 	"layout( std140, push_constant ) uniform buffer0\n"
@@ -11639,7 +12510,7 @@ static void BarGraph_Create( GpuContext_t * context, BarGraph_t * barGraph, GpuR
 									PROGRAM( barGraphVertexProgram ), sizeof( PROGRAM( barGraphVertexProgram ) ),
 									PROGRAM( barGraphFragmentProgram ), sizeof( PROGRAM( barGraphFragmentProgram ) ),
 									barGraphGraphicsProgramParms, 0,
-									VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_TRANSFORM );
+									barGraph->graphics.quad.layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_TRANSFORM );
 
 		GpuGraphicsPipelineParms_t pipelineParms;
 		GpuGraphicsPipelineParms_Init( &pipelineParms );
@@ -11705,7 +12576,7 @@ static void BarGraph_AddBar( BarGraph_t * barGraph, const int stackedBar, const 
 static void BarGraph_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph )
 {
 	GpuVertexAttributeArrays_t attribs;
-	GpuBuffer_t * instanceBuffer = GpuCommandBuffer_MapInstanceAttributes( commandBuffer, &barGraph->graphics.quad, &attribs );
+	GpuBuffer_t * instanceBuffer = GpuCommandBuffer_MapInstanceAttributes( commandBuffer, &barGraph->graphics.quad, &attribs.base );
 
 #if defined( GRAPHICS_API_VULKAN )
 	const float flipY = -1.0f;
@@ -12299,7 +13170,7 @@ static void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_
 	{
 		for ( int y = 0; y <= eyeTilesHigh; y++ )
 		{
-			const float yf = (float)y / (float)eyeTilesHigh;
+			const float yf = 1.0f - (float)y / (float)eyeTilesHigh;
 
 			for ( int x = 0; x <= eyeTilesWide; x++ )
 			{
@@ -12787,32 +13658,33 @@ static const unsigned int timeWarpChromaticFragmentProgramSPIRV[] =
 
 static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics, GpuRenderPass_t * renderPass )
 {
-	const int numVertices = ( EYE_TILES_HIGH + 1 ) * ( EYE_TILES_WIDE + 1 );
-	const int numIndices = EYE_TILES_HIGH * EYE_TILES_WIDE * 6;
+	const int vertexCount = ( EYE_TILES_HIGH + 1 ) * ( EYE_TILES_WIDE + 1 );
+	const int indexCount = EYE_TILES_HIGH * EYE_TILES_WIDE * 6;
 
-	GpuTriangleIndex_t * indices = (GpuTriangleIndex_t *) malloc( numIndices * sizeof( indices[0] ) );
+	GpuTriangleIndex_t * indices = (GpuTriangleIndex_t *) malloc( indexCount * sizeof( indices[0] ) );
 	for ( int y = 0; y < EYE_TILES_HIGH; y++ )
 	{
 		for ( int x = 0; x < EYE_TILES_WIDE; x++ )
 		{
 			const int offset = ( y * EYE_TILES_WIDE + x ) * 6;
 
-			indices[offset + 0] = ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 );
-			indices[offset + 1] = ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 );
-			indices[offset + 2] = ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 );
+			indices[offset + 0] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
+			indices[offset + 1] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
+			indices[offset + 2] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
 
-			indices[offset + 3] = ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 );
-			indices[offset + 4] = ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 );
-			indices[offset + 5] = ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 );
+			indices[offset + 3] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
+			indices[offset + 4] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
+			indices[offset + 5] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
 		}
 	}
 
 	GpuVertexAttributeArrays_t vertexAttribs;
-	GpuVertexAttributeArrays_Alloc( &vertexAttribs, numVertices,
-							VERTEX_ATTRIBUTE_FLAG_POSITION |
-							VERTEX_ATTRIBUTE_FLAG_UV0 |
-							VERTEX_ATTRIBUTE_FLAG_UV1 |
-							VERTEX_ATTRIBUTE_FLAG_UV2 );
+	GpuVertexAttributeArrays_Alloc( &vertexAttribs.base,
+									DefaultVertexAttributeLayout, vertexCount,
+									VERTEX_ATTRIBUTE_FLAG_POSITION |
+									VERTEX_ATTRIBUTE_FLAG_UV0 |
+									VERTEX_ATTRIBUTE_FLAG_UV1 |
+									VERTEX_ATTRIBUTE_FLAG_UV2 );
 
 	const int numMeshCoords = ( EYE_TILES_WIDE + 1 ) * ( EYE_TILES_HIGH + 1 );
 	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t ) );
@@ -12849,23 +13721,23 @@ static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t 
 			}
 		}
 
-		GpuGeometry_Create( context, &graphics->distortionMesh[eye], &vertexAttribs, numVertices, indices, numIndices );
+		GpuGeometry_Create( context, &graphics->distortionMesh[eye], &vertexAttribs.base, vertexCount, indices, indexCount );
 	}
 
 	free( meshCoordsBasePtr );
-	GpuVertexAttributeArrays_Free( &vertexAttribs );
+	GpuVertexAttributeArrays_Free( &vertexAttribs.base );
 	free( indices );
 
 	GpuGraphicsProgram_Create( context, &graphics->timeWarpSpatialProgram,
 								PROGRAM( timeWarpSpatialVertexProgram ), sizeof( PROGRAM( timeWarpSpatialVertexProgram ) ),
 								PROGRAM( timeWarpSpatialFragmentProgram ), sizeof( PROGRAM( timeWarpSpatialFragmentProgram ) ),
 								timeWarpSpatialGraphicsProgramParms, ARRAY_SIZE( timeWarpSpatialGraphicsProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV0 );
+								graphics->distortionMesh[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV1 );
 	GpuGraphicsProgram_Create( context, &graphics->timeWarpChromaticProgram,
 								PROGRAM( timeWarpChromaticVertexProgram ), sizeof( PROGRAM( timeWarpChromaticVertexProgram ) ),
 								PROGRAM( timeWarpChromaticFragmentProgram ), sizeof( PROGRAM( timeWarpChromaticFragmentProgram ) ),
 								timeWarpChromaticGraphicsProgramParms, ARRAY_SIZE( timeWarpChromaticGraphicsProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV0 |
+								graphics->distortionMesh[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV0 |
 								VERTEX_ATTRIBUTE_FLAG_UV1 | VERTEX_ATTRIBUTE_FLAG_UV2 );
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
@@ -13731,16 +14603,17 @@ static void TimeWarp_SetTriangleLevel( TimeWarp_t * timeWarp, const int level );
 static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level );
 static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level );
 
-static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp,
-											const Matrix4x4f_t * viewMatrix, const Matrix4x4_t * projectionMatrix,
-											GpuTexture_t * eyeTexture[2], GpuFence_t * eyeCompletionFence[2],
-											int eyeArrayLayer[2], float eyeTexturesCpuTime, float eyeTexturesGpuTime );
-static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window );
+static Microseconds_t TimeWarp_GetPredictedDisplayTime( TimeWarp_t * timeWarp, const int frameIndex );
+static void TimeWarp_SubmitFrame( TimeWarp_t * timeWarp, const int frameIndex, const Microseconds_t displayTime,
+									const Matrix4x4f_t * viewMatrix, const Matrix4x4_t * projectionMatrix,
+									GpuTexture_t * eyeTexture[NUM_EYES], GpuFence_t * eyeCompletionFence[NUM_EYES],
+									int eyeArrayLayer[NUM_EYES], float eyeTexturesCpuTime, float eyeTexturesGpuTime );
+static void TimeWarp_Render( TimeWarp_t * timeWarp );
 
 ================================================================================================================================
 */
 
-#define AVARGE_FRAME_RATE_FRAMES		20
+#define AVERAGE_FRAME_RATE_FRAMES		20
 
 typedef enum
 {
@@ -13752,6 +14625,8 @@ typedef enum
 typedef struct
 {
 	int							index;
+	int							frameIndex;
+	Microseconds_t				displayTime;
 	Matrix4x4f_t				viewMatrix;
 	Matrix4x4f_t				projectionMatrix;
 	GpuTexture_t *				texture[NUM_EYES];
@@ -13763,7 +14638,16 @@ typedef struct
 
 typedef struct
 {
+	long long					frameIndex;
+	Microseconds_t				vsyncTime;
+	Microseconds_t				frameTime;
+} FrameTiming_t;
+
+typedef struct
+{
+	GpuWindow_t *				window;
 	GpuTexture_t				defaultTexture;
+	Microseconds_t				displayTime;
 	Matrix4x4f_t				viewMatrix;
 	Matrix4x4f_t				projectionMatrix;
 	GpuTexture_t *				eyeTexture[NUM_EYES];
@@ -13772,13 +14656,16 @@ typedef struct
 	Mutex_t						newEyeTexturesMutex;
 	Signal_t					newEyeTexturesConsumed;
 	EyeTextures_t				newEyeTextures;
-
 	int							eyeTexturesPresentIndex;
 	int							eyeTexturesConsumedIndex;
 
+	FrameTiming_t				frameTiming;
+	Mutex_t						frameTimingMutex;
+	Signal_t					vsyncSignal;
+
 	float						refreshRate;
-	Microseconds_t				frameCpuTime[AVARGE_FRAME_RATE_FRAMES];
-	int							eyeTexturesFrames[AVARGE_FRAME_RATE_FRAMES];
+	Microseconds_t				frameCpuTime[AVERAGE_FRAME_RATE_FRAMES];
+	int							eyeTexturesFrames[AVERAGE_FRAME_RATE_FRAMES];
 	int							timeWarpFrames;
 	float						cpuTimes[PROFILE_TIME_MAX];
 	float						gpuTimes[PROFILE_TIME_MAX];
@@ -13795,7 +14682,9 @@ typedef struct
 
 static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 {
-	GpuTexture_CreateDefault( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_DEFAULT_CIRCLES, 1024, 1024, 1, 2, 1, false, true );
+	timeWarp->window = window;
+
+	GpuTexture_CreateDefault( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_DEFAULT_CIRCLES, 1024, 1024, 0, 2, 1, false, true );
 	GpuTexture_SetWrapMode( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 
 	Mutex_Create( &timeWarp->newEyeTexturesMutex );
@@ -13803,6 +14692,7 @@ static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	Signal_Raise( &timeWarp->newEyeTexturesConsumed );
 
 	timeWarp->newEyeTextures.index = 0;
+	timeWarp->newEyeTextures.displayTime = 0;
 	Matrix4x4f_CreateIdentity( &timeWarp->newEyeTextures.viewMatrix );
 	Matrix4x4f_CreateProjectionFov( &timeWarp->newEyeTextures.projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
@@ -13814,6 +14704,7 @@ static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	timeWarp->newEyeTextures.cpuTime = 0.0f;
 	timeWarp->newEyeTextures.gpuTime = 0.0f;
 
+	timeWarp->displayTime = 0;
 	timeWarp->viewMatrix = timeWarp->newEyeTextures.viewMatrix;
 	timeWarp->projectionMatrix = timeWarp->newEyeTextures.projectionMatrix;
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
@@ -13825,8 +14716,14 @@ static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	timeWarp->eyeTexturesPresentIndex = 1;
 	timeWarp->eyeTexturesConsumedIndex = 0;
 
+	timeWarp->frameTiming.frameIndex = 0;
+	timeWarp->frameTiming.vsyncTime = 0;
+	timeWarp->frameTiming.frameTime = 0;
+	Mutex_Create( &timeWarp->frameTimingMutex );
+	Signal_Create( &timeWarp->vsyncSignal, false );
+
 	timeWarp->refreshRate = window->windowRefreshRate;
-	for ( int i = 0; i < AVARGE_FRAME_RATE_FRAMES; i++ )
+	for ( int i = 0; i < AVERAGE_FRAME_RATE_FRAMES; i++ )
 	{
 		timeWarp->frameCpuTime[i] = 0;
 		timeWarp->eyeTexturesFrames[i] = 0;
@@ -13863,6 +14760,8 @@ static void TimeWarp_Destroy( TimeWarp_t * timeWarp, GpuWindow_t * window )
 
 	Signal_Destroy( &timeWarp->newEyeTexturesConsumed );
 	Mutex_Destroy( &timeWarp->newEyeTexturesMutex );
+	Mutex_Destroy( &timeWarp->frameTimingMutex );
+	Signal_Destroy( &timeWarp->vsyncSignal );
 
 	GpuTexture_Destroy( &window->context, &timeWarp->defaultTexture );
 }
@@ -13944,13 +14843,32 @@ static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level )
 	}
 }
 
-static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp,
-											const Matrix4x4f_t * viewMatrix, const Matrix4x4f_t * projectionMatrix,
-											GpuTexture_t * eyeTexture[2], GpuFence_t * eyeCompletionFence[2],
-											int eyeArrayLayer[2], float eyeTexturesCpuTime, float eyeTexturesGpuTime )
+static Microseconds_t TimeWarp_GetPredictedDisplayTime( TimeWarp_t * timeWarp, const int frameIndex )
+{
+	Mutex_Lock( &timeWarp->frameTimingMutex, true );
+	const FrameTiming_t frameTiming = timeWarp->frameTiming;
+	Mutex_Unlock( &timeWarp->frameTimingMutex );
+
+	// The time warp thread is currently released by SwapBuffers shortly after a V-Sync.
+	// Where possible, the time warp thread then waits until a short time before the next V-Sync
+	// giving it just enough time to warp the latest eye textures onto the display. The time warp
+	// thread then tries to pick up the latest eye textures that will be displayed the next V-Sync.
+	// The time warp then warps the new eye textures onto the display for the next V-Sync. After
+	// this V-Sync the main thread is released and can start working on new eye textures that
+	// are will be displayed effectively 2 display refresh cycles in the future.
+
+	return frameTiming.vsyncTime + ( frameIndex - frameTiming.frameIndex ) * frameTiming.frameTime;
+}
+
+static void TimeWarp_SubmitFrame( TimeWarp_t * timeWarp, const int frameIndex, const Microseconds_t displayTime,
+									const Matrix4x4f_t * viewMatrix, const Matrix4x4f_t * projectionMatrix,
+									GpuTexture_t * eyeTexture[NUM_EYES], GpuFence_t * eyeCompletionFence[NUM_EYES],
+									int eyeArrayLayer[NUM_EYES], float eyeTexturesCpuTime, float eyeTexturesGpuTime )
 {
 	EyeTextures_t newEyeTextures;
 	newEyeTextures.index = timeWarp->eyeTexturesPresentIndex++;
+	newEyeTextures.frameIndex = frameIndex;
+	newEyeTextures.displayTime = displayTime;
 	newEyeTextures.viewMatrix = *viewMatrix;
 	newEyeTextures.projectionMatrix = *projectionMatrix;
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
@@ -13962,62 +14880,83 @@ static void TimeWarp_PresentNewEyeTextures( TimeWarp_t * timeWarp,
 	newEyeTextures.cpuTime = eyeTexturesCpuTime;
 	newEyeTextures.gpuTime = eyeTexturesGpuTime;
 
+	// Wait for the previous eye textures to be consumed before overwriting them.
 	Signal_Wait( &timeWarp->newEyeTexturesConsumed, -1 );
 
 	Mutex_Lock( &timeWarp->newEyeTexturesMutex, true );
 	timeWarp->newEyeTextures = newEyeTextures;
 	Mutex_Unlock( &timeWarp->newEyeTexturesMutex );
+
+	// Wait for at least one V-Sync to pass to avoid piling up frames of latency.
+	Signal_Wait( &timeWarp->vsyncSignal, -1 );
+
+	FrameTiming_t newFrameTiming;
+	newFrameTiming.frameIndex = frameIndex;
+	newFrameTiming.vsyncTime = GpuWindow_GetNextSwapTimeMicroseconds( timeWarp->window );
+	newFrameTiming.frameTime = GpuWindow_GetFrameTimeMicroseconds( timeWarp->window );
+
+	Mutex_Lock( &timeWarp->frameTimingMutex, true );
+	timeWarp->frameTiming = newFrameTiming;
+	Mutex_Unlock( &timeWarp->frameTimingMutex );
 }
 
-static void TimeWarp_ConsumeNewEyeTextures( GpuContext_t * context, TimeWarp_t * timeWarp )
+static void TimeWarp_Render( TimeWarp_t * timeWarp )
 {
-	timeWarp->eyeTexturesFrames[timeWarp->timeWarpFrames % AVARGE_FRAME_RATE_FRAMES] = 0;
+	const Microseconds_t nextSwapTime = GpuWindow_GetNextSwapTimeMicroseconds( timeWarp->window );
+	const Microseconds_t frameTime = GpuWindow_GetFrameTimeMicroseconds( timeWarp->window );
 
-	// Never block the time warp thread.
-	if ( !Mutex_Lock( &timeWarp->newEyeTexturesMutex, false ) )
-	{
-		return;
-	}
-	EyeTextures_t newEyeTextures = timeWarp->newEyeTextures;
-	Mutex_Unlock( &timeWarp->newEyeTexturesMutex );
+	// Wait until close to the next V-Sync but still far enough away to allow the time warp to complete rendering.
+	GpuWindow_DelayBeforeSwap( timeWarp->window, frameTime / 2 );
 
-	if ( newEyeTextures.index > timeWarp->eyeTexturesConsumedIndex &&
-			GpuFence_IsSignalled( context, newEyeTextures.completionFence[0] ) &&
-				GpuFence_IsSignalled( context, newEyeTextures.completionFence[1] ) )
+	timeWarp->eyeTexturesFrames[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES] = 0;
+
+	// Try to pick up the latest eye textures but never block the time warp thread.
+	// It is better to display an old set of eye textures than to miss the next V-Sync
+	// in case another thread is suspended while holding on to the mutex.
+	if ( Mutex_Lock( &timeWarp->newEyeTexturesMutex, false ) )
 	{
-		assert( newEyeTextures.index == timeWarp->eyeTexturesConsumedIndex + 1 );
-		timeWarp->eyeTexturesConsumedIndex = newEyeTextures.index;
-		timeWarp->projectionMatrix = newEyeTextures.projectionMatrix;
-		timeWarp->viewMatrix = newEyeTextures.viewMatrix;
-		for ( int eye = 0; eye < NUM_EYES; eye++ )
+		EyeTextures_t newEyeTextures = timeWarp->newEyeTextures;
+		Mutex_Unlock( &timeWarp->newEyeTexturesMutex );
+
+		// If this is a new set of eye textures.
+		if ( newEyeTextures.index > timeWarp->eyeTexturesConsumedIndex &&
+				// Never display the eye textures before they are meant to be displayed.
+				newEyeTextures.displayTime < nextSwapTime + frameTime / 2 &&
+					// Make sure both eye textures have completed rendering.
+					GpuFence_IsSignalled( &timeWarp->window->context, newEyeTextures.completionFence[0] ) &&
+						GpuFence_IsSignalled( &timeWarp->window->context, newEyeTextures.completionFence[1] ) )
 		{
-			timeWarp->eyeTexture[eye] = newEyeTextures.texture[eye];
-			timeWarp->eyeArrayLayer[eye] = newEyeTextures.arrayLayer[eye];
+			assert( newEyeTextures.index == timeWarp->eyeTexturesConsumedIndex + 1 );
+			timeWarp->eyeTexturesConsumedIndex = newEyeTextures.index;
+			timeWarp->displayTime = newEyeTextures.displayTime;
+			timeWarp->projectionMatrix = newEyeTextures.projectionMatrix;
+			timeWarp->viewMatrix = newEyeTextures.viewMatrix;
+			for ( int eye = 0; eye < NUM_EYES; eye++ )
+			{
+				timeWarp->eyeTexture[eye] = newEyeTextures.texture[eye];
+				timeWarp->eyeArrayLayer[eye] = newEyeTextures.arrayLayer[eye];
+			}
+			timeWarp->cpuTimes[PROFILE_TIME_EYE_TEXTURES] = newEyeTextures.cpuTime;
+			timeWarp->gpuTimes[PROFILE_TIME_EYE_TEXTURES] = newEyeTextures.gpuTime;
+			timeWarp->eyeTexturesFrames[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES] = 1;
+			Signal_Clear( &timeWarp->vsyncSignal );
+			Signal_Raise( &timeWarp->newEyeTexturesConsumed );
 		}
-		timeWarp->cpuTimes[PROFILE_TIME_EYE_TEXTURES] = newEyeTextures.cpuTime;
-		timeWarp->gpuTimes[PROFILE_TIME_EYE_TEXTURES] = newEyeTextures.gpuTime;
-		timeWarp->eyeTexturesFrames[timeWarp->timeWarpFrames % AVARGE_FRAME_RATE_FRAMES] = 1;
-		Signal_Raise( &timeWarp->newEyeTexturesConsumed );
 	}
-}
-
-static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window )
-{
-	TimeWarp_ConsumeNewEyeTextures( &window->context, timeWarp );
 
 	// Calculate the eye texture and time warp frame rates.
 	float timeWarpFrameRate = timeWarp->refreshRate;
 	float eyeTexturesFrameRate = timeWarp->refreshRate;
 	{
-		Microseconds_t lastTime = timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVARGE_FRAME_RATE_FRAMES];
-		Microseconds_t time = GpuWindow_GetNextSwapTime( window );
-		timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVARGE_FRAME_RATE_FRAMES] = time;
+		Microseconds_t lastTime = timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES];
+		Microseconds_t time = nextSwapTime;
+		timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES] = time;
 		timeWarp->timeWarpFrames++;
-		if ( timeWarp->timeWarpFrames > AVARGE_FRAME_RATE_FRAMES )
+		if ( timeWarp->timeWarpFrames > AVERAGE_FRAME_RATE_FRAMES )
 		{
-			int timeWarpFrames = AVARGE_FRAME_RATE_FRAMES;
+			int timeWarpFrames = AVERAGE_FRAME_RATE_FRAMES;
 			int eyeTexturesFrames = 0;
-			for ( int i = 0; i < AVARGE_FRAME_RATE_FRAMES; i++ )
+			for ( int i = 0; i < AVERAGE_FRAME_RATE_FRAMES; i++ )
 			{
 				eyeTexturesFrames += timeWarp->eyeTexturesFrames[i];
 			}
@@ -14041,36 +14980,37 @@ static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window )
 			const float * times = ( i == 0 ) ? timeWarp->cpuTimes : timeWarp->gpuTimes;
 			float barHeights[PROFILE_TIME_MAX];
 			float totalBarHeight = 0.0f;
-			for ( int i = 0; i < PROFILE_TIME_MAX; i++ )
+			for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
 			{
-				barHeights[i] = times[i] * timeWarp->refreshRate * ( 1.0f / 1000.0f );
-				totalBarHeight += barHeights[i];
+				barHeights[p] = times[p] * timeWarp->refreshRate * ( 1.0f / 1000.0f );
+				totalBarHeight += barHeights[p];
 			}
 
 			const float limit = 0.9f;
 			if ( totalBarHeight > limit )
 			{
 				totalBarHeight = 0.0f;
-				for ( int i = 0; i < PROFILE_TIME_MAX; i++ )
+				for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
 				{
-					barHeights[i] = ( totalBarHeight + barHeights[i] > limit ) ? ( limit - totalBarHeight ) : barHeights[i];
-					totalBarHeight += barHeights[i];
+					barHeights[p] = ( totalBarHeight + barHeights[p] > limit ) ? ( limit - totalBarHeight ) : barHeights[p];
+					totalBarHeight += barHeights[p];
 				}
 				barHeights[PROFILE_TIME_OVERFLOW] = 1.0f - limit;
 			}
 
 			BarGraph_t * barGraph = ( i == 0 ) ? &timeWarp->bargraphs.frameCpuTimeBarGraph : &timeWarp->bargraphs.frameGpuTimeBarGraph;
-			for ( int i = 0; i < PROFILE_TIME_MAX; i++ )
+			for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
 			{
-				BarGraph_AddBar( barGraph, i, barHeights[i], profileTimeBarColors[i], ( i == PROFILE_TIME_MAX - 1 ) );
+				BarGraph_AddBar( barGraph, p, barHeights[p], profileTimeBarColors[p], ( p == PROFILE_TIME_MAX - 1 ) );
 			}
 		}
 	}
 
 	FrameLog_BeginFrame();
 
-	const Microseconds_t refreshStartTime = GpuWindow_GetNextSwapTime( window );
-	const Microseconds_t refreshEndTime = refreshStartTime /* + refresh time for incremental display refresh */;
+	//assert( timeWarp->displayTime == nextSwapTime );
+	const Microseconds_t refreshStartTime = nextSwapTime;
+	const Microseconds_t refreshEndTime = refreshStartTime /* + display refresh time for an incremental display refresh */;
 
 	if ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS )
 	{
@@ -14097,23 +15037,210 @@ static void TimeWarp_Render( TimeWarp_t * timeWarp, GpuWindow_t * window )
 						timeWarp->gpuTimes[PROFILE_TIME_TIME_WARP] +
 						timeWarp->gpuTimes[PROFILE_TIME_BAR_GRAPHS] +
 						timeWarp->gpuTimes[PROFILE_TIME_BLIT], gpuTimeFramesDelayed );
+
+	GpuWindow_SwapBuffers( timeWarp->window );
+
+	Signal_Raise( &timeWarp->vsyncSignal );
 }
 
 /*
 ================================================================================================================================
 
-Scene rendering.
+ViewState_t
 
-Scene_t
+static void ViewState_Init( ViewState_t * viewState, const float interpupillaryDistance );
+static void ViewState_HandleInput( ViewState_t * viewState, GpuWindowInput_t * input, const Microseconds_t time );
+static void ViewState_HandleHmd( ViewState_t * viewState, const Microseconds_t time );
+
+================================================================================================================================
+*/
+
+typedef struct ViewState_t
+{
+	float						interpupillaryDistance;
+	Vector4f_t					viewport;
+	Vector3f_t					viewTranslationalVelocity;
+	Vector3f_t					viewRotationalVelocity;
+	Vector3f_t					viewTranslation;
+	Vector3f_t					viewRotation;
+	Matrix4x4f_t				hmdViewMatrix;						// HMD view matrix.
+	Matrix4x4f_t				centerViewMatrix;					// Center view matrix.
+	Matrix4x4f_t				viewMatrix[NUM_EYES];				// Per eye view matrix.
+	Matrix4x4f_t				projectionMatrix[NUM_EYES];			// Per eye projection matrix.
+	Matrix4x4f_t				viewInverseMatrix[NUM_EYES];		// Per eye inverse view matrix.
+	Matrix4x4f_t				projectionInverseMatrix[NUM_EYES];	// Per eye inverse projection matrix.
+	Matrix4x4f_t				combinedViewProjectionMatrix;		// Combined matrix containing all views for culling.
+} ViewState_t;
+
+static void ViewState_DerivedData( ViewState_t * viewState )
+{
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		Matrix4x4f_Invert( &viewState->viewInverseMatrix[eye], &viewState->viewMatrix[eye] );
+		Matrix4x4f_Invert( &viewState->projectionInverseMatrix[eye], &viewState->projectionMatrix[eye] );
+	}
+
+	// Derive a combined view and projection matrix that encapsulates both views.
+	Matrix4x4f_t combinedProjectionMatrix;
+	combinedProjectionMatrix = viewState->projectionMatrix[0];
+	combinedProjectionMatrix.m[0][0] = viewState->projectionMatrix[0].m[0][0] / ( fabsf( viewState->projectionMatrix[0].m[2][0] ) + 1.0f );
+	combinedProjectionMatrix.m[2][0] = 0.0f;
+ 
+	Matrix4x4f_t moveBackMatrix;
+	Matrix4x4f_CreateTranslation( &moveBackMatrix, 0.0f, 0.0f, -0.5f * viewState->interpupillaryDistance * combinedProjectionMatrix.m[0][0] );
+
+	Matrix4x4f_t combinedViewMatrix;
+	Matrix4x4f_Multiply( &combinedViewMatrix, &moveBackMatrix, &viewState->centerViewMatrix );
+
+	Matrix4x4f_Multiply( &viewState->combinedViewProjectionMatrix, &combinedProjectionMatrix, &combinedViewMatrix );
+}
+
+static void ViewState_Init( ViewState_t * viewState, const float interpupillaryDistance )
+{
+	viewState->interpupillaryDistance = interpupillaryDistance;
+	viewState->viewport.x = 0.0f;
+	viewState->viewport.y = 0.0f;
+	viewState->viewport.z = 1.0f;
+	viewState->viewport.w = 1.0f;
+	viewState->viewTranslationalVelocity.x = 0.0f;
+	viewState->viewTranslationalVelocity.y = 0.0f;
+	viewState->viewTranslationalVelocity.z = 0.0f;
+	viewState->viewRotationalVelocity.x = 0.0f;
+	viewState->viewRotationalVelocity.y = 0.0f;
+	viewState->viewRotationalVelocity.z = 0.0f;
+	viewState->viewTranslation.x = 0.0f;
+	viewState->viewTranslation.y = 1.5f;
+	viewState->viewTranslation.z = 0.25f;
+	viewState->viewRotation.x = 0.0f;
+	viewState->viewRotation.y = 0.0f;
+	viewState->viewRotation.z = 0.0f;
+
+	Matrix4x4f_CreateIdentity( &viewState->hmdViewMatrix );
+	Matrix4x4f_CreateIdentity( &viewState->centerViewMatrix );
+
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		Matrix4x4f_CreateIdentity( &viewState->viewMatrix[eye] );
+		Matrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 60.0f, 0.0f, 0.0f, 0.01f, 0.0f );
+
+		Matrix4x4f_Invert( &viewState->viewInverseMatrix[eye], &viewState->viewMatrix[eye] );
+		Matrix4x4f_Invert( &viewState->projectionInverseMatrix[eye], &viewState->projectionMatrix[eye] );
+	}
+
+	ViewState_DerivedData( viewState );
+}
+
+static void ViewState_HandleInput( ViewState_t * viewState, GpuWindowInput_t * input, const Microseconds_t time )
+{
+	static const float TRANSLATION_UNITS_PER_TAP		= 0.005f;
+	static const float TRANSLATION_UNITS_DECAY			= 0.0025f;
+	static const float ROTATION_DEGREES_PER_TAP			= 0.25f;
+	static const float ROTATION_DEGREES_DECAY			= 0.125f;
+	static const Vector3f_t minTranslationalVelocity	= { -0.05f, -0.05f, -0.05f};
+	static const Vector3f_t maxTranslationalVelocity	= { 0.05f, 0.05f, 0.05f };
+	static const Vector3f_t minRotationalVelocity		= { -2.0f, -2.0f, -2.0f };
+	static const Vector3f_t maxRotationalVelocity		= { 2.0f, 2.0f, 2.0f };
+
+	GetHmdViewMatrixForTime( &viewState->hmdViewMatrix, time );
+
+	Vector3f_t translationDelta = { 0.0f, 0.0f, 0.0f };
+	Vector3f_t rotationDelta = { 0.0f, 0.0f, 0.0f };
+
+	// NOTE: don't consume but only 'check' the keyboard state in case the input is maintained on another thread.
+	if ( GpuWindowInput_CheckKeyboardKey( input, KEY_SHIFT_LEFT ) )
+	{
+		if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ rotationDelta.x -= ROTATION_DEGREES_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )	{ rotationDelta.x += ROTATION_DEGREES_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )	{ rotationDelta.y += ROTATION_DEGREES_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ rotationDelta.y -= ROTATION_DEGREES_PER_TAP; }
+	}
+	else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CTRL_LEFT ) )
+	{
+		if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ translationDelta.y += TRANSLATION_UNITS_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )	{ translationDelta.y -= TRANSLATION_UNITS_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )	{ translationDelta.x -= TRANSLATION_UNITS_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ translationDelta.x += TRANSLATION_UNITS_PER_TAP; }
+	}
+	else
+	{
+		if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ translationDelta.z -= TRANSLATION_UNITS_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )	{ translationDelta.z += TRANSLATION_UNITS_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )	{ rotationDelta.y += ROTATION_DEGREES_PER_TAP; }
+		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ rotationDelta.y -= ROTATION_DEGREES_PER_TAP; }
+	}
+
+	Vector3f_Decay( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, TRANSLATION_UNITS_DECAY );
+	Vector3f_Decay( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, ROTATION_DEGREES_DECAY );
+
+	Vector3f_Add( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, &translationDelta );
+	Vector3f_Add( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, &rotationDelta );
+
+	Vector3f_Max( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, &minTranslationalVelocity );
+	Vector3f_Min( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, &maxTranslationalVelocity );
+
+	Vector3f_Max( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, &minRotationalVelocity );
+	Vector3f_Min( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, &maxRotationalVelocity );
+
+	Vector3f_Add( &viewState->viewRotation, &viewState->viewRotation, &viewState->viewRotationalVelocity );
+
+	Matrix4x4f_t yawRotation;
+	Matrix4x4f_CreateRotation( &yawRotation, 0.0f, viewState->viewRotation.y, 0.0f );
+
+	Vector3f_t rotatedTranslationalVelocity;
+	Matrix4x4f_TransformVector3f( &rotatedTranslationalVelocity, &yawRotation, &viewState->viewTranslationalVelocity );
+
+	Vector3f_Add( &viewState->viewTranslation, &viewState->viewTranslation, &rotatedTranslationalVelocity );
+
+	Matrix4x4f_t viewRotation;
+	Matrix4x4f_CreateRotation( &viewRotation, viewState->viewRotation.x, viewState->viewRotation.y, viewState->viewRotation.z );
+
+	Matrix4x4f_t viewRotationTranspose;
+	Matrix4x4f_Transpose( &viewRotationTranspose, &viewRotation );
+
+	Matrix4x4f_t viewTranslation;
+	Matrix4x4f_CreateTranslation( &viewTranslation, -viewState->viewTranslation.x, -viewState->viewTranslation.y, -viewState->viewTranslation.z );
+
+	Matrix4x4f_t inputViewMatrix;
+	Matrix4x4f_Multiply( &inputViewMatrix, &viewRotationTranspose, &viewTranslation );
+
+	Matrix4x4f_Multiply( &viewState->centerViewMatrix, &viewState->hmdViewMatrix, &inputViewMatrix );
+
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		Matrix4x4f_t eyeOffsetMatrix;
+		Matrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
+
+		Matrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
+		Matrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 60.0f, 0.0f, 0.0f, 0.01f, 0.0f );
+	}
+
+	ViewState_DerivedData( viewState );
+}
+
+static void ViewState_HandleHmd( ViewState_t * viewState, const Microseconds_t time )
+{
+	GetHmdViewMatrixForTime( &viewState->hmdViewMatrix, time );
+
+	viewState->centerViewMatrix = viewState->hmdViewMatrix;
+
+	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	{
+		Matrix4x4f_t eyeOffsetMatrix;
+		Matrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
+
+		Matrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
+		Matrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 72.0f, 0.0f, 0.0f, 0.01f, 0.0f );
+	}
+
+	ViewState_DerivedData( viewState );
+}
+
+/*
+================================================================================================================================
+
+Scene settings.
+
 SceneSettings_t
-
-static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings_t * settings, GpuRenderPass_t * renderPass );
-static void Scene_Destroy( GpuContext_t * context, Scene_t * scene );
-static void Scene_UpdateSettings( Scene_t * scene );
-static void Scene_Simulate( Scene_t * scene, const Microseconds_t time );
-static void Scene_UpdateMatrices( GpuCommandBuffer_t * commandBuffer, Scene_t * scene,
-									const Matrix4x4f_t * viewMatrix, const Matrix4x4f_t * projectionMatrix );
-static void Scene_Render( GpuCommandBuffer_t * commandBuffer, const Scene_t * scene );
 
 static void SceneSettings_ToggleSimulationPaused( SceneSettings_t * settings );
 static void SceneSettings_ToggleMultiView( SceneSettings_t * settings );
@@ -14201,6 +15328,22 @@ static int SceneSettings_GetTriangleLevel( const SceneSettings_t * settings ) { 
 static int SceneSettings_GetFragmentLevel( const SceneSettings_t * settings ) { return settings->fragmentLevel; }
 static int SceneSettings_GetSamplesLevel( const SceneSettings_t * settings ) { return settings->samplesLevel; }
 
+/*
+================================================================================================================================
+
+Performance scene rendering.
+
+PerfScene_t
+
+static void PerfScene_Create( GpuContext_t * context, PerfScene_t * scene, SceneSettings_t * settings, GpuRenderPass_t * renderPass );
+static void PerfScene_Destroy( GpuContext_t * context, PerfScene_t * scene );
+static void PerfScene_Simulate( PerfScene_t * scene, ViewState_t * viewState, const Microseconds_t time );
+static void PerfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, PerfScene_t * scene, ViewState_t * viewState, const int eye );
+static void PerfScene_Render( GpuCommandBuffer_t * commandBuffer, PerfScene_t * scene );
+
+================================================================================================================================
+*/
+
 typedef struct
 {
 	// assets
@@ -14219,7 +15362,7 @@ typedef struct
 	float					smallRotationX;
 	float					smallRotationY;
 	Matrix4x4f_t *			modelMatrix;
-} Scene_t;
+} PerfScene_t;
 
 enum
 {
@@ -15310,9 +16453,9 @@ static const unsigned int normalMapped2000LightsFragmentProgramSPIRV[] =
 	0x0003003e,0x00000089,0x00000025,0x000100fd,0x00010038
 };
 
-static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings_t * settings, GpuRenderPass_t * renderPass )
+static void PerfScene_Create( GpuContext_t * context, PerfScene_t * scene, SceneSettings_t * settings, GpuRenderPass_t * renderPass )
 {
-	memset( scene, 0, sizeof( Scene_t ) );
+	memset( scene, 0, sizeof( PerfScene_t ) );
 
 	GpuGeometry_CreateCube( context, &scene->geometry[0], 0.0f, 0.5f );			// 12 triangles
 	GpuGeometry_CreateTorus( context, &scene->geometry[1], 8, 0.0f, 1.0f );		// 128 triangles
@@ -15325,14 +16468,14 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 								PROGRAM( flatShadedFragmentProgram ),
 								sizeof( PROGRAM( flatShadedFragmentProgram ) ),
 								flatShadedProgramParms, ARRAY_SIZE( flatShadedProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL );
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL );
 	GpuGraphicsProgram_Create( context, &scene->program[1],
 								PROGRAM( normalMappedVertexProgram ),
 								sizeof( PROGRAM( normalMappedVertexProgram ) ),
 								PROGRAM( normalMapped100LightsFragmentProgram ),
 								sizeof( PROGRAM( normalMapped100LightsFragmentProgram ) ),
 								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
 								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
 								VERTEX_ATTRIBUTE_FLAG_UV0 );
 	GpuGraphicsProgram_Create( context, &scene->program[2],
@@ -15341,7 +16484,7 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 								PROGRAM( normalMapped1000LightsFragmentProgram ),
 								sizeof( PROGRAM( normalMapped1000LightsFragmentProgram ) ),
 								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
 								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
 								VERTEX_ATTRIBUTE_FLAG_UV0 );
 	GpuGraphicsProgram_Create( context, &scene->program[3],
@@ -15350,7 +16493,7 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 								PROGRAM( normalMapped2000LightsFragmentProgram ),
 								sizeof( PROGRAM( normalMapped2000LightsFragmentProgram ) ),
 								normalMappedProgramParms, ARRAY_SIZE( normalMappedProgramParms ),
-								VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
+								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
 								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
 								VERTEX_ATTRIBUTE_FLAG_UV0 );
 
@@ -15371,9 +16514,9 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 
 	GpuBuffer_Create( context, &scene->sceneMatrices, GPU_BUFFER_TYPE_UNIFORM, 2 * sizeof( Matrix4x4f_t ), NULL, false );
 
-	GpuTexture_CreateDefault( context, &scene->diffuseTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 1, 1, 1, true, false );
-	GpuTexture_CreateDefault( context, &scene->specularTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 1, 1, 1, true, false );
-	GpuTexture_CreateDefault( context, &scene->normalTexture, GPU_TEXTURE_DEFAULT_PYRAMIDS, 256, 256, 1, 1, 1, true, false );
+	GpuTexture_CreateDefault( context, &scene->diffuseTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 0, 1, 1, true, false );
+	GpuTexture_CreateDefault( context, &scene->specularTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 0, 1, 1, true, false );
+	GpuTexture_CreateDefault( context, &scene->normalTexture, GPU_TEXTURE_DEFAULT_PYRAMIDS, 256, 256, 0, 1, 1, true, false );
 
 	scene->settings = *settings;
 	scene->newSettings = settings;
@@ -15388,7 +16531,7 @@ static void Scene_Create( GpuContext_t * context, Scene_t * scene, SceneSettings
 	scene->modelMatrix = (Matrix4x4f_t *) AllocAlignedMemory( maxDimension * maxDimension * maxDimension * sizeof( Matrix4x4f_t ), sizeof( Matrix4x4f_t ) );
 }
 
-static void Scene_Destroy( GpuContext_t * context, Scene_t * scene )
+static void PerfScene_Destroy( GpuContext_t * context, PerfScene_t * scene )
 {
 	GpuContext_WaitIdle( context );
 
@@ -15420,37 +16563,35 @@ static void Scene_Destroy( GpuContext_t * context, Scene_t * scene )
 	scene->modelMatrix = NULL;
 }
 
-static void Scene_UpdateSettings( Scene_t * scene )
+static void PerfScene_Simulate( PerfScene_t * scene, ViewState_t * viewState, const Microseconds_t time )
 {
+	// Must recreate the scene if multi-view is enabled/disabled.
+	assert( scene->settings.useMultiView == scene->newSettings->useMultiView );
 	scene->settings = *scene->newSettings;
-}
 
-static void Scene_Simulate( Scene_t * scene, const Microseconds_t time )
-{
-	if ( scene->settings.simulationPaused )
+	ViewState_HandleHmd( viewState, time );
+
+	if ( !scene->settings.simulationPaused )
 	{
-		return;
+		const float offset = time * ( MATH_PI / 1000.0f / 1000.0f );
+		scene->bigRotationX = 20.0f * offset;
+		scene->bigRotationY = 10.0f * offset;
+		scene->smallRotationX = -60.0f * offset;
+		scene->smallRotationY = -40.0f * offset;
 	}
-
-	const float offset = time * ( MATH_PI / 1000.0f / 1000.0f );
-	scene->bigRotationX = 20.0f * offset;
-	scene->bigRotationY = 10.0f * offset;
-	scene->smallRotationX = -60.0f * offset;
-	scene->smallRotationY = -40.0f * offset;
 }
 
-static void Scene_UpdateMatrices( GpuCommandBuffer_t * commandBuffer, Scene_t * scene,
-									const Matrix4x4f_t * viewMatrix, const Matrix4x4f_t * projectionMatrix )
+static void PerfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, PerfScene_t * scene, ViewState_t * viewState, const int eye )
 {
 	void * sceneMatrices = NULL;
 	GpuBuffer_t * sceneMatricesBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &scene->sceneMatrices, &sceneMatrices );
 	const int numMatrices = 1;
-	memcpy( (char *)sceneMatrices + 0 * numMatrices * sizeof( Matrix4x4f_t ), viewMatrix, numMatrices * sizeof( Matrix4x4f_t ) );
-	memcpy( (char *)sceneMatrices + 1 * numMatrices * sizeof( Matrix4x4f_t ), projectionMatrix, numMatrices * sizeof( Matrix4x4f_t ) );
+	memcpy( (char *)sceneMatrices + 0 * numMatrices * sizeof( Matrix4x4f_t ), &viewState->viewMatrix[eye], numMatrices * sizeof( Matrix4x4f_t ) );
+	memcpy( (char *)sceneMatrices + 1 * numMatrices * sizeof( Matrix4x4f_t ), &viewState->projectionMatrix[eye], numMatrices * sizeof( Matrix4x4f_t ) );
 	GpuCommandBuffer_UnmapBuffer( commandBuffer, &scene->sceneMatrices, sceneMatricesBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
 }
 
-static void Scene_Render( GpuCommandBuffer_t * commandBuffer, const Scene_t * scene )
+static void PerfScene_Render( GpuCommandBuffer_t * commandBuffer, PerfScene_t * scene )
 {
 	const int dimension = 2 * ( 1 << scene->settings.drawCallLevel );
 	const float cubeOffset = ( dimension - 1.0f ) * 0.5f;
@@ -15498,6 +16639,2795 @@ static void Scene_Render( GpuCommandBuffer_t * commandBuffer, const Scene_t * sc
 		}
 	}
 }
+
+#if USE_GLTF == 1
+
+/*
+================================================================================================================================
+
+glTF scene rendering.
+
+GltfScene_t
+
+static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scene, const char * fileName, GpuRenderPass_t * renderPass );
+static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene );
+static void GltfScene_Simulate( GltfScene_t * scene, ViewState_t * viewState, GpuWindowInput_t * input, const Microseconds_t time );
+static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState, const int eye );
+static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState, const int eye );
+
+================================================================================================================================
+*/
+
+#include <utils/json.h>
+#include <utils/base64.h>
+
+#define GL_BYTE							0x1400
+#define GL_UNSIGNED_BYTE				0x1401
+#define GL_SHORT						0x1402
+#define GL_UNSIGNED_SHORT				0x1403
+
+#define GL_BOOL							0x8B56
+#define GL_BOOL_VEC2					0x8B57
+#define GL_BOOL_VEC3					0x8B58
+#define GL_BOOL_VEC4					0x8B59
+#define GL_INT							0x1404
+#define GL_INT_VEC2						0x8B53
+#define GL_INT_VEC3						0x8B54
+#define GL_INT_VEC4						0x8B55
+#define GL_FLOAT						0x1406
+#define GL_FLOAT_VEC2					0x8B50
+#define GL_FLOAT_VEC3					0x8B51
+#define GL_FLOAT_VEC4					0x8B52
+#define GL_FLOAT_MAT2					0x8B5A
+#define GL_FLOAT_MAT2x3					0x8B65
+#define GL_FLOAT_MAT2x4					0x8B66
+#define GL_FLOAT_MAT3x2					0x8B67
+#define GL_FLOAT_MAT3					0x8B5B
+#define GL_FLOAT_MAT3x4					0x8B68
+#define GL_FLOAT_MAT4x2					0x8B69
+#define GL_FLOAT_MAT4x3					0x8B6A
+#define GL_FLOAT_MAT4					0x8B5C
+#define GL_SAMPLER_1D					0x8B5D
+#define GL_SAMPLER_2D					0x8B5E
+#define GL_SAMPLER_3D					0x8B5F
+#define GL_SAMPLER_CUBE					0x8B60
+
+#define GL_TEXTURE_1D					0x0DE0
+#define GL_TEXTURE_2D					0x0DE1
+#define GL_TEXTURE_3D					0x806F
+#define GL_TEXTURE_CUBE_MAP				0x8513
+#define GL_TEXTURE_1D_ARRAY				0x8C18
+#define GL_TEXTURE_2D_ARRAY				0x8C1A
+#define GL_TEXTURE_CUBE_MAP_ARRAY		0x9009
+
+#define GL_NEAREST						0x2600
+#define GL_LINEAR						0x2601
+#define GL_NEAREST_MIPMAP_NEAREST		0x2700
+#define GL_LINEAR_MIPMAP_NEAREST		0x2701
+#define GL_NEAREST_MIPMAP_LINEAR		0x2702
+#define GL_LINEAR_MIPMAP_LINEAR			0x2703
+
+#define GL_CLAMP						0x2900
+#define GL_REPEAT						0x2901
+#define GL_CLAMP_TO_BORDER				0x812D
+
+#define GL_VERTEX_SHADER				0x8B31
+#define GL_FRAGMENT_SHADER				0x8B30
+
+#define GL_BLEND						0x0BE2
+#define GL_DEPTH_TEST					0x0B71
+#define GL_DEPTH_WRITEMASK				0x0B72
+#define GL_CULL_FACE					0x0B44
+#define GL_POLYGON_OFFSET_FILL			0x8037
+#define GL_SAMPLE_ALPHA_TO_COVERAGE		0x809E
+#define GL_SCISSOR_TEST					0x0C11
+
+#define GL_CW							0x0900
+#define GL_CCW							0x0901
+
+#define GL_NONE							0
+#define GL_FRONT						0x0404
+#define GL_BACK							0x0405
+
+#define GL_NEVER						0x0200
+#define GL_LESS							0x0201
+#define GL_EQUAL						0x0202
+#define GL_LEQUAL						0x0203
+#define GL_GREATER						0x0204
+#define GL_NOTEQUAL						0x0205
+#define GL_GEQUAL						0x0206
+#define GL_ALWAYS						0x0207
+
+#define GL_FUNC_ADD						0x8006
+#define GL_FUNC_SUBTRACT				0x800A
+#define GL_FUNC_REVERSE_SUBTRACT		0x800B
+#define GL_MIN							0x8007
+#define GL_MAX							0x8008
+
+#define GL_ZERO							0
+#define GL_ONE							1
+#define GL_SRC_COLOR					0x0300
+#define GL_ONE_MINUS_SRC_COLOR			0x0301
+#define GL_DST_COLOR					0x0306
+#define GL_ONE_MINUS_DST_COLOR			0x0307
+#define GL_SRC_ALPHA					0x0302
+#define GL_ONE_MINUS_SRC_ALPHA			0x0303
+#define GL_DST_ALPHA					0x0304
+#define GL_ONE_MINUS_DST_ALPHA			0x0305
+#define GL_CONSTANT_COLOR				0x8001
+#define GL_ONE_MINUS_CONSTANT_COLOR		0x8002
+#define GL_CONSTANT_ALPHA				0x8003
+#define GL_ONE_MINUS_CONSTANT_ALPHA		0x8004
+#define GL_SRC_ALPHA_SATURATE			0x0308
+
+static GpuProgramParm_t unitCubeFlatShadeProgramParms[] =
+{
+	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	0,		"ModelMatrix",		  0 },
+	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	1,		"ViewMatrix",		 64 },
+	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	2,		"ProjectionMatrix",	128 }
+};
+
+static const char unitCubeFlatShadeVertexProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"layout( location = 0 ) in vec3 vertexPosition;\n"
+	"layout( location = 1 ) in vec3 vertexNormal;\n"
+	"layout( std140, push_constant ) uniform PushConstants\n"
+	"{\n"
+	"	layout( offset =   0 ) mat4 ModelMatrix;\n"
+	"	layout( offset =  64 ) mat4 ViewMatrix;\n"
+	"	layout( offset = 128 ) mat4 ProjectionMatrix;\n"
+	"} pc;\n"
+	"layout( location = 0 ) out vec3 fragmentEyeDir;\n"
+	"layout( location = 1 ) out vec3 fragmentNormal;\n"
+	"out gl_PerVertex { vec4 gl_Position; };\n"
+	"vec3 multiply3x3( mat4 m, vec3 v )\n"
+	"{\n"
+	"	return vec3(\n"
+	"		m[0].x * v.x + m[1].x * v.y + m[2].x * v.z,\n"
+	"		m[0].y * v.x + m[1].y * v.y + m[2].y * v.z,\n"
+	"		m[0].z * v.x + m[1].z * v.y + m[2].z * v.z );\n"
+	"}\n"
+	"vec3 transposeMultiply3x3( mat4 m, vec3 v )\n"
+	"{\n"
+	"	return vec3(\n"
+	"		m[0].x * v.x + m[0].y * v.y + m[0].z * v.z,\n"
+	"		m[1].x * v.x + m[1].y * v.y + m[1].z * v.z,\n"
+	"		m[2].x * v.x + m[2].y * v.y + m[2].z * v.z );\n"
+	"}\n"
+	"void main( void )\n"
+	"{\n"
+	"	vec4 vertexWorldPos = pc.ModelMatrix * vec4( vertexPosition, 1.0 );\n"
+	"	vec3 eyeWorldPos = transposeMultiply3x3( pc.ViewMatrix, -vec3( pc.ViewMatrix[3] ) );\n"
+	"	gl_Position = pc.ProjectionMatrix * ( pc.ViewMatrix * vertexWorldPos );\n"
+	"	fragmentEyeDir = eyeWorldPos - vec3( vertexWorldPos );\n"
+	"	fragmentNormal = multiply3x3( pc.ModelMatrix, vertexNormal );\n"
+	"}\n";
+
+static const char unitCubeFlatShadeFragmentProgramGLSL[] =
+	"#version " GLSL_PROGRAM_VERSION "\n"
+	GLSL_EXTENSIONS
+	"layout( location = 0 ) in lowp vec3 fragmentEyeDir;\n"
+	"layout( location = 1 ) in lowp vec3 fragmentNormal;\n"
+	"layout( location = 0 ) out lowp vec4 outColor;\n"
+	"void main()\n"
+	"{\n"
+	"	lowp vec3 diffuseMap = vec3( 0.2, 0.2, 1.0 );\n"
+	"	lowp vec3 specularMap = vec3( 0.5, 0.5, 0.5 );\n"
+	"	lowp float specularPower = 10.0;\n"
+	"	lowp vec3 eyeDir = normalize( fragmentEyeDir );\n"
+	"	lowp vec3 normal = normalize( fragmentNormal );\n"
+	"\n"
+	"	lowp vec3 lightDir = normalize( vec3( -1.0, 1.0, 1.0 ) );\n"
+	"	lowp vec3 lightReflection = normalize( 2.0 * dot( lightDir, normal ) * normal - lightDir );\n"
+	"	lowp vec3 lightDiffuse = diffuseMap * ( max( dot( normal, lightDir ), 0.0 ) * 0.5 + 0.5 );\n"
+	"	lowp vec3 lightSpecular = specularMap * pow( max( dot( lightReflection, eyeDir ), 0.0 ), specularPower );\n"
+	"\n"
+	"	outColor.xyz = lightDiffuse + lightSpecular;\n"
+	"	outColor.w = 1.0;\n"
+	"}\n";
+
+static const unsigned int unitCubeFlatShadeVertexProgramSPIRV[] =
+{
+	// SPIRV99.947 15-Feb-2016
+	0x07230203,0x00010000,0x00080001,0x000000c7,0x00000000,0x00020011,0x00000001,0x0006000b,
+	0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
+	0x000a000f,0x00000000,0x00000004,0x6e69616d,0x00000000,0x00000093,0x000000ac,0x000000b7,
+	0x000000bf,0x000000c0,0x00030003,0x00000001,0x00000136,0x00070004,0x415f4c47,0x655f4252,
+	0x6e61686e,0x5f646563,0x6f79616c,0x00737475,0x00070004,0x455f4c47,0x735f5458,0x65646168,
+	0x6f695f72,0x6f6c625f,0x00736b63,0x00040005,0x00000004,0x6e69616d,0x00000000,0x00080005,
+	0x0000000f,0x746c756d,0x796c7069,0x28337833,0x3434666d,0x3366763b,0x0000003b,0x00030005,
+	0x0000000d,0x0000006d,0x00030005,0x0000000e,0x00000076,0x000a0005,0x00000013,0x6e617274,
+	0x736f7073,0x6c754d65,0x6c706974,0x33783379,0x34666d28,0x66763b34,0x00003b33,0x00030005,
+	0x00000011,0x0000006d,0x00030005,0x00000012,0x00000076,0x00060005,0x0000008b,0x74726576,
+	0x6f577865,0x50646c72,0x0000736f,0x00060005,0x0000008c,0x68737550,0x736e6f43,0x746e6174,
+	0x00000073,0x00060006,0x0000008c,0x00000000,0x65646f4d,0x74614d6c,0x00786972,0x00060006,
+	0x0000008c,0x00000001,0x77656956,0x7274614d,0x00007869,0x00080006,0x0000008c,0x00000002,
+	0x6a6f7250,0x69746365,0x614d6e6f,0x78697274,0x00000000,0x00030005,0x0000008e,0x00006370,
+	0x00060005,0x00000093,0x74726576,0x6f507865,0x69746973,0x00006e6f,0x00050005,0x0000009b,
+	0x57657965,0x646c726f,0x00736f50,0x00040005,0x000000a5,0x61726170,0x0000006d,0x00040005,
+	0x000000a8,0x61726170,0x0000006d,0x00060005,0x000000aa,0x505f6c67,0x65567265,0x78657472,
+	0x00000000,0x00060006,0x000000aa,0x00000000,0x505f6c67,0x7469736f,0x006e6f69,0x00030005,
+	0x000000ac,0x00000000,0x00060005,0x000000b7,0x67617266,0x746e656d,0x44657945,0x00007269,
+	0x00060005,0x000000bf,0x67617266,0x746e656d,0x6d726f4e,0x00006c61,0x00060005,0x000000c0,
+	0x74726576,0x6f4e7865,0x6c616d72,0x00000000,0x00040005,0x000000c1,0x61726170,0x0000006d,
+	0x00040005,0x000000c4,0x61726170,0x0000006d,0x00040048,0x0000008c,0x00000000,0x00000005,
+	0x00050048,0x0000008c,0x00000000,0x00000023,0x00000000,0x00050048,0x0000008c,0x00000000,
+	0x00000007,0x00000010,0x00040048,0x0000008c,0x00000001,0x00000005,0x00050048,0x0000008c,
+	0x00000001,0x00000023,0x00000040,0x00050048,0x0000008c,0x00000001,0x00000007,0x00000010,
+	0x00040048,0x0000008c,0x00000002,0x00000005,0x00050048,0x0000008c,0x00000002,0x00000023,
+	0x00000080,0x00050048,0x0000008c,0x00000002,0x00000007,0x00000010,0x00030047,0x0000008c,
+	0x00000002,0x00040047,0x00000093,0x0000001e,0x00000000,0x00050048,0x000000aa,0x00000000,
+	0x0000000b,0x00000000,0x00030047,0x000000aa,0x00000002,0x00040047,0x000000b7,0x0000001e,
+	0x00000000,0x00040047,0x000000bf,0x0000001e,0x00000001,0x00040047,0x000000c0,0x0000001e,
+	0x00000001,0x00020013,0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,0x00000006,
+	0x00000020,0x00040017,0x00000007,0x00000006,0x00000004,0x00040018,0x00000008,0x00000007,
+	0x00000004,0x00040020,0x00000009,0x00000007,0x00000008,0x00040017,0x0000000a,0x00000006,
+	0x00000003,0x00040020,0x0000000b,0x00000007,0x0000000a,0x00050021,0x0000000c,0x0000000a,
+	0x00000009,0x0000000b,0x00040015,0x00000015,0x00000020,0x00000001,0x0004002b,0x00000015,
+	0x00000016,0x00000000,0x00040015,0x00000017,0x00000020,0x00000000,0x0004002b,0x00000017,
+	0x00000018,0x00000000,0x00040020,0x00000019,0x00000007,0x00000006,0x0004002b,0x00000015,
+	0x0000001f,0x00000001,0x0004002b,0x00000017,0x00000022,0x00000001,0x0004002b,0x00000015,
+	0x00000027,0x00000002,0x0004002b,0x00000017,0x0000002a,0x00000002,0x00040020,0x0000008a,
+	0x00000007,0x00000007,0x0005001e,0x0000008c,0x00000008,0x00000008,0x00000008,0x00040020,
+	0x0000008d,0x00000009,0x0000008c,0x0004003b,0x0000008d,0x0000008e,0x00000009,0x00040020,
+	0x0000008f,0x00000009,0x00000008,0x00040020,0x00000092,0x00000001,0x0000000a,0x0004003b,
+	0x00000092,0x00000093,0x00000001,0x0004002b,0x00000006,0x00000095,0x3f800000,0x0004002b,
+	0x00000015,0x0000009c,0x00000003,0x00040020,0x0000009d,0x00000009,0x00000007,0x0003001e,
+	0x000000aa,0x00000007,0x00040020,0x000000ab,0x00000003,0x000000aa,0x0004003b,0x000000ab,
+	0x000000ac,0x00000003,0x00040020,0x000000b4,0x00000003,0x00000007,0x00040020,0x000000b6,
+	0x00000003,0x0000000a,0x0004003b,0x000000b6,0x000000b7,0x00000003,0x0004003b,0x000000b6,
+	0x000000bf,0x00000003,0x0004003b,0x00000092,0x000000c0,0x00000001,0x00050036,0x00000002,
+	0x00000004,0x00000000,0x00000003,0x000200f8,0x00000005,0x0004003b,0x0000008a,0x0000008b,
+	0x00000007,0x0004003b,0x0000000b,0x0000009b,0x00000007,0x0004003b,0x00000009,0x000000a5,
+	0x00000007,0x0004003b,0x0000000b,0x000000a8,0x00000007,0x0004003b,0x00000009,0x000000c1,
+	0x00000007,0x0004003b,0x0000000b,0x000000c4,0x00000007,0x00050041,0x0000008f,0x00000090,
+	0x0000008e,0x00000016,0x0004003d,0x00000008,0x00000091,0x00000090,0x0004003d,0x0000000a,
+	0x00000094,0x00000093,0x00050051,0x00000006,0x00000096,0x00000094,0x00000000,0x00050051,
+	0x00000006,0x00000097,0x00000094,0x00000001,0x00050051,0x00000006,0x00000098,0x00000094,
+	0x00000002,0x00070050,0x00000007,0x00000099,0x00000096,0x00000097,0x00000098,0x00000095,
+	0x00050091,0x00000007,0x0000009a,0x00000091,0x00000099,0x0003003e,0x0000008b,0x0000009a,
+	0x00060041,0x0000009d,0x0000009e,0x0000008e,0x0000001f,0x0000009c,0x0004003d,0x00000007,
+	0x0000009f,0x0000009e,0x00050051,0x00000006,0x000000a0,0x0000009f,0x00000000,0x00050051,
+	0x00000006,0x000000a1,0x0000009f,0x00000001,0x00050051,0x00000006,0x000000a2,0x0000009f,
+	0x00000002,0x00060050,0x0000000a,0x000000a3,0x000000a0,0x000000a1,0x000000a2,0x0004007f,
+	0x0000000a,0x000000a4,0x000000a3,0x00050041,0x0000008f,0x000000a6,0x0000008e,0x0000001f,
+	0x0004003d,0x00000008,0x000000a7,0x000000a6,0x0003003e,0x000000a5,0x000000a7,0x0003003e,
+	0x000000a8,0x000000a4,0x00060039,0x0000000a,0x000000a9,0x00000013,0x000000a5,0x000000a8,
+	0x0003003e,0x0000009b,0x000000a9,0x00050041,0x0000008f,0x000000ad,0x0000008e,0x00000027,
+	0x0004003d,0x00000008,0x000000ae,0x000000ad,0x00050041,0x0000008f,0x000000af,0x0000008e,
+	0x0000001f,0x0004003d,0x00000008,0x000000b0,0x000000af,0x0004003d,0x00000007,0x000000b1,
+	0x0000008b,0x00050091,0x00000007,0x000000b2,0x000000b0,0x000000b1,0x00050091,0x00000007,
+	0x000000b3,0x000000ae,0x000000b2,0x00050041,0x000000b4,0x000000b5,0x000000ac,0x00000016,
+	0x0003003e,0x000000b5,0x000000b3,0x0004003d,0x0000000a,0x000000b8,0x0000009b,0x0004003d,
+	0x00000007,0x000000b9,0x0000008b,0x00050051,0x00000006,0x000000ba,0x000000b9,0x00000000,
+	0x00050051,0x00000006,0x000000bb,0x000000b9,0x00000001,0x00050051,0x00000006,0x000000bc,
+	0x000000b9,0x00000002,0x00060050,0x0000000a,0x000000bd,0x000000ba,0x000000bb,0x000000bc,
+	0x00050083,0x0000000a,0x000000be,0x000000b8,0x000000bd,0x0003003e,0x000000b7,0x000000be,
+	0x00050041,0x0000008f,0x000000c2,0x0000008e,0x00000016,0x0004003d,0x00000008,0x000000c3,
+	0x000000c2,0x0003003e,0x000000c1,0x000000c3,0x0004003d,0x0000000a,0x000000c5,0x000000c0,
+	0x0003003e,0x000000c4,0x000000c5,0x00060039,0x0000000a,0x000000c6,0x0000000f,0x000000c1,
+	0x000000c4,0x0003003e,0x000000bf,0x000000c6,0x000100fd,0x00010038,0x00050036,0x0000000a,
+	0x0000000f,0x00000000,0x0000000c,0x00030037,0x00000009,0x0000000d,0x00030037,0x0000000b,
+	0x0000000e,0x000200f8,0x00000010,0x00060041,0x00000019,0x0000001a,0x0000000d,0x00000016,
+	0x00000018,0x0004003d,0x00000006,0x0000001b,0x0000001a,0x00050041,0x00000019,0x0000001c,
+	0x0000000e,0x00000018,0x0004003d,0x00000006,0x0000001d,0x0000001c,0x00050085,0x00000006,
+	0x0000001e,0x0000001b,0x0000001d,0x00060041,0x00000019,0x00000020,0x0000000d,0x0000001f,
+	0x00000018,0x0004003d,0x00000006,0x00000021,0x00000020,0x00050041,0x00000019,0x00000023,
+	0x0000000e,0x00000022,0x0004003d,0x00000006,0x00000024,0x00000023,0x00050085,0x00000006,
+	0x00000025,0x00000021,0x00000024,0x00050081,0x00000006,0x00000026,0x0000001e,0x00000025,
+	0x00060041,0x00000019,0x00000028,0x0000000d,0x00000027,0x00000018,0x0004003d,0x00000006,
+	0x00000029,0x00000028,0x00050041,0x00000019,0x0000002b,0x0000000e,0x0000002a,0x0004003d,
+	0x00000006,0x0000002c,0x0000002b,0x00050085,0x00000006,0x0000002d,0x00000029,0x0000002c,
+	0x00050081,0x00000006,0x0000002e,0x00000026,0x0000002d,0x00060041,0x00000019,0x0000002f,
+	0x0000000d,0x00000016,0x00000022,0x0004003d,0x00000006,0x00000030,0x0000002f,0x00050041,
+	0x00000019,0x00000031,0x0000000e,0x00000018,0x0004003d,0x00000006,0x00000032,0x00000031,
+	0x00050085,0x00000006,0x00000033,0x00000030,0x00000032,0x00060041,0x00000019,0x00000034,
+	0x0000000d,0x0000001f,0x00000022,0x0004003d,0x00000006,0x00000035,0x00000034,0x00050041,
+	0x00000019,0x00000036,0x0000000e,0x00000022,0x0004003d,0x00000006,0x00000037,0x00000036,
+	0x00050085,0x00000006,0x00000038,0x00000035,0x00000037,0x00050081,0x00000006,0x00000039,
+	0x00000033,0x00000038,0x00060041,0x00000019,0x0000003a,0x0000000d,0x00000027,0x00000022,
+	0x0004003d,0x00000006,0x0000003b,0x0000003a,0x00050041,0x00000019,0x0000003c,0x0000000e,
+	0x0000002a,0x0004003d,0x00000006,0x0000003d,0x0000003c,0x00050085,0x00000006,0x0000003e,
+	0x0000003b,0x0000003d,0x00050081,0x00000006,0x0000003f,0x00000039,0x0000003e,0x00060041,
+	0x00000019,0x00000040,0x0000000d,0x00000016,0x0000002a,0x0004003d,0x00000006,0x00000041,
+	0x00000040,0x00050041,0x00000019,0x00000042,0x0000000e,0x00000018,0x0004003d,0x00000006,
+	0x00000043,0x00000042,0x00050085,0x00000006,0x00000044,0x00000041,0x00000043,0x00060041,
+	0x00000019,0x00000045,0x0000000d,0x0000001f,0x0000002a,0x0004003d,0x00000006,0x00000046,
+	0x00000045,0x00050041,0x00000019,0x00000047,0x0000000e,0x00000022,0x0004003d,0x00000006,
+	0x00000048,0x00000047,0x00050085,0x00000006,0x00000049,0x00000046,0x00000048,0x00050081,
+	0x00000006,0x0000004a,0x00000044,0x00000049,0x00060041,0x00000019,0x0000004b,0x0000000d,
+	0x00000027,0x0000002a,0x0004003d,0x00000006,0x0000004c,0x0000004b,0x00050041,0x00000019,
+	0x0000004d,0x0000000e,0x0000002a,0x0004003d,0x00000006,0x0000004e,0x0000004d,0x00050085,
+	0x00000006,0x0000004f,0x0000004c,0x0000004e,0x00050081,0x00000006,0x00000050,0x0000004a,
+	0x0000004f,0x00060050,0x0000000a,0x00000051,0x0000002e,0x0000003f,0x00000050,0x000200fe,
+	0x00000051,0x00010038,0x00050036,0x0000000a,0x00000013,0x00000000,0x0000000c,0x00030037,
+	0x00000009,0x00000011,0x00030037,0x0000000b,0x00000012,0x000200f8,0x00000014,0x00060041,
+	0x00000019,0x00000054,0x00000011,0x00000016,0x00000018,0x0004003d,0x00000006,0x00000055,
+	0x00000054,0x00050041,0x00000019,0x00000056,0x00000012,0x00000018,0x0004003d,0x00000006,
+	0x00000057,0x00000056,0x00050085,0x00000006,0x00000058,0x00000055,0x00000057,0x00060041,
+	0x00000019,0x00000059,0x00000011,0x00000016,0x00000022,0x0004003d,0x00000006,0x0000005a,
+	0x00000059,0x00050041,0x00000019,0x0000005b,0x00000012,0x00000022,0x0004003d,0x00000006,
+	0x0000005c,0x0000005b,0x00050085,0x00000006,0x0000005d,0x0000005a,0x0000005c,0x00050081,
+	0x00000006,0x0000005e,0x00000058,0x0000005d,0x00060041,0x00000019,0x0000005f,0x00000011,
+	0x00000016,0x0000002a,0x0004003d,0x00000006,0x00000060,0x0000005f,0x00050041,0x00000019,
+	0x00000061,0x00000012,0x0000002a,0x0004003d,0x00000006,0x00000062,0x00000061,0x00050085,
+	0x00000006,0x00000063,0x00000060,0x00000062,0x00050081,0x00000006,0x00000064,0x0000005e,
+	0x00000063,0x00060041,0x00000019,0x00000065,0x00000011,0x0000001f,0x00000018,0x0004003d,
+	0x00000006,0x00000066,0x00000065,0x00050041,0x00000019,0x00000067,0x00000012,0x00000018,
+	0x0004003d,0x00000006,0x00000068,0x00000067,0x00050085,0x00000006,0x00000069,0x00000066,
+	0x00000068,0x00060041,0x00000019,0x0000006a,0x00000011,0x0000001f,0x00000022,0x0004003d,
+	0x00000006,0x0000006b,0x0000006a,0x00050041,0x00000019,0x0000006c,0x00000012,0x00000022,
+	0x0004003d,0x00000006,0x0000006d,0x0000006c,0x00050085,0x00000006,0x0000006e,0x0000006b,
+	0x0000006d,0x00050081,0x00000006,0x0000006f,0x00000069,0x0000006e,0x00060041,0x00000019,
+	0x00000070,0x00000011,0x0000001f,0x0000002a,0x0004003d,0x00000006,0x00000071,0x00000070,
+	0x00050041,0x00000019,0x00000072,0x00000012,0x0000002a,0x0004003d,0x00000006,0x00000073,
+	0x00000072,0x00050085,0x00000006,0x00000074,0x00000071,0x00000073,0x00050081,0x00000006,
+	0x00000075,0x0000006f,0x00000074,0x00060041,0x00000019,0x00000076,0x00000011,0x00000027,
+	0x00000018,0x0004003d,0x00000006,0x00000077,0x00000076,0x00050041,0x00000019,0x00000078,
+	0x00000012,0x00000018,0x0004003d,0x00000006,0x00000079,0x00000078,0x00050085,0x00000006,
+	0x0000007a,0x00000077,0x00000079,0x00060041,0x00000019,0x0000007b,0x00000011,0x00000027,
+	0x00000022,0x0004003d,0x00000006,0x0000007c,0x0000007b,0x00050041,0x00000019,0x0000007d,
+	0x00000012,0x00000022,0x0004003d,0x00000006,0x0000007e,0x0000007d,0x00050085,0x00000006,
+	0x0000007f,0x0000007c,0x0000007e,0x00050081,0x00000006,0x00000080,0x0000007a,0x0000007f,
+	0x00060041,0x00000019,0x00000081,0x00000011,0x00000027,0x0000002a,0x0004003d,0x00000006,
+	0x00000082,0x00000081,0x00050041,0x00000019,0x00000083,0x00000012,0x0000002a,0x0004003d,
+	0x00000006,0x00000084,0x00000083,0x00050085,0x00000006,0x00000085,0x00000082,0x00000084,
+	0x00050081,0x00000006,0x00000086,0x00000080,0x00000085,0x00060050,0x0000000a,0x00000087,
+	0x00000064,0x00000075,0x00000086,0x000200fe,0x00000087,0x00010038
+};
+
+static const unsigned int unitCubeFlatShadeFragmentProgramSPIRV[] =
+{
+	// SPIRV99.947 15-Feb-2016
+	0x07230203,0x00010000,0x00080001,0x0000004a,0x00000000,0x00020011,0x00000001,0x0006000b,
+	0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
+	0x0008000f,0x00000004,0x00000004,0x6e69616d,0x00000000,0x00000015,0x00000019,0x00000040,
+	0x00030010,0x00000004,0x00000007,0x00030003,0x00000001,0x00000136,0x00070004,0x415f4c47,
+	0x655f4252,0x6e61686e,0x5f646563,0x6f79616c,0x00737475,0x00070004,0x455f4c47,0x735f5458,
+	0x65646168,0x6f695f72,0x6f6c625f,0x00736b63,0x00040005,0x00000004,0x6e69616d,0x00000000,
+	0x00050005,0x00000009,0x66666964,0x4d657375,0x00007061,0x00050005,0x0000000d,0x63657073,
+	0x72616c75,0x0070614d,0x00060005,0x00000011,0x63657073,0x72616c75,0x65776f50,0x00000072,
+	0x00040005,0x00000013,0x44657965,0x00007269,0x00060005,0x00000015,0x67617266,0x746e656d,
+	0x44657945,0x00007269,0x00040005,0x00000018,0x6d726f6e,0x00006c61,0x00060005,0x00000019,
+	0x67617266,0x746e656d,0x6d726f4e,0x00006c61,0x00050005,0x0000001c,0x6867696c,0x72694474,
+	0x00000000,0x00060005,0x00000020,0x6867696c,0x66655274,0x7463656c,0x006e6f69,0x00060005,
+	0x0000002b,0x6867696c,0x66694474,0x65737566,0x00000000,0x00060005,0x00000035,0x6867696c,
+	0x65705374,0x616c7563,0x00000072,0x00050005,0x00000040,0x4374756f,0x726f6c6f,0x00000000,
+	0x00030047,0x00000009,0x00000000,0x00030047,0x0000000d,0x00000000,0x00030047,0x00000011,
+	0x00000000,0x00030047,0x00000013,0x00000000,0x00030047,0x00000015,0x00000000,0x00040047,
+	0x00000015,0x0000001e,0x00000000,0x00030047,0x00000016,0x00000000,0x00030047,0x00000017,
+	0x00000000,0x00030047,0x00000018,0x00000000,0x00030047,0x00000019,0x00000000,0x00040047,
+	0x00000019,0x0000001e,0x00000001,0x00030047,0x0000001a,0x00000000,0x00030047,0x0000001b,
+	0x00000000,0x00030047,0x0000001c,0x00000000,0x00030047,0x00000020,0x00000000,0x00030047,
+	0x00000022,0x00000000,0x00030047,0x00000023,0x00000000,0x00030047,0x00000024,0x00000000,
+	0x00030047,0x00000025,0x00000000,0x00030047,0x00000026,0x00000000,0x00030047,0x00000027,
+	0x00000000,0x00030047,0x00000028,0x00000000,0x00030047,0x00000029,0x00000000,0x00030047,
+	0x0000002a,0x00000000,0x00030047,0x0000002b,0x00000000,0x00030047,0x0000002c,0x00000000,
+	0x00030047,0x0000002d,0x00000000,0x00030047,0x0000002e,0x00000000,0x00030047,0x0000002f,
+	0x00000000,0x00030047,0x00000031,0x00000000,0x00030047,0x00000032,0x00000000,0x00030047,
+	0x00000033,0x00000000,0x00030047,0x00000034,0x00000000,0x00030047,0x00000035,0x00000000,
+	0x00030047,0x00000036,0x00000000,0x00030047,0x00000037,0x00000000,0x00030047,0x00000038,
+	0x00000000,0x00030047,0x00000039,0x00000000,0x00030047,0x0000003a,0x00000000,0x00030047,
+	0x0000003b,0x00000000,0x00030047,0x0000003c,0x00000000,0x00030047,0x0000003d,0x00000000,
+	0x00030047,0x00000040,0x00000000,0x00040047,0x00000040,0x0000001e,0x00000000,0x00030047,
+	0x00000041,0x00000000,0x00030047,0x00000042,0x00000000,0x00030047,0x00000043,0x00000000,
+	0x00020013,0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,0x00000006,0x00000020,
+	0x00040017,0x00000007,0x00000006,0x00000003,0x00040020,0x00000008,0x00000007,0x00000007,
+	0x0004002b,0x00000006,0x0000000a,0x3e4ccccd,0x0004002b,0x00000006,0x0000000b,0x3f800000,
+	0x0006002c,0x00000007,0x0000000c,0x0000000a,0x0000000a,0x0000000b,0x0004002b,0x00000006,
+	0x0000000e,0x3f000000,0x0006002c,0x00000007,0x0000000f,0x0000000e,0x0000000e,0x0000000e,
+	0x00040020,0x00000010,0x00000007,0x00000006,0x0004002b,0x00000006,0x00000012,0x41200000,
+	0x00040020,0x00000014,0x00000001,0x00000007,0x0004003b,0x00000014,0x00000015,0x00000001,
+	0x0004003b,0x00000014,0x00000019,0x00000001,0x0004002b,0x00000006,0x0000001d,0xbf13cd3a,
+	0x0004002b,0x00000006,0x0000001e,0x3f13cd3a,0x0006002c,0x00000007,0x0000001f,0x0000001d,
+	0x0000001e,0x0000001e,0x0004002b,0x00000006,0x00000021,0x40000000,0x0004002b,0x00000006,
+	0x00000030,0x00000000,0x00040017,0x0000003e,0x00000006,0x00000004,0x00040020,0x0000003f,
+	0x00000003,0x0000003e,0x0004003b,0x0000003f,0x00000040,0x00000003,0x00040015,0x00000046,
+	0x00000020,0x00000000,0x0004002b,0x00000046,0x00000047,0x00000003,0x00040020,0x00000048,
+	0x00000003,0x00000006,0x00050036,0x00000002,0x00000004,0x00000000,0x00000003,0x000200f8,
+	0x00000005,0x0004003b,0x00000008,0x00000009,0x00000007,0x0004003b,0x00000008,0x0000000d,
+	0x00000007,0x0004003b,0x00000010,0x00000011,0x00000007,0x0004003b,0x00000008,0x00000013,
+	0x00000007,0x0004003b,0x00000008,0x00000018,0x00000007,0x0004003b,0x00000008,0x0000001c,
+	0x00000007,0x0004003b,0x00000008,0x00000020,0x00000007,0x0004003b,0x00000008,0x0000002b,
+	0x00000007,0x0004003b,0x00000008,0x00000035,0x00000007,0x0003003e,0x00000009,0x0000000c,
+	0x0003003e,0x0000000d,0x0000000f,0x0003003e,0x00000011,0x00000012,0x0004003d,0x00000007,
+	0x00000016,0x00000015,0x0006000c,0x00000007,0x00000017,0x00000001,0x00000045,0x00000016,
+	0x0003003e,0x00000013,0x00000017,0x0004003d,0x00000007,0x0000001a,0x00000019,0x0006000c,
+	0x00000007,0x0000001b,0x00000001,0x00000045,0x0000001a,0x0003003e,0x00000018,0x0000001b,
+	0x0003003e,0x0000001c,0x0000001f,0x0004003d,0x00000007,0x00000022,0x0000001c,0x0004003d,
+	0x00000007,0x00000023,0x00000018,0x00050094,0x00000006,0x00000024,0x00000022,0x00000023,
+	0x00050085,0x00000006,0x00000025,0x00000021,0x00000024,0x0004003d,0x00000007,0x00000026,
+	0x00000018,0x0005008e,0x00000007,0x00000027,0x00000026,0x00000025,0x0004003d,0x00000007,
+	0x00000028,0x0000001c,0x00050083,0x00000007,0x00000029,0x00000027,0x00000028,0x0006000c,
+	0x00000007,0x0000002a,0x00000001,0x00000045,0x00000029,0x0003003e,0x00000020,0x0000002a,
+	0x0004003d,0x00000007,0x0000002c,0x00000009,0x0004003d,0x00000007,0x0000002d,0x00000018,
+	0x0004003d,0x00000007,0x0000002e,0x0000001c,0x00050094,0x00000006,0x0000002f,0x0000002d,
+	0x0000002e,0x0007000c,0x00000006,0x00000031,0x00000001,0x00000028,0x0000002f,0x00000030,
+	0x00050085,0x00000006,0x00000032,0x00000031,0x0000000e,0x00050081,0x00000006,0x00000033,
+	0x00000032,0x0000000e,0x0005008e,0x00000007,0x00000034,0x0000002c,0x00000033,0x0003003e,
+	0x0000002b,0x00000034,0x0004003d,0x00000007,0x00000036,0x0000000d,0x0004003d,0x00000007,
+	0x00000037,0x00000020,0x0004003d,0x00000007,0x00000038,0x00000013,0x00050094,0x00000006,
+	0x00000039,0x00000037,0x00000038,0x0007000c,0x00000006,0x0000003a,0x00000001,0x00000028,
+	0x00000039,0x00000030,0x0004003d,0x00000006,0x0000003b,0x00000011,0x0007000c,0x00000006,
+	0x0000003c,0x00000001,0x0000001a,0x0000003a,0x0000003b,0x0005008e,0x00000007,0x0000003d,
+	0x00000036,0x0000003c,0x0003003e,0x00000035,0x0000003d,0x0004003d,0x00000007,0x00000041,
+	0x0000002b,0x0004003d,0x00000007,0x00000042,0x00000035,0x00050081,0x00000007,0x00000043,
+	0x00000041,0x00000042,0x0004003d,0x0000003e,0x00000044,0x00000040,0x0009004f,0x0000003e,
+	0x00000045,0x00000044,0x00000043,0x00000004,0x00000005,0x00000006,0x00000003,0x0003003e,
+	0x00000040,0x00000045,0x00050041,0x00000048,0x00000049,0x00000040,0x00000047,0x0003003e,
+	0x00000049,0x0000000b,0x000100fd,0x00010038
+};
+
+typedef struct GltfBuffer_t
+{
+	char *						name;
+	char *						type;
+	size_t						byteLength;
+	unsigned char *				bufferData;
+} GltfBuffer_t;
+
+typedef struct GltfBufferView_t
+{
+	char *						name;
+	const GltfBuffer_t *		buffer;
+	size_t						byteOffset;
+	size_t						byteLength;
+	int							target;
+} GltfBufferView_t;
+
+typedef struct GltfAccessor_t
+{
+	char *						name;
+	char *						type;
+	const GltfBufferView_t *	bufferView;
+	size_t						byteOffset;
+	size_t						byteStride;
+	int							componentType;
+	int							count;
+	int							intMin[16];
+	int							intMax[16];
+	float						floatMin[16];
+	float						floatMax[16];
+} GltfAccessor_t;
+
+typedef struct GltfImage_t
+{
+	char *						name;
+	char *						uri;
+} GltfImage_t;
+
+typedef struct GltfSampler_t
+{
+	char *						name;
+	int							magFilter;	// default GL_LINEAR
+	int							minFilter;	// default GL_NEAREST_MIPMAP_LINEAR
+	int							wrapS;		// default GL_REPEAT
+	int							wrapT;		// default GL_REPEAT
+} GltfSampler_t;
+
+typedef struct GltfTexture_t
+{
+	char *						name;
+	const GltfImage_t *			image;
+	const GltfSampler_t *		sampler;
+	GpuTexture_t				texture;
+} GltfTexture_t;
+
+typedef struct GltfShader_t
+{
+	char *						name;
+	char *						uriGlslOpenGL;
+	char *						uriGlslVulkan;
+	char *						uriSpirvOpenGL;
+	char *						uriSpirvVulkan;
+	int							type;
+} GltfShader_t;
+
+typedef struct GltfProgram_t
+{
+	char *						name;
+	unsigned char *				vertexSource;
+	unsigned char *				fragmentSource;
+	int							vertexSourceSize;
+	int							fragmentSourceSize;
+} GltfProgram_t;
+
+typedef enum
+{
+	GLTF_UNIFORM_SEMANTIC_NONE,
+	GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE,
+	GLTF_UNIFORM_SEMANTIC_LOCAL,
+	GLTF_UNIFORM_SEMANTIC_VIEW,
+	GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE,
+	GLTF_UNIFORM_SEMANTIC_PROJECTION,
+	GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE,
+	GLTF_UNIFORM_SEMANTIC_MODEL,
+	GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE,
+	GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE,
+	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW,
+	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE,
+	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE,
+	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION,
+	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE,
+	GLTF_UNIFORM_SEMANTIC_VIEWPORT,
+	GLTF_UNIFORM_SEMANTIC_JOINTMATRIX
+} GltfUniformSemantic_t;
+
+static struct
+{
+	const char *			name;
+	GltfUniformSemantic_t	semantic;
+}
+gltfUniformSemanticNames[] =
+{
+	{ "",								GLTF_UNIFORM_SEMANTIC_NONE },
+	{ "",								GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE },
+	{ "LOCAL",							GLTF_UNIFORM_SEMANTIC_LOCAL },
+	{ "VIEW",							GLTF_UNIFORM_SEMANTIC_VIEW },
+	{ "VIEWINVERSE",					GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE },
+	{ "PROJECTION",						GLTF_UNIFORM_SEMANTIC_PROJECTION },
+	{ "PROJECTIONINVERSE",				GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE },
+	{ "MODEL",							GLTF_UNIFORM_SEMANTIC_MODEL },
+	{ "MODELINVERSE",					GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE },
+	{ "MODELINVERSETRANSPOSE",			GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE },
+	{ "MODELVIEW",						GLTF_UNIFORM_SEMANTIC_MODEL_VIEW },
+	{ "MODELVIEWINVERSE",				GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE },
+	{ "MODELVIEWINVERSETRANSPOSE",		GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE },
+	{ "MODELVIEWPROJECTION",			GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION },
+	{ "MODELVIEWPROJECTIONINVERSE",		GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE },
+	{ "VIEWPORT",						GLTF_UNIFORM_SEMANTIC_VIEWPORT },
+	{ "JOINTMATRIX",					GLTF_UNIFORM_SEMANTIC_JOINTMATRIX },
+	{ NULL,								0 }
+};
+
+typedef struct GltfUniformValue_t
+{
+	GltfTexture_t *				texture;
+	int							intValue[16];
+	float						floatValue[16];
+} GltfUniformValue_t;
+
+typedef struct GltfUniform_t
+{
+	char *						name;
+	GltfUniformSemantic_t		semantic;
+	GpuProgramParmType_t		type;
+	int							index;
+	GltfUniformValue_t			defaultValue;
+} GltfUniform_t;
+
+typedef struct GltfTechnique_t
+{
+	char *						name;
+	GpuGraphicsProgram_t		program;
+	GpuProgramParm_t *			parms;
+	GltfUniform_t *				uniforms;
+	int							uniformCount;
+	GpuRasterOperations_t		rop;
+} GltfTechnique_t;
+
+typedef struct GltfMaterialValue_t
+{
+	GltfUniform_t *				uniform;
+	GltfUniformValue_t			value;
+} GltfMaterialValue_t;
+
+typedef struct GltfMaterial_t
+{
+	char *						name;
+	const GltfTechnique_t *		technique;
+	GltfMaterialValue_t *		values;
+	int							valueCount;
+} GltfMaterial_t;
+
+typedef struct GltfSurface_t
+{
+	const GltfMaterial_t *		material;		// material used to render this surface
+	GpuGeometry_t				geometry;		// surface geometry
+	GpuGraphicsPipeline_t		pipeline;		// rendering pipeline for this surface
+	Vector3f_t					mins;			// minimums of the surface geometry excluding animations
+	Vector3f_t					maxs;			// maximums of the surface geometry excluding animations
+} GltfSurface_t;
+
+typedef struct GltfModel_t
+{
+	char *						name;
+	GltfSurface_t *				surfaces;
+	int							surfaceCount;
+} GltfModel_t;
+
+typedef struct GltfAnimationChannel_t
+{
+	char *						nodeName;
+	struct GltfNode_t *			node;
+	Quatf_t *					rotation;
+	Vector3f_t *				translation;
+	Vector3f_t *				scale;
+} GltfAnimationChannel_t;
+
+typedef struct GltfAnimation_t
+{
+	char *						name;
+	float *						sampleTimes;
+	int							sampleCount;
+	GltfAnimationChannel_t *	channels;
+	int							channelCount;
+} GltfAnimation_t;
+
+typedef struct GltfJoint_t
+{
+	char *						name;
+	struct GltfNode_t *			node;
+} GltfJoint_t;
+
+typedef struct GltfSkin_t
+{
+	char *						name;
+	struct GltfNode_t *			parent;
+	Matrix4x4f_t				bindShapeMatrix;
+	Matrix4x4f_t *				inverseBindMatrices;
+	Vector3f_t *				jointGeometryMins;		// joint local space minimums of the geometry influenced by each joint
+	Vector3f_t *				jointGeometryMaxs;		// joint local space maximums of the geometry influenced by each joint
+	GltfJoint_t *				joints;					// joints of this skin
+	int							jointCount;				// number of joints
+	GpuBuffer_t					jointBuffer;			// buffer with joint matrices
+	Vector3f_t					mins;					// minimums of the complete skin geometry (modified at run-time)
+	Vector3f_t					maxs;					// maximums of the complete skin geometry (modified at run-time)
+	bool						culled;					// true if the skin is culled (modified at run-time)
+} GltfSkin_t;
+
+typedef enum
+{
+	GLTF_CAMERA_TYPE_PERSPECTIVE,
+	GLTF_CAMERA_TYPE_ORTHOGRAPHIC
+} GltfCameraType_t;
+
+typedef struct GltfCamera_t
+{
+	char *						name;
+	GltfCameraType_t			type;
+	struct
+	{
+		float					aspectRatio;
+		float					fovDegreesX;
+		float					fovDegreesY;
+		float					nearZ;
+		float					farZ;
+	}							perspective;
+	struct
+	{
+		float					magX;
+		float					magY;
+		float					nearZ;
+		float					farZ;
+	}							orthographic;
+} GltfCamera_t;
+
+typedef struct GltfNode_t
+{
+	char *						name;
+	char *						jointName;
+	Quatf_t						rotation;			// (modified at run-time)
+	Vector3f_t					translation;		// (modified at run-time)
+	Vector3f_t					scale;				// (modified at run-time)
+	Matrix4x4f_t				localTransform;		// (modified at run-time)
+	Matrix4x4f_t				globalTransform;	// (modified at run-time)
+	int							subTreeNodeCount;	// this node plus the number of direct or indirect decendants
+	struct GltfNode_t **		children;
+	char **						childNames;
+	int							childCount;
+	struct GltfNode_t *			parent;
+	struct GltfCamera_t *		camera;
+	struct GltfSkin_t *			skin;
+	struct GltfModel_t **		models;
+	int							modelCount;
+} GltfNode_t;
+
+typedef struct GltfSubTree_t
+{
+	GltfNode_t *				nodes;				// points into GltfScene_t::nodes
+	int							nodeCount;
+} GltfSubTree_t;
+
+typedef struct GltfSubScene_t
+{
+	char *						name;
+	GltfSubTree_t *				subTrees;
+	int							subTreeCount;
+} GltfSubScene_t;
+
+typedef struct GltfScene_t
+{
+	GltfBuffer_t *				buffers;
+	int *						bufferNameHash;
+	int							bufferCount;
+	GltfBufferView_t *			bufferViews;
+	int *						bufferViewNameHash;
+	int							bufferViewCount;
+	GltfAccessor_t *			accessors;
+	int *						accessorNameHash;
+	int							accessorCount;
+	GltfImage_t *				images;
+	int *						imageNameHash;
+	int							imageCount;
+	GltfSampler_t *				samplers;
+	int *						samplerNameHash;
+	int							samplerCount;
+	GltfTexture_t *				textures;
+	int *						textureNameHash;
+	int							textureCount;
+	GltfShader_t *				shaders;
+	int *						shaderNameHash;
+	int							shaderCount;
+	GltfProgram_t *				programs;
+	int *						programNameHash;
+	int							programCount;
+	GltfTechnique_t *			techniques;
+	int *						techniqueNameHash;
+	int							techniqueCount;
+	GltfMaterial_t *			materials;
+	int *						materialNameHash;
+	int							materialCount;
+	GltfSkin_t *				skins;
+	int *						skinNameHash;
+	int							skinCount;
+	GltfModel_t *				models;
+	int *						modelNameHash;
+	int							modelCount;
+	GltfAnimation_t *			animations;
+	int *						animationNameHash;
+	int							animationCount;
+	GltfCamera_t *				cameras;
+	int *						cameraNameHash;
+	int							cameraCount;
+	GltfNode_t *				nodes;
+	int *						nodeNameHash;
+	int *						nodeJointNameHash;
+	int							nodeCount;
+	GltfNode_t **				rootNodes;
+	int							rootNodeCount;
+	GltfSubScene_t *			subScenes;
+	int *						subSceneNameHash;
+	int							subSceneCount;
+	GltfSubScene_t *			currentSubScene;
+
+	GpuBuffer_t					defaultJointBuffer;
+	GpuGeometry_t				unitCubeGeometry;
+	GpuGraphicsProgram_t		unitCubeFlatShadeProgram;
+	GpuGraphicsPipeline_t		unitCubePipeline;
+} GltfScene_t;
+
+#define HASH_TABLE_SIZE		256
+
+static unsigned int StringHash( const char * string )
+{
+	unsigned int hash = 5381;
+	for ( int i = 0; string[i] != '\0'; i++ )
+	{
+		hash = ( ( hash << 5 ) - hash ) + string[i];
+	}
+	return ( hash & ( HASH_TABLE_SIZE - 1 ) );
+}
+
+#define GLTF_HASH( type, typeCapitalized, name, nameCapitalized ) \
+	static void Gltf_Create##typeCapitalized##nameCapitalized##Hash( GltfScene_t * scene ) \
+	{ \
+		scene->type##nameCapitalized##Hash = (int *) malloc( ( HASH_TABLE_SIZE + scene->type##Count ) * sizeof( scene->type##nameCapitalized##Hash[0] ) ); \
+		memset( scene->type##nameCapitalized##Hash, -1, ( HASH_TABLE_SIZE + scene->type##Count ) * sizeof( scene->type##nameCapitalized##Hash[0] ) ); \
+		for ( int i = 0; i < scene->type##Count; i++ ) \
+		{ \
+			const unsigned int hash = StringHash( scene->type##s[i].name ); \
+			scene->type##nameCapitalized##Hash[HASH_TABLE_SIZE + i] = scene->type##nameCapitalized##Hash[hash]; \
+			scene->type##nameCapitalized##Hash[hash] = i; \
+		} \
+	} \
+	\
+	static Gltf##typeCapitalized##_t * Gltf_Get##typeCapitalized##By##nameCapitalized( const GltfScene_t * scene, const char * name ) \
+	{ \
+		const unsigned int hash = StringHash( name ); \
+		for ( int i = scene->type##nameCapitalized##Hash[hash]; i >= 0; i = scene->type##nameCapitalized##Hash[HASH_TABLE_SIZE + i] ) \
+		{ \
+			if ( strcmp( scene->type##s[i].name, name ) == 0 ) \
+			{ \
+				return &scene->type##s[i]; \
+			} \
+		} \
+		return NULL; \
+	}
+
+GLTF_HASH( buffer,		Buffer,		name,		Name );
+GLTF_HASH( bufferView,	BufferView,	name,		Name );
+GLTF_HASH( accessor,	Accessor,	name,		Name );
+GLTF_HASH( image,		Image,		name,		Name );
+GLTF_HASH( sampler,		Sampler,	name,		Name );
+GLTF_HASH( texture,		Texture,	name,		Name );
+GLTF_HASH( shader,		Shader,		name,		Name );
+GLTF_HASH( program,		Program,	name,		Name );
+GLTF_HASH( technique,	Technique,	name,		Name );
+GLTF_HASH( material,	Material,	name,		Name );
+GLTF_HASH( skin,		Skin,		name,		Name );
+GLTF_HASH( model,		Model,		name,		Name );
+GLTF_HASH( animation,	Animation,	name,		Name );
+GLTF_HASH( camera,		Camera,		name,		Name );
+GLTF_HASH( node,		Node,		name,		Name );
+GLTF_HASH( node,		Node,		jointName,	JointName );
+GLTF_HASH( subScene,	SubScene,	name,		Name );
+
+static GltfAccessor_t * Gltf_GetAccessorByNameAndType( const GltfScene_t * scene, const char * name, const char * type, const int componentType )
+{
+	GltfAccessor_t * accessor = Gltf_GetAccessorByName( scene, name );
+	if ( accessor != NULL &&
+			accessor->componentType == componentType &&
+				strcmp( accessor->type, type ) == 0 )
+	{
+		return accessor;
+	}
+	return NULL;
+}
+
+static char * Gltf_strdup( const char * str )
+{
+	char * out = (char *)malloc( strlen( str ) + 1 );
+	strcpy( out, str );
+	return out;
+}
+
+static unsigned char * Gltf_ReadFile( const char * fileName, int * outSizeInBytes )
+{
+	if ( outSizeInBytes != NULL )
+	{
+		*outSizeInBytes = 0;
+	}
+	FILE * file = fopen( fileName, "rb" );
+	if ( file == NULL )
+	{
+		return NULL;
+	}
+	fseek( file, 0L, SEEK_END );
+	size_t bufferSize = ftell( file );
+	fseek( file, 0L, SEEK_SET );
+	unsigned char * buffer = (unsigned char *) malloc( bufferSize + 1 );
+	if ( fread( buffer, 1, bufferSize, file ) != bufferSize )
+	{
+		fclose( file );
+		free( buffer );
+		return NULL;
+	}
+	buffer[bufferSize] = '\0';
+	fclose( file );
+	if ( outSizeInBytes != NULL )
+	{
+		*outSizeInBytes = (int)bufferSize;
+	}
+	return buffer;
+}
+
+static unsigned char * Gltf_ReadBase64( const char * base64, int * outSizeInBytes )
+{
+	const int base64SizeInBytes = (int)strlen( base64 );
+	const int dataSizeInBytes = Base64_DecodeSizeInBytes( base64, base64SizeInBytes );
+	unsigned char * buffer = (unsigned char *)malloc( dataSizeInBytes );
+	Base64_Decode( buffer, base64, base64SizeInBytes );
+	if ( outSizeInBytes != NULL )
+	{
+		*outSizeInBytes = dataSizeInBytes;
+	}
+	return buffer;
+}
+
+static unsigned char * Gltf_ReadUri( const char * uri, int * outSizeInBytes )
+{
+	if ( strncmp( uri, "data:", 5 ) == 0 )
+	{
+		// plain text
+		if ( strncmp( uri, "data:text/plain,", 16 ) == 0 )
+		{
+			return (unsigned char *)Gltf_strdup( uri + 16 );
+		}
+		// base64 text "shader"
+		else if ( strncmp( uri, "data:text/plain;base64,", 23 ) == 0 )
+		{
+			return Gltf_ReadBase64( uri + 23, outSizeInBytes );
+		}
+		// base64 binary "buffer"
+		else if ( strncmp( uri, "data:application/octet-stream;base64,", 37 ) == 0 )
+		{
+			return Gltf_ReadBase64( uri + 37, outSizeInBytes );
+		}
+		// base64 KTX "image"
+		else if ( strncmp( uri, "data:image/ktx;base64,", 22 ) == 0 )
+		{
+			return Gltf_ReadBase64( uri + 22, outSizeInBytes );
+		}
+	}
+	return Gltf_ReadFile( uri, outSizeInBytes );
+}
+
+static void Gltf_ParseIntArray( int * elements, const int count, const Json_t * arrayNode )
+{
+	int i = 0;
+	for ( ; i < Json_GetMemberCount( arrayNode ) && i < count; i++ )
+	{
+		elements[i] = Json_GetInt32( Json_GetMemberByIndex( arrayNode, i ), 0 );
+	}
+	for ( ; i < count; i++ )
+	{
+		elements[i] = 0;
+	}
+}
+
+static void Gltf_ParseFloatArray( float * elements, const int count, const Json_t * arrayNode )
+{
+	int i = 0;
+	for ( ; i < Json_GetMemberCount( arrayNode ) && i < count; i++ )
+	{
+		elements[i] = Json_GetFloat( Json_GetMemberByIndex( arrayNode, i ), 0.0f );
+	}
+	for ( ; i < count; i++ )
+	{
+		elements[i] = 0.0f;
+	}
+}
+
+static void Gltf_ParseUniformValue( GltfUniformValue_t * value, const Json_t * json, const GpuProgramParmType_t type, const GltfScene_t * scene )
+{
+	switch ( type )
+	{
+		case GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED:					value->texture = Gltf_GetTextureByName( scene, Json_GetString( json, "" ) ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT:				value->intValue[0] = Json_GetInt32( json, 0 ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2:		Gltf_ParseIntArray( value->intValue, 16, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3:		Gltf_ParseIntArray( value->intValue, 16, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4:		Gltf_ParseIntArray( value->intValue, 16, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT:				value->floatValue[0] = Json_GetFloat( json, 0.0f ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		Gltf_ParseFloatArray( value->floatValue, 2, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		Gltf_ParseFloatArray( value->floatValue, 3, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		Gltf_ParseFloatArray( value->floatValue, 4, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2:	Gltf_ParseFloatArray( value->floatValue, 2*2, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3:	Gltf_ParseFloatArray( value->floatValue, 2*3, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4:	Gltf_ParseFloatArray( value->floatValue, 2*4, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2:	Gltf_ParseFloatArray( value->floatValue, 3*2, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3:	Gltf_ParseFloatArray( value->floatValue, 3*3, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4:	Gltf_ParseFloatArray( value->floatValue, 3*4, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	Gltf_ParseFloatArray( value->floatValue, 4*2, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	Gltf_ParseFloatArray( value->floatValue, 4*3, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	Gltf_ParseFloatArray( value->floatValue, 4*4, json ); break;
+	}
+}
+
+static GpuTextureFilter_t Gltf_GetTextureFilter( const int filter )
+{
+	switch ( filter )
+	{
+		case GL_NEAREST:					return GPU_TEXTURE_FILTER_NEAREST;
+		case GL_LINEAR:						return GPU_TEXTURE_FILTER_LINEAR;
+		case GL_NEAREST_MIPMAP_NEAREST:		return GPU_TEXTURE_FILTER_NEAREST;
+		case GL_LINEAR_MIPMAP_NEAREST:		return GPU_TEXTURE_FILTER_NEAREST;
+		case GL_NEAREST_MIPMAP_LINEAR:		return GPU_TEXTURE_FILTER_BILINEAR;
+		case GL_LINEAR_MIPMAP_LINEAR:		return GPU_TEXTURE_FILTER_BILINEAR;
+		default:							return GPU_TEXTURE_FILTER_BILINEAR;
+	}
+}
+
+static GpuTextureWrapMode_t Gltf_GetTextureWrapMode( const int wrapMode )
+{
+	switch ( wrapMode )
+	{
+		case GL_REPEAT:				return GPU_TEXTURE_WRAP_MODE_REPEAT;
+		case GL_CLAMP:				return GPU_TEXTURE_WRAP_MODE_CLAMP_TO_EDGE;
+		case GL_CLAMP_TO_BORDER:	return GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER;
+		default:					return GPU_TEXTURE_WRAP_MODE_REPEAT;
+	}
+}
+
+static GpuFrontFace_t Gltf_GetFrontFace( const int face )
+{
+	switch ( face )
+	{
+		case GL_CCW:	return GPU_FRONT_FACE_COUNTER_CLOCKWISE;
+		case GL_CW:		return GPU_FRONT_FACE_CLOCKWISE;
+		default:		return GPU_FRONT_FACE_COUNTER_CLOCKWISE;
+	}
+}
+
+static GpuCullMode_t Gltf_GetCullMode( const int mode )
+{
+	switch ( mode )
+	{
+		case GL_NONE:	return GPU_CULL_MODE_NONE;
+		case GL_FRONT:	return GPU_CULL_MODE_FRONT;
+		case GL_BACK:	return GPU_CULL_MODE_BACK;
+		default:		return GPU_CULL_MODE_BACK;
+	}
+}
+
+static GpuCompareOp_t Gltf_GetCompareOp( const int op )
+{
+	switch ( op )
+	{
+		case GL_NEVER:		return GPU_COMPARE_OP_NEVER;
+		case GL_LESS:		return GPU_COMPARE_OP_LESS;
+		case GL_EQUAL:		return GPU_COMPARE_OP_EQUAL;
+		case GL_LEQUAL:		return GPU_COMPARE_OP_LESS_OR_EQUAL;
+		case GL_GREATER:	return GPU_COMPARE_OP_GREATER;
+		case GL_NOTEQUAL:	return GPU_COMPARE_OP_NOT_EQUAL;
+		case GL_GEQUAL:		return GPU_COMPARE_OP_GREATER_OR_EQUAL;
+		case GL_ALWAYS:		return GPU_COMPARE_OP_ALWAYS;
+		default:			return GPU_COMPARE_OP_LESS;
+	}
+}
+
+static GpuBlendOp_t Gltf_GetBlendOp( const int op )
+{
+	switch( op )
+	{
+		case GL_FUNC_ADD:				return GPU_BLEND_OP_ADD;
+		case GL_FUNC_SUBTRACT:			return GPU_BLEND_OP_SUBTRACT;
+		case GL_FUNC_REVERSE_SUBTRACT:	return GPU_BLEND_OP_REVERSE_SUBTRACT;
+		case GL_MIN:					return GPU_BLEND_OP_MIN;
+		case GL_MAX:					return GPU_BLEND_OP_MAX;
+		default:						return GPU_BLEND_OP_ADD;
+	}
+}
+
+static GpuBlendFactor_t Gltf_GetBlendFactor( const int factor )
+{
+	switch ( factor )
+	{
+		case GL_ZERO:						return GPU_BLEND_FACTOR_ZERO;
+		case GL_ONE:						return GPU_BLEND_FACTOR_ONE;
+		case GL_SRC_COLOR:					return GPU_BLEND_FACTOR_SRC_COLOR;
+		case GL_ONE_MINUS_SRC_COLOR:		return GPU_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+		case GL_DST_COLOR:					return GPU_BLEND_FACTOR_DST_COLOR;
+		case GL_ONE_MINUS_DST_COLOR:		return GPU_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+		case GL_SRC_ALPHA:					return GPU_BLEND_FACTOR_SRC_ALPHA;
+		case GL_ONE_MINUS_SRC_ALPHA:		return GPU_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+		case GL_DST_ALPHA:					return GPU_BLEND_FACTOR_DST_ALPHA;
+		case GL_ONE_MINUS_DST_ALPHA:		return GPU_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+		case GL_CONSTANT_COLOR:				return GPU_BLEND_FACTOR_CONSTANT_COLOR;
+		case GL_ONE_MINUS_CONSTANT_COLOR:	return GPU_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
+		case GL_CONSTANT_ALPHA:				return GPU_BLEND_FACTOR_CONSTANT_ALPHA;
+		case GL_ONE_MINUS_CONSTANT_ALPHA:	return GPU_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
+		case GL_SRC_ALPHA_SATURATE:			return GPU_BLEND_FACTOR_SRC_ALPHA_SATURAT;
+		default:							return GPU_BLEND_FACTOR_ZERO;
+	}
+}
+
+static void * Gltf_GetBufferData( const GltfAccessor_t * access )
+{
+	if ( access != NULL )
+	{
+		return access->bufferView->buffer->bufferData + access->bufferView->byteOffset + access->byteOffset;
+	}
+	return NULL;
+}
+
+// Sort the nodes such that parents come before their children and every sub-tree is a contiguous sequence of nodes.
+// Note that the node graph must be acyclic and no node may be a direct or indirect descendant of more than one node.
+static void Gltf_SortNodes( GltfNode_t * nodes, const int nodeCount )
+{
+	GltfNode_t * nodeStack = (GltfNode_t *) malloc( nodeCount * sizeof( GltfNode_t ) );
+	int stackSize = 0;
+	int stackOffset = 0;
+	for ( int nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++ )
+	{
+		bool foundParent = false;
+		for ( int nodeSearchIndex = 0; nodeSearchIndex < nodeCount; nodeSearchIndex++ )
+		{
+			for ( int childIndex = 0; childIndex < nodes[nodeSearchIndex].childCount; childIndex++ )
+			{
+				if ( strcmp( nodes[nodeSearchIndex].childNames[childIndex], nodes[nodeIndex].name ) == 0 )
+				{
+					foundParent = true;
+					break;
+				}
+			}
+		}
+		if ( !foundParent )
+		{
+			const int subTreeStartOffset = stackSize;
+			nodeStack[stackSize++] = nodes[nodeIndex];
+			while( stackOffset < stackSize )
+			{
+				const GltfNode_t * node = &nodeStack[stackOffset++];
+				for ( int childIndex = 0; childIndex < node->childCount; childIndex++ )
+				{
+					for ( int nodeSearchIndex = 0; nodeSearchIndex < nodeCount; nodeSearchIndex++ )
+					{
+						if ( strcmp( node->childNames[childIndex], nodes[nodeSearchIndex].name ) == 0 )
+						{
+							assert( stackSize < nodeCount );
+							nodeStack[stackSize++] = nodes[nodeSearchIndex];
+							break;
+						}
+					}
+				}
+			}
+			for ( int updateNodeIndex = subTreeStartOffset; updateNodeIndex < stackSize; updateNodeIndex++ )
+			{
+				nodeStack[updateNodeIndex].subTreeNodeCount = stackSize - updateNodeIndex;
+			}
+		}
+	}
+	assert( stackSize == nodeCount );
+	memcpy( nodes, nodeStack, nodeCount );
+	free( nodeStack );
+}
+
+static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scene, const char * fileName, GpuRenderPass_t * renderPass )
+{
+	const Microseconds_t t0 = GetTimeMicroseconds();
+
+	memset( scene, 0, sizeof( GltfScene_t ) );
+
+	// Based on a GL_MAX_UNIFORM_BLOCK_SIZE of 16384 on the ARM Mali.
+	const int MAX_JOINTS = 16384 / sizeof( Matrix4x4f_t );
+
+	Json_t * rootNode = Json_Create();
+	if ( Json_ReadFromFile( rootNode, fileName, NULL ) )
+	{
+		const Json_t * asset = Json_GetMemberByName( rootNode, "asset" );
+		const char * version = Json_GetString( Json_GetMemberByName( asset, "version" ), "1.0" );
+		if ( strcmp( version, "1.0" ) != 0 )
+		{
+			Json_Destroy( rootNode );
+			return false;
+		}
+
+		//
+		// glTF buffers
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * buffers = Json_GetMemberByName( rootNode, "buffers" );
+			scene->bufferCount = Json_GetMemberCount( buffers );
+			scene->buffers = (GltfBuffer_t *) calloc( scene->bufferCount, sizeof( GltfBuffer_t ) );
+			for ( int bufferIndex = 0; bufferIndex < scene->bufferCount; bufferIndex++ )
+			{
+				const Json_t * buffer = Json_GetMemberByIndex( buffers, bufferIndex );
+				scene->buffers[bufferIndex].name = Gltf_strdup( Json_GetMemberName( buffer ) );
+				scene->buffers[bufferIndex].byteLength = Json_GetUint64( Json_GetMemberByName( buffer, "byteLength" ), 0 );
+				scene->buffers[bufferIndex].type = Gltf_strdup( Json_GetString( Json_GetMemberByName( buffer, "type" ), "" ) );
+				scene->buffers[bufferIndex].bufferData = Gltf_ReadUri( Json_GetString( Json_GetMemberByName( buffer, "uri" ), "" ), NULL );
+				assert( scene->buffers[bufferIndex].name[0] != '\0' );
+				assert( scene->buffers[bufferIndex].byteLength != 0 );
+				assert( scene->buffers[bufferIndex].bufferData != NULL );
+			}
+			Gltf_CreateBufferNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load buffers\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF bufferViews
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * bufferViews = Json_GetMemberByName( rootNode, "bufferViews" );
+			scene->bufferViewCount = Json_GetMemberCount( bufferViews );
+			scene->bufferViews = (GltfBufferView_t *) calloc( scene->bufferViewCount, sizeof( GltfBufferView_t ) );
+			for ( int bufferViewIndex = 0; bufferViewIndex < scene->bufferViewCount; bufferViewIndex++ )
+			{
+				const Json_t * view = Json_GetMemberByIndex( bufferViews, bufferViewIndex );
+				scene->bufferViews[bufferViewIndex].name = Gltf_strdup( Json_GetMemberName( view ) );
+				scene->bufferViews[bufferViewIndex].buffer = Gltf_GetBufferByName( scene, Json_GetString( Json_GetMemberByName( view, "buffer" ), "" ) );
+				scene->bufferViews[bufferViewIndex].byteOffset = (size_t) Json_GetUint64( Json_GetMemberByName( view, "byteOffset" ), 0 );
+				scene->bufferViews[bufferViewIndex].byteLength = (size_t) Json_GetUint64( Json_GetMemberByName( view, "byteLength" ), 0 );
+				scene->bufferViews[bufferViewIndex].target = Json_GetUint16( Json_GetMemberByName( view, "target" ), 0 );
+				assert( scene->bufferViews[bufferViewIndex].name[0] != '\0' );
+				assert( scene->bufferViews[bufferViewIndex].buffer != NULL );
+				assert( scene->bufferViews[bufferViewIndex].byteLength != 0 );
+				assert( scene->bufferViews[bufferViewIndex].byteOffset + scene->bufferViews[bufferViewIndex].byteLength <= scene->bufferViews[bufferViewIndex].buffer->byteLength );
+			}
+			Gltf_CreateBufferViewNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load buffer views\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF accessors
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * accessors = Json_GetMemberByName( rootNode, "accessors" );
+			scene->accessorCount = Json_GetMemberCount( accessors );
+			scene->accessors = (GltfAccessor_t *) calloc( scene->accessorCount, sizeof( GltfAccessor_t ) );
+			for ( int accessorIndex = 0; accessorIndex < scene->accessorCount; accessorIndex++ )
+			{
+				const Json_t * access = Json_GetMemberByIndex( accessors, accessorIndex );
+				scene->accessors[accessorIndex].name = Gltf_strdup( Json_GetMemberName( access ) );
+				scene->accessors[accessorIndex].bufferView = Gltf_GetBufferViewByName( scene, Json_GetString( Json_GetMemberByName( access, "bufferView" ), "" ) );
+				scene->accessors[accessorIndex].byteOffset = (size_t) Json_GetUint64( Json_GetMemberByName( access, "byteOffset" ), 0 );
+				scene->accessors[accessorIndex].byteStride = (size_t) Json_GetUint64( Json_GetMemberByName( access, "byteStride" ), 0 );
+				scene->accessors[accessorIndex].componentType = Json_GetUint16( Json_GetMemberByName( access, "componentType" ), 0 );
+				scene->accessors[accessorIndex].count = Json_GetInt32( Json_GetMemberByName( access, "count" ), 0 );
+				scene->accessors[accessorIndex].type =  Gltf_strdup( Json_GetString( Json_GetMemberByName( access, "type" ), "" ) );
+				const Json_t * min = Json_GetMemberByName( access, "min" );
+				const Json_t * max = Json_GetMemberByName( access, "max" );
+				if ( min != NULL && max != NULL )
+				{
+					int componentCount = 0;
+					if ( strcmp( scene->accessors[accessorIndex].type, "SCALAR" ) == 0 ) { componentCount = 1; }
+					else if ( strcmp( scene->accessors[accessorIndex].type, "VEC2" ) == 0 ) { componentCount = 2; }
+					else if ( strcmp( scene->accessors[accessorIndex].type, "VEC3" ) == 0 ) { componentCount = 3; }
+					else if ( strcmp( scene->accessors[accessorIndex].type, "VEC4" ) == 0 ) { componentCount = 4; }
+					else if ( strcmp( scene->accessors[accessorIndex].type, "MAT2" ) == 0 ) { componentCount = 4; }
+					else if ( strcmp( scene->accessors[accessorIndex].type, "MAT3" ) == 0 ) { componentCount = 9; }
+					else if ( strcmp( scene->accessors[accessorIndex].type, "MAT4" ) == 0 ) { componentCount = 16; }
+
+					switch ( scene->accessors[accessorIndex].componentType )
+					{
+						case GL_BYTE:
+						case GL_UNSIGNED_BYTE:
+						case GL_SHORT:
+						case GL_UNSIGNED_SHORT:
+							Gltf_ParseIntArray( scene->accessors[accessorIndex].intMin, componentCount, min );
+							Gltf_ParseIntArray( scene->accessors[accessorIndex].intMax, componentCount, max );
+							break;
+						case GL_FLOAT:
+							Gltf_ParseFloatArray( scene->accessors[accessorIndex].floatMin, componentCount, min );
+							Gltf_ParseFloatArray( scene->accessors[accessorIndex].floatMax, componentCount, max );
+							break;
+					}
+				}
+				assert( scene->accessors[accessorIndex].name[0] != '\0' );
+				assert( scene->accessors[accessorIndex].bufferView != NULL );
+				assert( scene->accessors[accessorIndex].byteStride != 0 );
+				assert( scene->accessors[accessorIndex].componentType != 0 );
+				assert( scene->accessors[accessorIndex].count != 0 );
+				assert( scene->accessors[accessorIndex].type[0] != '\0' );
+				assert( scene->accessors[accessorIndex].byteOffset + scene->accessors[accessorIndex].count * scene->accessors[accessorIndex].byteStride <= scene->accessors[accessorIndex].bufferView->byteLength );
+			}
+			Gltf_CreateAccessorNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load accessors\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF images
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * images = Json_GetMemberByName( rootNode, "images" );
+			scene->imageCount = Json_GetMemberCount( images );
+			scene->images = (GltfImage_t *) calloc( scene->imageCount, sizeof( GltfImage_t ) );
+			for ( int imageIndex = 0; imageIndex < scene->imageCount; imageIndex++ )
+			{
+				const Json_t * image = Json_GetMemberByIndex( images, imageIndex );
+				scene->images[imageIndex].name = Gltf_strdup( Json_GetMemberName( image ) );
+				scene->images[imageIndex].uri = Gltf_strdup( Json_GetString( Json_GetMemberByName( image, "uri" ), "" ) );
+				assert( scene->images[imageIndex].name[0] != '\0' );
+				assert( scene->images[imageIndex].uri[0] != '\0' );
+			}
+			Gltf_CreateImageNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load images\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF samplers
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * samplers = Json_GetMemberByName( rootNode, "samplers" );
+			scene->samplerCount = Json_GetMemberCount( samplers );
+			scene->samplers = (GltfSampler_t *) calloc( scene->samplerCount, sizeof( GltfSampler_t ) );
+			for ( int samplerIndex = 0; samplerIndex < scene->samplerCount; samplerIndex++ )
+			{
+				const Json_t * sampler = Json_GetMemberByIndex( samplers, samplerIndex );
+				scene->samplers[samplerIndex].name = Gltf_strdup( Json_GetMemberName( sampler ) );
+				scene->samplers[samplerIndex].magFilter = Json_GetUint16( Json_GetMemberByName( sampler, "magFilter" ), GL_LINEAR );
+				scene->samplers[samplerIndex].minFilter = Json_GetUint16( Json_GetMemberByName( sampler, "minFilter" ), GL_NEAREST_MIPMAP_LINEAR );
+				scene->samplers[samplerIndex].wrapS = Json_GetUint16( Json_GetMemberByName( sampler, "wrapS" ), GL_REPEAT );
+				scene->samplers[samplerIndex].wrapT = Json_GetUint16( Json_GetMemberByName( sampler, "wrapT" ), GL_REPEAT );
+				assert( scene->samplers[samplerIndex].name[0] != '\0' );
+			}
+			Gltf_CreateSamplerNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load samplers\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF textures
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * textures = Json_GetMemberByName( rootNode, "textures" );
+			scene->textureCount = Json_GetMemberCount( textures );
+			scene->textures = (GltfTexture_t *) calloc( scene->textureCount, sizeof( GltfTexture_t ) );
+			for ( int textureIndex = 0; textureIndex < scene->textureCount; textureIndex++ )
+			{
+				const Json_t * texture = Json_GetMemberByIndex( textures, textureIndex );
+				scene->textures[textureIndex].name = Gltf_strdup( Json_GetMemberName( texture ) );
+				scene->textures[textureIndex].image = Gltf_GetImageByName( scene, Json_GetString( Json_GetMemberByName( texture, "source" ), "" ) );
+				scene->textures[textureIndex].sampler = Gltf_GetSamplerByName( scene, Json_GetString( Json_GetMemberByName( texture, "sampler" ), "" ) );
+
+				assert( scene->textures[textureIndex].name[0] != '\0' );
+				assert( scene->textures[textureIndex].image != NULL );
+				//assert( scene->textures[textureIndex].sampler != NULL );
+
+				// The "format", "internalFormat", "target" and "type" are automatically derived from the KTX file.
+				int dataSizeInBytes = 0;
+				unsigned char * data = Gltf_ReadUri( scene->textures[textureIndex].image->uri, &dataSizeInBytes );
+				GpuTexture_CreateFromKTX( context, &scene->textures[textureIndex].texture, scene->textures[textureIndex].name, data, dataSizeInBytes );
+				free( data );
+			}
+			Gltf_CreateTextureNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load textures\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF shaders
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * shaders = Json_GetMemberByName( rootNode, "shaders" );
+			scene->shaderCount = Json_GetMemberCount( shaders );
+			scene->shaders = (GltfShader_t *) calloc( scene->shaderCount, sizeof( GltfShader_t ) );
+			for ( int shaderIndex = 0; shaderIndex < scene->shaderCount; shaderIndex++ )
+			{
+				const Json_t * shader = Json_GetMemberByIndex( shaders, shaderIndex );
+				scene->shaders[shaderIndex].name = Gltf_strdup( Json_GetMemberName( shader ) );
+				scene->shaders[shaderIndex].uriGlslOpenGL = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uri" ), "" ) );
+				scene->shaders[shaderIndex].uriGlslVulkan = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uriGlslVulkan" ), "" ) );
+				scene->shaders[shaderIndex].uriSpirvOpenGL = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uriSpirvOpenGL" ), "" ) );
+				scene->shaders[shaderIndex].uriSpirvVulkan = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uriSpirvVulkan" ), "" ) );
+				scene->shaders[shaderIndex].type = Json_GetUint16( Json_GetMemberByName( shader, "type" ), 0 );
+				assert( scene->shaders[shaderIndex].name[0] != '\0' );
+				assert( scene->shaders[shaderIndex].uriGlslOpenGL[0] != '\0' );
+				assert( scene->shaders[shaderIndex].uriGlslVulkan != '\0' );
+				assert( scene->shaders[shaderIndex].uriSpirvOpenGL != '\0' );
+				assert( scene->shaders[shaderIndex].uriSpirvVulkan != '\0' );
+				assert( scene->shaders[shaderIndex].type != 0 );
+			}
+			Gltf_CreateShaderNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load shaders\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF programs
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * programs = Json_GetMemberByName( rootNode, "programs" );
+			scene->programCount = Json_GetMemberCount( programs );
+			scene->programs = (GltfProgram_t *) calloc( scene->programCount, sizeof( GltfProgram_t ) );
+			for ( int programIndex = 0; programIndex < scene->programCount; programIndex++ )
+			{
+				const Json_t * program = Json_GetMemberByIndex( programs, programIndex );
+				const char * vertexShaderName = Json_GetString( Json_GetMemberByName( program, "vertexShader" ), "" );
+				const char * fragmentShaderName = Json_GetString( Json_GetMemberByName( program, "fragmentShader" ), "" );
+				const GltfShader_t * vertexShader = Gltf_GetShaderByName( scene, vertexShaderName );
+				const GltfShader_t * fragmentShader = Gltf_GetShaderByName( scene, fragmentShaderName );
+
+				assert( vertexShader != NULL );
+				assert( fragmentShader != NULL );
+
+				scene->programs[programIndex].name = Gltf_strdup( Json_GetMemberName( program ) );
+#if USE_SPIRV == 1
+				scene->programs[programIndex].vertexSource = Gltf_ReadUri( vertexShader->uriSpirvVulkan, &scene->programs[programIndex].vertexSourceSize );
+				scene->programs[programIndex].fragmentSource = Gltf_ReadUri( fragmentShader->uriSpirvVulkan, &scene->programs[programIndex].fragmentSourceSize );
+#else
+				scene->programs[programIndex].vertexSource = Gltf_ReadUri( vertexShader->uriGlslVulkan, &scene->programs[programIndex].vertexSourceSize );
+				scene->programs[programIndex].fragmentSource = Gltf_ReadUri( fragmentShader->uriGlslVulkan, &scene->programs[programIndex].fragmentSourceSize );
+#endif
+				assert( scene->programs[programIndex].name[0] != '\0' );
+				assert( scene->programs[programIndex].vertexSource[0] != '\0' );
+				assert( scene->programs[programIndex].fragmentSource[0] != '\0' );
+			}
+			Gltf_CreateProgramNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load programs\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF techniques
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * techniques = Json_GetMemberByName( rootNode, "techniques" );
+			scene->techniqueCount = Json_GetMemberCount( techniques );
+			scene->techniques = (GltfTechnique_t *) calloc( scene->techniqueCount, sizeof( GltfTechnique_t ) );
+			for ( int techniqueIndex = 0; techniqueIndex < scene->techniqueCount; techniqueIndex++ )
+			{
+				const Json_t * technique = Json_GetMemberByIndex( techniques, techniqueIndex );
+				scene->techniques[techniqueIndex].name = Gltf_strdup( Json_GetMemberName( technique ) );
+				const GltfProgram_t * program = Gltf_GetProgramByName( scene, Json_GetString( Json_GetMemberByName( technique, "program" ), "" ) );
+
+				assert( scene->techniques[techniqueIndex].name[0] != '\0' );
+				assert( program != NULL );
+
+				int vertexAttribsFlags = 0;
+				const Json_t * attributes = Json_GetMemberByName( technique, "attributes" );
+				const int attributeCount = Json_GetMemberCount( attributes );
+				for ( int j = 0; j < attributeCount; j++ )
+				{
+					const char * attrib = Json_GetString( Json_GetMemberByIndex( attributes, j ), "" );
+					if ( strcmp( attrib, "POSITION" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_POSITION; }
+					else if ( strcmp( attrib, "NORMAL" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_NORMAL; }
+					else if ( strcmp( attrib, "TANGENT" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_TANGENT; }
+					else if ( strcmp( attrib, "BINORMAL" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_BINORMAL; }
+					else if ( strcmp( attrib, "COLOR" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_COLOR; }
+					else if ( strcmp( attrib, "TEXCOORD_0" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_UV0; }
+					else if ( strcmp( attrib, "TEXCOORD_1" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_UV1; }
+					else if ( strcmp( attrib, "TEXCOORD_2" ) == 0 )	{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_UV2; }
+					else if ( strcmp( attrib, "JOINT" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES; }
+					else if ( strcmp( attrib, "WEIGHT" ) == 0 )		{ vertexAttribsFlags |= VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS; }
+				}
+
+				// Must have at least positions.
+				assert( ( vertexAttribsFlags & VERTEX_ATTRIBUTE_FLAG_POSITION ) != 0 );
+
+				const Json_t * uniforms = Json_GetMemberByName( technique, "uniforms" );
+				const Json_t * parameters = Json_GetMemberByName( technique, "parameters" );
+				const int uniformCount = Json_GetMemberCount( uniforms );
+				scene->techniques[techniqueIndex].parms = (GpuProgramParm_t *) calloc( uniformCount, sizeof( GpuProgramParm_t ) );
+				scene->techniques[techniqueIndex].uniformCount = uniformCount;
+				scene->techniques[techniqueIndex].uniforms = (GltfUniform_t *) calloc( uniformCount, sizeof( GltfUniform_t ) );
+				memset( scene->techniques[techniqueIndex].uniforms, 0, uniformCount * sizeof( GltfUniform_t ) );
+				for ( int j = 0; j < uniformCount; j++ )
+				{
+					const Json_t * uniform = Json_GetMemberByIndex( uniforms, j );
+					const char * uniformName = Json_GetMemberName( uniform );
+					const char * parmName = Json_GetString( uniform, "" );
+					const Json_t * parameter = Json_GetMemberByName( parameters, parmName );
+					const char * semantic = Json_GetString( Json_GetMemberByName( parameter, "semantic" ), "" );
+					const int stage = Json_GetUint32( Json_GetMemberByName( parameter, "stage" ), 0 );
+					const int type = Json_GetUint16( Json_GetMemberByName( parameter, "type" ), 0 );
+					const int binding = Json_GetUint32( Json_GetMemberByName( parameter, "bindingVulkan" ), 0 );
+
+					GpuProgramParmType_t parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED;
+					switch ( type )
+					{
+						case GL_SAMPLER_2D:		parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED; break;
+						case GL_SAMPLER_3D:		parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED; break;
+						case GL_SAMPLER_CUBE:	parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED; break;
+						case GL_INT:			parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT; break;
+						case GL_INT_VEC2:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2; break;
+						case GL_INT_VEC3:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3; break;
+						case GL_INT_VEC4:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4; break;
+						case GL_FLOAT:			parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT; break;
+						case GL_FLOAT_VEC2:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2; break;
+						case GL_FLOAT_VEC3:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3; break;
+						case GL_FLOAT_VEC4:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4; break;
+						case GL_FLOAT_MAT2:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2; break;
+						case GL_FLOAT_MAT2x3:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3; break;
+						case GL_FLOAT_MAT2x4:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4; break;
+						case GL_FLOAT_MAT3x2:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2; break;
+						case GL_FLOAT_MAT3:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3; break;
+						case GL_FLOAT_MAT3x4:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4; break;
+						case GL_FLOAT_MAT4x2:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2; break;
+						case GL_FLOAT_MAT4x3:	parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3; break;
+						case GL_FLOAT_MAT4:		parmType = GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4; break;
+					}
+
+					if ( strcmp( semantic, "JOINTMATRIX" ) == 0 )
+					{
+						parmType = GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM;
+					}
+
+					scene->techniques[techniqueIndex].parms[j].stage = ( stage == GL_VERTEX_SHADER ) ? GPU_PROGRAM_STAGE_VERTEX : GPU_PROGRAM_STAGE_FRAGMENT;
+					scene->techniques[techniqueIndex].parms[j].type = parmType;
+					scene->techniques[techniqueIndex].parms[j].access = GPU_PROGRAM_PARM_ACCESS_READ_ONLY;	// assume all parms are read-only
+					scene->techniques[techniqueIndex].parms[j].index = j;
+					scene->techniques[techniqueIndex].parms[j].name = Gltf_strdup( uniformName );
+					scene->techniques[techniqueIndex].parms[j].binding = binding;
+
+					scene->techniques[techniqueIndex].uniforms[j].name = Gltf_strdup( parmName );
+					scene->techniques[techniqueIndex].uniforms[j].semantic = GLTF_UNIFORM_SEMANTIC_NONE;		// default to the material setting the uniform
+					scene->techniques[techniqueIndex].uniforms[j].type = parmType;
+					scene->techniques[techniqueIndex].uniforms[j].index = j;
+					for ( int s = 0; s < sizeof( gltfUniformSemanticNames ) / sizeof( gltfUniformSemanticNames[0] ); s++ )
+					{
+						if ( strcmp( gltfUniformSemanticNames[s].name, semantic ) == 0 )
+						{
+							scene->techniques[techniqueIndex].uniforms[j].semantic = gltfUniformSemanticNames[s].semantic;
+							break;
+						}
+					}
+					const Json_t * value = Json_GetMemberByName( parameter, "value" );
+					if ( value != NULL )
+					{
+						GltfUniform_t * techniqueUniform = &scene->techniques[techniqueIndex].uniforms[j];
+						techniqueUniform->semantic = GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE;
+						Gltf_ParseUniformValue( &techniqueUniform->defaultValue, value, techniqueUniform->type, scene );
+					}
+				}
+
+				scene->techniques[techniqueIndex].rop.blendEnable = false;
+				scene->techniques[techniqueIndex].rop.redWriteEnable = true;
+				scene->techniques[techniqueIndex].rop.blueWriteEnable = true;
+				scene->techniques[techniqueIndex].rop.greenWriteEnable = true;
+				scene->techniques[techniqueIndex].rop.alphaWriteEnable = false;
+				scene->techniques[techniqueIndex].rop.depthTestEnable = false;
+				scene->techniques[techniqueIndex].rop.depthWriteEnable = false;
+				scene->techniques[techniqueIndex].rop.frontFace = GPU_FRONT_FACE_COUNTER_CLOCKWISE;
+				scene->techniques[techniqueIndex].rop.cullMode = GPU_CULL_MODE_NONE;
+				scene->techniques[techniqueIndex].rop.depthCompare = GPU_COMPARE_OP_LESS_OR_EQUAL;
+				scene->techniques[techniqueIndex].rop.blendColor.x = 0.0f;
+				scene->techniques[techniqueIndex].rop.blendColor.y = 0.0f;
+				scene->techniques[techniqueIndex].rop.blendColor.z = 0.0f;
+				scene->techniques[techniqueIndex].rop.blendColor.w = 0.0f;
+				scene->techniques[techniqueIndex].rop.blendOpColor = GPU_BLEND_OP_ADD;
+				scene->techniques[techniqueIndex].rop.blendSrcColor = GPU_BLEND_FACTOR_ONE;
+				scene->techniques[techniqueIndex].rop.blendDstColor = GPU_BLEND_FACTOR_ZERO;
+				scene->techniques[techniqueIndex].rop.blendOpAlpha = GPU_BLEND_OP_ADD;
+				scene->techniques[techniqueIndex].rop.blendSrcAlpha = GPU_BLEND_FACTOR_ONE;
+				scene->techniques[techniqueIndex].rop.blendDstAlpha = GPU_BLEND_FACTOR_ZERO;
+
+				const Json_t * states = Json_GetMemberByName( technique, "states" );
+				const Json_t * enable = Json_GetMemberByName( states, "enable" );
+				const int enableCount = Json_GetMemberCount( enable );
+				for ( int enableIndex = 0; enableIndex < enableCount; enableIndex++ )
+				{
+					const int enableState = Json_GetUint16( Json_GetMemberByIndex( enable, enableIndex ), 0 );
+					switch ( enableState )
+					{
+						case GL_BLEND:
+							scene->techniques[techniqueIndex].rop.blendEnable = true;
+							scene->techniques[techniqueIndex].rop.blendOpColor = GPU_BLEND_OP_ADD;
+							scene->techniques[techniqueIndex].rop.blendSrcColor = GPU_BLEND_FACTOR_SRC_ALPHA;
+							scene->techniques[techniqueIndex].rop.blendDstColor = GPU_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+							break;
+						case GL_DEPTH_TEST:
+							scene->techniques[techniqueIndex].rop.depthTestEnable = true;
+							break;
+						case GL_DEPTH_WRITEMASK:
+							scene->techniques[techniqueIndex].rop.depthWriteEnable = true;
+							break;
+						case GL_CULL_FACE:
+							scene->techniques[techniqueIndex].rop.cullMode = GPU_CULL_MODE_BACK;
+							break;
+						case GL_POLYGON_OFFSET_FILL:
+							assert( false );
+							break;
+						case GL_SAMPLE_ALPHA_TO_COVERAGE:
+							assert( false );
+							break;
+						case GL_SCISSOR_TEST:
+							assert( false );
+							break;
+					}
+				}
+
+				const Json_t * functions = Json_GetMemberByName( states, "functions" );
+				const int functionCount = Json_GetMemberCount( functions );
+				for ( int functionIndex = 0; functionIndex < functionCount; functionIndex++ )
+				{
+					const Json_t * func = Json_GetMemberByIndex( functions, functionIndex );
+					const char * funcName = Json_GetMemberName( func );
+					if ( strcmp( funcName, "blendColor" ) == 0 )
+					{
+						// [float:red, float:blue, float:green, float:alpha]
+						scene->techniques[techniqueIndex].rop.blendColor.x = Json_GetFloat( Json_GetMemberByIndex( func, 0 ), 0.0f );
+						scene->techniques[techniqueIndex].rop.blendColor.y = Json_GetFloat( Json_GetMemberByIndex( func, 1 ), 0.0f );
+						scene->techniques[techniqueIndex].rop.blendColor.z = Json_GetFloat( Json_GetMemberByIndex( func, 2 ), 0.0f );
+						scene->techniques[techniqueIndex].rop.blendColor.w = Json_GetFloat( Json_GetMemberByIndex( func, 3 ), 0.0f );
+					}
+					else if ( strcmp( funcName, "blendEquationSeparate" ) == 0 )
+					{
+						// [GLenum:GL_FUNC_* (rgb), GLenum:GL_FUNC_* (alpha)]
+						scene->techniques[techniqueIndex].rop.blendOpColor = Gltf_GetBlendOp( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+						scene->techniques[techniqueIndex].rop.blendOpAlpha = Gltf_GetBlendOp( Json_GetUint16( Json_GetMemberByIndex( func, 1 ), 0 ) );
+					}
+					else if ( strcmp( funcName, "blendFuncSeparate" ) == 0 )
+					{
+						// [GLenum:GL_ONE (srcRGB), GLenum:GL_ZERO (dstRGB), GLenum:GL_ONE (srcAlpha), GLenum:GL_ZERO (dstAlpha)]
+						scene->techniques[techniqueIndex].rop.blendSrcColor = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+						scene->techniques[techniqueIndex].rop.blendDstColor = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 1 ), 0 ) );
+						scene->techniques[techniqueIndex].rop.blendSrcAlpha = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 2 ), 0 ) );
+						scene->techniques[techniqueIndex].rop.blendDstAlpha = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 3 ), 0 ) );
+					}
+					else if ( strcmp( funcName, "colorMask" ) == 0 )
+					{
+						// [bool:red, bool:green, bool:blue, bool:alpha]
+						scene->techniques[techniqueIndex].rop.redWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 0 ), false );
+						scene->techniques[techniqueIndex].rop.blueWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 1 ), false );
+						scene->techniques[techniqueIndex].rop.greenWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 2 ), false );
+						scene->techniques[techniqueIndex].rop.alphaWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 3 ), false );
+					}
+					else if ( strcmp( funcName, "cullFace" ) == 0 )
+					{
+						// [GLenum:GL_BACK,GL_FRONT]
+						scene->techniques[techniqueIndex].rop.cullMode = Gltf_GetCullMode( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+					}
+					else if ( strcmp( funcName, "depthFunc" ) == 0 )
+					{
+						// [GLenum:GL_LESS,GL_LEQUAL,GL_GREATER]
+						scene->techniques[techniqueIndex].rop.depthCompare = Gltf_GetCompareOp( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+					}
+					else if ( strcmp( funcName, "depthMask" ) == 0 )
+					{
+						// [bool:mask]
+						scene->techniques[techniqueIndex].rop.depthWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 0 ), false );
+					}
+					else if ( strcmp( funcName, "frontFace" ) == 0 )
+					{
+						// [Glenum:GL_CCW,GL_CW]
+						scene->techniques[techniqueIndex].rop.frontFace = Gltf_GetFrontFace( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+					}
+					else if ( strcmp( funcName, "lineWidth" ) == 0 )
+					{
+						// [float:width]
+						assert( false );
+					}
+					else if ( strcmp( funcName, "polygonOffset" ) == 0 )
+					{
+						// [float:factor, float:units]
+						assert( false );
+					}
+					else if ( strcmp( funcName, "depthRange" ) == 0 )
+					{
+						// [float:znear, float:zfar]
+						assert( false );
+					}
+					else if ( strcmp( funcName, "scissor" ) == 0 )
+					{
+						// [int:x, int:y, int:width, int:height]
+						assert( false );
+					}
+				}
+
+				GpuGraphicsProgram_Create( context, &scene->techniques[techniqueIndex].program,
+											program->vertexSource, program->vertexSourceSize,
+											program->fragmentSource, program->fragmentSourceSize,
+											scene->techniques[techniqueIndex].parms, uniformCount, DefaultVertexAttributeLayout, vertexAttribsFlags );
+			}
+			Gltf_CreateTechniqueNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load techniques\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF materials
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * materials = Json_GetMemberByName( rootNode, "materials" );
+			scene->materialCount = Json_GetMemberCount( materials );
+			scene->materials = (GltfMaterial_t *) calloc( scene->materialCount, sizeof( GltfMaterial_t ) );
+			for ( int materialIndex = 0; materialIndex < scene->materialCount; materialIndex++ )
+			{
+				const Json_t * material = Json_GetMemberByIndex( materials, materialIndex );
+				const GltfTechnique_t * technique = Gltf_GetTechniqueByName( scene, Json_GetString( Json_GetMemberByName( material, "technique" ), "" ) );
+				scene->materials[materialIndex].name = Gltf_strdup( Json_GetMemberName( material ) );
+				scene->materials[materialIndex].technique = technique;
+
+				assert( scene->materials[materialIndex].name[0] != '\0' );
+				assert( scene->materials[materialIndex].technique != NULL );
+
+				const Json_t * values = Json_GetMemberByName( material, "values" );
+				scene->materials[materialIndex].valueCount = Json_GetMemberCount( values );
+				scene->materials[materialIndex].values = (GltfMaterialValue_t *) calloc( scene->materials[materialIndex].valueCount, sizeof( GltfMaterialValue_t ) );
+				for ( int valueIndex = 0; valueIndex < scene->materials[materialIndex].valueCount; valueIndex++ )
+				{
+					const Json_t * value = Json_GetMemberByIndex( values, valueIndex );
+					const char * valueName = Json_GetMemberName( value );
+					GltfUniform_t * uniform = NULL;
+					for ( int uniformIndex = 0; uniformIndex < technique->uniformCount; uniformIndex++ )
+					{
+						if ( strcmp( technique->uniforms[uniformIndex].name, valueName ) == 0 )
+						{
+							uniform = &technique->uniforms[uniformIndex];
+							break;
+						}
+					}
+					if ( uniform == NULL )
+					{
+						assert( false );
+						continue;
+					}
+					assert( uniform->semantic == GLTF_UNIFORM_SEMANTIC_NONE || uniform->semantic == GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE );
+					scene->materials[materialIndex].values[valueIndex].uniform = uniform;
+					Gltf_ParseUniformValue( &scene->materials[materialIndex].values[valueIndex].value, value, uniform->type, scene );
+				}
+				// Make sure that the material sets any uniforms that do not have a special semantic or a default value.
+				for ( int uniformIndex = 0; uniformIndex < technique->uniformCount; uniformIndex++ )
+				{
+					if ( technique->uniforms[uniformIndex].semantic == GLTF_UNIFORM_SEMANTIC_NONE )
+					{
+						bool found = false;
+						for ( int valueIndex = 0; valueIndex < scene->materials[materialIndex].valueCount; valueIndex++ )
+						{
+							if ( scene->materials[materialIndex].values[valueIndex].uniform == &technique->uniforms[uniformIndex] )
+							{
+								found = true;
+							}
+						}
+						assert( found );
+					}
+				}
+			}
+			Gltf_CreateMaterialNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load materials\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF meshes
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * models = Json_GetMemberByName( rootNode, "meshes" );
+			scene->modelCount = Json_GetMemberCount( models );
+			scene->models = (GltfModel_t *) calloc( scene->modelCount, sizeof( GltfModel_t ) );
+			for ( int meshIndex = 0; meshIndex < scene->modelCount; meshIndex++ )
+			{
+				const Json_t * model = Json_GetMemberByIndex( models, meshIndex );
+				scene->models[meshIndex].name = Gltf_strdup( Json_GetMemberName( model ) );
+
+				assert( scene->models[meshIndex].name[0] != '\0' );
+
+				const Json_t * primitives = Json_GetMemberByName( model, "primitives" );
+				scene->models[meshIndex].surfaceCount = Json_GetMemberCount( primitives );
+				scene->models[meshIndex].surfaces = (GltfSurface_t *) calloc( scene->models[meshIndex].surfaceCount, sizeof( GltfSurface_t ) );
+				for ( int surfaceIndex = 0; surfaceIndex < scene->models[meshIndex].surfaceCount; surfaceIndex++ )
+				{
+					GltfSurface_t * surface = &scene->models[meshIndex].surfaces[surfaceIndex];
+
+					const Json_t * primitive = Json_GetMemberByIndex( primitives, surfaceIndex );
+					const Json_t * attributes = Json_GetMemberByName( primitive, "attributes" );
+
+					const char * positionAccessorName		= Json_GetString( Json_GetMemberByName( attributes, "POSITION" ), "" );
+					const char * normalAccessorName			= Json_GetString( Json_GetMemberByName( attributes, "NORMAL" ), "" );
+					const char * tangentAccessorName		= Json_GetString( Json_GetMemberByName( attributes, "TANGENT" ), "" );
+					const char * binormalAccessorName		= Json_GetString( Json_GetMemberByName( attributes, "BINORMAL" ), "" );
+					const char * colorAccessorName			= Json_GetString( Json_GetMemberByName( attributes, "COLOR" ), "" );
+					const char * uv0AccessorName			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_0" ), "" );
+					const char * uv1AccessorName			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_1" ), "" );
+					const char * uv2AccessorName			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_2" ), "" );
+					const char * jointIndicesAccessorName	= Json_GetString( Json_GetMemberByName( attributes, "JOINT" ), "" );
+					const char * jointWeightsAccessorName	= Json_GetString( Json_GetMemberByName( attributes, "WEIGHT" ), "" );
+					const char * indicesAccessorName		= Json_GetString( Json_GetMemberByName( primitive, "indices" ), "" );
+
+					surface->material = Gltf_GetMaterialByName( scene, Json_GetString( Json_GetMemberByName( primitive, "material" ), "" ) );
+					assert( surface->material != NULL );
+
+					const GltfAccessor_t * positionAccessor		= Gltf_GetAccessorByNameAndType( scene, positionAccessorName,		"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * normalAccessor		= Gltf_GetAccessorByNameAndType( scene, normalAccessorName,			"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * tangentAccessor		= Gltf_GetAccessorByNameAndType( scene, tangentAccessorName,		"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * binormalAccessor		= Gltf_GetAccessorByNameAndType( scene, binormalAccessorName,		"VEC3",		GL_FLOAT );
+					const GltfAccessor_t * colorAccessor		= Gltf_GetAccessorByNameAndType( scene, colorAccessorName,			"VEC4",		GL_FLOAT );
+					const GltfAccessor_t * uv0Accessor			= Gltf_GetAccessorByNameAndType( scene, uv0AccessorName,			"VEC2",		GL_FLOAT );
+					const GltfAccessor_t * uv1Accessor			= Gltf_GetAccessorByNameAndType( scene, uv1AccessorName,			"VEC2",		GL_FLOAT );
+					const GltfAccessor_t * uv2Accessor			= Gltf_GetAccessorByNameAndType( scene, uv2AccessorName,			"VEC2",		GL_FLOAT );
+					const GltfAccessor_t * jointIndicesAccessor	= Gltf_GetAccessorByNameAndType( scene, jointIndicesAccessorName,	"VEC4",		GL_FLOAT );
+					const GltfAccessor_t * jointWeightsAccessor	= Gltf_GetAccessorByNameAndType( scene, jointWeightsAccessorName,	"VEC4",		GL_FLOAT );
+					const GltfAccessor_t * indicesAccessor		= Gltf_GetAccessorByNameAndType( scene, indicesAccessorName,		"SCALAR",	GL_UNSIGNED_SHORT );
+
+					if ( positionAccessor == NULL || indicesAccessor == NULL )
+					{
+						assert( false );
+						continue;
+					}
+
+					surface->mins.x = positionAccessor->floatMin[0];
+					surface->mins.y = positionAccessor->floatMin[1];
+					surface->mins.z = positionAccessor->floatMin[2];
+					surface->maxs.x = positionAccessor->floatMax[0];
+					surface->maxs.y = positionAccessor->floatMax[1];
+					surface->maxs.z = positionAccessor->floatMax[2];
+
+					assert( normalAccessor			== NULL || normalAccessor->count		== positionAccessor->count );
+					assert( tangentAccessor			== NULL || tangentAccessor->count		== positionAccessor->count );
+					assert( binormalAccessor		== NULL || binormalAccessor->count		== positionAccessor->count );
+					assert( colorAccessor			== NULL || colorAccessor->count			== positionAccessor->count );
+					assert( uv0Accessor				== NULL || uv0Accessor->count			== positionAccessor->count );
+					assert( uv1Accessor				== NULL || uv1Accessor->count			== positionAccessor->count );
+					assert( uv2Accessor				== NULL || uv2Accessor->count			== positionAccessor->count );
+					assert( jointIndicesAccessor	== NULL || jointIndicesAccessor->count	== positionAccessor->count );
+					assert( jointWeightsAccessor	== NULL || jointWeightsAccessor->count	== positionAccessor->count );
+
+					const int attribFlags = ( positionAccessor != NULL		? VERTEX_ATTRIBUTE_FLAG_POSITION : 0 ) |
+											( normalAccessor != NULL		? VERTEX_ATTRIBUTE_FLAG_NORMAL : 0 ) |
+											( tangentAccessor != NULL		? VERTEX_ATTRIBUTE_FLAG_TANGENT : 0 ) |
+											( binormalAccessor != NULL		? VERTEX_ATTRIBUTE_FLAG_BINORMAL : 0 ) |
+											( colorAccessor != NULL			? VERTEX_ATTRIBUTE_FLAG_COLOR : 0 ) |
+											( uv0Accessor != NULL			? VERTEX_ATTRIBUTE_FLAG_UV0 : 0 ) |
+											( uv1Accessor != NULL			? VERTEX_ATTRIBUTE_FLAG_UV1 : 0 ) |
+											( uv2Accessor != NULL			? VERTEX_ATTRIBUTE_FLAG_UV2 : 0 ) |
+											( jointIndicesAccessor != NULL	? VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES : 0 ) |
+											( jointWeightsAccessor != NULL	? VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS : 0 );
+
+					GpuVertexAttributeArrays_t attribs;
+					GpuVertexAttributeArrays_Alloc( &attribs.base, DefaultVertexAttributeLayout, positionAccessor->count, attribFlags );
+
+					if ( positionAccessor != NULL )		memcpy( attribs.position,		Gltf_GetBufferData( positionAccessor ),		positionAccessor->count		* sizeof( attribs.position[0] ) );
+					if ( normalAccessor != NULL )		memcpy( attribs.normal,			Gltf_GetBufferData( normalAccessor ),		normalAccessor->count		* sizeof( attribs.normal[0] ) );
+					if ( tangentAccessor != NULL )		memcpy( attribs.tangent,		Gltf_GetBufferData( tangentAccessor ),		tangentAccessor->count		* sizeof( attribs.tangent[0] ) );
+					if ( binormalAccessor != NULL )		memcpy( attribs.binormal,		Gltf_GetBufferData( binormalAccessor ),		binormalAccessor->count		* sizeof( attribs.binormal[0] ) );
+					if ( colorAccessor != NULL )		memcpy( attribs.color,			Gltf_GetBufferData( colorAccessor ),		colorAccessor->count		* sizeof( attribs.color[0] ) );
+					if ( uv0Accessor != NULL )			memcpy( attribs.uv0,			Gltf_GetBufferData( uv0Accessor ),			uv0Accessor->count			* sizeof( attribs.uv0[0] ) );
+					if ( uv1Accessor != NULL )			memcpy( attribs.uv1,			Gltf_GetBufferData( uv1Accessor ),			uv1Accessor->count			* sizeof( attribs.uv1[0] ) );
+					if ( uv2Accessor != NULL )			memcpy( attribs.uv2,			Gltf_GetBufferData( uv2Accessor ),			uv2Accessor->count			* sizeof( attribs.uv2[0] ) );
+					if ( jointIndicesAccessor != NULL )	memcpy( attribs.jointIndices,	Gltf_GetBufferData( jointIndicesAccessor ),	jointIndicesAccessor->count	* sizeof( attribs.jointIndices[0] ) );
+					if ( jointWeightsAccessor != NULL )	memcpy( attribs.jointWeights,	Gltf_GetBufferData( jointWeightsAccessor ),	jointWeightsAccessor->count	* sizeof( attribs.jointWeights[0] ) );
+
+					GpuTriangleIndex_t * indices = (GpuTriangleIndex_t *)Gltf_GetBufferData( indicesAccessor );
+
+					GpuGeometry_Create( context, &surface->geometry, &attribs.base, positionAccessor->count, indices, indicesAccessor->count );
+
+					GpuVertexAttributeArrays_Free( &attribs.base );
+
+					GpuGraphicsPipelineParms_t pipelineParms;
+					GpuGraphicsPipelineParms_Init( &pipelineParms );
+
+					pipelineParms.renderPass = renderPass;
+					pipelineParms.program = &surface->material->technique->program;
+					pipelineParms.geometry = &surface->geometry;
+					pipelineParms.rop = surface->material->technique->rop;
+
+					GpuGraphicsPipeline_Create( context, &surface->pipeline, &pipelineParms );
+				}
+			}
+			Gltf_CreateModelNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load models\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF animations
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * animations = Json_GetMemberByName( rootNode, "animations" );
+			scene->animationCount = Json_GetMemberCount( animations );
+			scene->animations = (GltfAnimation_t *) calloc( scene->animationCount, sizeof( GltfAnimation_t ) );
+			for ( int animationIndex = 0; animationIndex < scene->animationCount; animationIndex++ )
+			{
+				const Json_t * animation = Json_GetMemberByIndex( animations, animationIndex );
+				scene->animations[animationIndex].name = Gltf_strdup( Json_GetMemberName( animation ) );
+
+				const Json_t * parameters = Json_GetMemberByName( animation, "parameters" );
+				const Json_t * samplers = Json_GetMemberByName( animation, "samplers" );
+
+				const char * timeAccessor = Json_GetString( Json_GetMemberByName( parameters, "TIME" ), "" );
+				const GltfAccessor_t * access_time = Gltf_GetAccessorByNameAndType( scene, timeAccessor, "SCALAR", GL_FLOAT );
+
+				if ( access_time == NULL || access_time->count <= 0 )
+				{
+					assert( false );
+					continue;
+				}
+
+				scene->animations[animationIndex].sampleCount = access_time->count;
+				scene->animations[animationIndex].sampleTimes = (float *)Gltf_GetBufferData( access_time );
+
+				const Json_t * channels = Json_GetMemberByName( animation, "channels" );
+				scene->animations[animationIndex].channelCount = Json_GetMemberCount( channels );
+				scene->animations[animationIndex].channels = (GltfAnimationChannel_t *) calloc( scene->animations[animationIndex].channelCount, sizeof( GltfAnimationChannel_t ) );
+				int newChannelCount = 0;
+				for ( int channelIndex = 0; channelIndex < scene->animations[animationIndex].channelCount; channelIndex++ )
+				{
+					const Json_t * channel = Json_GetMemberByIndex( channels, channelIndex );
+					const char * samplerName = Json_GetString( Json_GetMemberByName( channel, "sampler" ), "" );
+					const Json_t * sampler = Json_GetMemberByName( samplers, samplerName );
+					const char * inputName = Json_GetString( Json_GetMemberByName( sampler, "input" ), "" );
+					const char * interpolation = Json_GetString( Json_GetMemberByName( sampler, "interpolation" ), "" );
+					const char * outputName = Json_GetString( Json_GetMemberByName( sampler, "output" ), "" );
+					const char * accessorName = Json_GetString( Json_GetMemberByName( parameters, outputName ), "" );
+
+					assert( strcmp( inputName, "TIME" ) == 0 );
+					assert( strcmp( interpolation, "LINEAR" ) == 0 );
+					assert( outputName[0] != '\0' );
+					assert( accessorName[0] != '\0' );
+
+					UNUSED_PARM( inputName );
+					UNUSED_PARM( interpolation );
+
+					const Json_t * target = Json_GetMemberByName( channel, "target" );
+					const char * nodeName = Json_GetString( Json_GetMemberByName( target, "id" ), "" );
+					const char * pathName = Json_GetString( Json_GetMemberByName( target, "path" ), "" );
+
+					Vector3f_t * translation = NULL;
+					Quatf_t * rotation = NULL;
+					Vector3f_t * scale = NULL;
+
+					if ( strcmp( pathName, "translation" ) == 0 )
+					{
+						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC3", GL_FLOAT );
+						assert( accessor != NULL );
+						translation = (Vector3f_t *) Gltf_GetBufferData( accessor );
+					}
+					else if ( strcmp( pathName, "rotation" ) == 0 )
+					{
+						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC4", GL_FLOAT );
+						assert( accessor != NULL );
+						rotation = (Quatf_t *) Gltf_GetBufferData( accessor );
+					}
+					else if ( strcmp( pathName, "scale" ) == 0 )
+					{
+						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC3", GL_FLOAT );
+						assert( accessor != NULL );
+						scale = (Vector3f_t *) Gltf_GetBufferData( accessor );
+					}
+
+					// Try to merge this channel with a previous channel for the same node.
+					for ( int k = 0; k < newChannelCount; k++ )
+					{
+						if ( strcmp( nodeName, scene->animations[animationIndex].channels[k].nodeName ) == 0 )
+						{
+							if ( translation != NULL )
+							{
+								scene->animations[animationIndex].channels[k].translation = translation;
+								translation = NULL;
+							}
+							if ( rotation != NULL )
+							{
+								scene->animations[animationIndex].channels[k].rotation = rotation;
+								rotation = NULL;
+							}
+							if ( scale != NULL )
+							{
+								scene->animations[animationIndex].channels[k].scale = scale;
+								scale = NULL;
+							}
+							break;
+						}
+					}
+
+					// Only store the channel if it was not merged.
+					if ( translation != NULL || rotation != NULL || scale != NULL )
+					{
+						scene->animations[animationIndex].channels[newChannelCount].nodeName = Gltf_strdup( nodeName );
+						scene->animations[animationIndex].channels[newChannelCount].node = NULL; // linked up once the nodes are loaded
+						scene->animations[animationIndex].channels[newChannelCount].translation = translation;
+						scene->animations[animationIndex].channels[newChannelCount].rotation = rotation;
+						scene->animations[animationIndex].channels[newChannelCount].scale = scale;
+						newChannelCount++;
+					}
+				}
+				scene->animations[animationIndex].channelCount = newChannelCount;
+			}
+			Gltf_CreateAnimationNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load animations\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF skins
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * skins = Json_GetMemberByName( rootNode, "skins" );
+			scene->skinCount = Json_GetMemberCount( skins );
+			scene->skins = (GltfSkin_t *) calloc( scene->skinCount, sizeof( GltfSkin_t ) );
+			for ( int skinIndex = 0; skinIndex < scene->skinCount; skinIndex++ )
+			{
+				const Json_t * skin = Json_GetMemberByIndex( skins, skinIndex );
+				scene->skins[skinIndex].name = Gltf_strdup( Json_GetMemberName( skin ) );
+				Gltf_ParseFloatArray( scene->skins[skinIndex].bindShapeMatrix.m[0], 16, Json_GetMemberByName( skin, "bindShapeMatrix" ) );
+
+				const char * bindAccessorName = Json_GetString( Json_GetMemberByName( skin, "inverseBindMatrices" ), "" );
+				const GltfAccessor_t * bindAccess = Gltf_GetAccessorByNameAndType( scene, bindAccessorName, "MAT4", GL_FLOAT );
+				scene->skins[skinIndex].inverseBindMatrices = Gltf_GetBufferData( bindAccess );
+
+				const char * minsAccessorName = Json_GetString( Json_GetMemberByName( skin, "jointGeometryMins" ), "" );
+				const GltfAccessor_t * minsAccess = Gltf_GetAccessorByNameAndType( scene, minsAccessorName, "VEC3", GL_FLOAT );
+				scene->skins[skinIndex].jointGeometryMins = Gltf_GetBufferData( minsAccess );
+
+				const char * maxsAccessorName = Json_GetString( Json_GetMemberByName( skin, "jointGeometryMaxs" ), "" );
+				const GltfAccessor_t * maxsAccess = Gltf_GetAccessorByNameAndType( scene, maxsAccessorName, "VEC3", GL_FLOAT );
+				scene->skins[skinIndex].jointGeometryMaxs = Gltf_GetBufferData( maxsAccess );
+
+				assert( scene->skins[skinIndex].name[0] != '\0' );
+				assert( scene->skins[skinIndex].inverseBindMatrices != NULL );
+
+				const Json_t * jointNames = Json_GetMemberByName( skin, "jointNames" );
+				scene->skins[skinIndex].jointCount = Json_GetMemberCount( jointNames );
+				scene->skins[skinIndex].joints = (GltfJoint_t *) calloc( scene->skins[skinIndex].jointCount, sizeof( GltfJoint_t ) );
+				assert( scene->skins[skinIndex].jointCount <= MAX_JOINTS );
+				for ( int jointIndex = 0; jointIndex < scene->skins[skinIndex].jointCount; jointIndex++ )
+				{
+					scene->skins[skinIndex].joints[jointIndex].name = Gltf_strdup( Json_GetString( Json_GetMemberByIndex( jointNames, jointIndex ), "" ) );
+					scene->skins[skinIndex].joints[jointIndex].node = NULL; // linked up once the nodes are loaded
+				}
+				assert( bindAccess->count == scene->skins[skinIndex].jointCount );
+
+				GpuBuffer_Create( context, &scene->skins[skinIndex].jointBuffer, GPU_BUFFER_TYPE_UNIFORM, scene->skins[skinIndex].jointCount * sizeof( Matrix4x4f_t ), NULL, false );
+			}
+			Gltf_CreateSkinNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load skins\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF cameras
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * cameras = Json_GetMemberByName( rootNode, "cameras" );
+			scene->cameraCount = Json_GetMemberCount( cameras );
+			scene->cameras = (GltfCamera_t *) calloc( scene->cameraCount, sizeof( GltfCamera_t ) );
+			for ( int cameraIndex = 0; cameraIndex < scene->cameraCount; cameraIndex++ )
+			{
+				const Json_t * camera = Json_GetMemberByIndex( cameras, cameraIndex );
+				const char * type = Json_GetString( Json_GetMemberByName( camera, "type" ), "" );
+				scene->cameras[cameraIndex].name = Gltf_strdup( Json_GetMemberName( camera ) );
+				if ( strcmp( type, "perspective" ) == 0 )
+				{
+					const Json_t * perspective = Json_GetMemberByName( camera, "perspective" );
+					const float aspectRatio = Json_GetFloat( Json_GetMemberByName( perspective, "aspectRatio" ), 0.0f );
+					const float yfov = Json_GetFloat( Json_GetMemberByName( perspective, "yfov" ), 0.0f );
+					scene->cameras[cameraIndex].type = GLTF_CAMERA_TYPE_PERSPECTIVE;
+					scene->cameras[cameraIndex].perspective.fovDegreesX = ( 180.0f / MATH_PI ) * 2.0f * atanf( tanf( yfov * 0.5f ) * aspectRatio );
+					scene->cameras[cameraIndex].perspective.fovDegreesY = ( 180.0f / MATH_PI ) * yfov;
+					scene->cameras[cameraIndex].perspective.nearZ = Json_GetFloat( Json_GetMemberByName( perspective, "znear" ), 0.0f );
+					scene->cameras[cameraIndex].perspective.farZ = Json_GetFloat( Json_GetMemberByName( perspective, "zfar" ), 0.0f );
+					assert( scene->cameras[cameraIndex].perspective.fovDegreesX > 0.0f );
+					assert( scene->cameras[cameraIndex].perspective.fovDegreesY > 0.0f );
+					assert( scene->cameras[cameraIndex].perspective.nearZ > 0.0f );
+				}
+				else
+				{
+					const Json_t * orthographic = Json_GetMemberByName( camera, "orthographic" );
+					scene->cameras[cameraIndex].type = GLTF_CAMERA_TYPE_ORTHOGRAPHIC;
+					scene->cameras[cameraIndex].orthographic.magX = Json_GetFloat( Json_GetMemberByName( orthographic, "xmag" ), 0.0f );
+					scene->cameras[cameraIndex].orthographic.magY = Json_GetFloat( Json_GetMemberByName( orthographic, "ymag" ), 0.0f );
+					scene->cameras[cameraIndex].orthographic.nearZ = Json_GetFloat( Json_GetMemberByName( orthographic, "znear" ), 0.0f );
+					scene->cameras[cameraIndex].orthographic.farZ = Json_GetFloat( Json_GetMemberByName( orthographic, "zfar" ), 0.0f );
+					assert( scene->cameras[cameraIndex].orthographic.magX > 0.0f );
+					assert( scene->cameras[cameraIndex].orthographic.magY > 0.0f );
+					assert( scene->cameras[cameraIndex].orthographic.nearZ > 0.0f );
+				}
+			}
+			Gltf_CreateCameraNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load cameras\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// glTF nodes
+		//
+		{
+			const Microseconds_t startTime = GetTimeMicroseconds();
+
+			const Json_t * nodes = Json_GetMemberByName( rootNode, "nodes" );
+			scene->nodeCount = Json_GetMemberCount( nodes );
+			scene->nodes = (GltfNode_t *) calloc( scene->nodeCount, sizeof( GltfNode_t ) );
+			for ( int nodeIndex = 0; nodeIndex < scene->nodeCount; nodeIndex++ )
+			{
+				const Json_t * node = Json_GetMemberByIndex( nodes, nodeIndex );
+				scene->nodes[nodeIndex].name = Gltf_strdup( Json_GetMemberName( node ) );
+				scene->nodes[nodeIndex].jointName = Gltf_strdup( Json_GetString( Json_GetMemberByName( node, "jointName" ), "" ) );
+				const Json_t * matrix = Json_GetMemberByName( node, "matrix" );
+				if ( Json_IsArray( matrix ) )
+				{
+					Gltf_ParseFloatArray( scene->nodes[nodeIndex].localTransform.m[0], 16, matrix );
+					Matrix4x4f_GetTranslation( &scene->nodes[nodeIndex].translation, &scene->nodes[nodeIndex].localTransform );
+					Matrix4x4f_GetRotation( &scene->nodes[nodeIndex].rotation, &scene->nodes[nodeIndex].localTransform );
+					Matrix4x4f_GetScale( &scene->nodes[nodeIndex].scale, &scene->nodes[nodeIndex].localTransform );
+				}
+				else
+				{
+					Gltf_ParseFloatArray( &scene->nodes[nodeIndex].rotation.x, 4, Json_GetMemberByName( node, "rotation" ) );
+					Gltf_ParseFloatArray( &scene->nodes[nodeIndex].scale.x, 3, Json_GetMemberByName( node, "scale" ) );
+					Gltf_ParseFloatArray( &scene->nodes[nodeIndex].translation.x, 3, Json_GetMemberByName( node, "translation" ) );
+					Matrix4x4f_CreateTranslationRotationScale( &scene->nodes[nodeIndex].localTransform,
+																&scene->nodes[nodeIndex].scale,
+																&scene->nodes[nodeIndex].rotation,
+																&scene->nodes[nodeIndex].translation );
+				}
+				scene->nodes[nodeIndex].globalTransform = scene->nodes[nodeIndex].localTransform;	// transformed to global space later
+
+				assert( scene->nodes[nodeIndex].name[0] != '\0' );
+				assert( Matrix4x4f_IsAffine( &scene->nodes[nodeIndex].localTransform, 1e-4f ) );
+				assert( Matrix4x4f_IsAffine( &scene->nodes[nodeIndex].globalTransform, 1e-4f ) );
+
+				const Json_t * children = Json_GetMemberByName( node, "children" );
+				scene->nodes[nodeIndex].childCount = Json_GetMemberCount( children );
+				scene->nodes[nodeIndex].childNames = (char **) calloc( scene->nodes[nodeIndex].childCount, sizeof( char * ) );
+				for ( int c = 0; c < scene->nodes[nodeIndex].childCount; c++ )
+				{
+					scene->nodes[nodeIndex].childNames[c] = Gltf_strdup( Json_GetString( Json_GetMemberByIndex( children, c ), "" ) );
+				}
+				scene->nodes[nodeIndex].camera = Gltf_GetCameraByName( scene, Json_GetString( Json_GetMemberByName( node, "camera" ), "" ) );
+				scene->nodes[nodeIndex].skin = Gltf_GetSkinByName( scene, Json_GetString( Json_GetMemberByName( node, "skin" ), "" ) );
+				const Json_t * meshes = Json_GetMemberByName( node, "meshes" );
+				scene->nodes[nodeIndex].modelCount = Json_GetMemberCount( meshes );
+				scene->nodes[nodeIndex].models = (GltfModel_t **) calloc( scene->nodes[nodeIndex].modelCount, sizeof( GltfModel_t ** ) );
+				for ( int m = 0; m < scene->nodes[nodeIndex].modelCount; m++ )
+				{
+					scene->nodes[nodeIndex].models[m] = Gltf_GetModelByName( scene, Json_GetString( Json_GetMemberByIndex( meshes, m ), "" ) );
+					assert( scene->nodes[nodeIndex].models[m] != NULL );
+				}
+			}
+			Gltf_SortNodes( scene->nodes, scene->nodeCount );
+			Gltf_CreateNodeNameHash( scene );
+			Gltf_CreateNodeJointNameHash( scene );
+
+			const Microseconds_t endTime = GetTimeMicroseconds();
+			Print( "%1.3f seconds to load nodes\n", ( endTime - startTime ) * 1e-6f );
+		}
+
+		//
+		// Assign node pointers now that the nodes are sorted and the hash is setup.
+		//
+		{
+			// Get the node children and parents.
+			for ( int nodeIndex = 0; nodeIndex < scene->nodeCount; nodeIndex++ )
+			{
+				GltfNode_t * node = &scene->nodes[nodeIndex];
+				node->children = (GltfNode_t **) calloc( node->childCount, sizeof( GltfNode_t * ) );
+				for ( int childIndex = 0; childIndex < node->childCount; childIndex++ )
+				{
+					node->children[childIndex] = Gltf_GetNodeByName( scene, node->childNames[childIndex] );
+					node->children[childIndex]->parent = node;
+				}
+			}
+			// Get the animated nodes.
+			for ( int animationIndex = 0; animationIndex < scene->animationCount; animationIndex++ )
+			{
+				for ( int channelIndex = 0; channelIndex < scene->animations[animationIndex].channelCount; channelIndex++ )
+				{
+					scene->animations[animationIndex].channels[channelIndex].node = Gltf_GetNodeByName( scene, scene->animations[animationIndex].channels[channelIndex].nodeName );
+					assert( scene->animations[animationIndex].channels[channelIndex].node != NULL );
+				}
+			}
+			// Get the skin joint nodes.
+			for ( int skinIndex = 0; skinIndex < scene->skinCount; skinIndex++ )
+			{
+				for ( int jointIndex = 0; jointIndex < scene->skins[skinIndex].jointCount; jointIndex++ )
+				{
+					scene->skins[skinIndex].joints[jointIndex].node = Gltf_GetNodeByJointName( scene, scene->skins[skinIndex].joints[jointIndex].name );
+					assert( scene->skins[skinIndex].joints[jointIndex].node != NULL );
+				}
+				// Find the parent of the root node of the skin.
+				GltfNode_t * root = NULL;
+				for ( int jointIndex = 0; jointIndex < scene->skins[skinIndex].jointCount && root == NULL; jointIndex++ )
+				{
+					root = scene->skins[skinIndex].joints[jointIndex].node;
+					for ( int k = 0; k < scene->skins[skinIndex].jointCount; k++ )
+					{
+						if ( root->parent == scene->skins[skinIndex].joints[k].node )
+						{
+							root = NULL;
+							break;
+						}
+					}
+				}
+				scene->skins[skinIndex].parent = root->parent;
+			}
+		}
+
+		//
+		// glTF sub-scenes
+		//
+		{
+			const Json_t * subScenes = Json_GetMemberByName( rootNode, "scenes" );
+			scene->subSceneCount = Json_GetMemberCount( subScenes );
+			scene->subScenes = (GltfSubScene_t *) calloc( scene->subSceneCount, sizeof( GltfSubScene_t ) );
+			for ( int subSceneIndex = 0; subSceneIndex < scene->subSceneCount; subSceneIndex++ )
+			{
+				const Json_t * subScene = Json_GetMemberByIndex( subScenes, subSceneIndex );
+				scene->subScenes[subSceneIndex].name = Gltf_strdup( Json_GetMemberName( subScene ) );
+
+				const Json_t * nodes = Json_GetMemberByName( subScene, "nodes" );
+				scene->subScenes[subSceneIndex].subTreeCount = Json_GetMemberCount( nodes );
+				scene->subScenes[subSceneIndex].subTrees = (GltfSubTree_t *) calloc( scene->subScenes[subSceneIndex].subTreeCount, sizeof( GltfSubTree_t ) );
+				for ( int subTreeIndex = 0; subTreeIndex < scene->subScenes[subSceneIndex].subTreeCount; subTreeIndex++ )
+				{
+					GltfSubTree_t * subTree = &scene->subScenes[subSceneIndex].subTrees[subTreeIndex];
+					const char * nodeName = Json_GetString( Json_GetMemberByIndex( nodes, subTreeIndex ), "" );
+					subTree->nodes = Gltf_GetNodeByName( scene, nodeName );
+					assert( subTree->nodes != NULL );
+					subTree->nodeCount = subTree->nodes->subTreeNodeCount;
+				}
+			}
+			Gltf_CreateSubSceneNameHash( scene );
+		}
+
+		//
+		// glTF default scene
+		//
+
+		const char * defaultSceneName = Json_GetString( Json_GetMemberByName( rootNode, "scene" ), "" );
+		scene->currentSubScene = Gltf_GetSubSceneByName( scene, defaultSceneName );
+		assert( scene->currentSubScene != NULL );
+	}
+	Json_Destroy( rootNode );
+
+	// Create a default joint buffer.
+	{
+		Matrix4x4f_t * data = malloc( MAX_JOINTS * sizeof( Matrix4x4f_t ) );
+		for ( int jointIndex = 0; jointIndex < MAX_JOINTS; jointIndex++ )
+		{
+			Matrix4x4f_CreateIdentity( &data[jointIndex] );
+		}
+		GpuBuffer_Create( context, &scene->defaultJointBuffer, GPU_BUFFER_TYPE_UNIFORM, MAX_JOINTS * sizeof( Matrix4x4f_t ), data, false );
+		free( data );
+	}
+
+	// Create unit cube.
+	{
+		GpuGeometry_CreateCube( context, &scene->unitCubeGeometry, 0.0f, 1.0f );
+		GpuGraphicsProgram_Create( context, &scene->unitCubeFlatShadeProgram,
+									PROGRAM( unitCubeFlatShadeVertexProgram ), sizeof( PROGRAM( unitCubeFlatShadeVertexProgram ) ),
+									PROGRAM( unitCubeFlatShadeFragmentProgram ), sizeof( PROGRAM( unitCubeFlatShadeFragmentProgram ) ),
+									unitCubeFlatShadeProgramParms, ARRAY_SIZE( unitCubeFlatShadeProgramParms ),
+									scene->unitCubeGeometry.layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL );
+
+		GpuGraphicsPipelineParms_t pipelineParms;
+		GpuGraphicsPipelineParms_Init( &pipelineParms );
+
+		pipelineParms.renderPass = renderPass;
+		pipelineParms.program = &scene->unitCubeFlatShadeProgram;
+		pipelineParms.geometry = &scene->unitCubeGeometry;
+
+		GpuGraphicsPipeline_Create( context, &scene->unitCubePipeline, &pipelineParms );
+	}
+
+	const Microseconds_t t1 = GetTimeMicroseconds();
+
+	Print( "%1.3f seconds to load %s\n", ( t1 - t0 ) * 1e-6f, fileName );
+
+	return true;
+}
+
+static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
+{
+	GpuContext_WaitIdle( context );
+
+	{
+		for ( int bufferIndex = 0; bufferIndex < scene->bufferCount; bufferIndex++ )
+		{
+			free( scene->buffers[bufferIndex].name );
+			free( scene->buffers[bufferIndex].type );
+			free( scene->buffers[bufferIndex].bufferData );
+		}
+		free( scene->buffers );
+		free( scene->bufferNameHash );
+	}
+	{
+		for ( int bufferViewIndex = 0; bufferViewIndex < scene->bufferViewCount; bufferViewIndex++ )
+		{
+			free( scene->bufferViews[bufferViewIndex].name );
+		}
+		free( scene->bufferViews );
+		free( scene->bufferViewNameHash );
+	}
+	{
+		for ( int accessorIndex = 0; accessorIndex < scene->accessorCount; accessorIndex++ )
+		{
+			free( scene->accessors[accessorIndex].name );
+			free( scene->accessors[accessorIndex].type );
+		}
+		free( scene->accessors );
+		free( scene->accessorNameHash );
+	}
+	{
+		for ( int imageIndex = 0; imageIndex < scene->imageCount; imageIndex++ )
+		{
+			free( scene->images[imageIndex].name );
+			free( scene->images[imageIndex].uri );
+		}
+		free( scene->images );
+		free( scene->imageNameHash );
+	}
+	{
+		for ( int textureIndex = 0; textureIndex < scene->textureCount; textureIndex++ )
+		{
+			free( scene->textures[textureIndex].name );
+			GpuTexture_Destroy( context, &scene->textures[textureIndex].texture );
+		}
+		free( scene->textures );
+		free( scene->textureNameHash );
+	}
+	{
+		for ( int shaderIndex = 0; shaderIndex < scene->shaderCount; shaderIndex++ )
+		{
+			free( scene->shaders[shaderIndex].name );
+			free( scene->shaders[shaderIndex].uriGlslOpenGL );
+			free( scene->shaders[shaderIndex].uriGlslVulkan );
+			free( scene->shaders[shaderIndex].uriSpirvOpenGL );
+			free( scene->shaders[shaderIndex].uriSpirvVulkan );
+		}
+		free( scene->shaders );
+		free( scene->shaderNameHash );
+	}
+	{
+		for ( int programIndex = 0; programIndex < scene->programCount; programIndex++ )
+		{
+			free( scene->programs[programIndex].name );
+			free( scene->programs[programIndex].vertexSource );
+			free( scene->programs[programIndex].fragmentSource );
+		}
+		free( scene->programs );
+		free( scene->programNameHash );
+	}
+	{
+		for ( int techniqueIndex = 0; techniqueIndex < scene->techniqueCount; techniqueIndex++ )
+		{
+			for ( int uniformIndex = 0; uniformIndex < scene->techniques[techniqueIndex].uniformCount; uniformIndex++ )
+			{
+				free( (void *)scene->techniques[techniqueIndex].parms[uniformIndex].name );
+				free( scene->techniques[techniqueIndex].uniforms[uniformIndex].name );
+			}
+			free( scene->techniques[techniqueIndex].name );
+			free( scene->techniques[techniqueIndex].parms );
+			free( scene->techniques[techniqueIndex].uniforms );
+			GpuGraphicsProgram_Destroy( context, &scene->techniques[techniqueIndex].program );
+		}
+		free( scene->techniques );
+		free( scene->techniqueNameHash );
+	}
+	{
+		for ( int materialIndex = 0; materialIndex < scene->materialCount; materialIndex++ )
+		{
+			free( scene->materials[materialIndex].name );
+			free( scene->materials[materialIndex].values );
+		}
+		free( scene->materials );
+		free( scene->materialNameHash );
+	}
+	{
+		for ( int modelIndex = 0; modelIndex < scene->modelCount; modelIndex++ )
+		{
+			for ( int surfaceIndex = 0; surfaceIndex < scene->models[modelIndex].surfaceCount; surfaceIndex++ )
+			{
+				GpuGeometry_Destroy( context, &scene->models[modelIndex].surfaces[surfaceIndex].geometry );
+				GpuGraphicsPipeline_Destroy( context, &scene->models[modelIndex].surfaces[surfaceIndex].pipeline );
+			}
+			free( scene->models[modelIndex].name );
+			free( scene->models[modelIndex].surfaces );
+		}
+		free( scene->models );
+		free( scene->modelNameHash );
+	}
+	{
+		for ( int animationIndex = 0; animationIndex < scene->animationCount; animationIndex++ )
+		{
+			for ( int channelIndex = 0; channelIndex < scene->animations[animationIndex].channelCount; channelIndex++ )
+			{
+				free( scene->animations[animationIndex].channels[channelIndex].nodeName );
+			}
+			free( scene->animations[animationIndex].name );
+			free( scene->animations[animationIndex].channels );
+		}
+		free( scene->animations );
+		free( scene->animationNameHash );
+	}
+	{
+		for ( int skinIndex = 0; skinIndex < scene->skinCount; skinIndex++ )
+		{
+			for ( int jointIndex = 0; jointIndex < scene->skins[skinIndex].jointCount; jointIndex++ )
+			{
+				free( scene->skins[skinIndex].joints[jointIndex].name );
+			}
+			free( scene->skins[skinIndex].name );
+			free( scene->skins[skinIndex].joints );
+			GpuBuffer_Destroy( context, &scene->skins[skinIndex].jointBuffer );
+		}
+		free( scene->skins );
+		free( scene->skinNameHash );
+	}
+	{
+		for ( int cameraIndex = 0; cameraIndex < scene->cameraCount; cameraIndex++ )
+		{
+			free( scene->cameras[cameraIndex].name );
+		}
+		free( scene->cameras );
+		free( scene->cameraNameHash );
+	}
+	{
+		for ( int nodeIndex = 0; nodeIndex < scene->nodeCount; nodeIndex++ )
+		{
+			for ( int childIndex = 0; childIndex < scene->nodes[nodeIndex].childCount; childIndex++ )
+			{
+				free( scene->nodes[nodeIndex].childNames[childIndex] );
+			}
+			free( scene->nodes[nodeIndex].name );
+			free( scene->nodes[nodeIndex].jointName );
+			free( scene->nodes[nodeIndex].children );
+			free( scene->nodes[nodeIndex].childNames );
+			free( scene->nodes[nodeIndex].models );
+		}
+		free( scene->nodes );
+		free( scene->nodeNameHash );
+		free( scene->nodeJointNameHash );
+	}
+	{
+		for ( int subSceneIndex = 0; subSceneIndex < scene->subSceneCount; subSceneIndex++ )
+		{
+			free( scene->subScenes[subSceneIndex].subTrees );
+		}
+		free( scene->subScenes );
+		free( scene->subSceneNameHash );
+	}
+
+	GpuBuffer_Destroy( context, &scene->defaultJointBuffer );
+	GpuGraphicsPipeline_Destroy( context, &scene->unitCubePipeline );
+	GpuGraphicsProgram_Destroy( context, &scene->unitCubeFlatShadeProgram );
+	GpuGeometry_Destroy( context, &scene->unitCubeGeometry );
+
+	memset( scene, 0, sizeof( GltfScene_t ) );
+}
+
+static void GltfScene_Simulate( GltfScene_t * scene, ViewState_t * viewState, GpuWindowInput_t * input, const Microseconds_t time )
+{
+	// Apply animations to the nodes in the hierarchy.
+	for ( int animIndex = 0; animIndex < scene->animationCount; animIndex++ )
+	{
+		const GltfAnimation_t * animation = &scene->animations[animIndex];
+		if ( animation->sampleTimes == NULL || animation->sampleCount < 2 )
+		{
+			continue;
+		}
+
+		const float timeInSeconds = fmodf( time * 1e-6f, animation->sampleTimes[animation->sampleCount - 1] - animation->sampleTimes[0] );
+		int frame = 0;
+		for ( int sampleCount = animation->sampleCount; sampleCount > 1; sampleCount >>= 1 )
+		{
+			const int mid = sampleCount >> 1;
+			if ( timeInSeconds >= animation->sampleTimes[frame + mid] )
+			{
+				frame += mid;
+				sampleCount = ( sampleCount - mid ) * 2;
+			}
+		}
+		assert( timeInSeconds >= animation->sampleTimes[frame] && timeInSeconds < animation->sampleTimes[frame + 1] );
+		const float fraction = ( timeInSeconds - animation->sampleTimes[frame] ) / ( animation->sampleTimes[frame + 1] - animation->sampleTimes[frame] );
+
+		for ( int channelIndex = 0; channelIndex < animation->channelCount; channelIndex++ )
+		{
+			const GltfAnimationChannel_t * channel = &animation->channels[channelIndex];
+			if ( channel->translation != NULL )
+			{
+				Vector3f_Lerp( &channel->node->translation, &channel->translation[frame], &channel->translation[frame + 1], fraction );
+			}
+			if ( channel->rotation != NULL )
+			{
+				Quatf_Lerp( &channel->node->rotation, &channel->rotation[frame], &channel->rotation[frame + 1], fraction );
+			}
+			if ( channel->scale != NULL )
+			{
+				Vector3f_Lerp( &channel->node->scale, &channel->scale[frame], &channel->scale[frame + 1], fraction );
+			}
+		}
+	}
+
+	// Transform the node hierarchy into global space.
+	for ( int subTreeIndex = 0; subTreeIndex < scene->currentSubScene->subTreeCount; subTreeIndex++ )
+	{
+		GltfSubTree_t * subTree = &scene->currentSubScene->subTrees[subTreeIndex];
+		for ( int nodeIndex = 0; nodeIndex < subTree->nodeCount; nodeIndex++ )
+		{
+			GltfNode_t * node = &subTree->nodes[nodeIndex];
+
+			Matrix4x4f_CreateTranslationRotationScale( &node->localTransform, &node->scale, &node->rotation, &node->translation );
+			if ( node->parent != NULL )
+			{
+				assert( node->parent < node );
+				Matrix4x4f_Multiply( &node->globalTransform, &node->parent->globalTransform, &node->localTransform );
+			}
+			else
+			{
+				node->globalTransform = node->localTransform;
+			}
+		}
+	}
+
+	// Find the first camera.
+	const GltfNode_t * cameraNode = NULL;
+	for ( int subTreeIndex = 0; subTreeIndex < scene->currentSubScene->subTreeCount; subTreeIndex++ )
+	{
+		GltfSubTree_t * subTree = &scene->currentSubScene->subTrees[subTreeIndex];
+		for ( int nodeIndex = 0; nodeIndex < subTree->nodeCount; nodeIndex++ )
+		{
+			GltfNode_t * node = &subTree->nodes[nodeIndex];
+			if ( node->camera != NULL )
+			{
+				cameraNode = node;
+				break;
+			}
+		}
+	}
+
+	// Use the camera if there is one, otherwise use input to move the view point.
+	if ( cameraNode != NULL )
+	{
+		GetHmdViewMatrixForTime( &viewState->hmdViewMatrix, time );
+
+		Matrix4x4f_t cameraViewMatrix;
+		Matrix4x4f_Invert( &cameraViewMatrix, &cameraNode->globalTransform );
+
+		Matrix4x4f_Multiply( &viewState->centerViewMatrix, &viewState->hmdViewMatrix, &cameraViewMatrix );
+
+		for ( int eye = 0; eye < NUM_EYES; eye++ )
+		{
+			Matrix4x4f_t eyeOffsetMatrix;
+			Matrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
+
+			Matrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
+			Matrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye],
+											cameraNode->camera->perspective.fovDegreesX,
+											cameraNode->camera->perspective.fovDegreesY,
+											0.0f, 0.0f,
+											cameraNode->camera->perspective.nearZ, cameraNode->camera->perspective.farZ );
+
+			ViewState_DerivedData( viewState );
+		}
+	}
+	else if ( input != NULL )
+	{
+		ViewState_HandleInput( viewState, input, time );
+	}
+	else
+	{
+		ViewState_HandleHmd( viewState, time );
+	}
+}
+
+static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState, const int eye )
+{
+	UNUSED_PARM( eye );
+
+	for ( int subTreeIndex = 0; subTreeIndex < scene->currentSubScene->subTreeCount; subTreeIndex++ )
+	{
+		GltfSubTree_t * subTree = &scene->currentSubScene->subTrees[subTreeIndex];
+		for ( int nodeIndex = 0; nodeIndex < subTree->nodeCount; nodeIndex++ )
+		{
+			GltfNode_t * node = &subTree->nodes[nodeIndex];
+			GltfSkin_t * skin = node->skin;
+			if ( skin == NULL )
+			{
+				continue;
+			}
+
+			// Exclude the transform of the whole skeleton because that transform will be
+			// passed down the vertex shader as the model matrix.
+			Matrix4x4f_t inverseGlobalSkeletonTransfom;
+			Matrix4x4f_Invert( &inverseGlobalSkeletonTransfom, &skin->parent->globalTransform );
+
+			// Calculate the skin bounds.
+			Vector3f_Set( &skin->mins, FLT_MAX );
+			Vector3f_Set( &skin->maxs, -FLT_MAX );
+			if ( skin->jointGeometryMins != NULL && skin->jointGeometryMaxs != NULL )
+			{
+				for ( int jointIndex = 0; jointIndex < skin->jointCount; jointIndex++ )
+				{
+					Matrix4x4f_t localJointTransform;
+					Matrix4x4f_Multiply( &localJointTransform, &inverseGlobalSkeletonTransfom, &skin->joints[jointIndex].node->globalTransform );
+
+					Vector3f_t jointMins;
+					Vector3f_t jointMaxs;
+					Matrix4x4f_TransformBounds( &jointMins, &jointMaxs, &localJointTransform, &skin->jointGeometryMins[jointIndex], &skin->jointGeometryMaxs[jointIndex] );
+					Vector3f_Min( &skin->mins, &skin->mins, &jointMins );
+					Vector3f_Max( &skin->maxs, &skin->maxs, &jointMaxs );
+				}
+			}
+
+			// Do not update the joint buffer if the skin bounds are culled.
+			{
+				Matrix4x4f_t modelViewProjectionCullMatrix;
+				Matrix4x4f_Multiply( &modelViewProjectionCullMatrix, &viewState->combinedViewProjectionMatrix, &skin->parent->globalTransform );
+
+				skin->culled = Matrix4x4f_CullBounds( &modelViewProjectionCullMatrix, &skin->mins, &skin->maxs );
+				if ( skin->culled )
+				{
+					continue;
+				}
+			}
+
+			// Update the skin joint buffer.
+			Matrix4x4f_t * joints = NULL;
+			GpuBuffer_t * mappedJointBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &skin->jointBuffer, &joints );
+
+			for ( int jointIndex = 0; jointIndex < skin->jointCount; jointIndex++ )
+			{
+				Matrix4x4f_t inverseBindMatrix;
+				Matrix4x4f_Multiply( &inverseBindMatrix, &skin->inverseBindMatrices[jointIndex], &skin->bindShapeMatrix );
+
+				Matrix4x4f_t localJointTransform;
+				Matrix4x4f_Multiply( &localJointTransform, &inverseGlobalSkeletonTransfom, &skin->joints[jointIndex].node->globalTransform );
+
+				Matrix4x4f_Multiply( &joints[jointIndex], &localJointTransform, &inverseBindMatrix );
+			}
+
+			GpuCommandBuffer_UnmapBuffer( commandBuffer, &skin->jointBuffer, mappedJointBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
+		}
+	}
+}
+
+static void GltfScene_SetUniformValue( GpuGraphicsCommand_t * command, const GltfUniform_t * uniform, const GltfUniformValue_t * value )
+{
+	switch ( uniform->type )
+	{
+		case GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED:					GpuGraphicsCommand_SetParmTextureSampled( command, uniform->index, &value->texture->texture ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT:				GpuGraphicsCommand_SetParmInt( command, uniform->index, value->intValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2:		GpuGraphicsCommand_SetParmIntVector2( command, uniform->index, (const Vector2i_t *)value->intValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3:		GpuGraphicsCommand_SetParmIntVector3( command, uniform->index, (const Vector3i_t *)value->intValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4:		GpuGraphicsCommand_SetParmIntVector4( command, uniform->index, (const Vector4i_t *)value->intValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT:				GpuGraphicsCommand_SetParmFloat( command, uniform->index, value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		GpuGraphicsCommand_SetParmFloatVector2( command, uniform->index, (const Vector2f_t *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		GpuGraphicsCommand_SetParmFloatVector3( command, uniform->index, (const Vector3f_t *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		GpuGraphicsCommand_SetParmFloatVector4( command, uniform->index, (const Vector4f_t *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2:	GpuGraphicsCommand_SetParmFloatMatrix2x2( command, uniform->index, (const Matrix2x2f_t *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3:	GpuGraphicsCommand_SetParmFloatMatrix2x3( command, uniform->index, (const Matrix2x3f_t *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4:	GpuGraphicsCommand_SetParmFloatMatrix2x4( command, uniform->index, (const Matrix2x4f_t *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2:	GpuGraphicsCommand_SetParmFloatMatrix3x2( command, uniform->index, (const Matrix3x2f_t *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3:	GpuGraphicsCommand_SetParmFloatMatrix3x3( command, uniform->index, (const Matrix3x3f_t *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4:	GpuGraphicsCommand_SetParmFloatMatrix3x4( command, uniform->index, (const Matrix3x4f_t *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	GpuGraphicsCommand_SetParmFloatMatrix4x2( command, uniform->index, (const Matrix4x2f_t *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	GpuGraphicsCommand_SetParmFloatMatrix4x3( command, uniform->index, (const Matrix4x3f_t *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	GpuGraphicsCommand_SetParmFloatMatrix4x4( command, uniform->index, (const Matrix4x4f_t *)value->floatValue ); break;
+	}
+}
+
+typedef struct
+{
+	Vector4f_t		viewport;
+	Matrix4x4f_t	viewMatrix;
+	Matrix4x4f_t	projectionMatrix;
+	Matrix4x4f_t	viewInverseMatrix;
+	Matrix4x4f_t	projectionInverseMatrix;
+	Matrix4x4f_t	localMatrix;
+	Matrix4x4f_t	modelMatrix;
+	Matrix4x4f_t	modelViewMatrix;
+	Matrix4x4f_t	modelViewProjectionMatrix;
+	Matrix4x4f_t	modelInverseMatrix;
+	Matrix4x4f_t	modelViewInverseMatrix;
+	Matrix4x4f_t	modelViewProjectionInverseMatrix;
+	Matrix3x3f_t	modelInverseTransposeMatrix;
+	Matrix3x3f_t	modelViewInverseTransposeMatrix;
+} GltfBuiltinUniforms_t;
+
+static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState, const int eye )
+{
+	GltfBuiltinUniforms_t builtin;
+
+	builtin.viewMatrix = viewState->viewMatrix[eye];
+	builtin.projectionMatrix = viewState->projectionMatrix[eye];
+	builtin.viewInverseMatrix = viewState->viewInverseMatrix[eye];
+	builtin.projectionInverseMatrix = viewState->projectionInverseMatrix[eye];
+	builtin.viewport.x = viewState->viewport.x;
+	builtin.viewport.y = viewState->viewport.y;
+	builtin.viewport.z = viewState->viewport.z;
+	builtin.viewport.w = viewState->viewport.w;
+
+	for ( int subTreeIndex = 0; subTreeIndex < scene->currentSubScene->subTreeCount; subTreeIndex++ )
+	{
+		GltfSubTree_t * subTree = &scene->currentSubScene->subTrees[subTreeIndex];
+		for ( int nodeIndex = 0; nodeIndex < subTree->nodeCount; nodeIndex++ )
+		{
+			GltfNode_t * node = &subTree->nodes[nodeIndex];
+			if ( node->modelCount == 0 )
+			{
+				continue;
+			}
+
+			const GltfSkin_t * skin = node->skin;
+			const GpuBuffer_t * jointBuffer = ( skin != NULL ) ? &skin->jointBuffer : &scene->defaultJointBuffer;
+			const GltfNode_t * parent = ( skin != NULL ) ? skin->parent : node;
+
+			builtin.localMatrix = parent->localTransform;
+			builtin.modelMatrix = parent->globalTransform;
+			Matrix4x4f_Multiply( &builtin.modelViewMatrix, &builtin.viewMatrix, &builtin.modelMatrix );
+			Matrix4x4f_Multiply( &builtin.modelViewProjectionMatrix, &builtin.projectionMatrix, &builtin.modelViewMatrix );
+			Matrix4x4f_Invert( &builtin.modelInverseMatrix, &builtin.modelMatrix );
+			Matrix4x4f_Invert( &builtin.modelViewInverseMatrix, &builtin.modelViewMatrix );
+			Matrix4x4f_Invert( &builtin.modelViewProjectionInverseMatrix, &builtin.modelViewProjectionMatrix );
+			Matrix3x3f_CreateTransposeFromMatrix4x4f( &builtin.modelInverseTransposeMatrix, &builtin.modelInverseMatrix );
+			Matrix3x3f_CreateTransposeFromMatrix4x4f( &builtin.modelViewInverseTransposeMatrix, &builtin.modelViewInverseMatrix );
+
+			Matrix4x4f_t modelViewProjectionCullMatrix;
+			Matrix4x4f_Multiply( &modelViewProjectionCullMatrix, &viewState->combinedViewProjectionMatrix, &builtin.modelMatrix );
+
+			bool showSkinBounds = false;
+			if ( skin != NULL && showSkinBounds )
+			{
+				Matrix4x4f_t unitCubeMatrix;
+				Matrix4x4f_CreateOffsetScaleForBounds( &unitCubeMatrix, &builtin.modelMatrix, &skin->mins, &skin->maxs );
+
+				GpuGraphicsCommand_t command;
+				GpuGraphicsCommand_Init( &command );
+
+				GpuGraphicsCommand_SetPipeline( &command, &scene->unitCubePipeline );
+				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, 0, &unitCubeMatrix );
+				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, 1, &builtin.viewMatrix );
+				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, 2, &builtin.projectionMatrix );
+
+				GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
+			}
+
+			if ( skin != NULL && skin->culled )
+			{
+				continue;
+			}
+
+			for ( int modelIndex = 0; modelIndex < node->modelCount; modelIndex++ )
+			{
+				const GltfModel_t * model = node->models[modelIndex];
+
+				for ( int surfaceIndex = 0; surfaceIndex < model->surfaceCount; surfaceIndex++ )
+				{
+					const GltfSurface_t * surface = &model->surfaces[surfaceIndex];
+
+					if ( skin == NULL )
+					{
+						if ( Matrix4x4f_CullBounds( &modelViewProjectionCullMatrix, &surface->mins, &surface->maxs ) )
+						{
+							continue;
+						}
+					}
+
+					GpuGraphicsCommand_t command;
+					GpuGraphicsCommand_Init( &command );
+
+					GpuGraphicsCommand_SetPipeline( &command, &surface->pipeline );
+
+					const GltfTechnique_t * technique = surface->material->technique;
+					for ( int uniformIndex = 0; uniformIndex < technique->uniformCount; uniformIndex++ )
+					{
+						const GltfUniform_t * uniform = &technique->uniforms[uniformIndex];
+						switch ( uniform->semantic )
+						{
+							case GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE:					GltfScene_SetUniformValue( &command, uniform, &uniform->defaultValue ); break;
+							case GLTF_UNIFORM_SEMANTIC_VIEW:							GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.viewMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.viewInverseMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_PROJECTION:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.projectionMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE:				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.projectionInverseMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_LOCAL:							GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.localMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL:							GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelInverseMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE:			GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, uniform->index, &builtin.modelInverseTransposeMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE:				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewInverseMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE:	GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, uniform->index, &builtin.modelViewInverseTransposeMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION:			GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE:	GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionInverseMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_VIEWPORT:						GpuGraphicsCommand_SetParmFloatVector4( &command, uniform->index, &builtin.viewport ); break;
+							case GLTF_UNIFORM_SEMANTIC_JOINTMATRIX:						GpuGraphicsCommand_SetParmBufferUniform( &command, uniform->index, jointBuffer ); break;
+						}
+					}
+
+					for ( int valueIndex = 0; valueIndex < surface->material->valueCount; valueIndex++ )
+					{
+						const GltfMaterialValue_t * value = &surface->material->values[valueIndex];
+						if ( value->uniform != NULL )
+						{
+							GltfScene_SetUniformValue( &command, value->uniform, &value->value );
+						}
+					}
+
+					GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
+				}
+			}
+		}
+	}
+}
+
+#endif // USE_GLTF == 1
 
 /*
 ================================================================================================================================
@@ -15689,8 +19619,8 @@ typedef struct
 	GpuContext_t *			shareContext;
 	TimeWarp_t *			timeWarp;
 	SceneSettings_t *		sceneSettings;
+	GpuWindowInput_t *		input;
 
-	volatile Microseconds_t	nextSwapTime;
 	volatile bool			terminate;
 	volatile bool			openFrameLog;
 } SceneThreadData_t;
@@ -15741,14 +19671,22 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 	GpuCommandBuffer_t sceneCommandBuffer;
 	GpuCommandBuffer_Create( &context, &sceneCommandBuffer, GPU_COMMAND_BUFFER_TYPE_SECONDARY_CONTINUE_RENDER_PASS, NUM_EYE_BUFFERS );
 
-	Scene_t scene;
-	Scene_Create( &context, &scene, threadData->sceneSettings, &renderPassSingleView );
-
 	const BodyInfo_t * bodyInfo = GetDefaultBodyInfo();
+
+	ViewState_t viewState;
+	ViewState_Init( &viewState, bodyInfo->interpupillaryDistance );
+
+#if USE_GLTF == 1
+	GltfScene_t scene;
+	GltfScene_CreateFromFile( &context, &scene, "models.gltf", &renderPassSingleView );
+#else
+	PerfScene_t scene;
+	PerfScene_Create( &context, &scene, threadData->sceneSettings, &renderPassSingleView );
+#endif
 
 	Signal_Raise( &threadData->initialized );
 
-	while ( !threadData->terminate )
+	for ( int frameIndex = 0; !threadData->terminate; frameIndex++ )
 	{
 		if ( threadData->openFrameLog )
 		{
@@ -15756,36 +19694,31 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 			FrameLog_Open( OUTPUT_PATH "framelog_scene.txt", 10 );
 		}
 
-		Scene_UpdateSettings( &scene );
+		const Microseconds_t nextDisplayTime = TimeWarp_GetPredictedDisplayTime( threadData->timeWarp, frameIndex );
 
-		Scene_Simulate( &scene, threadData->nextSwapTime );
-
-		Matrix4x4f_t hmdViewMatrix;
-		GetHmdViewMatrixForTime( &hmdViewMatrix, threadData->nextSwapTime );
-
-		Matrix4x4f_t eyeViewMatrix[2];
-		Matrix4x4f_t eyeProjectionMatrix[2];
-		for ( int eye = 0; eye < NUM_EYES; eye++ )
-		{
-			const float eyeOffset = ( eye ? -0.5f : 0.5f ) * bodyInfo->interpupillaryDistance;
-			Matrix4x4f_t eyeOffsetMatrix;
-			Matrix4x4f_CreateTranslation( &eyeOffsetMatrix, eyeOffset, 0.0f, 0.0f );
-			Matrix4x4f_Multiply( &eyeViewMatrix[eye], &eyeOffsetMatrix, &hmdViewMatrix );
-			Matrix4x4f_CreateProjectionFov( &eyeProjectionMatrix[eye], 90.0f, 72.0f, 0.0f, 0.0f, 0.1f, 0.0f );
-		}
+#if USE_GLTF == 1
+		GltfScene_Simulate( &scene, &viewState, threadData->input, nextDisplayTime );
+#else
+		PerfScene_Simulate( &scene, &viewState, nextDisplayTime );
+#endif
 
 		FrameLog_BeginFrame();
 
 		const Microseconds_t t0 = GetTimeMicroseconds();
 
-		if ( scene.settings.useMultiView )
+		if ( threadData->sceneSettings->useMultiView )
 		{
 			const ScreenRect_t sceneRect = { 0, 0, EYE_WIDTH, EYE_HEIGHT };
 			GpuCommandBuffer_BeginSecondary( &sceneCommandBuffer, &renderPassMultiView, NULL );
 
 			GpuCommandBuffer_SetViewport( &sceneCommandBuffer, &sceneRect );
 			GpuCommandBuffer_SetScissor( &sceneCommandBuffer, &sceneRect );
-			Scene_Render( &sceneCommandBuffer, &scene );
+
+#if USE_GLTF == 1
+			GltfScene_Render( &sceneCommandBuffer, &scene, &viewState, 0 );
+#else
+			PerfScene_Render( &sceneCommandBuffer, &scene );
+#endif
 
 			GpuCommandBuffer_EndSecondary( &sceneCommandBuffer );
 		}
@@ -15801,14 +19734,18 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 			GpuCommandBuffer_BeginPrimary( &eyeCommandBuffer[eye] );
 			GpuCommandBuffer_BeginFramebuffer( &eyeCommandBuffer[eye], &framebuffer, eye, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
 
-			Scene_UpdateMatrices( &eyeCommandBuffer[eye], &scene, eyeViewMatrix + eye, eyeProjectionMatrix + eye );
+#if USE_GLTF == 1
+			GltfScene_UpdateBuffers( &eyeCommandBuffer[eye], &scene, &viewState, eye );
+#else
+			PerfScene_UpdateBuffers( &eyeCommandBuffer[eye], &scene, &viewState, eye );
+#endif
 
-			GpuRenderPass_t * renderPass = scene.settings.useMultiView ? &renderPassMultiView : &renderPassSingleView;
+			GpuRenderPass_t * renderPass = threadData->sceneSettings->useMultiView ? &renderPassMultiView : &renderPassSingleView;
 
 			GpuCommandBuffer_BeginTimer( &eyeCommandBuffer[eye], &eyeTimer[eye] );
 			GpuCommandBuffer_BeginRenderPass( &eyeCommandBuffer[eye], renderPass, &framebuffer, &screenRect );
 
-			if ( scene.settings.useMultiView )
+			if ( threadData->sceneSettings->useMultiView )
 			{
 				GpuCommandBuffer_SubmitSecondary( &sceneCommandBuffer, &eyeCommandBuffer[eye] );
 			}
@@ -15816,7 +19753,11 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 			{
 				GpuCommandBuffer_SetViewport( &eyeCommandBuffer[eye], &screenRect );
 				GpuCommandBuffer_SetScissor( &eyeCommandBuffer[eye], &screenRect );
-				Scene_Render( &eyeCommandBuffer[eye], &scene );
+#if USE_GLTF == 1
+				GltfScene_Render( &eyeCommandBuffer[eye], &scene, &viewState, eye );
+#else
+				PerfScene_Render( &eyeCommandBuffer[eye], &scene );
+#endif
 			}
 
 			GpuCommandBuffer_EndRenderPass( &eyeCommandBuffer[eye], renderPass );
@@ -15839,14 +19780,17 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 		Matrix4x4f_t projectionMatrix;
 		Matrix4x4f_CreateProjectionFov( &projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 
-		TimeWarp_PresentNewEyeTextures( threadData->timeWarp, &hmdViewMatrix, &projectionMatrix,
-										eyeTexture, eyeCompletionFence, eyeArrayLayer,
-										eyeTexturesCpuTime, eyeTexturesGpuTime );
+		TimeWarp_SubmitFrame( threadData->timeWarp, frameIndex, nextDisplayTime,
+								&viewState.hmdViewMatrix, &projectionMatrix,
+								eyeTexture, eyeCompletionFence, eyeArrayLayer,
+								eyeTexturesCpuTime, eyeTexturesGpuTime );
 	}
 
-	GpuContext_WaitIdle( &context );
-
-	Scene_Destroy( &context, &scene );
+#if USE_GLTF == 1
+	GltfScene_Destroy( &context, &scene );
+#else
+	PerfScene_Destroy( &context, &scene );
+#endif
 
 	GpuCommandBuffer_Destroy( &context, &sceneCommandBuffer );
 
@@ -15863,13 +19807,13 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 }
 
 void SceneThread_Create( Thread_t * sceneThread, SceneThreadData_t * sceneThreadData,
-							GpuContext_t * shareContext, TimeWarp_t * timeWarp, SceneSettings_t * sceneSettings )
+							GpuWindow_t * window, TimeWarp_t * timeWarp, SceneSettings_t * sceneSettings )
 {
 	Signal_Create( &sceneThreadData->initialized, true );
-	sceneThreadData->shareContext = shareContext;
+	sceneThreadData->shareContext = &window->context;
 	sceneThreadData->timeWarp = timeWarp;
 	sceneThreadData->sceneSettings = sceneSettings;
-	sceneThreadData->nextSwapTime = GetTimeMicroseconds();
+	sceneThreadData->input = &window->input;
 	sceneThreadData->terminate = false;
 	sceneThreadData->openFrameLog = false;
 
@@ -15883,6 +19827,7 @@ void SceneThread_Destroy( Thread_t * sceneThread, SceneThreadData_t * sceneThrea
 	sceneThreadData->terminate = true;
 	// The following assumes the time warp thread is blocked when this function is called.
 	Signal_Raise( &sceneThreadData->timeWarp->newEyeTexturesConsumed );
+	Signal_Raise( &sceneThreadData->timeWarp->vsyncSignal );
 	Signal_Destroy( &sceneThreadData->initialized );
 	Thread_Destroy( sceneThread );
 }
@@ -15934,7 +19879,7 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 
 	Thread_t sceneThread;
 	SceneThreadData_t sceneThreadData;
-	SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
+	SceneThread_Create( &sceneThread, &sceneThreadData, &window, &timeWarp, &sceneSettings );
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
 
@@ -15959,16 +19904,16 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
 		{
 			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
 			break;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
 			// Must recreate the scene and time warp to create a new window.
@@ -15990,50 +19935,50 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
 			TimeWarp_SetSamplesLevel( &timeWarp, SceneSettings_GetSamplesLevel( &sceneSettings ) );
-			SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
+			SceneThread_Create( &sceneThread, &sceneThreadData, &window, &timeWarp, &sceneSettings );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
 			sceneThreadData.openFrameLog = true;
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_P ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_P ) )
 		{
 			SceneSettings_ToggleSimulationPaused( &sceneSettings );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_G ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_G ) )
 		{
 			TimeWarp_CycleBarGraphState( &timeWarp );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_Q ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Q ) )
 		{
 			SceneSettings_CycleDrawCallLevel( &sceneSettings );
 			TimeWarp_SetDrawCallLevel( &timeWarp, SceneSettings_GetDrawCallLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_W ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_W ) )
 		{
 			SceneSettings_CycleTriangleLevel( &sceneSettings );
 			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_E ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_E ) )
 		{
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_S ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_S ) )
 		{
 			SceneSettings_CycleSamplesLevel( &sceneSettings );
 			// Must recreate the scene and time warp to allocate different framebuffers.
@@ -16049,32 +19994,29 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
 			TimeWarp_SetSamplesLevel( &timeWarp, SceneSettings_GetSamplesLevel( &sceneSettings ) );
-			SceneThread_Create( &sceneThread, &sceneThreadData, &window.context, &timeWarp, &sceneSettings );
+			SceneThread_Create( &sceneThread, &sceneThreadData, &window, &timeWarp, &sceneSettings );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_I ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_I ) )
 		{
 			TimeWarp_CycleImplementation( &timeWarp );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_C ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_C ) )
 		{
 			TimeWarp_ToggleChromaticAberrationCorrection( &timeWarp );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_M ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_M ) )
 		{
 			SceneSettings_ToggleMultiView( &sceneSettings );
 			TimeWarp_SetMultiView( &timeWarp, SceneSettings_GetMultiView( &sceneSettings ) );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_D ) )
 		{
 			DumpGLSL();
 		}
 
 		if ( window.windowActive )
 		{
-			TimeWarp_Render( &timeWarp, &window );
-			GpuWindow_SwapBuffers( &window );
-
-			sceneThreadData.nextSwapTime = GpuWindow_GetNextSwapTime( &window );
+			TimeWarp_Render( &timeWarp );
 		}
 	}
 
@@ -16148,16 +20090,16 @@ bool RenderTimeWarp( StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
 		{
 			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
 			break;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
 		{
 			const bool fullscreen = !window.windowFullscreen;
 			TimeWarp_Destroy( &timeWarp, &window );
@@ -16169,44 +20111,43 @@ bool RenderTimeWarp( StartupSettings_t * startupSettings )
 							fullscreen );
 			TimeWarp_Create( &timeWarp, &window );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_G ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_G ) )
 		{
 			TimeWarp_CycleBarGraphState( &timeWarp );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_I ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_I ) )
 		{
 			TimeWarp_CycleImplementation( &timeWarp );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_C ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_C ) )
 		{
 			TimeWarp_ToggleChromaticAberrationCorrection( &timeWarp );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_D ) )
 		{
 			DumpGLSL();
 		}
 
 		if ( window.windowActive )
 		{
-			TimeWarp_Render( &timeWarp, &window );
-			GpuWindow_SwapBuffers( &window );
+			TimeWarp_Render( &timeWarp );
 		}
 	}
 
@@ -16288,8 +20229,16 @@ bool RenderScene( StartupSettings_t * startupSettings )
 	SceneSettings_SetFragmentLevel( &sceneSettings, startupSettings->fragmentLevel );
 	SceneSettings_SetSamplesLevel( &sceneSettings, startupSettings->samplesLevel );
 
-	Scene_t scene;
-	Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
+	ViewState_t viewState;
+	ViewState_Init( &viewState, 0.0f );
+
+#if USE_GLTF == 1
+	GltfScene_t scene;
+	GltfScene_CreateFromFile( &window.context, &scene, "models.gltf", &renderPass );
+#else
+	PerfScene_t scene;
+	PerfScene_Create( &window.context, &scene, &sceneSettings, &renderPass );
+#endif
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
 
@@ -16315,67 +20264,71 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			exit = true;
 		}
 
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_ESCAPE ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_R ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
 		{
 			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
 			break;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_F ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
 		{
 			startupSettings->fullscreen = !startupSettings->fullscreen;
 			recreate = true;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_V ) ||
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
 			GpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_L ) ||
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
 			FrameLog_Open( OUTPUT_PATH "framelog_scene.txt", 10 );
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_H ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_P ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_P ) )
 		{
 			SceneSettings_ToggleSimulationPaused( &sceneSettings );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_Q ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Q ) )
 		{
 			SceneSettings_CycleDrawCallLevel( &sceneSettings );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_W ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_W ) )
 		{
 			SceneSettings_CycleTriangleLevel( &sceneSettings );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_E ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_E ) )
 		{
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_S ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_S ) )
 		{
 			SceneSettings_CycleSamplesLevel( &sceneSettings );
 			recreate = true;
 		}
-		if ( GpuWindow_ConsumeKeyboardKey( &window, KEY_D ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_D ) )
 		{
 			DumpGLSL();
 		}
 
 		if ( recreate )
 		{
-			const GpuSampleCount_t sampleCount = sampleCountTable[SceneSettings_GetSamplesLevel( &sceneSettings )];
-			Scene_Destroy( &window.context, &scene );
+			const GpuSampleCount_t newSampleCount = sampleCountTable[SceneSettings_GetSamplesLevel( &sceneSettings )];
+#if USE_GLTF == 1
+			GltfScene_Destroy( &window.context, &scene );
+#else
+			PerfScene_Destroy( &window.context, &scene );
+#endif
 			BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
 			BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
 			GpuTimer_Destroy( &window.context, &timer );
@@ -16384,12 +20337,12 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			GpuRenderPass_Destroy( &window.context, &renderPass );
 			GpuWindow_Destroy( &window );
 			GpuWindow_Create( &window, &instance, &queueInfo, 0,
-							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24, sampleCount,
+							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24, newSampleCount,
 							startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
 							startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
 							startupSettings->fullscreen );
 			GpuRenderPass_Create( &window.context, &renderPass, window.colorFormat, window.depthFormat,
-									sampleCount, GPU_RENDERPASS_TYPE_INLINE,
+									newSampleCount, GPU_RENDERPASS_TYPE_INLINE,
 									GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
 									GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
 			GpuFramebuffer_CreateFromSwapchain( &window, &framebuffer, &renderPass );
@@ -16397,21 +20350,23 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			GpuTimer_Create( &window.context, &timer );
 			BarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
 			BarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
-			Scene_Create( &window.context, &scene, &sceneSettings, &renderPass );
+#if USE_GLTF == 1
+			GltfScene_CreateFromFile( &window.context, &scene, "models.gltf", &renderPass );
+#else
+			PerfScene_Create( &window.context, &scene, &sceneSettings, &renderPass );
+#endif
 			recreate = false;
 		}
 
 		if ( window.windowActive )
 		{
-			Scene_UpdateSettings( &scene );
+			const Microseconds_t nextSwapTime = GpuWindow_GetNextSwapTimeMicroseconds( &window );
 
-			Scene_Simulate( &scene, GpuWindow_GetNextSwapTime( &window ) );
-
-			Matrix4x4f_t viewMatrix;
-			Matrix4x4f_CreateIdentity( &viewMatrix );
-
-			Matrix4x4f_t projectionMatrix;
-			Matrix4x4f_CreateProjectionFov( &projectionMatrix, 90.0f, 72.0f, 0.0f, 0.0f, 0.1f, 0.0f );
+#if USE_GLTF == 1
+			GltfScene_Simulate( &scene, &viewState, &window.input, nextSwapTime );
+#else
+			PerfScene_Simulate( &scene, &viewState, nextSwapTime );
+#endif
 
 			FrameLog_BeginFrame();
 
@@ -16422,7 +20377,11 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			GpuCommandBuffer_BeginPrimary( &commandBuffer );
 			GpuCommandBuffer_BeginFramebuffer( &commandBuffer, &framebuffer, 0, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
 
-			Scene_UpdateMatrices( &commandBuffer, &scene, &viewMatrix, &projectionMatrix );
+#if USE_GLTF == 1
+			GltfScene_UpdateBuffers( &commandBuffer, &scene, &viewState, 0 );
+#else
+			PerfScene_UpdateBuffers( &commandBuffer, &scene, &viewState, 0 );
+#endif
 
 			BarGraph_UpdateGraphics( &commandBuffer, &frameCpuTimeBarGraph );
 			BarGraph_UpdateGraphics( &commandBuffer, &frameGpuTimeBarGraph );
@@ -16432,7 +20391,12 @@ bool RenderScene( StartupSettings_t * startupSettings )
 
 			GpuCommandBuffer_SetViewport( &commandBuffer, &screenRect );
 			GpuCommandBuffer_SetScissor( &commandBuffer, &screenRect );
-			Scene_Render( &commandBuffer, &scene );
+
+#if USE_GLTF == 1
+			GltfScene_Render( &commandBuffer, &scene, &viewState, 0 );
+#else
+			PerfScene_Render( &commandBuffer, &scene );
+#endif
 
 			BarGraph_RenderGraphics( &commandBuffer, &frameCpuTimeBarGraph );
 			BarGraph_RenderGraphics( &commandBuffer, &frameGpuTimeBarGraph );
@@ -16459,7 +20423,11 @@ bool RenderScene( StartupSettings_t * startupSettings )
 		}
 	}
 
-	Scene_Destroy( &window.context, &scene );
+#if USE_GLTF == 1
+	GltfScene_Destroy( &window.context, &scene );
+#else
+	PerfScene_Destroy( &window.context, &scene );
+#endif
 	BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
 	BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
 	GpuTimer_Destroy( &window.context, &timer );

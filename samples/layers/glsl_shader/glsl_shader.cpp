@@ -562,8 +562,13 @@ bool CompileSPIRV(
 
 	if ( !shader->parse( &resources, 100, false, messages ) )
 	{
-		puts( shader->getInfoLog() );
-		puts( shader->getInfoDebugLog() );
+		Print( "%s", shader->getInfoLog() );
+		Print( "%s", shader->getInfoDebugLog() );
+#if defined( OS_WINDOWS )
+		OutputDebugString( shaderSource );
+		OutputDebugString( shader->getInfoLog() );
+		OutputDebugString( shader->getInfoDebugLog() );
+#endif
 		glslang::FinalizeProcess();
 		return false;
 	}
@@ -573,8 +578,13 @@ bool CompileSPIRV(
 
 	if ( !program->link( messages ) )
 	{
-		puts( shader->getInfoLog() );
-		puts( shader->getInfoDebugLog() );
+		Print( "%s", shader->getInfoLog() );
+		Print( "%s", shader->getInfoDebugLog() );
+#if defined( OS_WINDOWS )
+		OutputDebugString( shaderSource );
+		OutputDebugString( shader->getInfoLog() );
+		OutputDebugString( shader->getInfoDebugLog() );
+#endif
 		glslang::FinalizeProcess();
 		return false;
 	}
@@ -584,6 +594,27 @@ bool CompileSPIRV(
 	glslang::FinalizeProcess();
 
 	return true;
+}
+
+// Write SPIR-V out to a text file with 32-bit hexadecimal words
+void OutputSpvHex( const std::vector<unsigned int> & spirv, const char * baseName )
+{
+	FILE * fp = fopen( baseName, "wb" );
+	const int WORDS_PER_LINE = 8;
+	for ( int i = 0; i < (int)spirv.size(); i += WORDS_PER_LINE )
+	{
+		fprintf( fp, "\t" );
+		for (int j = 0; j < WORDS_PER_LINE && i + j < (int)spirv.size(); ++j) {
+			const unsigned int word = spirv[i + j];
+			fprintf( fp, "0x%08x", word );
+			if ( i + j + 1 < (int)spirv.size() )
+			{
+				fprintf( fp, "," );
+			}
+		}
+		fprintf( fp, "\n" );
+	}
+	fclose( fp );
 }
 
 #define ICD_SPV_MAGIC		0x07230203
@@ -607,6 +638,21 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
 		if ( !CompileSPIRV( shaderSource, shaderLength, stage, spirv ) )
 		{
 			return VK_ERROR_INVALID_SHADER_NV;
+		}
+
+		if ( 0 )
+		{
+			const char * stageName =
+					( ( stage == VK_SHADER_STAGE_VERTEX_BIT ) ? "vertex" :
+					( ( stage == VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT ) ? "tesselation_control" :
+					( ( stage == VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT ) ? "tesselation_evaluation" :
+					( ( stage == VK_SHADER_STAGE_GEOMETRY_BIT ) ? "geometry" :
+					( ( stage == VK_SHADER_STAGE_FRAGMENT_BIT ) ? "fragment" :
+					( ( stage == VK_SHADER_STAGE_COMPUTE_BIT ) ? "compute" :
+						"vertex" ) ) ) ) ) );
+			char name[1024];
+			sprintf( name, "%p_%s", pShaderModule, stageName );
+			OutputSpvHex( spirv, name );
 		}
 
 		VkShaderModuleCreateInfo moduleCreateInfo;
