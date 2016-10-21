@@ -358,16 +358,19 @@ Platform headers / declarations
 		#define _CRT_SECURE_NO_WARNINGS
 	#endif
 
-	#ifdef _MSC_VER
+	#if defined( _MSC_VER )
 		#pragma warning( disable : 4204 )	// nonstandard extension used : non-constant aggregate initializer
 		#pragma warning( disable : 4255 )	// '<name>' : no function prototype given: converting '()' to '(void)'
-		#pragma warning( disable : 4464	)	// relative include path contains '..'
 		#pragma warning( disable : 4668 )	// '__cplusplus' is not defined as a preprocessor macro, replacing with '0' for '#if/#elif'
 		#pragma warning( disable : 4710	)	// 'int printf(const char *const ,...)': function not inlined
 		#pragma warning( disable : 4711 )	// function '<name>' selected for automatic inline expansion
 		#pragma warning( disable : 4738 )	// storing 32-bit float result in memory, possible loss of performance
-		#pragma warning( disable : 4774	)	// 'printf' : format string expected in argument 1 is not a string literal
 		#pragma warning( disable : 4820 )	// '<name>' : 'X' bytes padding added after data member '<member>'		
+	#endif
+
+	#if _MSC_VER >= 1900
+		#pragma warning( disable : 4464	)	// relative include path contains '..'
+		#pragma warning( disable : 4774	)	// 'printf' : format string expected in argument 1 is not a string literal
 	#endif
 
 	#define OPENGL_VERSION_MAJOR	4
@@ -2981,9 +2984,9 @@ PFNGLISSYNCPROC										glIsSync;
 
 PFNGLBLENDFUNCSEPARATEPROC							glBlendFuncSeparate;
 PFNGLBLENDEQUATIONSEPARATEPROC						glBlendEquationSeparate;
-PFNGLBLENDCOLORPROC									glBlendColor;
 
 #if defined( OS_WINDOWS )
+PFNGLBLENDCOLORPROC									glBlendColor;
 PFNWGLCHOOSEPIXELFORMATARBPROC						wglChoosePixelFormatARB;
 PFNWGLCREATECONTEXTATTRIBSARBPROC					wglCreateContextAttribsARB;
 PFNWGLSWAPINTERVALEXTPROC							wglSwapIntervalEXT;
@@ -3115,9 +3118,9 @@ static void GlInitExtensions()
 
 	glBlendFuncSeparate							= (PFNGLBLENDFUNCSEPARATEPROC)			GetExtension( "glBlendFuncSeparate" );
 	glBlendEquationSeparate						= (PFNGLBLENDEQUATIONSEPARATEPROC)		GetExtension( "glBlendEquationSeparate" );
-	glBlendColor								= (PFNGLBLENDCOLORPROC)					GetExtension( "glBlendColor" );
 
 #if defined( OS_WINDOWS )
+	glBlendColor								= (PFNGLBLENDCOLORPROC)					GetExtension( "glBlendColor" );
 	wglChoosePixelFormatARB						= (PFNWGLCHOOSEPIXELFORMATARBPROC)		GetExtension( "wglChoosePixelFormatARB" );
 	wglCreateContextAttribsARB					= (PFNWGLCREATECONTEXTATTRIBSARBPROC)	GetExtension( "wglCreateContextAttribsARB" );
 	wglSwapIntervalEXT							= (PFNWGLSWAPINTERVALEXTPROC)			GetExtension( "wglSwapIntervalEXT" );
