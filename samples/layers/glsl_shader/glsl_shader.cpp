@@ -640,7 +640,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
 			return VK_ERROR_INVALID_SHADER_NV;
 		}
 
-		if ( 0 )
+#if 0
 		{
 			const char * stageName =
 					( ( stage == VK_SHADER_STAGE_VERTEX_BIT ) ? "vertex" :
@@ -654,6 +654,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
 			sprintf( name, "%p_%s", pShaderModule, stageName );
 			OutputSpvHex( spirv, name );
 		}
+#endif
 
 		VkShaderModuleCreateInfo moduleCreateInfo;
 		moduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
