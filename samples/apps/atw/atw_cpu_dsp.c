@@ -155,10 +155,9 @@ Windows, x86 or x64
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
-#ifdef _MSC_VER
+#if defined( _MSC_VER )
 #pragma warning( disable : 4204 )	// nonstandard extension used : non-constant aggregate initializer
 #pragma warning( disable : 4255 )	// '<name>' : no function prototype given: converting '()' to '(void)'
-#pragma warning( disable : 4464	)	// relative include path contains '..'
 #pragma warning( disable : 4668 )	// '__cplusplus' is not defined as a preprocessor macro, replacing with '0' for '#if/#elif'
 #pragma warning( disable : 4710	)	// 'int printf(const char *const ,...)': function not inlined
 #pragma warning( disable : 4711 )	// function '<name>' selected for automatic inline expansion
@@ -167,7 +166,11 @@ Windows, x86 or x64
 #pragma warning( disable : 4820 )	// '<name>' : 'X' bytes padding added after data member '<member>'
 #endif
 
-#ifdef __ICL
+#if _MSC_VER >= 1900
+#pragma warning( disable : 4464	)	// relative include path contains '..'
+#endif
+
+#if defined( __ICL )
 #pragma warning( disable : 2415 )	// variable X of static storage duration was declared but never referenced
 #endif
 

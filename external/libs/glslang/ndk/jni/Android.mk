@@ -73,12 +73,14 @@ LOCAL_SRC_FILES			:= \
 							$(GLSLANG_DIR)/glslang/GenericCodeGen/CodeGen.cpp \
 							$(GLSLANG_DIR)/glslang/GenericCodeGen/Link.cpp \
 							$(GLSLANG_DIR)/glslang/MachineIndependent/Constant.cpp \
+							${GLSLANG_DIR}/glslang/MachineIndependent/ParseContextBase.cpp \
 							$(GLSLANG_DIR)/glslang/MachineIndependent/glslang_tab.cpp \
 							$(GLSLANG_DIR)/glslang/MachineIndependent/InfoSink.cpp \
 							$(GLSLANG_DIR)/glslang/MachineIndependent/Initialize.cpp \
 							$(GLSLANG_DIR)/glslang/MachineIndependent/Intermediate.cpp \
 							$(GLSLANG_DIR)/glslang/MachineIndependent/intermOut.cpp \
 							$(GLSLANG_DIR)/glslang/MachineIndependent/IntermTraverse.cpp \
+							${GLSLANG_DIR}/glslang/MachineIndependent/iomapper.cpp \
 							$(GLSLANG_DIR)/glslang/MachineIndependent/limits.cpp \
 							$(GLSLANG_DIR)/glslang/MachineIndependent/linkValidate.cpp \
 							$(GLSLANG_DIR)/glslang/MachineIndependent/parseConst.cpp \

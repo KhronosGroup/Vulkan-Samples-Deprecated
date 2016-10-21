@@ -1066,13 +1066,13 @@ static void Json_WriteValue( const Json_t * node, int recursion, char ** bufferI
 	else if ( node->type == JSON_INT )
 	{
 		char temp[1024];
-		const int length = sprintf( temp, "%lld", node->valueInt64 );
+		const int length = sprintf( temp, "%lld", (long long int)node->valueInt64 );
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, length + 2, "%s%s\n", temp, lastChild ? "" : "," );
 	}
 	else if ( node->type == JSON_UINT )
 	{
 		char temp[1024];
-		const int length = sprintf( temp, "%llu", node->valueUint64 );
+		const int length = sprintf( temp, "%llu", (unsigned long long int)node->valueUint64 );
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, length + 2, "%s%s\n", temp, lastChild ? "" : "," );
 	}
 	else if ( node->type == JSON_FLOAT )
