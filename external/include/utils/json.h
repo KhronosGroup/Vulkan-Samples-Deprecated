@@ -159,8 +159,8 @@ bool			Json_IsInteger( const Json_t * node );								// Returns true if the node
 bool			Json_IsUnsigned( const Json_t * node );								// Returns true if the node != NULL and the value is an unsigned integer number.
 bool			Json_IsFloatingPoint( const Json_t * node );						// Returns true if the node != NULL and the value is a floating-point number.
 bool			Json_IsString( const Json_t * node );								// Returns true if the node != NULL and the value is a string.
-bool			Json_IsObject( const Json_t * node );								// Returns true if the node != NULL and this is an object.
-bool			Json_IsArray( const Json_t * node );								// Returns true if the node != NULL and this is an array.
+bool			Json_IsObject( const Json_t * node );								// Returns true if the node != NULL and the node is an object.
+bool			Json_IsArray( const Json_t * node );								// Returns true if the node != NULL and the node is an array.
 
 bool			Json_GetBoolean( const Json_t * node, const bool defaultValue );	// Returns 'defaultValue' if IsBoolean( node ) == false.
 int8_t			Json_GetInt8( const Json_t * node, const int8_t defaultValue );		// Returns 'defaultValue' if IsNumber( node ) == false.
@@ -461,10 +461,9 @@ typedef struct Json_t
 	int				memberIndex;		// mutable member index for faster lookups
 } Json_t;
 
-Json_t * Json_Create()
+static Json_t * Json_Create()
 {
-	Json_t * json = (Json_t *) malloc( sizeof( Json_t ) );
-	memset( json, 0, sizeof( Json_t ) );
+	Json_t * json = (Json_t *) calloc( 1, sizeof( Json_t ) );
 	json->valueString = (char *)"null";
 	json->type = JSON_NULL;
 	return json;

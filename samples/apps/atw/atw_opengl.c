@@ -223,6 +223,26 @@ Supported platforms are:
 	- Android 5.0 or later
 
 
+GRAPHICS API WRAPPER
+====================
+
+The code wraps the OpenGL API with a convenient wrapper that takes care of a
+lot of the OpenGL intricacies. This wrapper does not expose the full Vulkan API
+but can be easily extended to support more features. Some of the current
+limitations are:
+
+- The wrapper is setup for forward rendering with a single render pass. This
+  can be easily extended if more complex rendering algorithms are desired.
+
+- A pipeline can only use 256 bytes worth of plain integer and floating-point
+  uniforms, including vectors and matrices. If more uniforms are needed then 
+  it is advised to use a uniform buffer, which is the preferred approach for
+  exposing large amounts of data anyway.
+
+- Graphics programs currently consist of only of a vertex and fragment shader.
+  This can be easily extended if there is a need for geometry shaders etc.
+
+
 COMMAND-LINE COMPILATION
 ========================
 
@@ -12906,7 +12926,7 @@ static void TimeWarp_SetTriangleLevel( TimeWarp_t * timeWarp, const int level );
 static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level );
 static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level );
 
-static Microseconds_t TimeWarp_GetPredictedDisplayTime( const int frameIndex );
+static Microseconds_t TimeWarp_GetPredictedDisplayTime( TimeWarp_t * timeWarp, const int frameIndex );
 static void TimeWarp_SubmitFrame( TimeWarp_t * timeWarp, const int frameIndex, const Microseconds_t displayTime,
 									const Matrix4x4f_t * viewMatrix, const Matrix4x4_t * projectionMatrix,
 									GpuTexture_t * eyeTexture[NUM_EYES], GpuFence_t * eyeCompletionFence[NUM_EYES],
