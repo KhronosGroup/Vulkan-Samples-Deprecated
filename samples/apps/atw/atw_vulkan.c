@@ -342,12 +342,12 @@ Platform headers / declarations
 		#pragma warning( disable : 4710	)	// 'int printf(const char *const ,...)': function not inlined
 		#pragma warning( disable : 4711 )	// function '<name>' selected for automatic inline expansion
 		#pragma warning( disable : 4738 )	// storing 32-bit float result in memory, possible loss of performance
-		#pragma warning( disable : 4774	)	// 'printf' : format string expected in argument 1 is not a string literal
 		#pragma warning( disable : 4820 )	// '<name>' : 'X' bytes padding added after data member '<member>'
 	#endif
 
 	#if _MSC_VER >= 1900
 		#pragma warning( disable : 4464	)	// relative include path contains '..'
+		#pragma warning( disable : 4774	)	// 'printf' : format string expected in argument 1 is not a string literal
 	#endif
 
 	#include <windows.h>
