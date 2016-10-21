@@ -74,6 +74,7 @@ set( SOURCES
     ${GLSLANG_DIR}/glslang/MachineIndependent/Initialize.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/IntermTraverse.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/Intermediate.cpp
+	${GLSLANG_DIR}/glslang/MachineIndependent/ParseContextBase.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/ParseHelper.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/PoolAlloc.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/RemoveTree.cpp
@@ -82,6 +83,7 @@ set( SOURCES
     ${GLSLANG_DIR}/glslang/MachineIndependent/SymbolTable.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/Versions.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/intermOut.cpp
+	${GLSLANG_DIR}/glslang/MachineIndependent/iomapper.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/limits.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/linkValidate.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/parseConst.cpp
@@ -113,6 +115,7 @@ set( HEADERS
     ${GLSLANG_DIR}/glslang/MachineIndependent/glslang_tab.cpp.h
     ${GLSLANG_DIR}/glslang/MachineIndependent/gl_types.h
     ${GLSLANG_DIR}/glslang/MachineIndependent/Initialize.h
+	${GLSLANG_DIR}/glslang/MachineIndependent/iomapper.h
     ${GLSLANG_DIR}/glslang/MachineIndependent/localintermediate.h
     ${GLSLANG_DIR}/glslang/MachineIndependent/ParseHelper.h
     ${GLSLANG_DIR}/glslang/MachineIndependent/reflection.h

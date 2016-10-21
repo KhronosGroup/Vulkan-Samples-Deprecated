@@ -566,7 +566,7 @@ Common defines
 
 #define VK_ALLOCATOR					NULL
 
-#define USE_GLTF						1
+#define USE_GLTF						0
 #define USE_SPIRV						1
 #define USE_PM_MULTIVIEW				1
 #define USE_API_DUMP					0	// place vk_layer_settings.txt in the executable folder and change APIDumpFile = TRUE
@@ -4990,12 +4990,12 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 		}
 	}
 
-	window->input.keyInput[KEY_SHIFT_LEFT]	= GetAsyncKeyState( KEY_SHIFT_LEFT );
+	window->input.keyInput[KEY_SHIFT_LEFT]		= GetAsyncKeyState( KEY_SHIFT_LEFT );
 	window->input.keyInput[KEY_CTRL_LEFT]		= GetAsyncKeyState( KEY_CTRL_LEFT );
 	window->input.keyInput[KEY_ALT_LEFT]		= GetAsyncKeyState( KEY_ALT_LEFT );
 	window->input.keyInput[KEY_CURSOR_UP]		= GetAsyncKeyState( KEY_CURSOR_UP );
-	window->input.keyInput[KEY_CURSOR_DOWN]	= GetAsyncKeyState( KEY_CURSOR_DOWN );
-	window->input.keyInput[KEY_CURSOR_LEFT]	= GetAsyncKeyState( KEY_CURSOR_LEFT );
+	window->input.keyInput[KEY_CURSOR_DOWN]		= GetAsyncKeyState( KEY_CURSOR_DOWN );
+	window->input.keyInput[KEY_CURSOR_LEFT]		= GetAsyncKeyState( KEY_CURSOR_LEFT );
 	window->input.keyInput[KEY_CURSOR_RIGHT]	= GetAsyncKeyState( KEY_CURSOR_RIGHT );
 
 	if ( window->windowExit )
@@ -6635,7 +6635,7 @@ typedef enum	// https://developer.android.com/ndk/reference/group___input.html
 	KEY_ESCAPE			= AKEYCODE_ESCAPE,
 	KEY_SHIFT_LEFT		= AKEYCODE_SHIFT_LEFT,
 	KEY_CTRL_LEFT		= AKEYCODE_CTRL_LEFT,
-	KEY_ALT_LEFT		= AKEYCODE_ALT_LEFT
+	KEY_ALT_LEFT		= AKEYCODE_ALT_LEFT,
 	KEY_CURSOR_UP		= AKEYCODE_DPAD_UP,
 	KEY_CURSOR_DOWN		= AKEYCODE_DPAD_DOWN,
 	KEY_CURSOR_LEFT		= AKEYCODE_DPAD_LEFT,
@@ -8513,7 +8513,7 @@ typedef struct
 static size_t GpuVertexAttributeArrays_GetDataSize( const GpuVertexAttribute_t * layout, const int vertexCount, const int attribsFlags )
 {
 	size_t totalSize = 0;
-	for ( int i = 0; i < layout[i].attributeFlag != 0; i++ )
+	for ( int i = 0; layout[i].attributeFlag != 0; i++ )
 	{
 		const GpuVertexAttribute_t * v = &layout[i];
 		if ( ( v->attributeFlag & attribsFlags ) != 0 )
@@ -8526,7 +8526,7 @@ static size_t GpuVertexAttributeArrays_GetDataSize( const GpuVertexAttribute_t *
 
 static void * GpuVertexAttributeArrays_GetDataPointer( const GpuVertexAttributeArraysBase_t * attribs )
 {
-	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
+	for ( int i = 0; attribs->layout[i].attributeFlag != 0; i++ )
 	{
 		const GpuVertexAttribute_t * v = &attribs->layout[i];
 		void * attribPtr = *(void **) ( ((char *)attribs) + v->attributeOffset );
@@ -8541,7 +8541,7 @@ static void * GpuVertexAttributeArrays_GetDataPointer( const GpuVertexAttributeA
 static int GpuVertexAttributeArrays_GetAttribsFlags( const GpuVertexAttributeArraysBase_t * attribs )
 {
 	int attribsFlags = 0;
-	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
+	for ( int i = 0; attribs->layout[i].attributeFlag != 0; i++ )
 	{
 		const GpuVertexAttribute_t * v = &attribs->layout[i];
 		void * attribPtr = *(void **) ( ((char *)attribs) + v->attributeOffset );
@@ -8558,7 +8558,7 @@ static void GpuVertexAttributeArrays_Map( GpuVertexAttributeArraysBase_t * attri
 	unsigned char * dataBytePtr = (unsigned char *) data;
 	size_t offset = 0;
 
-	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
+	for ( int i = 0; attribs->layout[i].attributeFlag != 0; i++ )
 	{
 		const GpuVertexAttribute_t * v = &attribs->layout[i];
 		void ** attribPtr = (void **) ( ((char *)attribs) + v->attributeOffset );
@@ -8593,7 +8593,7 @@ static void GpuVertexAttributeArrays_Free( GpuVertexAttributeArraysBase_t * attr
 
 static void * GpuVertexAttributeArrays_FindAtribute( GpuVertexAttributeArraysBase_t * attribs, const char * name )
 {
-	for ( int i = 0; i < attribs->layout[i].attributeFlag != 0; i++ )
+	for ( int i = 0; attribs->layout[i].attributeFlag != 0; i++ )
 	{
 		const GpuVertexAttribute_t * v = &attribs->layout[i];
 		if ( strcmp( v->name, name ) == 0 ) 
@@ -10165,7 +10165,7 @@ static void InitVertexAttributes( const bool instance,
 								VkDeviceSize * bindingOffsets )
 {
 	size_t offset = 0;
-	for ( int i = 0; i < vertexLayout[i].attributeFlag != 0; i++ )
+	for ( int i = 0; vertexLayout[i].attributeFlag != 0; i++ )
 	{
 		const GpuVertexAttribute_t * v = &vertexLayout[i];
 		if ( ( v->attributeFlag & storedAttribsFlags ) != 0 )
@@ -16514,9 +16514,9 @@ static void PerfScene_Create( GpuContext_t * context, PerfScene_t * scene, Scene
 
 	GpuBuffer_Create( context, &scene->sceneMatrices, GPU_BUFFER_TYPE_UNIFORM, 2 * sizeof( Matrix4x4f_t ), NULL, false );
 
-	GpuTexture_CreateDefault( context, &scene->diffuseTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 0, 1, 1, true, false );
-	GpuTexture_CreateDefault( context, &scene->specularTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 0, 1, 1, true, false );
-	GpuTexture_CreateDefault( context, &scene->normalTexture, GPU_TEXTURE_DEFAULT_PYRAMIDS, 256, 256, 0, 1, 1, true, false );
+	GpuTexture_CreateDefault( context, &scene->diffuseTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 0, 0, 1, true, false );
+	GpuTexture_CreateDefault( context, &scene->specularTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 0, 0, 1, true, false );
+	GpuTexture_CreateDefault( context, &scene->normalTexture, GPU_TEXTURE_DEFAULT_PYRAMIDS, 256, 256, 0, 0, 1, true, false );
 
 	scene->settings = *settings;
 	scene->newSettings = settings;
@@ -16707,8 +16707,8 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 #define GL_NEAREST_MIPMAP_LINEAR		0x2702
 #define GL_LINEAR_MIPMAP_LINEAR			0x2703
 
-#define GL_CLAMP						0x2900
 #define GL_REPEAT						0x2901
+#define GL_CLAMP_TO_EDGE				0x812F
 #define GL_CLAMP_TO_BORDER				0x812D
 
 #define GL_VERTEX_SHADER				0x8B31
@@ -17592,6 +17592,7 @@ static void Gltf_ParseUniformValue( GltfUniformValue_t * value, const Json_t * j
 		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	Gltf_ParseFloatArray( value->floatValue, 4*2, json ); break;
 		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	Gltf_ParseFloatArray( value->floatValue, 4*3, json ); break;
 		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	Gltf_ParseFloatArray( value->floatValue, 4*4, json ); break;
+		default: break;
 	}
 }
 
@@ -17614,7 +17615,7 @@ static GpuTextureWrapMode_t Gltf_GetTextureWrapMode( const int wrapMode )
 	switch ( wrapMode )
 	{
 		case GL_REPEAT:				return GPU_TEXTURE_WRAP_MODE_REPEAT;
-		case GL_CLAMP:				return GPU_TEXTURE_WRAP_MODE_CLAMP_TO_EDGE;
+		case GL_CLAMP_TO_EDGE:		return GPU_TEXTURE_WRAP_MODE_CLAMP_TO_EDGE;
 		case GL_CLAMP_TO_BORDER:	return GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER;
 		default:					return GPU_TEXTURE_WRAP_MODE_REPEAT;
 	}
@@ -18356,6 +18357,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 							}
 						}
 						assert( found );
+						UNUSED_PARM( found );
 					}
 				}
 			}
@@ -19241,7 +19243,7 @@ static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const G
 
 			// Update the skin joint buffer.
 			Matrix4x4f_t * joints = NULL;
-			GpuBuffer_t * mappedJointBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &skin->jointBuffer, &joints );
+			GpuBuffer_t * mappedJointBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &skin->jointBuffer, (void **)&joints );
 
 			for ( int jointIndex = 0; jointIndex < skin->jointCount; jointIndex++ )
 			{
@@ -19281,6 +19283,7 @@ static void GltfScene_SetUniformValue( GpuGraphicsCommand_t * command, const Glt
 		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	GpuGraphicsCommand_SetParmFloatMatrix4x2( command, uniform->index, (const Matrix4x2f_t *)value->floatValue ); break;
 		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	GpuGraphicsCommand_SetParmFloatMatrix4x3( command, uniform->index, (const Matrix4x3f_t *)value->floatValue ); break;
 		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	GpuGraphicsCommand_SetParmFloatMatrix4x4( command, uniform->index, (const Matrix4x4f_t *)value->floatValue ); break;
+		default: break;
 	}
 }
 
@@ -19408,6 +19411,7 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE:	GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionInverseMatrix ); break;
 							case GLTF_UNIFORM_SEMANTIC_VIEWPORT:						GpuGraphicsCommand_SetParmFloatVector4( &command, uniform->index, &builtin.viewport ); break;
 							case GLTF_UNIFORM_SEMANTIC_JOINTMATRIX:						GpuGraphicsCommand_SetParmBufferUniform( &command, uniform->index, jointBuffer ); break;
+							default: break;
 						}
 					}
 
