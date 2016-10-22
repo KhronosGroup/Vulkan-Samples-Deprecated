@@ -82,7 +82,7 @@ or the time warp rendering drops frames. Therefore four scrolling bar graphs are
 drawn at the bottom left of the screen. Each bar represents a frame. New frames scroll
 in on the right and old frames scroll out on the left.
 
-The left-most bar graph represent the frame rate of the sterescopic rendering (pink).
+The left-most bar graph represent the frame rate of the stereoscopic rendering (pink).
 The next bar graph represents the frame rate of time warp rendering (green). Each bar
 that is pink or green respectively reaches the top of the graph and represents a frame
 rendered at the display refresh rate. When the frame rate drops, the bars turn red
@@ -114,10 +114,10 @@ Eye image resolution:
 	3: 4096 x 4096
 
 Eye image multi-sampling:
-	0: 1x
-	1: 2x
-	2: 4x
-	3: 8x
+	0: 1x MSAA
+	1: 2x MSAA
+	2: 4x MSAA
+	3: 8x MSAA
 
 
 SCENE WORKLOAD
@@ -178,15 +178,15 @@ The following command-line options can be used to change various settings.
 	-v <s>		start with V-Sync disabled for this many seconds
 	-h			start with head rotation disabled
 	-p			start with the simulation paused
+	-r <0-3>	set display resolution level
+	-b <0-3>	set eye image resolution level
+	-s <0-3>	set eye image multi-sampling level
 	-q <0-3>	set per eye draw calls level
 	-w <0-3>	set per eye triangles per draw call level
 	-e <0-3>	set per eye fragment program complexity level
-	-s <0-3>	set multi-sampling level
 	-m <0-1>    enable/disable multi-view
 	-c <0-1>	enable/disable correction for chromatic aberration
 	-i <name>	set time warp implementation: graphics, compute
-	-r <height>	set screen height: 1080, 1440, 2160, 4320
-	-b <width>	set eye buffer resolution: 1024, 1536, 2048, 4096
 	-z <name>	set the render mode: atw, tw, scene
 	-g			hide graphs
 	-l <s>		log 10 frames of OpenGL commands after this many seconds
@@ -199,19 +199,19 @@ KEYBOARD INPUT
 The following keys can be used at run-time to change various settings.
 
 	[F]		= toggle between windowed and fullscreen
-	[V]		= toggle V-Sync
-	[H]		= toggle head rotation
-	[P]		= pause/unpause the simulation
+	[V]		= toggle V-Sync on/off
+	[H]		= toggle head rotation on/off
+	[P]		= pause/resume the simulation
+	[R]		= cycle screen resolution level
+	[B]		= cycle eye buffer resolution level
+	[S]		= cycle multi-sampling level
 	[Q]		= cycle per eye draw calls level
 	[W]		= cycle per eye triangles per draw call level
 	[E]		= cycle per eye fragment program complexity level
-	[S]		= cycle multi-sampling level
 	[M]		= toggle multi-view
 	[C]		= toggle correction for chromatic aberration
-	[I]		= cycle time warp implementations: graphics, compute
-	[R]		= cycle screen resolution: 1920x1080, 2560x1440, 3840x2160, 7680x4320
-	[B]		= cycle eye buffer resolution: 1024x1024, 1536x1536, 2048x2048, 4096x4096
-	[Z]		= set the render mode: atw, tw, scene
+	[I]		= toggle time warp implementation: graphics, compute
+	[Z]		= cycle the render mode: atw, tw, scene
 	[G]		= cycle between showing graphs, showing paused graphs and hiding graphs
 	[L]		= log 10 frames of OpenGL commands
 	[D]		= dump GLSL to files for conversion to SPIR-V
@@ -250,7 +250,7 @@ GRAPHICS API WRAPPER
 ====================
 
 The code wraps the OpenGL API with a convenient wrapper that takes care of a
-lot of the OpenGL intricacies. This wrapper does not expose the full Vulkan API
+lot of the OpenGL intricacies. This wrapper does not expose the full OpenGL API
 but can be easily extended to support more features. Some of the current
 limitations are:
 
@@ -13776,9 +13776,9 @@ static void SceneSettings_Init( GpuContext_t * context, SceneSettings_t * settin
 	settings->drawCallLevel = 0;
 	settings->triangleLevel = 0;
 	settings->fragmentLevel = 0;
-	settings->maxDisplayResolutionLevels =	( !GpuWindow_SupportedResolution( 2560, 1440 ) ? 2 :
-											( !GpuWindow_SupportedResolution( 3840, 2160 ) ? 3 :
-											( !GpuWindow_SupportedResolution( 7680, 4320 ) ? 4 : 1 ) ) );
+	settings->maxDisplayResolutionLevels =	( !GpuWindow_SupportedResolution( 2560, 1440 ) ? 1 :
+											( !GpuWindow_SupportedResolution( 3840, 2160 ) ? 2 :
+											( !GpuWindow_SupportedResolution( 7680, 4320 ) ? 3 : 4 ) ) );
 	settings->maxEyeImageResolutionLevels = MAX_EYE_IMAGE_RESOLUTION_LEVELS;
 	settings->maxEyeImageSamplesLevels = ( maxEyeImageSamplesLevels < MAX_EYE_IMAGE_SAMPLES_LEVELS ) ? maxEyeImageSamplesLevels : MAX_EYE_IMAGE_SAMPLES_LEVELS;
 
@@ -16956,8 +16956,8 @@ typedef struct
 	bool						useMultiView;
 	bool						correctChromaticAberration;
 	bool						hideGraphs;
-	RenderMode_t				renderMode;
 	TimeWarpImplementation_t	timeWarpImplementation;
+	RenderMode_t				renderMode;
 	Microseconds_t				startupTimeMicroseconds;
 	Microseconds_t				noVSyncMicroseconds;
 	Microseconds_t				noLogMicroseconds;
@@ -17825,15 +17825,15 @@ static int StartApplication( int argc, char * argv[] )
 				   "   -v <s>      start with V-Sync disabled for this many seconds\n"
 				   "   -h          start with head rotation disabled\n"
 				   "   -p          start with the simulation paused\n"
+				   "   -r <0-3>    set display resolution level\n"
+				   "   -b <0-3>    set eye image resolution level\n"
+				   "   -s <0-3>    set multi-sampling level\n"
 				   "   -q <0-3>    set per eye draw calls level\n"
 				   "   -w <0-3>    set per eye triangles per draw call level\n"
 				   "   -e <0-3>    set per eye fragment program complexity level\n"
-				   "   -s <0-3>    set multi-sampling level\n"
 				   "   -m <0-1>    enable/disable multi-view\n"
 				   "   -c <0-1>    enable/disable correction for chromatic aberration\n"
 				   "   -i <name>   set time warp implementation: graphics, compute\n"
-				   "   -r <height> set screen height: 1080, 1440, 2160, 4320\n"
-				   "   -b <width>  set eye buffer resolution: 1024, 1536, 2048, 4096\n"
 				   "   -z <name>   set the render mode: atw, tw, scene\n"
 				   "   -g          hide graphs\n"
 				   "   -l <s>      log 10 frames of OpenGL commands after this many seconds\n"
@@ -17863,8 +17863,8 @@ static int StartApplication( int argc, char * argv[] )
 	Print( "    fragmentLevel = %d\n",				startupSettings.fragmentLevel );
 	Print( "    useMultiView = %d\n",				startupSettings.useMultiView );
 	Print( "    correctChromaticAberration = %d\n",	startupSettings.correctChromaticAberration );
-	Print( "    renderMode = %d\n",					startupSettings.renderMode );
 	Print( "    timeWarpImplementation = %d\n",		startupSettings.timeWarpImplementation );
+	Print( "    renderMode = %d\n",					startupSettings.renderMode );
 	Print( "    hideGraphs = %d\n",					startupSettings.hideGraphs );
 	Print( "    noLogMicroseconds = %lld\n",		startupSettings.noLogMicroseconds );
 
