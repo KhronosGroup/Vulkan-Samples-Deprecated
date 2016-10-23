@@ -231,6 +231,7 @@ Linux x86 or x64
 #include <string.h>					// for memset()
 #include <errno.h>					// for EBUSY, ETIMEDOUT etc.
 #include <ctype.h>					// for isspace() and isdigit()
+#include <time.h>					// for timespec
 #include <sys/time.h>				// for gettimeofday()
 #define __USE_UNIX98				// for pthread_mutexattr_settype
 #include <pthread.h>				// for pthread_create() etc.
