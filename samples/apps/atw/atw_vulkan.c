@@ -247,7 +247,7 @@ GRAPHICS API WRAPPER
 ====================
 
 The code wraps the Vulkan API with a convenient wrapper that takes care of all
-the complications of memory synchronization and memory barriers. This wrapper
+the intricacies of memory synchronization and memory barriers. This wrapper
 does not expose the full Vulkan API but can be easily extended to support more
 features. Some of the current limitations are:
 
@@ -466,11 +466,12 @@ Platform headers / declarations
 
 #elif defined( OS_LINUX )
 
-	#include <sys/time.h>
-	#define __USE_UNIX98	// for pthread_mutexattr_settype
-	#include <pthread.h>
-	#include <malloc.h>                     // for memalign
-	#include <dlfcn.h>						// for dlopen
+	#include <stdlib.h>							// for timespec
+	#include <sys/time.h>						// for gettimeofday()
+	#define __USE_UNIX98						// for pthread_mutexattr_settype
+	#include <pthread.h>						// for pthread_create() etc.
+	#include <malloc.h>							// for memalign
+	#include <dlfcn.h>							// for dlopen
 	#if defined( OS_LINUX_XLIB )
 		#include <X11/Xlib.h>
 		#include <X11/Xatom.h>

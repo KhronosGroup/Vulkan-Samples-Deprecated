@@ -224,6 +224,7 @@ Linux x86 or x64
 #endif
 
 #include <stdio.h>					// for printf()
+#include <stdlib.h>					// for timespec
 #include <stdint.h>					// for uint32_t etc.
 #include <stdbool.h>				// for bool
 #include <assert.h>					// for assert()
