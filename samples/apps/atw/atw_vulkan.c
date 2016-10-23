@@ -82,7 +82,7 @@ or the time warp rendering drops frames. Therefore four scrolling bar graphs are
 drawn at the bottom left of the screen. Each bar represents a frame. New frames scroll
 in on the right and old frames scroll out on the left.
 
-The left-most bar graph represent the frame rate of the sterescopic rendering (pink).
+The left-most bar graph represent the frame rate of the stereoscopic rendering (pink).
 The next bar graph represents the frame rate of time warp rendering (green). Each bar
 that is pink or green respectively reaches the top of the graph and represents a frame
 rendered at the display refresh rate. When the frame rate drops, the bars turn red
@@ -93,6 +93,31 @@ the time warp rendering (green) and the bar graph rendering (yellow). The times 
 stacked in each graph. The full height of a graph represents a full frame time.
 For instance, with a 60Hz display refresh rate, the full graph height represents 16.7
 milliseconds.
+
+
+RESOLUTIONS
+===========
+
+The rendering resolutions can be changed by adjusting the display resolution, the
+eye image resolution, and the eye image MSAA. For each of these there are four levels:
+
+Display Resolution:
+	0: 1920 x 1080
+	1: 2560 x 1440
+	2: 3840 x 2160
+	3: 7680 x 4320
+
+Eye image resolution:
+	0: 1024 x 1024
+	1: 1536 x 1536
+	2: 2048 x 2048
+	3: 4096 x 4096
+
+Eye image multi-sampling:
+	0: 1x MSAA
+	1: 2x MSAA
+	2: 4x MSAA
+	3: 8x MSAA
 
 
 SCENE WORKLOAD
@@ -119,12 +144,6 @@ Fragment program complexity:
 	1: normal-mapped with 100 lights
 	2: normal-mapped with 1000 lights
 	3: normal-mapped with 2000 lights
-
-Multi-sampling:
-	0: 1x
-	1: 2x
-	2: 4x
-	3: 8x
 
 In the lower right corner of the screen there are four indicators that show
 the current level for each. The levels are colored: 0 = green, 1 = blue,
@@ -159,14 +178,16 @@ The following command-line options can be used to change various settings.
 	-v <s>		start with V-Sync disabled for this many seconds
 	-h			start with head rotation disabled
 	-p			start with the simulation paused
+	-r <0-3>	set display resolution level
+	-b <0-3>	set eye image resolution level
+	-s <0-3>	set eye image multi-sampling level
 	-q <0-3>	set per eye draw calls level
 	-w <0-3>	set per eye triangles per draw call level
 	-e <0-3>	set per eye fragment program complexity level
-	-s <0-3>	set multi-sampling level
-	-m <0-1>    enable/disable multi-view
+	-m <0-1>	enable/disable multi-view
 	-c <0-1>	enable/disable correction for chromatic aberration
-	-r <name>	set the render mode: atw, tw, scene
 	-i <name>	set time warp implementation: graphics, compute
+	-z <name>	set the render mode: atw, tw, scene
 	-g			hide graphs
 	-l <s>		log 10 frames of Vulkan commands after this many seconds
 	-d			dump GLSL to files for conversion to SPIR-V
@@ -178,17 +199,19 @@ KEYBOARD INPUT
 The following keys can be used at run-time to change various settings.
 
 	[F]		= toggle between windowed and fullscreen
-	[V]		= toggle V-Sync
-	[H]		= toggle head rotation
-	[P]		= pause/unpause the simulation
+	[V]		= toggle V-Sync on/off
+	[H]		= toggle head rotation on/off
+	[P]		= pause/resume the simulation
+	[R]		= cycle screen resolution level
+	[B]		= cycle eye buffer resolution level
+	[S]		= cycle multi-sampling level
 	[Q]		= cycle per eye draw calls level
 	[W]		= cycle per eye triangles per draw call level
 	[E]		= cycle per eye fragment program complexity level
-	[S]		= cycle multi-sampling level
 	[M]		= toggle multi-view
 	[C]		= toggle correction for chromatic aberration
-	[R]		= set the render mode: atw, tw, scene
-	[I]		= cycle time warp implementations: graphics, compute
+	[I]		= toggle time warp implementation: graphics, compute
+	[Z]		= cycle the render mode: atw, tw, scene
 	[G]		= cycle between showing graphs, showing paused graphs and hiding graphs
 	[L]		= log 10 frames of Vulkan commands
 	[D]		= dump GLSL to files for conversion to SPIR-V
@@ -4556,6 +4579,7 @@ GpuWindowEvent_t
 KeyboardKey_t
 MouseButton_t
 
+static bool GpuWindow_SupportedResolution( const int width, const int height );
 static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								const GpuQueueInfo_t * queueInfo, const int queueIndex,
 								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
@@ -4972,6 +4996,20 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	return true;
 }
 
+static bool GpuWindow_SupportedResolution( const int width, const int height )
+{
+	DEVMODE dm = { 0 };
+	dm.dmSize = sizeof( dm );
+	for ( int modeIndex = 0; EnumDisplaySettings( NULL, modeIndex, &dm ) != 0; modeIndex++ )
+	{
+		if ( dm.dmPelsWidth == (DWORD)width && dm.dmPelsHeight == (DWORD)height )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 static void GpuWindow_Exit( GpuWindow_t * window )
 {
 	window->windowExit = true;
@@ -5144,6 +5182,14 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	GpuDevice_Create( &window->device, instance, queueInfo, surface );
 	GpuContext_Create( &window->context, &window->device, queueIndex );
 	GpuWindow_CreateFromSurface( window, surface );
+
+	return true;
+}
+
+static bool GpuWindow_SupportedResolution( const int width, const int height )
+{
+	UNUSED_PARM( width );
+	UNUSED_PARM( height );
 
 	return true;
 }
@@ -5436,6 +5482,14 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	GpuDevice_Create( &window->device, instance, queueInfo, surface );
 	GpuContext_Create( &window->context, &window->device, queueIndex );
 	GpuWindow_CreateFromSurface( window, surface );
+
+	return true;
+}
+
+static bool GpuWindow_SupportedResolution( const int width, const int height )
+{
+	UNUSED_PARM( width );
+	UNUSED_PARM( height );
 
 	return true;
 }
@@ -6057,6 +6111,14 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	return true;
 }
 
+static bool GpuWindow_SupportedResolution( const int width, const int height )
+{
+	UNUSED_PARM( width );
+	UNUSED_PARM( height );
+
+	return true;
+}
+
 static void GpuWindow_Exit( GpuWindow_t * window )
 {
 	window->windowExit = true;
@@ -6533,6 +6595,14 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	return true;
 }
 
+static bool GpuWindow_SupportedResolution( const int width, const int height )
+{
+	UNUSED_PARM( width );
+	UNUSED_PARM( height );
+
+	return true;
+}
+
 static void GpuWindow_Exit( GpuWindow_t * window )
 {
 	window->windowExit = true;
@@ -6853,6 +6923,15 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	GpuDevice_Create( &window->device, instance, queueInfo, VK_NULL_HANDLE );
 	GpuContext_Create( &window->context, &window->device, queueIndex );
 
+	return true;
+}
+
+static bool GpuWindow_SupportedResolution( const int width, const int height )
+{
+	UNUSED_PARM( width );
+	UNUSED_PARM( height );
+
+	// Assume the HWC can handle any window size.
 	return true;
 }
 
@@ -12757,14 +12836,17 @@ static const ScreenRect_t timeWarpFrameRateBarGraphRect				= { BARGRAPH_INSET + 
 static const ScreenRect_t frameCpuTimeBarGraphRect					= { BARGRAPH_INSET + 2 * 264, BARGRAPH_INSET, 256, 128 };
 static const ScreenRect_t frameGpuTimeBarGraphRect					= { BARGRAPH_INSET + 3 * 264, BARGRAPH_INSET, 256, 128 };
 
-static const ScreenRect_t multiViewBarGraphRect						= { 3 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 4 + 0 * 40, BARGRAPH_INSET, 32, 32 };
-static const ScreenRect_t correctChromaticAberrationBarGraphRect	= { 3 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 4 + 1 * 40, BARGRAPH_INSET, 32, 32 };
-static const ScreenRect_t timeWarpImplementationBarGraphRect		= { 3 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 4 + 2 * 40, BARGRAPH_INSET, 32, 32 };
+static const ScreenRect_t multiViewBarGraphRect						= { 2 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 3 + 0 * 40, BARGRAPH_INSET, 32, 32 };
+static const ScreenRect_t correctChromaticAberrationBarGraphRect	= { 2 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 3 + 1 * 40, BARGRAPH_INSET, 32, 32 };
+static const ScreenRect_t timeWarpImplementationBarGraphRect		= { 2 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 3 + 2 * 40, BARGRAPH_INSET, 32, 32 };
 
-static const ScreenRect_t sceneDrawCallLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 4 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
-static const ScreenRect_t sceneTriangleLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 3 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
-static const ScreenRect_t sceneFragmentLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 2 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
-static const ScreenRect_t sceneSamplesLevelBarGraphRect				= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 1 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ScreenRect_t displayResolutionLevelBarGraphRect		= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 7 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ScreenRect_t eyeImageResolutionLevelBarGraphRect		= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 6 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ScreenRect_t eyeImageSamplesLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 5 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+
+static const ScreenRect_t sceneDrawCallLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 3 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ScreenRect_t sceneTriangleLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 2 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ScreenRect_t sceneFragmentLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 1 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
 
 typedef enum
 {
@@ -12786,10 +12868,13 @@ typedef struct
 	BarGraph_t		correctChromaticAberrationBarGraph;
 	BarGraph_t		timeWarpImplementationBarGraph;
 
+	BarGraph_t		displayResolutionLevelBarGraph;
+	BarGraph_t		eyeImageResolutionLevelBarGraph;
+	BarGraph_t		eyeImageSamplesLevelBarGraph;
+
 	BarGraph_t		sceneDrawCallLevelBarGraph;
 	BarGraph_t		sceneTriangleLevelBarGraph;
 	BarGraph_t		sceneFragmentLevelBarGraph;
-	BarGraph_t		sceneSamplesLevelBarGraph;
 
 	GpuTimer_t		barGraphTimer;
 } TimeWarpBarGraphs_t;
@@ -12833,15 +12918,21 @@ static void TimeWarpBarGraphs_Create( GpuContext_t * context, TimeWarpBarGraphs_
 	BarGraph_CreateVirtualRect( context, &bargraphs->correctChromaticAberrationBarGraph, renderPass, &correctChromaticAberrationBarGraphRect, 1, 1, &colorDarkGrey );
 	BarGraph_CreateVirtualRect( context, &bargraphs->timeWarpImplementationBarGraph, renderPass, &timeWarpImplementationBarGraphRect, 1, 1, &colorDarkGrey );
 
+	BarGraph_CreateVirtualRect( context, &bargraphs->displayResolutionLevelBarGraph, renderPass, &displayResolutionLevelBarGraphRect, 1, 4, &colorDarkGrey );
+	BarGraph_CreateVirtualRect( context, &bargraphs->eyeImageResolutionLevelBarGraph, renderPass, &eyeImageResolutionLevelBarGraphRect, 1, 4, &colorDarkGrey );
+	BarGraph_CreateVirtualRect( context, &bargraphs->eyeImageSamplesLevelBarGraph, renderPass, &eyeImageSamplesLevelBarGraphRect, 1, 4, &colorDarkGrey );
+
 	BarGraph_CreateVirtualRect( context, &bargraphs->sceneDrawCallLevelBarGraph, renderPass, &sceneDrawCallLevelBarGraphRect, 1, 4, &colorDarkGrey );
 	BarGraph_CreateVirtualRect( context, &bargraphs->sceneTriangleLevelBarGraph, renderPass, &sceneTriangleLevelBarGraphRect, 1, 4, &colorDarkGrey );
 	BarGraph_CreateVirtualRect( context, &bargraphs->sceneFragmentLevelBarGraph, renderPass, &sceneFragmentLevelBarGraphRect, 1, 4, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->sceneSamplesLevelBarGraph, renderPass, &sceneSamplesLevelBarGraphRect, 1, 4, &colorDarkGrey );
+
+	BarGraph_AddBar( &bargraphs->displayResolutionLevelBarGraph, 0, 0.25f, &colorBlue, false );
+	BarGraph_AddBar( &bargraphs->eyeImageResolutionLevelBarGraph, 0, 0.25f, &colorBlue, false );
+	BarGraph_AddBar( &bargraphs->eyeImageSamplesLevelBarGraph, 0, 0.25f, &colorBlue, false );
 
 	BarGraph_AddBar( &bargraphs->sceneDrawCallLevelBarGraph, 0, 0.25f, &colorBlue, false );
 	BarGraph_AddBar( &bargraphs->sceneTriangleLevelBarGraph, 0, 0.25f, &colorBlue, false );
 	BarGraph_AddBar( &bargraphs->sceneFragmentLevelBarGraph, 0, 0.25f, &colorBlue, false );
-	BarGraph_AddBar( &bargraphs->sceneSamplesLevelBarGraph, 0, 0.25f, &colorBlue, false );
 
 	GpuTimer_Create( context, &bargraphs->barGraphTimer );
 }
@@ -12857,10 +12948,13 @@ static void TimeWarpBarGraphs_Destroy( GpuContext_t * context, TimeWarpBarGraphs
 	BarGraph_Destroy( context, &bargraphs->correctChromaticAberrationBarGraph );
 	BarGraph_Destroy( context, &bargraphs->timeWarpImplementationBarGraph );
 
+	BarGraph_Destroy( context, &bargraphs->displayResolutionLevelBarGraph );
+	BarGraph_Destroy( context, &bargraphs->eyeImageResolutionLevelBarGraph );
+	BarGraph_Destroy( context, &bargraphs->eyeImageSamplesLevelBarGraph );
+
 	BarGraph_Destroy( context, &bargraphs->sceneDrawCallLevelBarGraph );
 	BarGraph_Destroy( context, &bargraphs->sceneTriangleLevelBarGraph );
 	BarGraph_Destroy( context, &bargraphs->sceneFragmentLevelBarGraph );
-	BarGraph_Destroy( context, &bargraphs->sceneSamplesLevelBarGraph );
 
 	GpuTimer_Destroy( context, &bargraphs->barGraphTimer );
 }
@@ -12878,10 +12972,13 @@ static void TimeWarpBarGraphs_UpdateGraphics( GpuCommandBuffer_t * commandBuffer
 		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
 		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
 
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->displayResolutionLevelBarGraph );
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->eyeImageResolutionLevelBarGraph );
+		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->eyeImageSamplesLevelBarGraph );
+
 		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
 		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
 		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph );
 	}
 }
 
@@ -12900,10 +12997,13 @@ static void TimeWarpBarGraphs_RenderGraphics( GpuCommandBuffer_t * commandBuffer
 		BarGraph_RenderGraphics( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
 		BarGraph_RenderGraphics( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
 
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->displayResolutionLevelBarGraph );
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->eyeImageResolutionLevelBarGraph );
+		BarGraph_RenderGraphics( commandBuffer, &bargraphs->eyeImageSamplesLevelBarGraph );
+
 		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
 		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
 		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph );
 
 		GpuCommandBuffer_EndTimer( commandBuffer, &bargraphs->barGraphTimer );
 	}
@@ -12922,10 +13022,13 @@ static void TimeWarpBarGraphs_UpdateCompute( GpuCommandBuffer_t * commandBuffer,
 		BarGraph_UpdateCompute( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
 		BarGraph_UpdateCompute( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
 
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->displayResolutionLevelBarGraph );
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->eyeImageResolutionLevelBarGraph );
+		BarGraph_UpdateCompute( commandBuffer, &bargraphs->eyeImageSamplesLevelBarGraph );
+
 		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
 		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
 		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph );
 	}
 }
 
@@ -12944,10 +13047,13 @@ static void TimeWarpBarGraphs_RenderCompute( GpuCommandBuffer_t * commandBuffer,
 		BarGraph_RenderCompute( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph, framebuffer );
 		BarGraph_RenderCompute( commandBuffer, &bargraphs->timeWarpImplementationBarGraph, framebuffer );
 
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->displayResolutionLevelBarGraph, framebuffer );
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->eyeImageResolutionLevelBarGraph, framebuffer );
+		BarGraph_RenderCompute( commandBuffer, &bargraphs->eyeImageSamplesLevelBarGraph, framebuffer );
+
 		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph, framebuffer );
 		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph, framebuffer );
 		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneSamplesLevelBarGraph, framebuffer );
 
 		GpuCommandBuffer_EndTimer( commandBuffer, &bargraphs->barGraphTimer );
 	}
@@ -12981,25 +13087,21 @@ HmdInfo_t
 ================================================================================================================================
 */
 
-// Typical 16:9 resolutions: 1920 x 1080, 2560 x 1440, 3840 x 2160, 7680 x 4320
-#define DISPLAY_PIXELS_WIDE		1920
-#define DISPLAY_PIXELS_HIGH		1080
-
 #define NUM_EYES				2
 #define NUM_COLOR_CHANNELS		3
 
-#define TILE_PIXELS_WIDE		32
-#define TILE_PIXELS_HIGH		32
-
-#define EYE_TILES_WIDE			( DISPLAY_PIXELS_WIDE / TILE_PIXELS_WIDE / NUM_EYES )	// 30*32*2 = 1920
-#define EYE_TILES_HIGH			( DISPLAY_PIXELS_HIGH / TILE_PIXELS_HIGH )				// 33*32   = 1056 leaving 24 pixels untouched
-
 typedef struct
 {
-	int		widthInPixels;
-	int		heightInPixels;
-	float	widthInMeters;
-	float	heightInMeters;
+	int		displayPixelsWide;
+	int		displayPixelsHigh;
+	int		tilePixelsWide;
+	int		tilePixelsHigh;
+	int		eyeTilesWide;
+	int		eyeTilesHigh;
+	int		visiblePixelsWide;
+	int		visiblePixelsHigh;
+	float	visibleMetersWide;
+	float	visibleMetersHigh;
 	float	lensSeparationInMeters;
 	float	metersPerTanAngleAtCenter;
 	int		numKnots;
@@ -13012,14 +13114,20 @@ typedef struct
 	float	interpupillaryDistance;
 } BodyInfo_t;
 
-static const HmdInfo_t * GetDefaultHmdInfo()
+static const HmdInfo_t * GetDefaultHmdInfo( const int displayPixelsWide, const int displayPixelsHigh )
 {
 	static HmdInfo_t hmdInfo;
-	hmdInfo.widthInPixels = EYE_TILES_WIDE * TILE_PIXELS_WIDE * NUM_EYES;
-	hmdInfo.heightInPixels = EYE_TILES_HIGH * TILE_PIXELS_HIGH;
-	hmdInfo.widthInMeters = 0.11047f * ( EYE_TILES_WIDE * TILE_PIXELS_WIDE * NUM_EYES ) / DISPLAY_PIXELS_WIDE;
-	hmdInfo.heightInMeters = 0.06214f * ( EYE_TILES_HIGH * TILE_PIXELS_HIGH ) / DISPLAY_PIXELS_HIGH;
-	hmdInfo.lensSeparationInMeters = hmdInfo.widthInMeters / NUM_EYES;//0.062f;
+	hmdInfo.displayPixelsWide = displayPixelsWide;
+	hmdInfo.displayPixelsHigh = displayPixelsHigh;
+	hmdInfo.tilePixelsWide = 32;
+	hmdInfo.tilePixelsHigh = 32;
+	hmdInfo.eyeTilesWide = displayPixelsWide / hmdInfo.tilePixelsWide / NUM_EYES;
+	hmdInfo.eyeTilesHigh = displayPixelsHigh / hmdInfo.tilePixelsHigh;
+	hmdInfo.visiblePixelsWide = hmdInfo.eyeTilesWide * hmdInfo.tilePixelsWide * NUM_EYES;
+	hmdInfo.visiblePixelsHigh = hmdInfo.eyeTilesHigh * hmdInfo.tilePixelsHigh;
+	hmdInfo.visibleMetersWide = 0.11047f * ( hmdInfo.eyeTilesWide * hmdInfo.tilePixelsWide * NUM_EYES ) / displayPixelsWide;
+	hmdInfo.visibleMetersHigh = 0.06214f * ( hmdInfo.eyeTilesHigh * hmdInfo.tilePixelsHigh ) / displayPixelsHigh;
+	hmdInfo.lensSeparationInMeters = hmdInfo.visibleMetersWide / NUM_EYES;
 	hmdInfo.metersPerTanAngleAtCenter = 0.037f;
 	hmdInfo.numKnots = 11;
 	hmdInfo.K[0] = 1.0f;
@@ -13164,24 +13272,24 @@ static float EvaluateCatmullRomSpline( const float value, float const * K, const
 	return res;
 }
 
-static void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS], const int eyeTilesWide, const int eyeTilesHigh, const HmdInfo_t * hmdInfo )
+static void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS], const HmdInfo_t * hmdInfo )
 {
-	const float horizontalShiftMeters = ( hmdInfo->lensSeparationInMeters / 2 ) - ( hmdInfo->widthInMeters / 4 );
-	const float horizontalShiftView = horizontalShiftMeters / ( hmdInfo->widthInMeters / 2 );
+	const float horizontalShiftMeters = ( hmdInfo->lensSeparationInMeters / 2 ) - ( hmdInfo->visibleMetersWide / 4 );
+	const float horizontalShiftView = horizontalShiftMeters / ( hmdInfo->visibleMetersWide / 2 );
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		for ( int y = 0; y <= eyeTilesHigh; y++ )
+		for ( int y = 0; y <= hmdInfo->eyeTilesHigh; y++ )
 		{
-			const float yf = 1.0f - (float)y / (float)eyeTilesHigh;
+			const float yf = 1.0f - (float)y / (float)hmdInfo->eyeTilesHigh;
 
-			for ( int x = 0; x <= eyeTilesWide; x++ )
+			for ( int x = 0; x <= hmdInfo->eyeTilesWide; x++ )
 			{
-				const float xf = (float)x / (float)eyeTilesWide;
+				const float xf = (float)x / (float)hmdInfo->eyeTilesWide;
 
 				const float in[2] = { ( eye ? -horizontalShiftView : horizontalShiftView ) + xf, yf };
-				const float ndcToPixels[2] = { hmdInfo->widthInPixels * 0.25f, hmdInfo->heightInPixels * 0.5f };
-				const float pixelsToMeters[2] = { hmdInfo->widthInMeters / hmdInfo->widthInPixels, hmdInfo->heightInMeters / hmdInfo->heightInPixels };
+				const float ndcToPixels[2] = { hmdInfo->visiblePixelsWide * 0.25f, hmdInfo->visiblePixelsHigh * 0.5f };
+				const float pixelsToMeters[2] = { hmdInfo->visibleMetersWide / hmdInfo->visiblePixelsWide, hmdInfo->visibleMetersHigh / hmdInfo->visiblePixelsHigh };
 
 				float theta[2];
 				for ( int i = 0; i < 2; i++ )
@@ -13203,7 +13311,7 @@ static void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_
 					scale * ( 1.0f + hmdInfo->chromaticAberration[2] + rsq * hmdInfo->chromaticAberration[3] )
 				};
 
-				const int vertNum = y * ( eyeTilesWide + 1 ) + x;
+				const int vertNum = y * ( hmdInfo->eyeTilesWide + 1 ) + x;
 				for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
 				{
 					meshCoords[eye][channel][vertNum].x = chromaScale[channel] * theta[0];
@@ -13221,7 +13329,8 @@ Time warp graphics rendering.
 
 TimeWarpGraphics_t
 
-static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics, GpuRenderPass_t * renderPass );
+static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics,
+									const HmdInfo_t * hmdInfo, GpuRenderPass_t * renderPass );
 static void TimeWarpGraphics_Destroy( GpuContext_t * context, TimeWarpGraphics_t * graphics );
 static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpGraphics_t * graphics,
 									GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
@@ -13236,6 +13345,7 @@ static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWar
 
 typedef struct
 {
+	HmdInfo_t				hmdInfo;
 	GpuGeometry_t			distortionMesh[NUM_EYES];
 	GpuGraphicsProgram_t	timeWarpSpatialProgram;
 	GpuGraphicsProgram_t	timeWarpChromaticProgram;
@@ -13659,25 +13769,30 @@ static const unsigned int timeWarpChromaticFragmentProgramSPIRV[] =
 	0x00000040,0x000100fd,0x00010038
 };
 
-static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics, GpuRenderPass_t * renderPass )
+static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics,
+									const HmdInfo_t * hmdInfo, GpuRenderPass_t * renderPass )
 {
-	const int vertexCount = ( EYE_TILES_HIGH + 1 ) * ( EYE_TILES_WIDE + 1 );
-	const int indexCount = EYE_TILES_HIGH * EYE_TILES_WIDE * 6;
+	memset( graphics, 0, sizeof( TimeWarpGraphics_t ) );
+
+	graphics->hmdInfo = *hmdInfo;
+
+	const int vertexCount = ( hmdInfo->eyeTilesHigh + 1 ) * ( hmdInfo->eyeTilesWide + 1 );
+	const int indexCount = hmdInfo->eyeTilesHigh * hmdInfo->eyeTilesWide * 6;
 
 	GpuTriangleIndex_t * indices = (GpuTriangleIndex_t *) malloc( indexCount * sizeof( indices[0] ) );
-	for ( int y = 0; y < EYE_TILES_HIGH; y++ )
+	for ( int y = 0; y < hmdInfo->eyeTilesHigh; y++ )
 	{
-		for ( int x = 0; x < EYE_TILES_WIDE; x++ )
+		for ( int x = 0; x < hmdInfo->eyeTilesWide; x++ )
 		{
-			const int offset = ( y * EYE_TILES_WIDE + x ) * 6;
+			const int offset = ( y * hmdInfo->eyeTilesWide + x ) * 6;
 
-			indices[offset + 0] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
-			indices[offset + 1] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
-			indices[offset + 2] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
+			indices[offset + 0] = (GpuTriangleIndex_t)( ( y + 0 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 0 ) );
+			indices[offset + 1] = (GpuTriangleIndex_t)( ( y + 1 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 0 ) );
+			indices[offset + 2] = (GpuTriangleIndex_t)( ( y + 0 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 1 ) );
 
-			indices[offset + 3] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
-			indices[offset + 4] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
-			indices[offset + 5] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
+			indices[offset + 3] = (GpuTriangleIndex_t)( ( y + 0 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 1 ) );
+			indices[offset + 4] = (GpuTriangleIndex_t)( ( y + 1 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 0 ) );
+			indices[offset + 5] = (GpuTriangleIndex_t)( ( y + 1 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 1 ) );
 		}
 	}
 
@@ -13689,14 +13804,14 @@ static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t 
 									VERTEX_ATTRIBUTE_FLAG_UV1 |
 									VERTEX_ATTRIBUTE_FLAG_UV2 );
 
-	const int numMeshCoords = ( EYE_TILES_WIDE + 1 ) * ( EYE_TILES_HIGH + 1 );
+	const int numMeshCoords = ( hmdInfo->eyeTilesWide + 1 ) * ( hmdInfo->eyeTilesHigh + 1 );
 	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t ) );
 	MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
 	{
 		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
 		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
 	};
-	BuildDistortionMeshes( meshCoords, EYE_TILES_WIDE, EYE_TILES_HIGH, GetDefaultHmdInfo() );
+	BuildDistortionMeshes( meshCoords, hmdInfo );
 
 #if defined( GRAPHICS_API_VULKAN )
 	const float flipY = -1.0f;
@@ -13706,14 +13821,14 @@ static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t 
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		for ( int y = 0; y <= EYE_TILES_HIGH; y++ )
+		for ( int y = 0; y <= hmdInfo->eyeTilesHigh; y++ )
 		{
-			for ( int x = 0; x <= EYE_TILES_WIDE; x++ )
+			for ( int x = 0; x <= hmdInfo->eyeTilesWide; x++ )
 			{
-				const int index = y * ( EYE_TILES_WIDE + 1 ) + x;
-				vertexAttribs.position[index].x = ( -1.0f + eye + ( (float)x / EYE_TILES_WIDE ) );
-				vertexAttribs.position[index].y = ( -1.0f + 2.0f * ( ( EYE_TILES_HIGH - (float)y ) / EYE_TILES_HIGH ) *
-													( (float)( EYE_TILES_HIGH * TILE_PIXELS_HIGH ) / DISPLAY_PIXELS_HIGH ) ) * flipY;
+				const int index = y * ( hmdInfo->eyeTilesWide + 1 ) + x;
+				vertexAttribs.position[index].x = ( -1.0f + eye + ( (float)x / hmdInfo->eyeTilesWide ) );
+				vertexAttribs.position[index].y = ( -1.0f + 2.0f * ( ( hmdInfo->eyeTilesHigh - (float)y ) / hmdInfo->eyeTilesHigh ) *
+													( (float)( hmdInfo->eyeTilesHigh * hmdInfo->tilePixelsHigh ) / hmdInfo->displayPixelsHigh ) ) * flipY;
 				vertexAttribs.position[index].z = 0.0f;
 				vertexAttribs.uv0[index].x = meshCoords[eye][0][index].x;
 				vertexAttribs.uv0[index].y = meshCoords[eye][0][index].y;
@@ -13867,7 +13982,8 @@ Time warp compute rendering.
 
 TimeWarpCompute_t
 
-static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, GpuRenderPass_t * renderPass );
+static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, const HmdInfo_t * hmdInfo,
+									GpuRenderPass_t * renderPass );
 static void TimeWarpCompute_Destroy( GpuContext_t * context, TimeWarpCompute_t * compute );
 static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpCompute_t * compute,
 									GpuFramebuffer_t * framebuffer,
@@ -13882,6 +13998,7 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 
 typedef struct
 {
+	HmdInfo_t				hmdInfo;
 	GpuTexture_t			distortionImage[NUM_EYES][NUM_COLOR_CHANNELS];
 	GpuTexture_t			timeWarpImage[NUM_EYES][NUM_COLOR_CHANNELS];
 	GpuComputeProgram_t		timeWarpTransformProgram;
@@ -14360,20 +14477,23 @@ static const unsigned int timeWarpChromaticComputeProgramSPIRV[] =
 	0x0000006e,0x00000076,0x00000077,0x000100fd,0x00010038
 };
 
-static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, GpuRenderPass_t * renderPass )
+static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute,
+									const HmdInfo_t * hmdInfo, GpuRenderPass_t * renderPass )
 {
 	UNUSED_PARM( renderPass );
 
 	memset( compute, 0, sizeof( TimeWarpCompute_t ) );
 
-	const int numMeshCoords = ( EYE_TILES_WIDE + 1 ) * ( EYE_TILES_HIGH + 1 );
+	compute->hmdInfo = *hmdInfo;
+
+	const int numMeshCoords = ( hmdInfo->eyeTilesHigh + 1 ) * ( hmdInfo->eyeTilesWide + 1 );
 	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t ) );
 	MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
 	{
 		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
 		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
 	};
-	BuildDistortionMeshes( meshCoords, EYE_TILES_WIDE, EYE_TILES_HIGH, GetDefaultHmdInfo() );
+	BuildDistortionMeshes( meshCoords, hmdInfo );
 
 	float * rgbaFloat = (float *) malloc( numMeshCoords * 4 * sizeof( float ) );
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
@@ -14390,10 +14510,10 @@ static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * 
 			const size_t rgbaSize = numMeshCoords * 4 * sizeof( float );
 			GpuTexture_Create2D( context, &compute->distortionImage[eye][channel],
 								GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT, GPU_SAMPLE_COUNT_1,
-								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, GPU_TEXTURE_USAGE_STORAGE, rgbaFloat, rgbaSize );
+								hmdInfo->eyeTilesWide + 1, hmdInfo->eyeTilesHigh + 1, 1, GPU_TEXTURE_USAGE_STORAGE, rgbaFloat, rgbaSize );
 			GpuTexture_Create2D( context, &compute->timeWarpImage[eye][channel],
 								GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT, GPU_SAMPLE_COUNT_1,
-								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, GPU_TEXTURE_USAGE_STORAGE | GPU_TEXTURE_USAGE_SAMPLED, NULL, 0 );
+								hmdInfo->eyeTilesWide + 1, hmdInfo->eyeTilesHigh + 1, 1, GPU_TEXTURE_USAGE_STORAGE | GPU_TEXTURE_USAGE_SAMPLED, NULL, 0 );
 		}
 	}
 	free( rgbaFloat );
@@ -14480,7 +14600,7 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 		}
 	}
 
-	const Vector2i_t dimensions = { EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1 };
+	const Vector2i_t dimensions = { compute->hmdInfo.eyeTilesWide + 1, compute->hmdInfo.eyeTilesHigh + 1 };
 	const int eyeIndex[NUM_EYES] = { 0, 1 };
 
 	for ( int eye = 0; eye < NUM_EYES; eye ++ )
@@ -14514,16 +14634,16 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 	const int screenWidth = GpuFramebuffer_GetWidth( framebuffer );
 	const int screenHeight = GpuFramebuffer_GetHeight( framebuffer );
 	const int eyePixelsWide = screenWidth / NUM_EYES;
-	const int eyePixelsHigh = screenHeight * EYE_TILES_HIGH * TILE_PIXELS_HIGH / DISPLAY_PIXELS_HIGH;
+	const int eyePixelsHigh = screenHeight * compute->hmdInfo.eyeTilesHigh * compute->hmdInfo.tilePixelsHigh / compute->hmdInfo.displayPixelsHigh;
 	const Vector2f_t imageScale =
 	{
-		(float)EYE_TILES_WIDE / ( EYE_TILES_WIDE + 1 ) / eyePixelsWide,
-		(float)EYE_TILES_HIGH / ( EYE_TILES_HIGH + 1 ) / eyePixelsHigh
+		(float)compute->hmdInfo.eyeTilesWide / ( compute->hmdInfo.eyeTilesWide + 1 ) / eyePixelsWide,
+		(float)compute->hmdInfo.eyeTilesHigh / ( compute->hmdInfo.eyeTilesHigh + 1 ) / eyePixelsHigh
 	};
 	const Vector2f_t imageBias =
 	{
-		0.5f / ( EYE_TILES_WIDE + 1 ),
-		0.5f / ( EYE_TILES_HIGH + 1 )
+		0.5f / ( compute->hmdInfo.eyeTilesWide + 1 ),
+		0.5f / ( compute->hmdInfo.eyeTilesHigh + 1 )
 	};
 	const Vector2i_t eyePixelOffset[NUM_EYES] =
 	{
@@ -14601,10 +14721,14 @@ static void TimeWarp_CycleImplementation( TimeWarp_t * timeWarp );
 static void TimeWarp_SetChromaticAberrationCorrection( TimeWarp_t * timeWarp, const bool set );
 static void TimeWarp_ToggleChromaticAberrationCorrection( TimeWarp_t * timeWarp );
 static void TimeWarp_SetMultiView( TimeWarp_t * timeWarp, const bool enabled );
+
+static void TimeWarp_SetDisplayResolutionLevel( TimeWarp_t * timeWarp, const int level );
+static void TimeWarp_SetEyeImageResolutionLevel( TimeWarp_t * timeWarp, const int level );
+static void TimeWarp_SetEyeImageSamplesLevel( TimeWarp_t * timeWarp, const int level );
+
 static void TimeWarp_SetDrawCallLevel( TimeWarp_t * timeWarp, const int level );
 static void TimeWarp_SetTriangleLevel( TimeWarp_t * timeWarp, const int level );
 static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level );
-static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level );
 
 static Microseconds_t TimeWarp_GetPredictedDisplayTime( TimeWarp_t * timeWarp, const int frameIndex );
 static void TimeWarp_SubmitFrame( TimeWarp_t * timeWarp, const int frameIndex, const Microseconds_t displayTime,
@@ -14741,8 +14865,11 @@ static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 
 	timeWarp->correctChromaticAberration = false;
 	timeWarp->implementation = TIMEWARP_IMPLEMENTATION_GRAPHICS;
-	TimeWarpGraphics_Create( &window->context, &timeWarp->graphics, &timeWarp->renderPass );
-	TimeWarpCompute_Create( &window->context, &timeWarp->compute, &timeWarp->renderPass );
+
+	const HmdInfo_t * hmdInfo = GetDefaultHmdInfo( window->windowWidth, window->windowHeight );
+
+	TimeWarpGraphics_Create( &window->context, &timeWarp->graphics, hmdInfo, &timeWarp->renderPass );
+	TimeWarpCompute_Create( &window->context, &timeWarp->compute, hmdInfo, &timeWarp->renderPass );
 	TimeWarpBarGraphs_Create( &window->context, &timeWarp->bargraphs, &timeWarp->renderPass );
 
 	memset( timeWarp->cpuTimes, 0, sizeof( timeWarp->cpuTimes ) );
@@ -14810,6 +14937,33 @@ static void TimeWarp_SetMultiView( TimeWarp_t * timeWarp, const bool enabled )
 	BarGraph_AddBar( &timeWarp->bargraphs.multiViewBarGraph, 0, enabled ? 1.0f : 0.0f, &colorRed, false );
 }
 
+static void TimeWarp_SetDisplayResolutionLevel( TimeWarp_t * timeWarp, const int level )
+{
+	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
+	for ( int i = 0; i < 4; i++ )
+	{
+		BarGraph_AddBar( &timeWarp->bargraphs.displayResolutionLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
+	}
+}
+
+static void TimeWarp_SetEyeImageResolutionLevel( TimeWarp_t * timeWarp, const int level )
+{
+	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
+	for ( int i = 0; i < 4; i++ )
+	{
+		BarGraph_AddBar( &timeWarp->bargraphs.eyeImageResolutionLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
+	}
+}
+
+static void TimeWarp_SetEyeImageSamplesLevel( TimeWarp_t * timeWarp, const int level )
+{
+	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
+	for ( int i = 0; i < 4; i++ )
+	{
+		BarGraph_AddBar( &timeWarp->bargraphs.eyeImageSamplesLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
+	}
+}
+
 static void TimeWarp_SetDrawCallLevel( TimeWarp_t * timeWarp, const int level )
 {
 	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
@@ -14834,15 +14988,6 @@ static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level )
 	for ( int i = 0; i < 4; i++ )
 	{
 		BarGraph_AddBar( &timeWarp->bargraphs.sceneFragmentLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
-	}
-}
-
-static void TimeWarp_SetSamplesLevel( TimeWarp_t * timeWarp, const int level )
-{
-	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
-	for ( int i = 0; i < 4; i++ )
-	{
-		BarGraph_AddBar( &timeWarp->bargraphs.sceneSamplesLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
 	}
 }
 
@@ -15251,57 +15396,90 @@ static void SceneSettings_SetSimulationPaused( SceneSettings_t * settings, const
 static void SceneSettings_SetMultiView( SceneSettings_t * settings, const bool set );
 static bool SceneSettings_GetSimulationPaused( SceneSettings_t * settings );
 static bool SceneSettings_GetMultiView( SceneSettings_t * settings );
+
+static void SceneSettings_CycleDisplayResolutionLevel( SceneSettings_t * settings );
+static void SceneSettings_CycleEyeImageResolutionLevel( SceneSettings_t * settings );
+static void SceneSettings_CycleEyeImageSamplesLevel( SceneSettings_t * settings );
+
 static void SceneSettings_CycleDrawCallLevel( SceneSettings_t * settings );
 static void SceneSettings_CycleTriangleLevel( SceneSettings_t * settings );
 static void SceneSettings_CycleFragmentLevel( SceneSettings_t * settings );
-static void SceneSettings_CycleSamplesLevel( SceneSettings_t * settings );
+
+static void SceneSettings_SetDisplayResolutionLevel( SceneSettings_t * settings, const int level );
+static void SceneSettings_SetEyeImageResolutionLevel( SceneSettings_t * settings, const int level );
+static void SceneSettings_SetEyeImageSamplesLevel( SceneSettings_t * settings, const int level );
+
 static void SceneSettings_SetDrawCallLevel( SceneSettings_t * settings, const int level );
 static void SceneSettings_SetTriangleLevel( SceneSettings_t * settings, const int level );
 static void SceneSettings_SetFragmentLevel( SceneSettings_t * settings, const int level );
-static void SceneSettings_SetSamplesLevel( SceneSettings_t * settings, const int level );
+
+static int SceneSettings_GetDisplayResolutionLevel( const SceneSettings_t * settings );
+static int SceneSettings_GetEyeImageResolutionLevel( const SceneSettings_t * settings );
+static int SceneSettings_GetEyeImageSamplesLevel( const SceneSettings_t * settings );
+
 static int SceneSettings_GetDrawCallLevel( const SceneSettings_t * settings );
 static int SceneSettings_GetTriangleLevel( const SceneSettings_t * settings );
 static int SceneSettings_GetFragmentLevel( const SceneSettings_t * settings );
-static int SceneSettings_GetSamplesLevel( const SceneSettings_t * settings );
 
 ================================================================================================================================
 */
 
-#define MAX_SCENE_DRAWCALL_LEVELS	4
-#define MAX_SCENE_TRIANGLE_LEVELS	4
-#define MAX_SCENE_FRAGMENT_LEVELS	4
-#define MAX_SCENE_SAMPLES_LEVELS	4
+#define MAX_DISPLAY_RESOLUTION_LEVELS		4
+#define MAX_EYE_IMAGE_RESOLUTION_LEVELS		4
+#define MAX_EYE_IMAGE_SAMPLES_LEVELS		4
+
+#define MAX_SCENE_DRAWCALL_LEVELS			4
+#define MAX_SCENE_TRIANGLE_LEVELS			4
+#define MAX_SCENE_FRAGMENT_LEVELS			4
+
+static const int displayResolutionTable[] =
+{
+	1920, 1080,
+	2560, 1440,
+	3840, 2160,
+	7680, 4320
+};
 
 typedef struct
 {
 	bool	simulationPaused;
 	bool	useMultiView;
+	int		displayResolutionLevel;
+	int		eyeImageResolutionLevel;
+	int		eyeImageSamplesLevel;
 	int		drawCallLevel;
 	int		triangleLevel;
 	int		fragmentLevel;
-	int		samplesLevel;
-	int		maxSamplesLevels;
+	int		maxDisplayResolutionLevels;
+	int		maxEyeImageResolutionLevels;
+	int		maxEyeImageSamplesLevels;
 } SceneSettings_t;
 
 static void SceneSettings_Init( GpuContext_t * context, SceneSettings_t * settings )
 {
 	settings->simulationPaused = false;
 	settings->useMultiView = false;
+	settings->displayResolutionLevel = 0;
+	settings->eyeImageResolutionLevel = 0;
+	settings->eyeImageSamplesLevel = 0;
 	settings->drawCallLevel = 0;
 	settings->triangleLevel = 0;
 	settings->fragmentLevel = 0;
-	settings->samplesLevel = 0;
+	settings->maxDisplayResolutionLevels =	( !GpuWindow_SupportedResolution( displayResolutionTable[1 * 2 + 0], displayResolutionTable[1 * 2 + 1] ) ? 1 :
+											( !GpuWindow_SupportedResolution( displayResolutionTable[2 * 2 + 0], displayResolutionTable[2 * 2 + 1] ) ? 2 :
+											( !GpuWindow_SupportedResolution( displayResolutionTable[3 * 2 + 0], displayResolutionTable[3 * 2 + 1] ) ? 3 : 4 ) ) );
+	settings->maxEyeImageResolutionLevels = MAX_EYE_IMAGE_RESOLUTION_LEVELS;
 
 	const VkSampleCountFlags availableSampleCounts = context->device->physicalDeviceProperties.limits.framebufferColorSampleCounts &
 														context->device->physicalDeviceProperties.limits.framebufferDepthSampleCounts;
-	settings->maxSamplesLevels = 0;
+	settings->maxEyeImageSamplesLevels = 0;
 	for ( uint32_t sampleLevel = 0; sampleLevel < 4; sampleLevel++ )
 	{
 		if ( ( availableSampleCounts & ( 1 << sampleLevel ) ) == 0 )
 		{
 			break;
 		}
-		settings->maxSamplesLevels = sampleLevel + 1;
+		settings->maxEyeImageSamplesLevels = sampleLevel + 1;
 	}
 }
 
@@ -15316,20 +15494,29 @@ static void SceneSettings_SetMultiView( SceneSettings_t * settings, const bool s
 static bool SceneSettings_GetSimulationPaused( SceneSettings_t * settings ) { return settings->simulationPaused; }
 static bool SceneSettings_GetMultiView( SceneSettings_t * settings ) { return settings->useMultiView; }
 
+static void SceneSettings_CycleDisplayResolutionLevel( SceneSettings_t * settings ) { CycleLevel( &settings->displayResolutionLevel, settings->maxDisplayResolutionLevels ); }
+static void SceneSettings_CycleEyeImageResolutionLevel( SceneSettings_t * settings ) { CycleLevel( &settings->eyeImageResolutionLevel, settings->maxEyeImageResolutionLevels ); }
+static void SceneSettings_CycleEyeImageSamplesLevel( SceneSettings_t * settings ) { CycleLevel( &settings->eyeImageSamplesLevel, settings->maxEyeImageSamplesLevels ); }
+
 static void SceneSettings_CycleDrawCallLevel( SceneSettings_t * settings ) { CycleLevel( &settings->drawCallLevel, MAX_SCENE_DRAWCALL_LEVELS ); }
 static void SceneSettings_CycleTriangleLevel( SceneSettings_t * settings ) { CycleLevel( &settings->triangleLevel, MAX_SCENE_TRIANGLE_LEVELS ); }
 static void SceneSettings_CycleFragmentLevel( SceneSettings_t * settings ) { CycleLevel( &settings->fragmentLevel, MAX_SCENE_FRAGMENT_LEVELS ); }
-static void SceneSettings_CycleSamplesLevel( SceneSettings_t * settings ) { CycleLevel( &settings->samplesLevel, settings->maxSamplesLevels ); }
+
+static void SceneSettings_SetDisplayResolutionLevel( SceneSettings_t * settings, const int level ) { settings->displayResolutionLevel = ( level < settings->maxDisplayResolutionLevels ) ? level : settings->maxDisplayResolutionLevels; }
+static void SceneSettings_SetEyeImageResolutionLevel( SceneSettings_t * settings, const int level ) { settings->eyeImageResolutionLevel = ( level < settings->maxEyeImageResolutionLevels ) ? level : settings->maxEyeImageResolutionLevels; }
+static void SceneSettings_SetEyeImageSamplesLevel( SceneSettings_t * settings, const int level ) { settings->eyeImageSamplesLevel = ( level < settings->maxEyeImageSamplesLevels ) ? level : settings->maxEyeImageSamplesLevels; }
 
 static void SceneSettings_SetDrawCallLevel( SceneSettings_t * settings, const int level ) { settings->drawCallLevel = level; }
 static void SceneSettings_SetTriangleLevel( SceneSettings_t * settings, const int level ) { settings->triangleLevel = level; }
 static void SceneSettings_SetFragmentLevel( SceneSettings_t * settings, const int level ) { settings->fragmentLevel = level; }
-static void SceneSettings_SetSamplesLevel( SceneSettings_t * settings, const int level ) { settings->samplesLevel = ( level < settings->maxSamplesLevels ) ? level : settings->maxSamplesLevels; }
+
+static int SceneSettings_GetDisplayResolutionLevel( const SceneSettings_t * settings ) { return settings->eyeImageResolutionLevel; }
+static int SceneSettings_GetEyeImageResolutionLevel( const SceneSettings_t * settings ) { return settings->eyeImageResolutionLevel; }
+static int SceneSettings_GetEyeImageSamplesLevel( const SceneSettings_t * settings ) { return settings->eyeImageSamplesLevel; }
 
 static int SceneSettings_GetDrawCallLevel( const SceneSettings_t * settings ) { return settings->drawCallLevel; }
 static int SceneSettings_GetTriangleLevel( const SceneSettings_t * settings ) { return settings->triangleLevel; }
 static int SceneSettings_GetFragmentLevel( const SceneSettings_t * settings ) { return settings->fragmentLevel; }
-static int SceneSettings_GetSamplesLevel( const SceneSettings_t * settings ) { return settings->samplesLevel; }
 
 /*
 ================================================================================================================================
@@ -19561,15 +19748,17 @@ typedef struct
 	bool						fullscreen;
 	bool						simulationPaused;
 	bool						headRotationDisabled;
+	int							displayResolutionLevel;
+	int							eyeImageResolutionLevel;
+	int							eyeImageSamplesLevel;
 	int							drawCallLevel;
 	int							triangleLevel;
 	int							fragmentLevel;
-	int							samplesLevel;
 	bool						useMultiView;
 	bool						correctChromaticAberration;
 	bool						hideGraphs;
-	RenderMode_t				renderMode;
 	TimeWarpImplementation_t	timeWarpImplementation;
+	RenderMode_t				renderMode;
 	Microseconds_t				startupTimeMicroseconds;
 	Microseconds_t				noVSyncMicroseconds;
 	Microseconds_t				noLogMicroseconds;
@@ -19613,11 +19802,9 @@ enum
 #define NUM_EYE_BUFFERS			3
 
 #if defined( OS_ANDROID )
-#define WINDOWED_PIXELS_WIDE	DISPLAY_PIXELS_WIDE
-#define WINDOWED_PIXELS_HIGH	DISPLAY_PIXELS_HIGH
+#define WINDOW_RESOLUTION( x, fullscreen )	(x)		// always fullscreen
 #else
-#define WINDOWED_PIXELS_WIDE	ROUNDUP( DISPLAY_PIXELS_WIDE / 2, 8 )
-#define WINDOWED_PIXELS_HIGH	ROUNDUP( DISPLAY_PIXELS_HIGH / 2, 8 )
+#define WINDOW_RESOLUTION( x, fullscreen )	( (fullscreen) ? (x) : ROUNDUP( x / 2, 8 ) )
 #endif
 
 typedef struct
@@ -19634,13 +19821,19 @@ typedef struct
 
 void SceneThread_Render( SceneThreadData_t * threadData )
 {
-	static const int EYE_WIDTH			= 1024;
-	static const int EYE_HEIGHT			= 1024;
-
 	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
 
 	GpuContext_t context;
 	GpuContext_CreateShared( &context, threadData->shareContext, QUEUE_INDEX_SCENE );
+
+	const int resolutionTable[] =
+	{
+		1024,
+		1536,
+		2048,
+		4096
+	};
+	const int resolution = resolutionTable[threadData->sceneSettings->eyeImageResolutionLevel];
 
 	const GpuSampleCount_t sampleCountTable[] =
 	{
@@ -19649,7 +19842,7 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 		GPU_SAMPLE_COUNT_4,
 		GPU_SAMPLE_COUNT_8
 	};
-	const GpuSampleCount_t sampleCount = sampleCountTable[threadData->sceneSettings->samplesLevel];
+	const GpuSampleCount_t sampleCount = sampleCountTable[threadData->sceneSettings->eyeImageSamplesLevel];
 
 	GpuRenderPass_t renderPassSingleView;
 	GpuRenderPass_Create( &context, &renderPassSingleView, GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24,
@@ -19665,7 +19858,7 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 
 	GpuFramebuffer_t framebuffer;
 	GpuFramebuffer_CreateFromTextureArrays( &context, &framebuffer, &renderPassSingleView,
-				EYE_WIDTH, EYE_HEIGHT, NUM_EYES, NUM_EYE_BUFFERS, false );
+				resolution, resolution, NUM_EYES, NUM_EYE_BUFFERS, false );
 
 	GpuCommandBuffer_t eyeCommandBuffer[NUM_EYES];
 	GpuTimer_t eyeTimer[NUM_EYES];
@@ -19715,7 +19908,7 @@ void SceneThread_Render( SceneThreadData_t * threadData )
 
 		if ( threadData->sceneSettings->useMultiView )
 		{
-			const ScreenRect_t sceneRect = { 0, 0, EYE_WIDTH, EYE_HEIGHT };
+			const ScreenRect_t sceneRect = { 0, 0, resolution, resolution };
 			GpuCommandBuffer_BeginSecondary( &sceneCommandBuffer, &renderPassMultiView, NULL );
 
 			GpuCommandBuffer_SetViewport( &sceneCommandBuffer, &sceneRect );
@@ -19857,8 +20050,8 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 	GpuWindow_t window;
 	GpuWindow_Create( &window, &instance, &queueInfo, QUEUE_INDEX_TIMEWARP,
 						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
-						startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
-						startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
+						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 0], startupSettings->fullscreen ),
+						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 1], startupSettings->fullscreen ),
 						startupSettings->fullscreen );
 
 	int swapInterval = ( startupSettings->noVSyncMicroseconds <= 0 );
@@ -19870,19 +20063,23 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 	TimeWarp_SetImplementation( &timeWarp, startupSettings->timeWarpImplementation );
 	TimeWarp_SetChromaticAberrationCorrection( &timeWarp, startupSettings->correctChromaticAberration );
 	TimeWarp_SetMultiView( &timeWarp, startupSettings->useMultiView );
+	TimeWarp_SetDisplayResolutionLevel( &timeWarp, startupSettings->displayResolutionLevel );
+	TimeWarp_SetEyeImageResolutionLevel( &timeWarp, startupSettings->eyeImageResolutionLevel );
+	TimeWarp_SetEyeImageSamplesLevel( &timeWarp, startupSettings->eyeImageSamplesLevel );
 	TimeWarp_SetDrawCallLevel( &timeWarp, startupSettings->drawCallLevel );
 	TimeWarp_SetTriangleLevel( &timeWarp, startupSettings->triangleLevel );
 	TimeWarp_SetFragmentLevel( &timeWarp, startupSettings->fragmentLevel );
-	TimeWarp_SetSamplesLevel( &timeWarp, startupSettings->samplesLevel );
 
 	SceneSettings_t sceneSettings;
 	SceneSettings_Init( &window.context, &sceneSettings );
 	SceneSettings_SetSimulationPaused( &sceneSettings, startupSettings->simulationPaused );
 	SceneSettings_SetMultiView( &sceneSettings, startupSettings->useMultiView );
+	SceneSettings_SetDisplayResolutionLevel( &sceneSettings, startupSettings->displayResolutionLevel );
+	SceneSettings_SetEyeImageResolutionLevel( &sceneSettings, startupSettings->eyeImageResolutionLevel );
+	SceneSettings_SetEyeImageSamplesLevel( &sceneSettings, startupSettings->eyeImageSamplesLevel );
 	SceneSettings_SetDrawCallLevel( &sceneSettings, startupSettings->drawCallLevel );
 	SceneSettings_SetTriangleLevel( &sceneSettings, startupSettings->triangleLevel );
 	SceneSettings_SetFragmentLevel( &sceneSettings, startupSettings->fragmentLevel );
-	SceneSettings_SetSamplesLevel( &sceneSettings, startupSettings->samplesLevel );
 
 	Thread_t sceneThread;
 	SceneThreadData_t sceneThreadData;
@@ -19909,40 +20106,22 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 		else if ( handleEvent == GPU_WINDOW_EVENT_EXIT )
 		{
 			exit = true;
+			break;
 		}
 
 		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Z ) )
 		{
 			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
 			break;
 		}
 		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
 		{
-			const bool fullscreen = !window.windowFullscreen;
-			// Must recreate the scene and time warp to create a new window.
-			GpuContext_WaitIdle( &window.context );
-			SceneThread_Destroy( &sceneThread, &sceneThreadData );
-			TimeWarp_Destroy( &timeWarp, &window );
-			GpuWindow_Destroy( &window );
-			GpuWindow_Create( &window, &instance, &queueInfo, QUEUE_INDEX_TIMEWARP,
-							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
-							fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
-							fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
-							fullscreen );
-			TimeWarp_Create( &timeWarp, &window );
-			TimeWarp_SetBarGraphState( &timeWarp, startupSettings->hideGraphs ? BAR_GRAPH_HIDDEN : BAR_GRAPH_VISIBLE );
-			TimeWarp_SetImplementation( &timeWarp, startupSettings->timeWarpImplementation );
-			TimeWarp_SetChromaticAberrationCorrection( &timeWarp, startupSettings->correctChromaticAberration );
-			TimeWarp_SetMultiView( &timeWarp, startupSettings->useMultiView );
-			TimeWarp_SetDrawCallLevel( &timeWarp, SceneSettings_GetDrawCallLevel( &sceneSettings ) );
-			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
-			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
-			TimeWarp_SetSamplesLevel( &timeWarp, SceneSettings_GetSamplesLevel( &sceneSettings ) );
-			SceneThread_Create( &sceneThread, &sceneThreadData, &window, &timeWarp, &sceneSettings );
+			startupSettings->fullscreen = !startupSettings->fullscreen;
+			break;
 		}
 		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
@@ -19970,6 +20149,24 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 		{
 			TimeWarp_CycleBarGraphState( &timeWarp );
 		}
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
+		{
+			SceneSettings_CycleDisplayResolutionLevel( &sceneSettings );
+			startupSettings->displayResolutionLevel = sceneSettings.displayResolutionLevel;
+			break;
+		}
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_B ) )
+		{
+			SceneSettings_CycleEyeImageResolutionLevel( &sceneSettings );
+			startupSettings->eyeImageResolutionLevel = sceneSettings.eyeImageResolutionLevel;
+			break;
+		}
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_S ) )
+		{
+			SceneSettings_CycleEyeImageSamplesLevel( &sceneSettings );
+			startupSettings->eyeImageSamplesLevel = sceneSettings.eyeImageSamplesLevel;
+			break;
+		}
 		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Q ) )
 		{
 			SceneSettings_CycleDrawCallLevel( &sceneSettings );
@@ -19984,24 +20181,6 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 		{
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
 			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
-		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_S ) )
-		{
-			SceneSettings_CycleSamplesLevel( &sceneSettings );
-			// Must recreate the scene and time warp to allocate different framebuffers.
-			GpuContext_WaitIdle( &window.context );
-			SceneThread_Destroy( &sceneThread, &sceneThreadData );
-			TimeWarp_Destroy( &timeWarp, &window );
-			TimeWarp_Create( &timeWarp, &window );
-			TimeWarp_SetBarGraphState( &timeWarp, startupSettings->hideGraphs ? BAR_GRAPH_HIDDEN : BAR_GRAPH_VISIBLE );
-			TimeWarp_SetImplementation( &timeWarp, startupSettings->timeWarpImplementation );
-			TimeWarp_SetChromaticAberrationCorrection( &timeWarp, startupSettings->correctChromaticAberration );
-			TimeWarp_SetMultiView( &timeWarp, startupSettings->useMultiView );
-			TimeWarp_SetDrawCallLevel( &timeWarp, SceneSettings_GetDrawCallLevel( &sceneSettings ) );
-			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
-			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
-			TimeWarp_SetSamplesLevel( &timeWarp, SceneSettings_GetSamplesLevel( &sceneSettings ) );
-			SceneThread_Create( &sceneThread, &sceneThreadData, &window, &timeWarp, &sceneSettings );
 		}
 		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_I ) )
 		{
@@ -20061,8 +20240,8 @@ bool RenderTimeWarp( StartupSettings_t * startupSettings )
 	GpuWindow_t window;
 	GpuWindow_Create( &window, &instance, &queueInfo, 0,
 						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
-						startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
-						startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
+						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 0], startupSettings->fullscreen ),
+						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 1], startupSettings->fullscreen ),
 						startupSettings->fullscreen );
 
 	int swapInterval = ( startupSettings->noVSyncMicroseconds <= 0 );
@@ -20073,6 +20252,7 @@ bool RenderTimeWarp( StartupSettings_t * startupSettings )
 	TimeWarp_SetBarGraphState( &timeWarp, startupSettings->hideGraphs ? BAR_GRAPH_HIDDEN : BAR_GRAPH_VISIBLE );
 	TimeWarp_SetImplementation( &timeWarp, startupSettings->timeWarpImplementation );
 	TimeWarp_SetChromaticAberrationCorrection( &timeWarp, startupSettings->correctChromaticAberration );
+	TimeWarp_SetDisplayResolutionLevel( &timeWarp, startupSettings->displayResolutionLevel );
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
 
@@ -20101,22 +20281,15 @@ bool RenderTimeWarp( StartupSettings_t * startupSettings )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Z ) )
 		{
 			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
 			break;
 		}
 		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
 		{
-			const bool fullscreen = !window.windowFullscreen;
-			TimeWarp_Destroy( &timeWarp, &window );
-			GpuWindow_Destroy( &window );
-			GpuWindow_Create( &window, &instance, &queueInfo, 0,
-							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
-							fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
-							fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
-							fullscreen );
-			TimeWarp_Create( &timeWarp, &window );
+			startupSettings->fullscreen = !startupSettings->fullscreen;
+			break;
 		}
 		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
@@ -20188,7 +20361,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 		GPU_SAMPLE_COUNT_4,
 		GPU_SAMPLE_COUNT_8
 	};
-	const GpuSampleCount_t sampleCount = sampleCountTable[startupSettings->samplesLevel];
+	const GpuSampleCount_t sampleCount = sampleCountTable[startupSettings->eyeImageSamplesLevel];
 
 	const GpuQueueInfo_t queueInfo =
 	{
@@ -20200,8 +20373,8 @@ bool RenderScene( StartupSettings_t * startupSettings )
 	GpuWindow_t window;
 	GpuWindow_Create( &window, &instance, &queueInfo, 0,
 						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24, sampleCount,
-						startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
-						startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
+						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 0], startupSettings->fullscreen ),
+						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 1], startupSettings->fullscreen ),
 						startupSettings->fullscreen );
 
 	int swapInterval = ( startupSettings->noVSyncMicroseconds <= 0 );
@@ -20231,10 +20404,12 @@ bool RenderScene( StartupSettings_t * startupSettings )
 	SceneSettings_t sceneSettings;
 	SceneSettings_Init( &window.context, &sceneSettings );
 	SceneSettings_SetSimulationPaused( &sceneSettings, startupSettings->simulationPaused );
+	SceneSettings_SetDisplayResolutionLevel( &sceneSettings, startupSettings->displayResolutionLevel );
+	SceneSettings_SetEyeImageResolutionLevel( &sceneSettings, startupSettings->eyeImageResolutionLevel );
+	SceneSettings_SetEyeImageSamplesLevel( &sceneSettings, startupSettings->eyeImageSamplesLevel );
 	SceneSettings_SetDrawCallLevel( &sceneSettings, startupSettings->drawCallLevel );
 	SceneSettings_SetTriangleLevel( &sceneSettings, startupSettings->triangleLevel );
 	SceneSettings_SetFragmentLevel( &sceneSettings, startupSettings->fragmentLevel );
-	SceneSettings_SetSamplesLevel( &sceneSettings, startupSettings->samplesLevel );
 
 	ViewState_t viewState;
 	ViewState_Init( &viewState, 0.0f );
@@ -20255,7 +20430,6 @@ bool RenderScene( StartupSettings_t * startupSettings )
 
 	Thread_SetName( "atw:scene" );
 
-	bool recreate = false;
 	bool exit = false;
 	while ( !exit )
 	{
@@ -20269,13 +20443,14 @@ bool RenderScene( StartupSettings_t * startupSettings )
 		else if ( handleEvent == GPU_WINDOW_EVENT_EXIT )
 		{
 			exit = true;
+			break;
 		}
 
 		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_ESCAPE ) )
 		{
 			GpuWindow_Exit( &window );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Z ) )
 		{
 			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
 			break;
@@ -20283,7 +20458,7 @@ bool RenderScene( StartupSettings_t * startupSettings )
 		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
 		{
 			startupSettings->fullscreen = !startupSettings->fullscreen;
-			recreate = true;
+			break;
 		}
 		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
@@ -20306,6 +20481,24 @@ bool RenderScene( StartupSettings_t * startupSettings )
 		{
 			SceneSettings_ToggleSimulationPaused( &sceneSettings );
 		}
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
+		{
+			SceneSettings_CycleDisplayResolutionLevel( &sceneSettings );
+			startupSettings->displayResolutionLevel = sceneSettings.displayResolutionLevel;
+			break;
+		}
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_B ) )
+		{
+			SceneSettings_CycleEyeImageResolutionLevel( &sceneSettings );
+			startupSettings->eyeImageResolutionLevel = sceneSettings.eyeImageResolutionLevel;
+			break;
+		}
+		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_S ) )
+		{
+			SceneSettings_CycleEyeImageSamplesLevel( &sceneSettings );
+			startupSettings->eyeImageSamplesLevel = sceneSettings.eyeImageSamplesLevel;
+			break;
+		}
 		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Q ) )
 		{
 			SceneSettings_CycleDrawCallLevel( &sceneSettings );
@@ -20318,51 +20511,9 @@ bool RenderScene( StartupSettings_t * startupSettings )
 		{
 			SceneSettings_CycleFragmentLevel( &sceneSettings );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_S ) )
-		{
-			SceneSettings_CycleSamplesLevel( &sceneSettings );
-			recreate = true;
-		}
 		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_D ) )
 		{
 			DumpGLSL();
-		}
-
-		if ( recreate )
-		{
-			const GpuSampleCount_t newSampleCount = sampleCountTable[SceneSettings_GetSamplesLevel( &sceneSettings )];
-#if USE_GLTF == 1
-			GltfScene_Destroy( &window.context, &scene );
-#else
-			PerfScene_Destroy( &window.context, &scene );
-#endif
-			BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
-			BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
-			GpuTimer_Destroy( &window.context, &timer );
-			GpuCommandBuffer_Destroy( &window.context, &commandBuffer );
-			GpuFramebuffer_Destroy( &window.context, &framebuffer );
-			GpuRenderPass_Destroy( &window.context, &renderPass );
-			GpuWindow_Destroy( &window );
-			GpuWindow_Create( &window, &instance, &queueInfo, 0,
-							GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24, newSampleCount,
-							startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
-							startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
-							startupSettings->fullscreen );
-			GpuRenderPass_Create( &window.context, &renderPass, window.colorFormat, window.depthFormat,
-									newSampleCount, GPU_RENDERPASS_TYPE_INLINE,
-									GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
-									GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
-			GpuFramebuffer_CreateFromSwapchain( &window, &framebuffer, &renderPass );
-			GpuCommandBuffer_Create( &window.context, &commandBuffer, GPU_COMMAND_BUFFER_TYPE_PRIMARY, GpuFramebuffer_GetBufferCount( &framebuffer ) );
-			GpuTimer_Create( &window.context, &timer );
-			BarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
-			BarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
-#if USE_GLTF == 1
-			GltfScene_CreateFromFile( &window.context, &scene, "models.gltf", &renderPass );
-#else
-			PerfScene_Create( &window.context, &scene, &sceneSettings, &renderPass );
-#endif
-			recreate = false;
 		}
 
 		if ( window.windowActive )
@@ -20470,37 +20621,41 @@ static int StartApplication( int argc, char * argv[] )
 		else if ( strcmp( arg, "v" ) == 0 && i + 1 < argc )	{ startupSettings.noVSyncMicroseconds = (Microseconds_t)( atof( argv[++i] ) * 1000 * 1000 ); }
 		else if ( strcmp( arg, "h" ) == 0 && i + 0 < argc )	{ startupSettings.headRotationDisabled = true; }
 		else if ( strcmp( arg, "p" ) == 0 && i + 0 < argc )	{ startupSettings.simulationPaused = true; }
+		else if ( strcmp( arg, "r" ) == 0 && i + 1 < argc )	{ startupSettings.displayResolutionLevel = StartupSettings_StringToLevel( argv[++i], MAX_DISPLAY_RESOLUTION_LEVELS ); }
+		else if ( strcmp( arg, "b" ) == 0 && i + 1 < argc )	{ startupSettings.eyeImageResolutionLevel = StartupSettings_StringToLevel( argv[++i], MAX_EYE_IMAGE_RESOLUTION_LEVELS ); }
+		else if ( strcmp( arg, "s" ) == 0 && i + 1 < argc )	{ startupSettings.eyeImageSamplesLevel = StartupSettings_StringToLevel( argv[++i], MAX_EYE_IMAGE_SAMPLES_LEVELS ); }
 		else if ( strcmp( arg, "q" ) == 0 && i + 1 < argc )	{ startupSettings.drawCallLevel = StartupSettings_StringToLevel( argv[++i], MAX_SCENE_DRAWCALL_LEVELS ); }
 		else if ( strcmp( arg, "w" ) == 0 && i + 1 < argc )	{ startupSettings.triangleLevel = StartupSettings_StringToLevel( argv[++i], MAX_SCENE_TRIANGLE_LEVELS ); }
 		else if ( strcmp( arg, "e" ) == 0 && i + 1 < argc )	{ startupSettings.fragmentLevel = StartupSettings_StringToLevel( argv[++i], MAX_SCENE_FRAGMENT_LEVELS ); }
-		else if ( strcmp( arg, "s" ) == 0 && i + 1 < argc )	{ startupSettings.samplesLevel = StartupSettings_StringToLevel( argv[++i], MAX_SCENE_SAMPLES_LEVELS ); }
 		else if ( strcmp( arg, "m" ) == 0 && i + 0 < argc )	{ startupSettings.useMultiView = ( atoi( argv[++i] ) != 0 ); }
 		else if ( strcmp( arg, "c" ) == 0 && i + 1 < argc )	{ startupSettings.correctChromaticAberration = ( atoi( argv[++i] ) != 0 ); }
-		else if ( strcmp( arg, "r" ) == 0 && i + 1 < argc )	{ startupSettings.renderMode = StartupSettings_StringToRenderMode( argv[++i] ); }
 		else if ( strcmp( arg, "i" ) == 0 && i + 1 < argc )	{ startupSettings.timeWarpImplementation = (TimeWarpImplementation_t)StartupSettings_StringToTimeWarpImplementation( argv[++i] ); }
+		else if ( strcmp( arg, "z" ) == 0 && i + 1 < argc )	{ startupSettings.renderMode = StartupSettings_StringToRenderMode( argv[++i] ); }
 		else if ( strcmp( arg, "g" ) == 0 && i + 0 < argc )	{ startupSettings.hideGraphs = true; }
 		else if ( strcmp( arg, "l" ) == 0 && i + 1 < argc )	{ startupSettings.noLogMicroseconds = (Microseconds_t)( atof( argv[++i] ) * 1000 * 1000 ); }
 		else if ( strcmp( arg, "d" ) == 0 && i + 0 < argc )	{ DumpGLSL(); exit( 0 ); }
 		else
 		{
 			Print( "Unknown option: %s\n"
-				   "atw_vulkan [options]\n"
+				   "atw_opengl [options]\n"
 				   "options:\n"
-				   "   -f         start fullscreen\n"
-				   "   -v <s>     start with V-Sync disabled for this many seconds\n"
-				   "   -h         start with head rotation disabled\n"
-				   "   -p         start with the simulation paused\n"
-				   "   -q <0-3>   set per eye draw calls level\n"
-				   "   -w <0-3>   set per eye triangles per draw call level\n"
-				   "   -e <0-3>   set per eye fragment program complexity level\n"
-				   "   -s <0-3>   set multi-sampling level\n"
-				   "   -m <0-1>   enable/disable multi-view\n"
-				   "   -c <0-1>   enable/disable correction for chromatic aberration\n"
-				   "   -r <name>  set the render mode: atw, tw, scene\n"
-				   "   -i <name>  set time warp implementation: graphics, compute\n"
-				   "   -g         hide graphs\n"
-				   "   -l <s>     log 10 frames of Vulkan commands after this many seconds\n"
-				   "   -d         dump GLSL to files for conversion to SPIR-V\n",
+				   "   -f          start fullscreen\n"
+				   "   -v <s>      start with V-Sync disabled for this many seconds\n"
+				   "   -h          start with head rotation disabled\n"
+				   "   -p          start with the simulation paused\n"
+				   "   -r <0-3>    set display resolution level\n"
+				   "   -b <0-3>    set eye image resolution level\n"
+				   "   -s <0-3>    set multi-sampling level\n"
+				   "   -q <0-3>    set per eye draw calls level\n"
+				   "   -w <0-3>    set per eye triangles per draw call level\n"
+				   "   -e <0-3>    set per eye fragment program complexity level\n"
+				   "   -m <0-1>    enable/disable multi-view\n"
+				   "   -c <0-1>    enable/disable correction for chromatic aberration\n"
+				   "   -i <name>   set time warp implementation: graphics, compute\n"
+				   "   -z <name>   set the render mode: atw, tw, scene\n"
+				   "   -g          hide graphs\n"
+				   "   -l <s>      log 10 frames of OpenGL commands after this many seconds\n"
+				   "   -d          dump GLSL to files for conversion to SPIR-V\n",
 				   arg );
 			return 1;
 		}
@@ -20508,7 +20663,7 @@ static int StartApplication( int argc, char * argv[] )
 
 	//startupSettings.headRotationDisabled = true;
 	//startupSettings.simulationPaused = true;
-	//startupSettings.samplesLevel = 0;
+	//startupSettings.eyeImageSamplesLevel = 0;
 	//startupSettings.useMultiView = true;
 	//startupSettings.correctChromaticAberration = true;
 	//startupSettings.renderMode = RENDER_MODE_SCENE;
@@ -20518,14 +20673,16 @@ static int StartApplication( int argc, char * argv[] )
 	Print( "    noVSyncMicroseconds = %lld\n",		startupSettings.noVSyncMicroseconds );
 	Print( "    headRotationDisabled = %d\n",		startupSettings.headRotationDisabled );
 	Print( "    simulationPaused = %d\n",			startupSettings.simulationPaused );
+	Print( "    displayResolutionLevel = %d\n",		startupSettings.displayResolutionLevel );
+	Print( "    eyeImageResolutionLevel = %d\n",	startupSettings.eyeImageResolutionLevel );
+	Print( "    eyeImageSamplesLevel = %d\n",		startupSettings.eyeImageSamplesLevel );
 	Print( "    drawCallLevel = %d\n",				startupSettings.drawCallLevel );
 	Print( "    triangleLevel = %d\n",				startupSettings.triangleLevel );
 	Print( "    fragmentLevel = %d\n",				startupSettings.fragmentLevel );
-	Print( "    samplesLevel = %d\n",				startupSettings.samplesLevel );
 	Print( "    useMultiView = %d\n",				startupSettings.useMultiView );
 	Print( "    correctChromaticAberration = %d\n",	startupSettings.correctChromaticAberration );
-	Print( "    renderMode = %d\n",					startupSettings.renderMode );
 	Print( "    timeWarpImplementation = %d\n",		startupSettings.timeWarpImplementation );
+	Print( "    renderMode = %d\n",					startupSettings.renderMode );
 	Print( "    hideGraphs = %d\n",					startupSettings.hideGraphs );
 	Print( "    noLogMicroseconds = %lld\n",		startupSettings.noLogMicroseconds );
 
