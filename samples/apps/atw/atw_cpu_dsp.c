@@ -224,6 +224,7 @@ Linux x86 or x64
 #endif
 
 #include <stdio.h>					// for printf()
+#include <stdlib.h>					// for timespec
 #include <stdint.h>					// for uint32_t etc.
 #include <stdbool.h>				// for bool
 #include <assert.h>					// for assert()
@@ -231,7 +232,6 @@ Linux x86 or x64
 #include <string.h>					// for memset()
 #include <errno.h>					// for EBUSY, ETIMEDOUT etc.
 #include <ctype.h>					// for isspace() and isdigit()
-#include <time.h>					// for timespec
 #include <sys/time.h>				// for gettimeofday()
 #define __USE_UNIX98				// for pthread_mutexattr_settype
 #include <pthread.h>				// for pthread_create() etc.

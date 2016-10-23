@@ -466,7 +466,7 @@ Platform headers / declarations
 
 #elif defined( OS_LINUX )
 
-	#include <time.h>							// for timespec
+	#include <stdlib.h>							// for timespec
 	#include <sys/time.h>						// for gettimeofday()
 	#define __USE_UNIX98						// for pthread_mutexattr_settype
 	#include <pthread.h>						// for pthread_create() etc.
