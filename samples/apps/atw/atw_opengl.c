@@ -184,7 +184,7 @@ The following command-line options can be used to change various settings.
 	-q <0-3>	set per eye draw calls level
 	-w <0-3>	set per eye triangles per draw call level
 	-e <0-3>	set per eye fragment program complexity level
-	-m <0-1>    enable/disable multi-view
+	-m <0-1>	enable/disable multi-view
 	-c <0-1>	enable/disable correction for chromatic aberration
 	-i <name>	set time warp implementation: graphics, compute
 	-z <name>	set the render mode: atw, tw, scene
@@ -512,7 +512,7 @@ Platform headers / declarations
 	#include <GLES3/gl3ext.h>
 	#include <GL/gl_format.h>
 
-	#define OUTPUT_PATH				"/sdcard/"
+	#define OUTPUT_PATH		"/sdcard/"
 
 	#pragma GCC diagnostic ignored "-Wunused-function"
 
@@ -7989,6 +7989,22 @@ static void GpuTexture_Destroy( GpuContext_t * context, GpuTexture_t * texture )
 	memset( texture, 0, sizeof( GpuTexture_t ) );
 }
 
+static void GpuTexture_SetWrapMode( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureWrapMode_t wrapMode )
+{
+	UNUSED_PARM( context );
+
+	texture->wrapMode = wrapMode;
+
+	const GLint wrap =  ( ( wrapMode == GPU_TEXTURE_WRAP_MODE_CLAMP_TO_EDGE ) ? GL_CLAMP_TO_EDGE :
+						( ( wrapMode == GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER ) ? glExtensions.texture_clamp_to_border_id :
+						( GL_REPEAT ) ) );
+
+	GL( glBindTexture( texture->target, texture->texture ) );
+	GL( glTexParameteri( texture->target, GL_TEXTURE_WRAP_S, wrap ) );
+	GL( glTexParameteri( texture->target, GL_TEXTURE_WRAP_T, wrap ) );
+	GL( glBindTexture( texture->target, 0 ) );
+}
+
 static void GpuTexture_SetFilter( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureFilter_t filter )
 {
 	UNUSED_PARM( context );
@@ -8022,22 +8038,6 @@ static void GpuTexture_SetAniso( GpuContext_t * context, GpuTexture_t * texture,
 
 	GL( glBindTexture( texture->target, texture->texture ) );
    	GL( glTexParameterf( texture->target, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxAniso ) );
-	GL( glBindTexture( texture->target, 0 ) );
-}
-
-static void GpuTexture_SetWrapMode( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureWrapMode_t wrapMode )
-{
-	UNUSED_PARM( context );
-
-	texture->wrapMode = wrapMode;
-
-	const GLint wrap =  ( ( wrapMode == GPU_TEXTURE_WRAP_MODE_CLAMP_TO_EDGE ) ? GL_CLAMP_TO_EDGE :
-						( ( wrapMode == GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER ) ? glExtensions.texture_clamp_to_border_id :
-						( GL_REPEAT ) ) );
-
-	GL( glBindTexture( texture->target, texture->texture ) );
-	GL( glTexParameteri( texture->target, GL_TEXTURE_WRAP_S, wrap ) );
-	GL( glTexParameteri( texture->target, GL_TEXTURE_WRAP_T, wrap ) );
 	GL( glBindTexture( texture->target, 0 ) );
 }
 
@@ -11961,22 +11961,18 @@ HmdInfo_t
 #define NUM_EYES				2
 #define NUM_COLOR_CHANNELS		3
 
-// Typical 16:9 resolutions: 1920 x 1080, 2560 x 1440, 3840 x 2160, 7680 x 4320
-#define DISPLAY_PIXELS_WIDE		1920
-#define DISPLAY_PIXELS_HIGH		1080
-
-#define TILE_PIXELS_WIDE		32
-#define TILE_PIXELS_HIGH		32
-
-#define EYE_TILES_WIDE			( DISPLAY_PIXELS_WIDE / TILE_PIXELS_WIDE / NUM_EYES )	// 30*32*2 = 1920
-#define EYE_TILES_HIGH			( DISPLAY_PIXELS_HIGH / TILE_PIXELS_HIGH )				// 33*32   = 1056 leaving 24 pixels untouched
-
 typedef struct
 {
-	int		widthInPixels;
-	int		heightInPixels;
-	float	widthInMeters;
-	float	heightInMeters;
+	int		displayPixelsWide;
+	int		displayPixelsHigh;
+	int		tilePixelsWide;
+	int		tilePixelsHigh;
+	int		eyeTilesWide;
+	int		eyeTilesHigh;
+	int		visiblePixelsWide;
+	int		visiblePixelsHigh;
+	float	visibleMetersWide;
+	float	visibleMetersHigh;
 	float	lensSeparationInMeters;
 	float	metersPerTanAngleAtCenter;
 	int		numKnots;
@@ -11989,14 +11985,20 @@ typedef struct
 	float	interpupillaryDistance;
 } BodyInfo_t;
 
-static const HmdInfo_t * GetDefaultHmdInfo()
+static const HmdInfo_t * GetDefaultHmdInfo( const int displayPixelsWide, const int displayPixelsHigh )
 {
 	static HmdInfo_t hmdInfo;
-	hmdInfo.widthInPixels = EYE_TILES_WIDE * TILE_PIXELS_WIDE * NUM_EYES;
-	hmdInfo.heightInPixels = EYE_TILES_HIGH * TILE_PIXELS_HIGH;
-	hmdInfo.widthInMeters = 0.11047f * ( EYE_TILES_WIDE * TILE_PIXELS_WIDE * NUM_EYES ) / DISPLAY_PIXELS_WIDE;
-	hmdInfo.heightInMeters = 0.06214f * ( EYE_TILES_HIGH * TILE_PIXELS_HIGH ) / DISPLAY_PIXELS_HIGH;
-	hmdInfo.lensSeparationInMeters = hmdInfo.widthInMeters / NUM_EYES;//0.062f;
+	hmdInfo.displayPixelsWide = displayPixelsWide;
+	hmdInfo.displayPixelsHigh = displayPixelsHigh;
+	hmdInfo.tilePixelsWide = 32;
+	hmdInfo.tilePixelsHigh = 32;
+	hmdInfo.eyeTilesWide = displayPixelsWide / hmdInfo.tilePixelsWide / NUM_EYES;
+	hmdInfo.eyeTilesHigh = displayPixelsHigh / hmdInfo.tilePixelsHigh;
+	hmdInfo.visiblePixelsWide = hmdInfo.eyeTilesWide * hmdInfo.tilePixelsWide * NUM_EYES;
+	hmdInfo.visiblePixelsHigh = hmdInfo.eyeTilesHigh * hmdInfo.tilePixelsHigh;
+	hmdInfo.visibleMetersWide = 0.11047f * ( hmdInfo.eyeTilesWide * hmdInfo.tilePixelsWide * NUM_EYES ) / displayPixelsWide;
+	hmdInfo.visibleMetersHigh = 0.06214f * ( hmdInfo.eyeTilesHigh * hmdInfo.tilePixelsHigh ) / displayPixelsHigh;
+	hmdInfo.lensSeparationInMeters = hmdInfo.visibleMetersWide / NUM_EYES;
 	hmdInfo.metersPerTanAngleAtCenter = 0.037f;
 	hmdInfo.numKnots = 11;
 	hmdInfo.K[0] = 1.0f;
@@ -12141,24 +12143,24 @@ static float EvaluateCatmullRomSpline( const float value, float const * K, const
 	return res;
 }
 
-static void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS], const int eyeTilesWide, const int eyeTilesHigh, const HmdInfo_t * hmdInfo )
+static void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS], const HmdInfo_t * hmdInfo )
 {
-	const float horizontalShiftMeters = ( hmdInfo->lensSeparationInMeters / 2 ) - ( hmdInfo->widthInMeters / 4 );
-	const float horizontalShiftView = horizontalShiftMeters / ( hmdInfo->widthInMeters / 2 );
+	const float horizontalShiftMeters = ( hmdInfo->lensSeparationInMeters / 2 ) - ( hmdInfo->visibleMetersWide / 4 );
+	const float horizontalShiftView = horizontalShiftMeters / ( hmdInfo->visibleMetersWide / 2 );
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		for ( int y = 0; y <= eyeTilesHigh; y++ )
+		for ( int y = 0; y <= hmdInfo->eyeTilesHigh; y++ )
 		{
-			const float yf = 1.0f - (float)y / (float)eyeTilesHigh;
+			const float yf = 1.0f - (float)y / (float)hmdInfo->eyeTilesHigh;
 
-			for ( int x = 0; x <= eyeTilesWide; x++ )
+			for ( int x = 0; x <= hmdInfo->eyeTilesWide; x++ )
 			{
-				const float xf = (float)x / (float)eyeTilesWide;
+				const float xf = (float)x / (float)hmdInfo->eyeTilesWide;
 
 				const float in[2] = { ( eye ? -horizontalShiftView : horizontalShiftView ) + xf, yf };
-				const float ndcToPixels[2] = { hmdInfo->widthInPixels * 0.25f, hmdInfo->heightInPixels * 0.5f };
-				const float pixelsToMeters[2] = { hmdInfo->widthInMeters / hmdInfo->widthInPixels, hmdInfo->heightInMeters / hmdInfo->heightInPixels };
+				const float ndcToPixels[2] = { hmdInfo->visiblePixelsWide * 0.25f, hmdInfo->visiblePixelsHigh * 0.5f };
+				const float pixelsToMeters[2] = { hmdInfo->visibleMetersWide / hmdInfo->visiblePixelsWide, hmdInfo->visibleMetersHigh / hmdInfo->visiblePixelsHigh };
 
 				float theta[2];
 				for ( int i = 0; i < 2; i++ )
@@ -12180,7 +12182,7 @@ static void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_
 					scale * ( 1.0f + hmdInfo->chromaticAberration[2] + rsq * hmdInfo->chromaticAberration[3] )
 				};
 
-				const int vertNum = y * ( eyeTilesWide + 1 ) + x;
+				const int vertNum = y * ( hmdInfo->eyeTilesWide + 1 ) + x;
 				for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
 				{
 					meshCoords[eye][channel][vertNum].x = chromaScale[channel] * theta[0];
@@ -12198,7 +12200,8 @@ Time warp graphics rendering.
 
 TimeWarpGraphics_t
 
-static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics, GpuRenderPass_t * renderPass );
+static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics,
+									const HmdInfo_t * hmdInfo, GpuRenderPass_t * renderPass );
 static void TimeWarpGraphics_Destroy( GpuContext_t * context, TimeWarpGraphics_t * graphics );
 static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpGraphics_t * graphics,
 									GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
@@ -12213,6 +12216,7 @@ static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWar
 
 typedef struct
 {
+	HmdInfo_t				hmdInfo;
 	GpuGeometry_t			distortionMesh[NUM_EYES];
 	GpuGraphicsProgram_t	timeWarpSpatialProgram;
 	GpuGraphicsProgram_t	timeWarpChromaticProgram;
@@ -12331,25 +12335,30 @@ static const char timeWarpChromaticFragmentProgramGLSL[] =
 	"	outColor.a = 1.0;\n"
 	"}\n";
 
-static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics, GpuRenderPass_t * renderPass )
+static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics,
+									const HmdInfo_t * hmdInfo, GpuRenderPass_t * renderPass )
 {
-	const int vertexCount = ( EYE_TILES_HIGH + 1 ) * ( EYE_TILES_WIDE + 1 );
-	const int indexCount = EYE_TILES_HIGH * EYE_TILES_WIDE * 6;
+	memset( graphics, 0, sizeof( TimeWarpGraphics_t ) );
+
+	graphics->hmdInfo = *hmdInfo;
+
+	const int vertexCount = ( hmdInfo->eyeTilesHigh + 1 ) * ( hmdInfo->eyeTilesWide + 1 );
+	const int indexCount = hmdInfo->eyeTilesHigh * hmdInfo->eyeTilesWide * 6;
 
 	GpuTriangleIndex_t * indices = (GpuTriangleIndex_t *) malloc( indexCount * sizeof( indices[0] ) );
-	for ( int y = 0; y < EYE_TILES_HIGH; y++ )
+	for ( int y = 0; y < hmdInfo->eyeTilesHigh; y++ )
 	{
-		for ( int x = 0; x < EYE_TILES_WIDE; x++ )
+		for ( int x = 0; x < hmdInfo->eyeTilesWide; x++ )
 		{
-			const int offset = ( y * EYE_TILES_WIDE + x ) * 6;
+			const int offset = ( y * hmdInfo->eyeTilesWide + x ) * 6;
 
-			indices[offset + 0] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
-			indices[offset + 1] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
-			indices[offset + 2] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
+			indices[offset + 0] = (GpuTriangleIndex_t)( ( y + 0 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 0 ) );
+			indices[offset + 1] = (GpuTriangleIndex_t)( ( y + 1 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 0 ) );
+			indices[offset + 2] = (GpuTriangleIndex_t)( ( y + 0 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 1 ) );
 
-			indices[offset + 3] = (GpuTriangleIndex_t)( ( y + 0 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
-			indices[offset + 4] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 0 ) );
-			indices[offset + 5] = (GpuTriangleIndex_t)( ( y + 1 ) * ( EYE_TILES_WIDE + 1 ) + ( x + 1 ) );
+			indices[offset + 3] = (GpuTriangleIndex_t)( ( y + 0 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 1 ) );
+			indices[offset + 4] = (GpuTriangleIndex_t)( ( y + 1 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 0 ) );
+			indices[offset + 5] = (GpuTriangleIndex_t)( ( y + 1 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 1 ) );
 		}
 	}
 
@@ -12361,14 +12370,14 @@ static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t 
 									VERTEX_ATTRIBUTE_FLAG_UV1 |
 									VERTEX_ATTRIBUTE_FLAG_UV2 );
 
-	const int numMeshCoords = ( EYE_TILES_WIDE + 1 ) * ( EYE_TILES_HIGH + 1 );
+	const int numMeshCoords = ( hmdInfo->eyeTilesWide + 1 ) * ( hmdInfo->eyeTilesHigh + 1 );
 	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t ) );
 	MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
 	{
 		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
 		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
 	};
-	BuildDistortionMeshes( meshCoords, EYE_TILES_WIDE, EYE_TILES_HIGH, GetDefaultHmdInfo() );
+	BuildDistortionMeshes( meshCoords, hmdInfo );
 
 #if defined( GRAPHICS_API_VULKAN )
 	const float flipY = -1.0f;
@@ -12378,14 +12387,14 @@ static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t 
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		for ( int y = 0; y <= EYE_TILES_HIGH; y++ )
+		for ( int y = 0; y <= hmdInfo->eyeTilesHigh; y++ )
 		{
-			for ( int x = 0; x <= EYE_TILES_WIDE; x++ )
+			for ( int x = 0; x <= hmdInfo->eyeTilesWide; x++ )
 			{
-				const int index = y * ( EYE_TILES_WIDE + 1 ) + x;
-				vertexAttribs.position[index].x = ( -1.0f + eye + ( (float)x / EYE_TILES_WIDE ) );
-				vertexAttribs.position[index].y = ( -1.0f + 2.0f * ( ( EYE_TILES_HIGH - (float)y ) / EYE_TILES_HIGH ) *
-													( (float)( EYE_TILES_HIGH * TILE_PIXELS_HIGH ) / DISPLAY_PIXELS_HIGH ) ) * flipY;
+				const int index = y * ( hmdInfo->eyeTilesWide + 1 ) + x;
+				vertexAttribs.position[index].x = ( -1.0f + eye + ( (float)x / hmdInfo->eyeTilesWide ) );
+				vertexAttribs.position[index].y = ( -1.0f + 2.0f * ( ( hmdInfo->eyeTilesHigh - (float)y ) / hmdInfo->eyeTilesHigh ) *
+													( (float)( hmdInfo->eyeTilesHigh * hmdInfo->tilePixelsHigh ) / hmdInfo->displayPixelsHigh ) ) * flipY;
 				vertexAttribs.position[index].z = 0.0f;
 				vertexAttribs.uv0[index].x = meshCoords[eye][0][index].x;
 				vertexAttribs.uv0[index].y = meshCoords[eye][0][index].y;
@@ -12543,7 +12552,8 @@ Time warp compute rendering.
 
 TimeWarpCompute_t
 
-static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, GpuRenderPass_t * renderPass, GpuWindow_t * window );
+static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, const HmdInfo_t * hmdInfo,
+									GpuRenderPass_t * renderPass, GpuWindow_t * window );
 static void TimeWarpCompute_Destroy( GpuContext_t * context, TimeWarpCompute_t * compute );
 static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpCompute_t * compute,
 									GpuFramebuffer_t * framebuffer,
@@ -12560,6 +12570,7 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 
 typedef struct
 {
+	HmdInfo_t				hmdInfo;
 	GpuTexture_t			distortionImage[NUM_EYES][NUM_COLOR_CHANNELS];
 	GpuTexture_t			timeWarpImage[NUM_EYES][NUM_COLOR_CHANNELS];
 	GpuComputeProgram_t		timeWarpTransformProgram;
@@ -12738,18 +12749,21 @@ static const char timeWarpChromaticComputeProgramGLSL[] =
 	"	imageStore( dest, ivec2( int( gl_GlobalInvocationID.x ) + eyePixelOffset.x, eyePixelOffset.y - 1 - int( gl_GlobalInvocationID.y ) ), rgba );\n"
 	"}\n";
 
-static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, GpuRenderPass_t * renderPass, GpuWindow_t * window )
+static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute,
+									const HmdInfo_t * hmdInfo, GpuRenderPass_t * renderPass, GpuWindow_t * window )
 {
 	memset( compute, 0, sizeof( TimeWarpCompute_t ) );
 
-	const int numMeshCoords = ( EYE_TILES_WIDE + 1 ) * ( EYE_TILES_HIGH + 1 );
+	compute->hmdInfo = *hmdInfo;
+
+	const int numMeshCoords = ( hmdInfo->eyeTilesHigh + 1 ) * ( hmdInfo->eyeTilesWide + 1 );
 	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t ) );
 	MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
 	{
 		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
 		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
 	};
-	BuildDistortionMeshes( meshCoords, EYE_TILES_WIDE, EYE_TILES_HIGH, GetDefaultHmdInfo() );
+	BuildDistortionMeshes( meshCoords, hmdInfo );
 
 	float * rgbaFloat = (float *) malloc( numMeshCoords * 4 * sizeof( float ) );
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
@@ -12766,10 +12780,10 @@ static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * 
 			const size_t rgbaSize = numMeshCoords * 4 * sizeof( float );
 			GpuTexture_Create2D( context, &compute->distortionImage[eye][channel],
 								GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT, GPU_SAMPLE_COUNT_1,
-								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, GPU_TEXTURE_USAGE_STORAGE, rgbaFloat, rgbaSize );
+								hmdInfo->eyeTilesWide + 1, hmdInfo->eyeTilesHigh + 1, 1, GPU_TEXTURE_USAGE_STORAGE, rgbaFloat, rgbaSize );
 			GpuTexture_Create2D( context, &compute->timeWarpImage[eye][channel],
 								GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT, GPU_SAMPLE_COUNT_1,
-								EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1, 1, GPU_TEXTURE_USAGE_STORAGE | GPU_TEXTURE_USAGE_SAMPLED, NULL, 0 );
+								hmdInfo->eyeTilesWide + 1, hmdInfo->eyeTilesHigh + 1, 1, GPU_TEXTURE_USAGE_STORAGE | GPU_TEXTURE_USAGE_SAMPLED, NULL, 0 );
 		}
 	}
 	free( rgbaFloat );
@@ -12860,7 +12874,7 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 		}
 	}
 
-	const Vector2i_t dimensions = { EYE_TILES_WIDE + 1, EYE_TILES_HIGH + 1 };
+	const Vector2i_t dimensions = { compute->hmdInfo.eyeTilesWide + 1, compute->hmdInfo.eyeTilesHigh + 1 };
 	const int eyeIndex[NUM_EYES] = { 0, 1 };
 
 	for ( int eye = 0; eye < NUM_EYES; eye ++ )
@@ -12895,16 +12909,16 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 	const int screenWidth = GpuFramebuffer_GetWidth( &compute->framebuffer );
 	const int screenHeight = GpuFramebuffer_GetHeight( &compute->framebuffer );
 	const int eyePixelsWide = screenWidth / NUM_EYES;
-	const int eyePixelsHigh = screenHeight * EYE_TILES_HIGH * TILE_PIXELS_HIGH / DISPLAY_PIXELS_HIGH;
+	const int eyePixelsHigh = screenHeight * compute->hmdInfo.eyeTilesHigh * compute->hmdInfo.tilePixelsHigh / compute->hmdInfo.displayPixelsHigh;
 	const Vector2f_t imageScale =
 	{
-		(float)EYE_TILES_WIDE / ( EYE_TILES_WIDE + 1 ) / eyePixelsWide,
-		(float)EYE_TILES_HIGH / ( EYE_TILES_HIGH + 1 ) / eyePixelsHigh
+		(float)compute->hmdInfo.eyeTilesWide / ( compute->hmdInfo.eyeTilesWide + 1 ) / eyePixelsWide,
+		(float)compute->hmdInfo.eyeTilesHigh / ( compute->hmdInfo.eyeTilesHigh + 1 ) / eyePixelsHigh
 	};
 	const Vector2f_t imageBias =
 	{
-		0.5f / ( EYE_TILES_WIDE + 1 ),
-		0.5f / ( EYE_TILES_HIGH + 1 )
+		0.5f / ( compute->hmdInfo.eyeTilesWide + 1 ),
+		0.5f / ( compute->hmdInfo.eyeTilesHigh + 1 )
 	};
 	const Vector2i_t eyePixelOffset[NUM_EYES] =
 	{
@@ -12980,10 +12994,12 @@ typedef struct
 	int		empty;
 } TimeWarpCompute_t;
 
-static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, GpuRenderPass_t * renderPass, GpuWindow_t * window )
+static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute,
+									const HmdInfo_t * hmdInfo, GpuRenderPass_t * renderPass, GpuWindow_t * window )
 {
 	UNUSED_PARM( context );
 	UNUSED_PARM( compute );
+	UNUSED_PARM( hmdInfo );
 	UNUSED_PARM( renderPass );
 	UNUSED_PARM( window );
 }
@@ -13179,8 +13195,11 @@ static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 
 	timeWarp->correctChromaticAberration = false;
 	timeWarp->implementation = TIMEWARP_IMPLEMENTATION_GRAPHICS;
-	TimeWarpGraphics_Create( &window->context, &timeWarp->graphics, &timeWarp->renderPass );
-	TimeWarpCompute_Create( &window->context, &timeWarp->compute, &timeWarp->renderPass, window );
+
+	const HmdInfo_t * hmdInfo = GetDefaultHmdInfo( window->windowWidth, window->windowHeight );
+
+	TimeWarpGraphics_Create( &window->context, &timeWarp->graphics, hmdInfo, &timeWarp->renderPass );
+	TimeWarpCompute_Create( &window->context, &timeWarp->compute, hmdInfo, &timeWarp->renderPass, window );
 	TimeWarpBarGraphs_Create( &window->context, &timeWarp->bargraphs, &timeWarp->renderPass );
 
 	memset( timeWarp->cpuTimes, 0, sizeof( timeWarp->cpuTimes ) );
@@ -13749,6 +13768,14 @@ static int SceneSettings_GetFragmentLevel( const SceneSettings_t * settings );
 #define MAX_SCENE_TRIANGLE_LEVELS			4
 #define MAX_SCENE_FRAGMENT_LEVELS			4
 
+static const int displayResolutionTable[] =
+{
+	1920, 1080,
+	2560, 1440,
+	3840, 2160,
+	7680, 4320
+};
+
 typedef struct
 {
 	bool	simulationPaused;
@@ -13776,9 +13803,9 @@ static void SceneSettings_Init( GpuContext_t * context, SceneSettings_t * settin
 	settings->drawCallLevel = 0;
 	settings->triangleLevel = 0;
 	settings->fragmentLevel = 0;
-	settings->maxDisplayResolutionLevels =	( !GpuWindow_SupportedResolution( 2560, 1440 ) ? 1 :
-											( !GpuWindow_SupportedResolution( 3840, 2160 ) ? 2 :
-											( !GpuWindow_SupportedResolution( 7680, 4320 ) ? 3 : 4 ) ) );
+	settings->maxDisplayResolutionLevels =	( !GpuWindow_SupportedResolution( displayResolutionTable[1 * 2 + 0], displayResolutionTable[1 * 2 + 1] ) ? 1 :
+											( !GpuWindow_SupportedResolution( displayResolutionTable[2 * 2 + 0], displayResolutionTable[2 * 2 + 1] ) ? 2 :
+											( !GpuWindow_SupportedResolution( displayResolutionTable[3 * 2 + 0], displayResolutionTable[3 * 2 + 1] ) ? 3 : 4 ) ) );
 	settings->maxEyeImageResolutionLevels = MAX_EYE_IMAGE_RESOLUTION_LEVELS;
 	settings->maxEyeImageSamplesLevels = ( maxEyeImageSamplesLevels < MAX_EYE_IMAGE_SAMPLES_LEVELS ) ? maxEyeImageSamplesLevels : MAX_EYE_IMAGE_SAMPLES_LEVELS;
 
@@ -17001,11 +17028,9 @@ enum
 #define NUM_EYE_BUFFERS			3
 
 #if defined( OS_ANDROID )
-#define WINDOWED_PIXELS_WIDE	DISPLAY_PIXELS_WIDE
-#define WINDOWED_PIXELS_HIGH	DISPLAY_PIXELS_HIGH
+#define WINDOW_RESOLUTION( x, fullscreen )	(x)		// always fullscreen
 #else
-#define WINDOWED_PIXELS_WIDE	ROUNDUP( DISPLAY_PIXELS_WIDE / 2, 8 )
-#define WINDOWED_PIXELS_HIGH	ROUNDUP( DISPLAY_PIXELS_HIGH / 2, 8 )
+#define WINDOW_RESOLUTION( x, fullscreen )	( (fullscreen) ? (x) : ROUNDUP( x / 2, 8 ) )
 #endif
 
 typedef struct
@@ -17229,8 +17254,8 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 	GpuWindow_t window;
 	GpuWindow_Create( &window, &instance, &queueInfo, QUEUE_INDEX_TIMEWARP,
 						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
-						startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
-						startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
+						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 0], startupSettings->fullscreen ),
+						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 1], startupSettings->fullscreen ),
 						startupSettings->fullscreen );
 
 	int swapInterval = ( startupSettings->noVSyncMicroseconds <= 0 );
@@ -17422,8 +17447,8 @@ bool RenderTimeWarp( StartupSettings_t * startupSettings )
 	GpuWindow_t window;
 	GpuWindow_Create( &window, &instance, &queueInfo, 0,
 						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
-						startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
-						startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
+						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 0], startupSettings->fullscreen ),
+						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 1], startupSettings->fullscreen ),
 						startupSettings->fullscreen );
 
 	int swapInterval = ( startupSettings->noVSyncMicroseconds <= 0 );
@@ -17555,8 +17580,8 @@ bool RenderScene( StartupSettings_t * startupSettings )
 	GpuWindow_t window;
 	GpuWindow_Create( &window, &instance, &queueInfo, 0,
 						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24, sampleCount,
-						startupSettings->fullscreen ? DISPLAY_PIXELS_WIDE : WINDOWED_PIXELS_WIDE,
-						startupSettings->fullscreen ? DISPLAY_PIXELS_HIGH : WINDOWED_PIXELS_HIGH,
+						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 0], startupSettings->fullscreen ),
+						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 1], startupSettings->fullscreen ),
 						startupSettings->fullscreen );
 
 	int swapInterval = ( startupSettings->noVSyncMicroseconds <= 0 );
