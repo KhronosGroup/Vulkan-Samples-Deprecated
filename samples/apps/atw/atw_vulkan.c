@@ -466,7 +466,13 @@ Platform headers / declarations
 
 #elif defined( OS_LINUX )
 
-	#include <stdlib.h>							// for timespec
+	#if __STDC_VERSION__ >= 199901L
+	#define _XOPEN_SOURCE 600
+	#else
+	#define _XOPEN_SOURCE 500
+	#endif
+
+	#include <time.h>							// for timespec
 	#include <sys/time.h>						// for gettimeofday()
 	#define __USE_UNIX98						// for pthread_mutexattr_settype
 	#include <pthread.h>						// for pthread_create() etc.

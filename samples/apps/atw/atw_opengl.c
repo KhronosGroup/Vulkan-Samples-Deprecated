@@ -452,7 +452,13 @@ Platform headers / declarations
 	#define GLSL_PROGRAM_VERSION	"430"
 	#define USE_SYNC_OBJECT			0			// 0 = GLsync, 1 = EGLSyncKHR, 2 = storage buffer
 
-	#include <stdlib.h>							// for timespec
+	#if __STDC_VERSION__ >= 199901L
+	#define _XOPEN_SOURCE 600
+	#else
+	#define _XOPEN_SOURCE 500
+	#endif
+
+	#include <time.h>							// for timespec
 	#include <sys/time.h>						// for gettimeofday()
 	#define __USE_UNIX98						// for pthread_mutexattr_settype
 	#include <pthread.h>						// for pthread_create() etc.

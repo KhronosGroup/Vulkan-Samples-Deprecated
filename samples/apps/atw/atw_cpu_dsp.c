@@ -223,8 +223,14 @@ Linux x86 or x64
 #pragma clang diagnostic ignored "-Wself-assign"
 #endif
 
+#if __STDC_VERSION__ >= 199901L
+#define _XOPEN_SOURCE 600
+#else
+#define _XOPEN_SOURCE 500
+#endif
+
+#include <time.h>					// for timespec
 #include <stdio.h>					// for printf()
-#include <stdlib.h>					// for timespec
 #include <stdint.h>					// for uint32_t etc.
 #include <stdbool.h>				// for bool
 #include <assert.h>					// for assert()
