@@ -133,13 +133,13 @@ VERSION HISTORY
 /*
 ================================================================================================================================
 
-HashMap_t
+ksHashMap
 
-static void HashMap_Create( HashMap_t * map );
-static void HashMap_Destroy( HashMap_t * map );
-static void HashMap_Add( HashMap_t * map, void * key, void * data );
-static void HashMap_Remove( HashMap_t * map, void * key );
-static void * HashMap_Find( HashMap_t * map, void * key );
+static void ksHashMap_Create( ksHashMap * map );
+static void ksHashMap_Destroy( ksHashMap * map );
+static void ksHashMap_Add( ksHashMap * map, void * key, void * data );
+static void ksHashMap_Remove( ksHashMap * map, void * key );
+static void * ksHashMap_Find( ksHashMap * map, void * key );
 
 ================================================================================================================================
 */
@@ -156,9 +156,9 @@ typedef struct
 	int *			empty;
 	int				count;
 	int				nextEmpty;
-} HashMap_t;
+} ksHashMap;
 
-static void HashMap_Grow( HashMap_t * map, const int newCount )
+static void ksHashMap_Grow( ksHashMap * map, const int newCount )
 {
 	assert( newCount > map->count );
 
@@ -189,23 +189,23 @@ static void HashMap_Grow( HashMap_t * map, const int newCount )
 	map->count = newCount;
 }
 
-static void HashMap_Create( HashMap_t * map )
+static void ksHashMap_Create( ksHashMap * map )
 {
-	memset( map, 0, sizeof( HashMap_t ) );
+	memset( map, 0, sizeof( ksHashMap ) );
 	memset( map->table, -1, sizeof( map->table ) );
-	HashMap_Grow( map, 16 );
+	ksHashMap_Grow( map, 16 );
 }
 
-static void HashMap_Destroy( HashMap_t * map )
+static void ksHashMap_Destroy( ksHashMap * map )
 {
 	free( map->key );
 	free( map->data );
 	free( map->next );
 	free( map->empty );
-	memset( map, 0, sizeof( HashMap_t ) );
+	memset( map, 0, sizeof( ksHashMap ) );
 }
 
-static unsigned int HashMap_HashPointer( HashMap_t * map, const void * key )
+static unsigned int ksHashMap_HashPointer( ksHashMap * map, const void * key )
 {
 	// HASH_TABLE_SIZE must be a power of two.
 	assert( ( HASH_TABLE_SIZE > 0 ) && ( HASH_TABLE_SIZE & ( HASH_TABLE_SIZE - 1 ) ) == 0 );
@@ -213,9 +213,9 @@ static unsigned int HashMap_HashPointer( HashMap_t * map, const void * key )
 	return (unsigned int)( ( ( value >> 3 ) ^ ( value >> 11 ) ^ ( value >> 19 ) ) & ( HASH_TABLE_SIZE - 1 ) );
 }
 
-static void HashMap_Add( HashMap_t * map, void * key, void * data )
+static void ksHashMap_Add( ksHashMap * map, void * key, void * data )
 {
-	const unsigned int hash = HashMap_HashPointer( map, key );
+	const unsigned int hash = ksHashMap_HashPointer( map, key );
 	int * index = NULL;
 	for ( index = &map->table[hash]; *index >= 0; index = &map->next[*index] )
 	{
@@ -227,7 +227,7 @@ static void HashMap_Add( HashMap_t * map, void * key, void * data )
 	}
 	if ( map->nextEmpty >= map->count )
 	{
-		HashMap_Grow( map, map->count * 2 );
+		ksHashMap_Grow( map, map->count * 2 );
 	}
 	*index = map->empty[map->nextEmpty++];
 	map->key[*index] = key;
@@ -235,9 +235,9 @@ static void HashMap_Add( HashMap_t * map, void * key, void * data )
 	map->next[*index] = -1;
 }
 
-static void HashMap_Remove( HashMap_t * map, void * key )
+static void ksHashMap_Remove( ksHashMap * map, void * key )
 {
-	const unsigned int hash = HashMap_HashPointer( map, key );
+	const unsigned int hash = ksHashMap_HashPointer( map, key );
 	for ( int * index = &map->table[hash]; *index >= 0; index = &map->next[*index] )
 	{
 		if ( map->key[*index] == key )
@@ -253,9 +253,9 @@ static void HashMap_Remove( HashMap_t * map, void * key )
 	assert( 0 );
 }
 
-static void * HashMap_Find( HashMap_t * map, void * key )
+static void * ksHashMap_Find( ksHashMap * map, void * key )
 {
-	const unsigned int hash = HashMap_HashPointer( map, key );
+	const unsigned int hash = ksHashMap_HashPointer( map, key );
 	for ( int index = map->table[hash]; index >= 0; index = map->next[index] )
 	{
 		if ( map->key[index] == key )
@@ -277,16 +277,16 @@ Instance/Device/Queue data maps
 typedef struct
 {
 	VkLayerInstanceDispatchTable *	instanceDispatchTable;
-} InstanceData_t;
+} ksInstanceData;
 
 typedef struct
 {
-	InstanceData_t *				instanceData;
+	ksInstanceData *				instanceData;
 	VkLayerDispatchTable *			deviceDispatchTable;
-} DeviceData_t;
+} ksDeviceData;
 
-static HashMap_t instance_data_map;
-static HashMap_t device_data_map;
+static ksHashMap instance_data_map;
+static ksHashMap device_data_map;
 
 static VkLayerDispatchTable * GetDispatchTable( const void * object ) { return *(VkLayerDispatchTable **)object; }
 
@@ -331,15 +331,15 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
 
 	if ( instance_data_map.nextEmpty == 0 )
 	{
-		HashMap_Create( &instance_data_map );
-		HashMap_Create( &device_data_map );
+		ksHashMap_Create( &instance_data_map );
+		ksHashMap_Create( &device_data_map );
 	}
 
-	InstanceData_t * my_instance_data = (InstanceData_t *)malloc( sizeof( InstanceData_t ) );
+	ksInstanceData * my_instance_data = (ksInstanceData *)malloc( sizeof( ksInstanceData ) );
 	my_instance_data->instanceDispatchTable = (VkLayerInstanceDispatchTable *)malloc( sizeof( VkLayerInstanceDispatchTable ) );
 	layer_init_instance_dispatch_table( *pInstance, my_instance_data->instanceDispatchTable, pfnGetInstanceProcAddr );
 
-	HashMap_Add( &instance_data_map, GetDispatchTable( *pInstance ), my_instance_data );
+	ksHashMap_Add( &instance_data_map, GetDispatchTable( *pInstance ), my_instance_data );
 		
 	return result;
 }
@@ -349,19 +349,19 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(
 		const VkAllocationCallbacks *	pAllocator)
 {
 	void * key = GetDispatchTable( instance );
-	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, key );
+	ksInstanceData * my_instance_data = (ksInstanceData *)ksHashMap_Find( &instance_data_map, key );
 
 	my_instance_data->instanceDispatchTable->DestroyInstance( instance, pAllocator );
 
-	HashMap_Remove( &instance_data_map, key );
+	ksHashMap_Remove( &instance_data_map, key );
 
 	free( my_instance_data->instanceDispatchTable );
 	free( my_instance_data );
 
 	if ( instance_data_map.nextEmpty == 0 )
 	{
-		HashMap_Destroy( &instance_data_map );
-		HashMap_Destroy( &device_data_map );
+		ksHashMap_Destroy( &instance_data_map );
+		ksHashMap_Destroy( &device_data_map );
 	}
 }
 
@@ -407,12 +407,12 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 	}
 
 	// Setup device data.
-	DeviceData_t * my_device_data = (DeviceData_t *)malloc( sizeof( DeviceData_t ) );
-	my_device_data->instanceData = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchTable( physicalDevice ) );
+	ksDeviceData * my_device_data = (ksDeviceData *)malloc( sizeof( ksDeviceData ) );
+	my_device_data->instanceData = (ksInstanceData *)ksHashMap_Find( &instance_data_map, GetDispatchTable( physicalDevice ) );
 	my_device_data->deviceDispatchTable = (VkLayerDispatchTable *)malloc( sizeof( VkLayerDispatchTable ) );
 	layer_init_device_dispatch_table( *pDevice, my_device_data->deviceDispatchTable, pfnGetDeviceProcAddr );
 
-	HashMap_Add( &device_data_map, GetDispatchTable( *pDevice ), my_device_data );
+	ksHashMap_Add( &device_data_map, GetDispatchTable( *pDevice ), my_device_data );
 
 	return result;
 }
@@ -422,11 +422,11 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
 		const VkAllocationCallbacks *	pAllocator )
 {
 	void * key = GetDispatchTable( device );
-	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, key );
+	ksDeviceData * my_device_data = (ksDeviceData *)ksHashMap_Find( &device_data_map, key );
 
 	my_device_data->deviceDispatchTable->DestroyDevice( device, pAllocator );
 
-	HashMap_Remove( &device_data_map, key );
+	ksHashMap_Remove( &device_data_map, key );
 
 	free( my_device_data->deviceDispatchTable );
 	free( my_device_data );
@@ -625,7 +625,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateShaderModule(
 		const VkAllocationCallbacks *		pAllocator,
 		VkShaderModule *					pShaderModule )
 {
-	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchTable( device ) );
+	ksDeviceData * my_device_data = (ksDeviceData *)ksHashMap_Find( &device_data_map, GetDispatchTable( device ) );
 
 	const unsigned int * header = (unsigned int *)pCreateInfo->pCode;
 	if ( header[0] == ICD_SPV_MAGIC && header[1] == 0 )
@@ -792,7 +792,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionPropert
 
 	assert( physicalDevice );
 
-	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchTable( physicalDevice ) );
+	ksInstanceData * my_instance_data = (ksInstanceData *)ksHashMap_Find( &instance_data_map, GetDispatchTable( physicalDevice ) );
 
 	return my_instance_data->instanceDispatchTable->EnumerateDeviceExtensionProperties( physicalDevice, NULL, pCount, pProperties );
 }
@@ -812,7 +812,7 @@ VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr( 
 		return NULL;
 	}
 
-	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchTable( instance ) );
+	ksInstanceData * my_instance_data = (ksInstanceData *)ksHashMap_Find( &instance_data_map, GetDispatchTable( instance ) );
 
 	VkLayerInstanceDispatchTable * pInstanceTable = my_instance_data->instanceDispatchTable;
 	if ( pInstanceTable->GetInstanceProcAddr == NULL )
@@ -834,7 +834,7 @@ VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr( Vk
 		return NULL;
 	}
 
-	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchTable( device ) );
+	ksDeviceData * my_device_data = (ksDeviceData *)ksHashMap_Find( &device_data_map, GetDispatchTable( device ) );
 
 	VkLayerDispatchTable * pDeviceTable = my_device_data->deviceDispatchTable;
 	if ( pDeviceTable->GetDeviceProcAddr == NULL )

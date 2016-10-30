@@ -3,7 +3,7 @@
 
 #include "AEEStdDef.idl"
 
-struct MeshCoord_t
+struct ksMeshCoord
 {
 	float x;
 	float y;
@@ -29,7 +29,7 @@ interface TimeWarpInterface
 						in int32					destPitchInPixels,	// in pixels: 1080, 1440, etc.
 						in int32					destTilesWide,		// tiles are implicitly 32 x 32 pixels
 						in int32					destTilesHigh,
-						in sequence<MeshCoord_t>	meshCoords,			// [(destTilesWide+1)*(destTilesHigh+1)]
+						in sequence<ksMeshCoord>	meshCoords,			// [(destTilesWide+1)*(destTilesHigh+1)]
 						in int32					sampling );
 };
 

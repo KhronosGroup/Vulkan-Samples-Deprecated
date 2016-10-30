@@ -713,10 +713,10 @@ static void VkCheckErrors( VkResult result, const char * function )
 
 Driver Instance.
 
-DriverInstance_t
+ksDriverInstance
 
-static bool DriverInstance_Create( DriverInstance_t * intance );
-static void DriverInstance_Destroy( DriverInstance_t * instance );
+static bool ksDriverInstance_Create( ksDriverInstance * intance );
+static void ksDriverInstance_Destroy( ksDriverInstance * instance );
 
 ================================================================================================================================
 */
@@ -744,14 +744,14 @@ typedef struct
 	PFN_vkGetPhysicalDeviceSparseImageFormatProperties	vkGetPhysicalDeviceSparseImageFormatProperties;
 	PFN_vkEnumerateDeviceExtensionProperties			vkEnumerateDeviceExtensionProperties;
 	PFN_vkEnumerateDeviceLayerProperties				vkEnumerateDeviceLayerProperties;
-} DriverInstance_t;
+} ksDriverInstance;
 
 #define GET_INSTANCE_PROC_ADDR_EXP( function )	instance->function = (PFN_##function)( instance->vkGetInstanceProcAddr( instance->instance, #function ) ); assert( instance->function != NULL );
 #define GET_INSTANCE_PROC_ADDR( function )		GET_INSTANCE_PROC_ADDR_EXP( function )
 
-static bool DriverInstance_Create( DriverInstance_t * instance )
+static bool ksDriverInstance_Create( ksDriverInstance * instance )
 {
-	memset( instance, 0, sizeof( DriverInstance_t ) );
+	memset( instance, 0, sizeof( ksDriverInstance ) );
 
 #if defined( OS_WINDOWS )
 	instance->loader = LoadLibrary( TEXT( VULKAN_LOADER ) );
@@ -821,7 +821,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 }
 
 
-static void DriverInstance_Destroy( DriverInstance_t * instance )
+static void ksDriverInstance_Destroy( ksDriverInstance * instance )
 {
 	VC( instance->vkDestroyInstance( instance->instance, VK_ALLOCATOR ) );
 
@@ -1289,8 +1289,8 @@ int main( int argc, char * argv[] )
 
 	Console_Resize( 4096, 120 );
 
-	DriverInstance_t instance;
-	DriverInstance_Create( &instance );
+	ksDriverInstance instance;
+	ksDriverInstance_Create( &instance );
 
 	const uint32_t headerMajor = VK_VERSION_MAJOR( VK_API_VERSION_1_0 );
 	const uint32_t headerMinor = VK_VERSION_MINOR( VK_API_VERSION_1_0 );
@@ -1541,7 +1541,7 @@ int main( int argc, char * argv[] )
 
 	Print( "--------------------------------\n" );
 
-	DriverInstance_Destroy( &instance );
+	ksDriverInstance_Destroy( &instance );
 
 #if defined( OS_WINDOWS )
 	Print( "Press any key to continue.\n" );

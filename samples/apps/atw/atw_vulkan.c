@@ -88,7 +88,7 @@ that is pink or green respectively reaches the top of the graph and represents a
 rendered at the display refresh rate. When the frame rate drops, the bars turn red
 and become shorter proportional to how much the frame rate drops.
 
-The next two bar graph shows the CPU and GPU time of the stereoscopic rendering (pink),
+The next two bar graphs shows the CPU and GPU time of the stereoscopic rendering (pink),
 the time warp rendering (green) and the bar graph rendering (yellow). The times are
 stacked in each graph. The full height of a graph represents a full frame time.
 For instance, with a 60Hz display refresh rate, the full graph height represents 16.7
