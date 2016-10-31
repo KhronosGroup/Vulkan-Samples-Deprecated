@@ -8162,10 +8162,11 @@ int main( int argc, char * argv[] )
 	sprintf( dspVersionString, "Hexagon v%d", dspVersion );
 
 	Print( "--------------------------------\n" );
-	Print( "OS     : %s\n", GetOSVersion() );
-	Print( "CPU    : %s\n", GetCPUVersion() );
-	Print( "DSP    : %s\n", dspVersion != 0 ? dspVersionString : "-" );
-	Print( "Mode   : %dx%d\n", hmdInfo->displayPixelsWide, hmdInfo->displayPixelsHigh );
+	Print( "OS      : %s\n", GetOSVersion() );
+	Print( "CPU     : %s\n", GetCPUVersion() );
+	Print( "DSP     : %s\n", dspVersion != 0 ? dspVersionString : "-" );
+	Print( "Source  : %dx%d\n", srcTexelsWide, srcTexelsHigh );
+	Print( "Display : %dx%d\n", hmdInfo->displayPixelsWide, hmdInfo->displayPixelsHigh );
 	Print( "--------------------------------\n" );
 
 	Print( "--------------------------------\n" );
