@@ -4421,9 +4421,10 @@ static void ksGpuWindow_SwapInterval( ksGpuWindow * window, const int swapInterv
 static void ksGpuWindow_SwapBuffers( ksGpuWindow * window );
 static ksMicroseconds ksGpuWindow_GetNextSwapTimeMicroseconds( ksGpuWindow * window );
 static ksMicroseconds ksGpuWindow_GetFrameTimeMicroseconds( ksGpuWindow * window );
-static bool ksGpuWindowInput_ConsumeKeyboardKey( ksGpuWindow * window, const ksKeyboardKey key );
-static bool ksGpuWindowInput_ConsumeMouseButton( ksGpuWindow * window, const ksMouseButton button );
-static bool ksGpuWindowInput_CheckKeyboardKey( ksGpuWindow * window, const ksKeyboardKey key );
+
+static bool ksGpuWindowInput_ConsumeKeyboardKey( ksGpuWindowInput * input, const ksKeyboardKey key );
+static bool ksGpuWindowInput_ConsumeMouseButton( ksGpuWindowInput * input, const ksMouseButton button );
+static bool ksGpuWindowInput_CheckKeyboardKey( ksGpuWindowInput * input, const ksKeyboardKey key );
 
 ================================================================================================================================
 */
@@ -4684,6 +4685,8 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	window->windowActiveState = false;
 	window->lastSwapTime = GetTimeMicroseconds();
 
+	const LPCTSTR displayDevice = NULL;
+
 	if ( window->windowFullscreen )
 	{
 		DEVMODE dmScreenSettings;
@@ -4694,7 +4697,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 		dmScreenSettings.dmBitsPerPel	= 32;
 		dmScreenSettings.dmFields		= DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL;
 
-		if ( ChangeDisplaySettings( &dmScreenSettings, CDS_FULLSCREEN ) != DISP_CHANGE_SUCCESSFUL )
+		if ( ChangeDisplaySettingsEx( displayDevice, &dmScreenSettings, NULL, CDS_FULLSCREEN, NULL ) != DISP_CHANGE_SUCCESSFUL )
 		{
 			Error( "The requested fullscreen mode is not supported." );
 			return false;
@@ -4706,7 +4709,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	lpDevMode.dmSize = sizeof( DEVMODE );
 	lpDevMode.dmDriverExtra = 0;
 
-	if ( EnumDisplaySettings( NULL, ENUM_CURRENT_SETTINGS, &lpDevMode ) != FALSE )
+	if ( EnumDisplaySettings( displayDevice, ENUM_CURRENT_SETTINGS, &lpDevMode ) != FALSE )
 	{
 		window->windowRefreshRate = (float)lpDevMode.dmDisplayFrequency;
 	}
@@ -4781,7 +4784,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 								NULL,								// No parent window
 								NULL,								// No menu
 								window->hInstance,					// Instance
-								NULL );
+								NULL );								// No WM_CREATE parameter
 	if ( !window->hWnd )
 	{
 		ksGpuWindow_Destroy( window );
@@ -7034,16 +7037,16 @@ ksGpuTextureDefault
 ksGpuTexture
 
 static bool ksGpuTexture_Create2D( ksGpuContext * context, ksGpuTexture * texture,
-								const ksGpuTextureFormat format, const ksGpuSampleCount sampleCount,
-								const int width, const int height, const int mipCount,
-								const ksGpuTextureUsageFlags usageFlags, const void * data, const size_t dataSize );
+									const ksGpuTextureFormat format, const ksGpuSampleCount sampleCount,
+									const int width, const int height, const int mipCount,
+									const ksGpuTextureUsageFlags usageFlags, const void * data, const size_t dataSize );
 static bool ksGpuTexture_Create2DArray( ksGpuContext * context, ksGpuTexture * texture,
-								const ksGpuTextureFormat format, const ksGpuSampleCount sampleCount,
-								const int width, const int height, const int layerCount, const int mipCount,
-								const ksGpuTextureUsageFlags usageFlags, const void * data, const size_t dataSize );
+									const ksGpuTextureFormat format, const ksGpuSampleCount sampleCount,
+									const int width, const int height, const int layerCount, const int mipCount,
+									const ksGpuTextureUsageFlags usageFlags, const void * data, const size_t dataSize );
 static bool ksGpuTexture_CreateDefault( ksGpuContext * context, ksGpuTexture * texture, const ksGpuTextureDefault defaultType,
-								const int width, const int height, const int depth,
-								const int layerCount, const int faceCount, const bool mipmaps, const bool border );
+									const int width, const int height, const int depth,
+									const int layerCount, const int faceCount, const bool mipmaps, const bool border );
 static bool ksGpuTexture_CreateFromSwapChain( ksGpuContext * context, ksGpuTexture * texture, const ksGpuWindow * window, int index );
 static bool ksGpuTexture_CreateFromFile( ksGpuContext * context, ksGpuTexture * texture, const char * fileName );
 static void ksGpuTexture_Destroy( ksGpuContext * context, ksGpuTexture * texture );
@@ -7669,9 +7672,9 @@ static bool ksGpuTexture_CreateInternal( ksGpuContext * context, ksGpuTexture * 
 }
 
 static bool ksGpuTexture_Create2D( ksGpuContext * context, ksGpuTexture * texture,
-								const ksGpuTextureFormat format, const ksGpuSampleCount sampleCount,
-								const int width, const int height, const int mipCount,
-								const ksGpuTextureUsageFlags usageFlags, const void * data, const size_t dataSize )
+									const ksGpuTextureFormat format, const ksGpuSampleCount sampleCount,
+									const int width, const int height, const int mipCount,
+									const ksGpuTextureUsageFlags usageFlags, const void * data, const size_t dataSize )
 {
 	const int depth = 0;
 	const int layerCount = 0;
@@ -7682,9 +7685,9 @@ static bool ksGpuTexture_Create2D( ksGpuContext * context, ksGpuTexture * textur
 }
 
 static bool ksGpuTexture_Create2DArray( ksGpuContext * context, ksGpuTexture * texture,
-								const ksGpuTextureFormat format, const ksGpuSampleCount sampleCount,
-								const int width, const int height, const int layerCount, const int mipCount,
-								const ksGpuTextureUsageFlags usageFlags, const void * data, const size_t dataSize )
+										const ksGpuTextureFormat format, const ksGpuSampleCount sampleCount,
+										const int width, const int height, const int layerCount, const int mipCount,
+										const ksGpuTextureUsageFlags usageFlags, const void * data, const size_t dataSize )
 {
 	const int depth = 0;
 	const int faceCount = 1;
@@ -9558,7 +9561,7 @@ ksGpuFrontFace
 ksGpuCullMode
 ksGpuCompareOp
 ksGpuBlendOp
-ksGpuBlendFactor_t
+ksGpuBlendFactor
 ksGpuRasterOperations
 ksGpuGraphicsPipelineParms
 ksGpuGraphicsPipeline
@@ -9620,7 +9623,7 @@ typedef enum
 	GPU_BLEND_FACTOR_CONSTANT_ALPHA				= GL_CONSTANT_ALPHA,
 	GPU_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA	= GL_ONE_MINUS_CONSTANT_ALPHA,
 	GPU_BLEND_FACTOR_SRC_ALPHA_SATURAT			= GL_SRC_ALPHA_SATURATE
-} ksGpuBlendFactor_t;
+} ksGpuBlendFactor;
 
 typedef struct
 {
@@ -9636,11 +9639,11 @@ typedef struct
 	ksGpuCompareOp					depthCompare;
 	ksVector4f						blendColor;
 	ksGpuBlendOp					blendOpColor;
-	ksGpuBlendFactor_t				blendSrcColor;
-	ksGpuBlendFactor_t				blendDstColor;
+	ksGpuBlendFactor				blendSrcColor;
+	ksGpuBlendFactor				blendDstColor;
 	ksGpuBlendOp					blendOpAlpha;
-	ksGpuBlendFactor_t				blendSrcAlpha;
-	ksGpuBlendFactor_t				blendDstAlpha;
+	ksGpuBlendFactor				blendSrcAlpha;
+	ksGpuBlendFactor				blendDstAlpha;
 } ksGpuRasterOperations;
 
 typedef struct
@@ -11962,6 +11965,7 @@ static float ksTimeWarpBarGraphs_GetGpuMillisecondsCompute( ksTimeWarpBarGraphs 
 HMD
 
 ksHmdInfo
+ksBodyInfo
 
 ================================================================================================================================
 */
@@ -13048,6 +13052,7 @@ static void ksTimeWarpCompute_Render( ksGpuCommandBuffer * commandBuffer, ksTime
 Time warp rendering.
 
 ksTimeWarp
+ksTimeWarpImplementation
 
 static void ksTimeWarp_Create( ksTimeWarp * timeWarp, ksGpuWindow * window );
 static void ksTimeWarp_Destroy( ksTimeWarp * timeWarp, ksGpuWindow * window );
@@ -13345,9 +13350,8 @@ static ksMicroseconds ksTimeWarp_GetPredictedDisplayTime( ksTimeWarp * timeWarp,
 	// Where possible, the time warp thread then waits until a short time before the next V-Sync,
 	// giving it just enough time to warp the latest eye textures onto the display. The time warp
 	// thread then tries to pick up the latest completed eye textures and warps them onto the
-	// display for the next V-Sync. After this V-Sync the main thread is released and can start
-	// working on new eye textures that will be displayed effectively 2 display refresh cycles
-	// in the future.
+	// display. The main thread is released right after the V-Sync and can start working on new
+	// eye textures that will be displayed effectively 2 display refresh cycles in the future.
 
 	return frameTiming.vsyncTime + ( frameIndex - frameTiming.frameIndex ) * frameTiming.frameTime;
 }
@@ -13642,22 +13646,22 @@ static void ksViewState_HandleInput( ksViewState * viewState, ksGpuWindowInput *
 	if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_SHIFT_LEFT ) )
 	{
 		if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ rotationDelta.x -= ROTATION_DEGREES_PER_TAP; }
-		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )	{ rotationDelta.x += ROTATION_DEGREES_PER_TAP; }
-		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )	{ rotationDelta.y += ROTATION_DEGREES_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )		{ rotationDelta.x += ROTATION_DEGREES_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )		{ rotationDelta.y += ROTATION_DEGREES_PER_TAP; }
 		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ rotationDelta.y -= ROTATION_DEGREES_PER_TAP; }
 	}
 	else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CTRL_LEFT ) )
 	{
 		if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ translationDelta.y += TRANSLATION_UNITS_PER_TAP; }
-		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )	{ translationDelta.y -= TRANSLATION_UNITS_PER_TAP; }
-		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )	{ translationDelta.x -= TRANSLATION_UNITS_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )		{ translationDelta.y -= TRANSLATION_UNITS_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )		{ translationDelta.x -= TRANSLATION_UNITS_PER_TAP; }
 		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ translationDelta.x += TRANSLATION_UNITS_PER_TAP; }
 	}
 	else
 	{
 		if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ translationDelta.z -= TRANSLATION_UNITS_PER_TAP; }
-		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )	{ translationDelta.z += TRANSLATION_UNITS_PER_TAP; }
-		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )	{ rotationDelta.y += ROTATION_DEGREES_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )		{ translationDelta.z += TRANSLATION_UNITS_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )		{ rotationDelta.y += ROTATION_DEGREES_PER_TAP; }
 		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ rotationDelta.y -= ROTATION_DEGREES_PER_TAP; }
 	}
 
@@ -14713,7 +14717,7 @@ typedef enum
 	GLTF_CAMERA_TYPE_ORTHOGRAPHIC
 } ksGltfCameraType;
 
-typedef struct GltfCamera_t
+typedef struct ksGltfCamera
 {
 	char *						name;
 	ksGltfCameraType			type;
@@ -14732,7 +14736,7 @@ typedef struct GltfCamera_t
 		float					nearZ;
 		float					farZ;
 	}							orthographic;
-} GltfCamera_t;
+} ksGltfCamera;
 
 typedef struct ksGltfNode
 {
@@ -14748,7 +14752,7 @@ typedef struct ksGltfNode
 	char **						childNames;
 	int							childCount;
 	struct ksGltfNode *			parent;
-	struct GltfCamera_t *		camera;
+	struct ksGltfCamera *		camera;
 	struct ksGltfSkin *			skin;
 	struct ksGltfModel **		models;
 	int							modelCount;
@@ -14760,12 +14764,12 @@ typedef struct ksGltfSubTree
 	int							nodeCount;
 } ksGltfSubTree;
 
-typedef struct GltfSubScene_t
+typedef struct ksGltfSubScene
 {
 	char *						name;
 	ksGltfSubTree *				subTrees;
 	int							subTreeCount;
-} GltfSubScene_t;
+} ksGltfSubScene;
 
 typedef struct ksGltfScene
 {
@@ -14808,7 +14812,7 @@ typedef struct ksGltfScene
 	ksGltfAnimation *			animations;
 	int *						animationNameHash;
 	int							animationCount;
-	GltfCamera_t *				cameras;
+	ksGltfCamera *				cameras;
 	int *						cameraNameHash;
 	int							cameraCount;
 	ksGltfNode *				nodes;
@@ -14817,10 +14821,10 @@ typedef struct ksGltfScene
 	int							nodeCount;
 	ksGltfNode **				rootNodes;
 	int							rootNodeCount;
-	GltfSubScene_t *			subScenes;
+	ksGltfSubScene *			subScenes;
 	int *						subSceneNameHash;
 	int							subSceneCount;
-	GltfSubScene_t *			currentSubScene;
+	ksGltfSubScene *			currentSubScene;
 
 	ksGpuBuffer					defaultJointBuffer;
 	ksGpuGeometry				unitCubeGeometry;
@@ -15101,7 +15105,7 @@ static ksGpuBlendOp ksGltf_GetBlendOp( const int op )
 	}
 }
 
-static ksGpuBlendFactor_t ksGltf_GetBlendFactor( const int factor )
+static ksGpuBlendFactor ksGltf_GetBlendFactor( const int factor )
 {
 	switch ( factor )
 	{
@@ -16094,7 +16098,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 
 			const Json_t * cameras = Json_GetMemberByName( rootNode, "cameras" );
 			scene->cameraCount = Json_GetMemberCount( cameras );
-			scene->cameras = (GltfCamera_t *) calloc( scene->cameraCount, sizeof( GltfCamera_t ) );
+			scene->cameras = (ksGltfCamera *) calloc( scene->cameraCount, sizeof( ksGltfCamera ) );
 			for ( int cameraIndex = 0; cameraIndex < scene->cameraCount; cameraIndex++ )
 			{
 				const Json_t * camera = Json_GetMemberByIndex( cameras, cameraIndex );
@@ -16253,7 +16257,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 		{
 			const Json_t * subScenes = Json_GetMemberByName( rootNode, "scenes" );
 			scene->subSceneCount = Json_GetMemberCount( subScenes );
-			scene->subScenes = (GltfSubScene_t *) calloc( scene->subSceneCount, sizeof( GltfSubScene_t ) );
+			scene->subScenes = (ksGltfSubScene *) calloc( scene->subSceneCount, sizeof( ksGltfSubScene ) );
 			for ( int subSceneIndex = 0; subSceneIndex < scene->subSceneCount; subSceneIndex++ )
 			{
 				const Json_t * subScene = Json_GetMemberByIndex( subScenes, subSceneIndex );
@@ -16962,9 +16966,9 @@ Startup settings.
 
 ksStartupSettings
 
-static int StartupSettings_StringToLevel( const char * string, const int maxLevels );
-static int StartupSettings_StringToRenderMode( const char * string );
-static int StartupSettings_StringToTimeWarpImplementation( const char * string );
+static int ksStartupSettings_StringToLevel( const char * string, const int maxLevels );
+static int ksStartupSettings_StringToRenderMode( const char * string );
+static int ksStartupSettings_StringToTimeWarpImplementation( const char * string );
 
 ================================================================================================================================
 */
@@ -16998,20 +17002,20 @@ typedef struct
 	ksMicroseconds				noLogMicroseconds;
 } ksStartupSettings;
 
-static int StartupSettings_StringToLevel( const char * string, const int maxLevels )
+static int ksStartupSettings_StringToLevel( const char * string, const int maxLevels )
 {
 	const int level = atoi( string );
 	return ( level >= 0 ) ? ( ( level < maxLevels ) ? level : maxLevels - 1 ) : 0;
 }
 
-static int StartupSettings_StringToRenderMode( const char * string )
+static int ksStartupSettings_StringToRenderMode( const char * string )
 {
 	return	( ( strcmp( string, "atw" ) == 0 ) ? RENDER_MODE_ASYNC_TIME_WARP:
 			( ( strcmp( string, "tw"  ) == 0 ) ? RENDER_MODE_TIME_WARP :
 			RENDER_MODE_SCENE ) );
 }
 
-static int StartupSettings_StringToTimeWarpImplementation( const char * string )
+static int ksStartupSettings_StringToTimeWarpImplementation( const char * string )
 {
 	return	( ( strcmp( string, "graphics" ) == 0 ) ? TIMEWARP_IMPLEMENTATION_GRAPHICS :
 			( ( strcmp( string, "compute"  ) == 0 ) ? TIMEWARP_IMPLEMENTATION_COMPUTE :
@@ -17836,16 +17840,16 @@ static int StartApplication( int argc, char * argv[] )
 		else if ( strcmp( arg, "v" ) == 0 && i + 1 < argc )	{ startupSettings.noVSyncMicroseconds = (ksMicroseconds)( atof( argv[++i] ) * 1000 * 1000 ); }
 		else if ( strcmp( arg, "h" ) == 0 && i + 0 < argc )	{ startupSettings.headRotationDisabled = true; }
 		else if ( strcmp( arg, "p" ) == 0 && i + 0 < argc )	{ startupSettings.simulationPaused = true; }
-		else if ( strcmp( arg, "r" ) == 0 && i + 1 < argc )	{ startupSettings.displayResolutionLevel = StartupSettings_StringToLevel( argv[++i], MAX_DISPLAY_RESOLUTION_LEVELS ); }
-		else if ( strcmp( arg, "b" ) == 0 && i + 1 < argc )	{ startupSettings.eyeImageResolutionLevel = StartupSettings_StringToLevel( argv[++i], MAX_EYE_IMAGE_RESOLUTION_LEVELS ); }
-		else if ( strcmp( arg, "s" ) == 0 && i + 1 < argc )	{ startupSettings.eyeImageSamplesLevel = StartupSettings_StringToLevel( argv[++i], MAX_EYE_IMAGE_SAMPLES_LEVELS ); }
-		else if ( strcmp( arg, "q" ) == 0 && i + 1 < argc )	{ startupSettings.drawCallLevel = StartupSettings_StringToLevel( argv[++i], MAX_SCENE_DRAWCALL_LEVELS ); }
-		else if ( strcmp( arg, "w" ) == 0 && i + 1 < argc )	{ startupSettings.triangleLevel = StartupSettings_StringToLevel( argv[++i], MAX_SCENE_TRIANGLE_LEVELS ); }
-		else if ( strcmp( arg, "e" ) == 0 && i + 1 < argc )	{ startupSettings.fragmentLevel = StartupSettings_StringToLevel( argv[++i], MAX_SCENE_FRAGMENT_LEVELS ); }
+		else if ( strcmp( arg, "r" ) == 0 && i + 1 < argc )	{ startupSettings.displayResolutionLevel = ksStartupSettings_StringToLevel( argv[++i], MAX_DISPLAY_RESOLUTION_LEVELS ); }
+		else if ( strcmp( arg, "b" ) == 0 && i + 1 < argc )	{ startupSettings.eyeImageResolutionLevel = ksStartupSettings_StringToLevel( argv[++i], MAX_EYE_IMAGE_RESOLUTION_LEVELS ); }
+		else if ( strcmp( arg, "s" ) == 0 && i + 1 < argc )	{ startupSettings.eyeImageSamplesLevel = ksStartupSettings_StringToLevel( argv[++i], MAX_EYE_IMAGE_SAMPLES_LEVELS ); }
+		else if ( strcmp( arg, "q" ) == 0 && i + 1 < argc )	{ startupSettings.drawCallLevel = ksStartupSettings_StringToLevel( argv[++i], MAX_SCENE_DRAWCALL_LEVELS ); }
+		else if ( strcmp( arg, "w" ) == 0 && i + 1 < argc )	{ startupSettings.triangleLevel = ksStartupSettings_StringToLevel( argv[++i], MAX_SCENE_TRIANGLE_LEVELS ); }
+		else if ( strcmp( arg, "e" ) == 0 && i + 1 < argc )	{ startupSettings.fragmentLevel = ksStartupSettings_StringToLevel( argv[++i], MAX_SCENE_FRAGMENT_LEVELS ); }
 		else if ( strcmp( arg, "m" ) == 0 && i + 0 < argc )	{ startupSettings.useMultiView = ( atoi( argv[++i] ) != 0 ); }
 		else if ( strcmp( arg, "c" ) == 0 && i + 1 < argc )	{ startupSettings.correctChromaticAberration = ( atoi( argv[++i] ) != 0 ); }
-		else if ( strcmp( arg, "i" ) == 0 && i + 1 < argc )	{ startupSettings.timeWarpImplementation = (ksTimeWarpImplementation)StartupSettings_StringToTimeWarpImplementation( argv[++i] ); }
-		else if ( strcmp( arg, "z" ) == 0 && i + 1 < argc )	{ startupSettings.renderMode = StartupSettings_StringToRenderMode( argv[++i] ); }
+		else if ( strcmp( arg, "i" ) == 0 && i + 1 < argc )	{ startupSettings.timeWarpImplementation = (ksTimeWarpImplementation)ksStartupSettings_StringToTimeWarpImplementation( argv[++i] ); }
+		else if ( strcmp( arg, "z" ) == 0 && i + 1 < argc )	{ startupSettings.renderMode = ksStartupSettings_StringToRenderMode( argv[++i] ); }
 		else if ( strcmp( arg, "g" ) == 0 && i + 0 < argc )	{ startupSettings.hideGraphs = true; }
 		else if ( strcmp( arg, "l" ) == 0 && i + 1 < argc )	{ startupSettings.noLogMicroseconds = (ksMicroseconds)( atof( argv[++i] ) * 1000 * 1000 ); }
 		else if ( strcmp( arg, "d" ) == 0 && i + 0 < argc )	{ DumpGLSL(); exit( 0 ); }
@@ -18184,10 +18188,10 @@ typedef struct
 	char	buffer[MAX_ARGS_BUFFER];
 	char *	argv[MAX_ARGS];
 	int		argc;
-} AndroidParm_t;
+} ksAndroidParm;
 
 // adb shell am start -n com.vulkansamples.atw_opengl/android.app.NativeActivity -a "android.intent.action.MAIN" --es "args" "\"-r tw\""
-void GetIntentParms( AndroidParm_t * parms )
+void GetIntentParms( ksAndroidParm * parms )
 {
 	parms->buffer[0] = '\0';
 	parms->argv[0] = "atw_vulkan";
@@ -18253,7 +18257,7 @@ void android_main( struct android_app * app )
 
 	global_app = app;
 
-	AndroidParm_t parms;
+	ksAndroidParm parms;
 	GetIntentParms( &parms );
 
 	StartApplication( parms.argc, parms.argv );
