@@ -5755,7 +5755,7 @@ static void TimeWarp_SampleNearestPackedRGB(
 		const int				srcTexelsWide,		// in texels
 		const int				srcTexelsHigh,		// in texels
 		unsigned char *			dest,				// destination buffer with 32 bits per pixel
-		const int				destPitchInPixels,	// in pixels: 1080, 1440, etc.
+		const int				destPitchInPixels,	// in pixels
 		const int				destTilesWide,		// tiles are implicitly 32 x 32 pixels
 		const int				destTilesHigh,
 		const int				destEye,
@@ -5796,7 +5796,7 @@ static void TimeWarp_SampleLinearPackedRGB(
 		const int				srcTexelsWide,		// in texels
 		const int				srcTexelsHigh,		// in texels
 		unsigned char *			dest,				// destination buffer with 32 bits per pixel
-		const int				destPitchInPixels,	// in pixels: 1080, 1440, etc.
+		const int				destPitchInPixels,	// in pixels
 		const int				destTilesWide,		// tiles are implicitly 32 x 32 pixels
 		const int				destTilesHigh,
 		const int				destEye,
@@ -5837,7 +5837,7 @@ static void TimeWarp_SampleBilinearPackedRGB(
 		const int				srcTexelsWide,		// in texels
 		const int				srcTexelsHigh,		// in texels
 		unsigned char *			dest,				// destination buffer with 32 bits per pixel
-		const int				destPitchInPixels,	// in pixels: 1080, 1440, etc.
+		const int				destPitchInPixels,	// in pixels
 		const int				destTilesWide,		// tiles are implicitly 32 x 32 pixels
 		const int				destTilesHigh,
 		const int				destEye,
@@ -5880,7 +5880,7 @@ static void TimeWarp_SampleBilinearPlanarRGB(
 		const int				srcTexelsWide,		// in texels
 		const int				srcTexelsHigh,		// in texels
 		unsigned char *			dest,				// destination buffer with 32 bits per pixel
-		const int				destPitchInPixels,	// in pixels: 1080, 1440, etc.
+		const int				destPitchInPixels,	// in pixels
 		const int				destTilesWide,		// tiles are implicitly 32 x 32 pixels
 		const int				destTilesHigh,
 		const int				destEye,
@@ -5923,7 +5923,7 @@ static void TimeWarp_SampleChromaticBilinearPlanarRGB(
 		const int				srcTexelsWide,		// in texels
 		const int				srcTexelsHigh,		// in texels
 		unsigned char *			dest,				// destination buffer with 32 bits per pixel
-		const int				destPitchInPixels,	// in pixels: 1080, 1440, etc.
+		const int				destPitchInPixels,	// in pixels
 		const int				destTilesWide,		// tiles are implicitly 32 x 32 pixels
 		const int				destTilesHigh,
 		const int				destEye,
@@ -6866,7 +6866,7 @@ typedef struct
 	int32_t				srcTexelsWide;		// in texels
 	int32_t				srcTexelsHigh;		// in texels
 	uint8_t *			dest;				// destination buffer with 32 bits per pixels
-	int32_t				destPitchInPixels;	// in pixels: 1080, 1440, etc.
+	int32_t				destPitchInPixels;	// in pixels
 	int32_t				destTilesWide;		// tiles are implicitly 32 x 32 pixels
 	int32_t				destTilesHigh;
 	const ksMeshCoord *	meshCoords;
@@ -7128,7 +7128,7 @@ int TimeWarpInterface_TimeWarp(
 		int32_t				srcTexelsHigh,		// in texels
 		uint8_t *			dest,				// destination buffer with 32 bits per pixels
 		int					destCount,
-		int32_t				destPitchInPixels,	// in pixels: 1080, 1440, etc.
+		int32_t				destPitchInPixels,	// in pixels
 		int32_t				destTilesWide,		// tiles are implicitly 32 x 32 pixels
 		int32_t				destTilesHigh,
 		const ksMeshCoord *	meshCoords,			// [(destTilesWide+1)*(destTilesHigh+1)]
@@ -7232,30 +7232,23 @@ Non-DSP code
 /*
 ================================================================================================
 
-Distortion meshes
+HMD
 
 ================================================================================================
 */
 
-// Typical 16:9 resolutions: 1920 x 1080, 2560 x 1440, 3840 x 2160, 7680 x 4320
-#define DISPLAY_PIXELS_WIDE		1920
-#define DISPLAY_PIXELS_HIGH		1080
-
-#define TILE_PIXELS_WIDE		32
-#define TILE_PIXELS_HIGH		32
-
-#define EYE_TILES_WIDE			( DISPLAY_PIXELS_WIDE / TILE_PIXELS_WIDE / NUM_EYES )	// 30*32*2 = 1920
-#define EYE_TILES_HIGH			( DISPLAY_PIXELS_HIGH / TILE_PIXELS_HIGH )				// 33*32   = 1056 leaving 24 pixels untouched
-
-static float MaxFloat( float x, float y ) { return ( x > y ) ? x : y; }
-static float MinFloat( float x, float y ) { return ( x < y ) ? x : y; }
-
 typedef struct
 {
-	int		widthInPixels;
-	int		heightInPixels;
-	float	widthInMeters;
-	float	heightInMeters;
+	int		displayPixelsWide;
+	int		displayPixelsHigh;
+	int		tilePixelsWide;
+	int		tilePixelsHigh;
+	int		eyeTilesWide;
+	int		eyeTilesHigh;
+	int		visiblePixelsWide;
+	int		visiblePixelsHigh;
+	float	visibleMetersWide;
+	float	visibleMetersHigh;
 	float	lensSeparationInMeters;
 	float	metersPerTanAngleAtCenter;
 	int		numKnots;
@@ -7263,14 +7256,20 @@ typedef struct
 	float	chromaticAberration[4];
 } ksHmdInfo;
 
-const ksHmdInfo * DefaultHmdInfo()
+static const ksHmdInfo * GetDefaultHmdInfo( const int displayPixelsWide, const int displayPixelsHigh )
 {
 	static ksHmdInfo hmdInfo;
-	hmdInfo.widthInPixels = EYE_TILES_WIDE * TILE_PIXELS_WIDE * NUM_EYES;
-	hmdInfo.heightInPixels = EYE_TILES_HIGH * TILE_PIXELS_HIGH;
-	hmdInfo.widthInMeters = 0.11047f * ( EYE_TILES_WIDE * TILE_PIXELS_WIDE * NUM_EYES ) / DISPLAY_PIXELS_WIDE;
-	hmdInfo.heightInMeters = 0.06214f * ( EYE_TILES_HIGH * TILE_PIXELS_HIGH ) / DISPLAY_PIXELS_HIGH;
-	hmdInfo.lensSeparationInMeters = hmdInfo.widthInMeters / NUM_EYES;//0.062f;
+	hmdInfo.displayPixelsWide = displayPixelsWide;
+	hmdInfo.displayPixelsHigh = displayPixelsHigh;
+	hmdInfo.tilePixelsWide = 32;
+	hmdInfo.tilePixelsHigh = 32;
+	hmdInfo.eyeTilesWide = displayPixelsWide / hmdInfo.tilePixelsWide / NUM_EYES;
+	hmdInfo.eyeTilesHigh = displayPixelsHigh / hmdInfo.tilePixelsHigh;
+	hmdInfo.visiblePixelsWide = hmdInfo.eyeTilesWide * hmdInfo.tilePixelsWide * NUM_EYES;
+	hmdInfo.visiblePixelsHigh = hmdInfo.eyeTilesHigh * hmdInfo.tilePixelsHigh;
+	hmdInfo.visibleMetersWide = 0.11047f * ( hmdInfo.eyeTilesWide * hmdInfo.tilePixelsWide * NUM_EYES ) / displayPixelsWide;
+	hmdInfo.visibleMetersHigh = 0.06214f * ( hmdInfo.eyeTilesHigh * hmdInfo.tilePixelsHigh ) / displayPixelsHigh;
+	hmdInfo.lensSeparationInMeters = hmdInfo.visibleMetersWide / NUM_EYES;
 	hmdInfo.metersPerTanAngleAtCenter = 0.037f;
 	hmdInfo.numKnots = 11;
 	hmdInfo.K[0] = 1.0f;
@@ -7290,6 +7289,17 @@ const ksHmdInfo * DefaultHmdInfo()
 	hmdInfo.chromaticAberration[3] =  0.0f;
 	return &hmdInfo;
 }
+
+/*
+================================================================================================
+
+Distortion meshes
+
+================================================================================================
+*/
+
+static float MaxFloat( float x, float y ) { return ( x > y ) ? x : y; }
+static float MinFloat( float x, float y ) { return ( x < y ) ? x : y; }
 
 // A Catmull-Rom spline through the values K[0], K[1], K[2] ... K[numKnots-1] evenly spaced from 0.0 to 1.0
 static float EvaluateCatmullRomSpline( const float value, float const * K, const int numKnots )
@@ -7339,24 +7349,24 @@ static float EvaluateCatmullRomSpline( const float value, float const * K, const
 	return res;
 }
 
-void BuildDistortionMeshes( ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS], const int eyeTilesWide, const int eyeTilesHigh, const ksHmdInfo * hmdInfo )
+static void BuildDistortionMeshes( ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS], const ksHmdInfo * hmdInfo )
 {
-	const float horizontalShiftMeters = ( hmdInfo->lensSeparationInMeters / 2 ) - ( hmdInfo->widthInMeters / 4 );
-	const float horizontalShiftView = horizontalShiftMeters / ( hmdInfo->widthInMeters / 2 );
+	const float horizontalShiftMeters = ( hmdInfo->lensSeparationInMeters / 2 ) - ( hmdInfo->visibleMetersWide / 4 );
+	const float horizontalShiftView = horizontalShiftMeters / ( hmdInfo->visibleMetersWide / 2 );
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		for ( int y = 0; y <= eyeTilesHigh; y++ )
+		for ( int y = 0; y <= hmdInfo->eyeTilesHigh; y++ )
 		{
-			const float yf = (float)y / (float)eyeTilesHigh;
+			const float yf = 1.0f - (float)y / (float)hmdInfo->eyeTilesHigh;
 
-			for ( int x = 0; x <= eyeTilesWide; x++ )
+			for ( int x = 0; x <= hmdInfo->eyeTilesWide; x++ )
 			{
-				const float xf = (float)x / (float)eyeTilesWide;
+				const float xf = (float)x / (float)hmdInfo->eyeTilesWide;
 
 				const float in[2] = { ( eye ? -horizontalShiftView : horizontalShiftView ) + xf, yf };
-				const float ndcToPixels[2] = { hmdInfo->widthInPixels * 0.25f, hmdInfo->heightInPixels * 0.5f };
-				const float pixelsToMeters[2] = { hmdInfo->widthInMeters / hmdInfo->widthInPixels, hmdInfo->heightInMeters / hmdInfo->heightInPixels };
+				const float ndcToPixels[2] = { hmdInfo->visiblePixelsWide * 0.25f, hmdInfo->visiblePixelsHigh * 0.5f };
+				const float pixelsToMeters[2] = { hmdInfo->visibleMetersWide / hmdInfo->visiblePixelsWide, hmdInfo->visibleMetersHigh / hmdInfo->visiblePixelsHigh };
 
 				float theta[2];
 				for ( int i = 0; i < 2; i++ )
@@ -7378,7 +7388,7 @@ void BuildDistortionMeshes( ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_CHANNEL
 					scale * ( 1.0f + hmdInfo->chromaticAberration[2] + rsq * hmdInfo->chromaticAberration[3] )
 				};
 
-				const int vertNum = y * ( eyeTilesWide + 1 ) + x;
+				const int vertNum = y * ( hmdInfo->eyeTilesWide + 1 ) + x;
 				for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
 				{
 					meshCoords[eye][channel][vertNum].x = chromaScale[channel] * theta[0];
@@ -7984,10 +7994,8 @@ void WriteTGA( const char * fileName, const unsigned char * rgba, const int widt
 	fclose( fp );
 }
 
-void TestTimeWarp()
+void TestTimeWarp( const int srcTexelsWide, const int srcTexelsHigh, const ksHmdInfo * hmdInfo )
 {
-	int srcTexelsWide = 1024;
-	int srcTexelsHigh = 1024;
 	int srcPitchInTexels = srcTexelsWide;
 	unsigned char * src = (unsigned char *)AllocAlignedMemory( srcTexelsWide * srcTexelsHigh * 4 * sizeof( unsigned char ), 128 );
 
@@ -7999,7 +8007,7 @@ void TestTimeWarp()
 	unsigned char * planarG = packedRGB + 1 * srcTexelsWide * srcTexelsHigh;
 	unsigned char * planarB = packedRGB + 2 * srcTexelsWide * srcTexelsHigh;
 
-	const size_t numMeshCoords = ( EYE_TILES_WIDE + 1 ) * ( EYE_TILES_HIGH + 1 );
+	const size_t numMeshCoords = ( hmdInfo->eyeTilesWide + 1 ) * ( hmdInfo->eyeTilesHigh + 1 );
 	const size_t meshSizeInBytes = ( NUM_EYES + 1 ) * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( ksMeshCoord );
 	ksMeshCoord * meshCoordsBasePtr = (ksMeshCoord *)AllocContiguousPhysicalMemory( meshSizeInBytes, MEMORY_CACHED );
 	ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
@@ -8008,9 +8016,9 @@ void TestTimeWarp()
 		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
 	};
 
-	BuildDistortionMeshes( meshCoords, EYE_TILES_WIDE, EYE_TILES_HIGH, DefaultHmdInfo() );
+	BuildDistortionMeshes( meshCoords, hmdInfo );
 
-	const int dstSizeInBytes = DISPLAY_PIXELS_WIDE * DISPLAY_PIXELS_HIGH * 4 * sizeof( unsigned char );
+	const int dstSizeInBytes = hmdInfo->displayPixelsWide * hmdInfo->displayPixelsHigh * 4 * sizeof( unsigned char );
 	unsigned char * dst = (unsigned char *) AllocContiguousPhysicalMemory( dstSizeInBytes, MEMORY_WRITE_COMBINED );
 
 #if defined( USE_DSP_TIMEWARP )
@@ -8084,9 +8092,9 @@ void TestTimeWarp()
 					srcTexelsHigh,
 					dst,
 					dstSizeInBytes,
-					DISPLAY_PIXELS_WIDE,
-					EYE_TILES_WIDE,
-					EYE_TILES_HIGH,
+					hmdInfo->displayPixelsWide,
+					hmdInfo->eyeTilesWide,
+					hmdInfo->eyeTilesHigh,
 					meshCoordsBasePtr,
 					(int)meshSizeInBytes / sizeof( ksMeshCoord ),
 					sampling );
@@ -8112,11 +8120,11 @@ void TestTimeWarp()
 		Print( "%22s = %5.1f milliseconds (%1.0f Mpixels/sec)\n",
 				string,
 				bestTime / 1000.0f,
-				2.0f * EYE_TILES_WIDE * EYE_TILES_HIGH * 32 * 32 / bestTime );
+				2.0f * hmdInfo->eyeTilesWide * hmdInfo->eyeTilesHigh * 32 * 32 / bestTime );
 
 		char fileName[1024];
 		sprintf( fileName, OUTPUT "warped-%d-%s.tga", sampling, string );
-		WriteTGA( fileName, dst, DISPLAY_PIXELS_WIDE, DISPLAY_PIXELS_HIGH );
+		WriteTGA( fileName, dst, hmdInfo->displayPixelsWide, hmdInfo->displayPixelsHigh );
 	}
 
 	TimeWarpInterface_Shutdown();
@@ -8139,6 +8147,16 @@ int main( int argc, char * argv[] )
 	(void)argc;
 	(void)argv;
 
+	// Up to 2048 x 2048
+	const int srcTexelsWide = 1024;
+	const int srcTexelsHigh = 1024;
+
+	// Typical 16:9 resolutions: 1920 x 1080, 2560 x 1440, 3840 x 2160, 7680 x 4320
+	const int displayPixelsWide = 1920;
+	const int displayPixelsHigh = 1080;
+
+	const ksHmdInfo * hmdInfo = GetDefaultHmdInfo( displayPixelsWide, displayPixelsHigh );
+
 	const int dspVersion = TimeWarpInterface_GetDspVersion();
 	char dspVersionString[32];
 	sprintf( dspVersionString, "Hexagon v%d", dspVersion );
@@ -8147,12 +8165,12 @@ int main( int argc, char * argv[] )
 	Print( "OS     : %s\n", GetOSVersion() );
 	Print( "CPU    : %s\n", GetCPUVersion() );
 	Print( "DSP    : %s\n", dspVersion != 0 ? dspVersionString : "-" );
-	Print( "Mode   : %dx%d\n", DISPLAY_PIXELS_WIDE, DISPLAY_PIXELS_HIGH );
+	Print( "Mode   : %dx%d\n", hmdInfo->displayPixelsWide, hmdInfo->displayPixelsHigh );
 	Print( "--------------------------------\n" );
 
 	Print( "--------------------------------\n" );
 
-	TestTimeWarp();
+	TestTimeWarp( srcTexelsWide, srcTexelsHigh, hmdInfo );
 
 	Print( "--------------------------------\n" );
 
