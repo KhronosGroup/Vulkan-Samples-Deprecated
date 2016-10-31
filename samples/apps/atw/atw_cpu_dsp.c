@@ -8165,8 +8165,8 @@ int main( int argc, char * argv[] )
 	Print( "OS      : %s\n", GetOSVersion() );
 	Print( "CPU     : %s\n", GetCPUVersion() );
 	Print( "DSP     : %s\n", dspVersion != 0 ? dspVersionString : "-" );
-	Print( "Source  : %dx%d\n", srcTexelsWide, srcTexelsHigh );
 	Print( "Display : %dx%d\n", hmdInfo->displayPixelsWide, hmdInfo->displayPixelsHigh );
+	Print( "Eye Img : %dx%d\n", srcTexelsWide, srcTexelsHigh );
 	Print( "--------------------------------\n" );
 
 	Print( "--------------------------------\n" );

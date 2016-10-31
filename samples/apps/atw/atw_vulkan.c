@@ -15452,6 +15452,22 @@ static const int displayResolutionTable[] =
 	7680, 4320
 };
 
+static const int eyeResolutionTable[] =
+{
+	1024,
+	1536,
+	2048,
+	4096
+};
+
+static const ksGpuSampleCount eyeSampleCountTable[] =
+{
+	GPU_SAMPLE_COUNT_1,
+	GPU_SAMPLE_COUNT_2,
+	GPU_SAMPLE_COUNT_4,
+	GPU_SAMPLE_COUNT_8
+};
+
 typedef struct
 {
 	bool	simulationPaused;
@@ -19638,25 +19654,31 @@ static void ksGltfScene_Render( ksGpuCommandBuffer * commandBuffer, const ksGltf
 /*
 ================================================================================================================================
 
-Stats
+Info
 
 ================================================================================================================================
 */
 
-static void PrintStats( const ksGpuWindow * window )
+static void PrintInfo( const ksGpuWindow * window, const int eyeImageResolutionLevel, const int eyeImageSamplesLevel )
 {
+	const int resolution = ( eyeImageResolutionLevel >= 0 ) ? eyeResolutionTable[eyeImageResolutionLevel] : 0;
+	const int samples = ( eyeImageSamplesLevel >= 0 ) ? eyeSampleCountTable[eyeImageSamplesLevel] : 0;
+	char resolutionString[32];
+	sprintf( resolutionString, "%4d x %4d - %dx MSAA", resolution, resolution, samples );
+
 	const uint32_t version = window->context.device->physicalDeviceProperties.apiVersion;
 	const uint32_t major = VK_VERSION_MAJOR( version );
 	const uint32_t minor = VK_VERSION_MINOR( version );
 	const uint32_t patch = VK_VERSION_PATCH( version );
 
 	Print( "--------------------------------\n" );
-	Print( "OS     : %s\n", GetOSVersion() );
-	Print( "CPU    : %s\n", GetCPUVersion() );
-	Print( "GPU    : %s\n", window->context.device->physicalDeviceProperties.deviceName );
-	Print( "Vulkan : %d.%d.%d\n", major, minor, patch );
-	Print( "Mode   : %s %dx%d %1.0f Hz\n", window->windowFullscreen ? "fullscreen" : "windowed",
-					window->windowWidth, window->windowHeight, window->windowRefreshRate );
+	Print( "OS      : %s\n", GetOSVersion() );
+	Print( "CPU     : %s\n", GetCPUVersion() );
+	Print( "GPU     : %s\n", window->context.device->physicalDeviceProperties.deviceName );
+	Print( "Vulkan  : %d.%d.%d\n", major, minor, patch );
+	Print( "Display : %4d x %4d - %1.0f Hz (%s)\n", window->windowWidth, window->windowHeight, window->windowRefreshRate,
+												window->windowFullscreen ? "fullscreen" : "windowed" );
+	Print( "Eye Img : %s\n", ( resolution >= 0 ) ? resolutionString : "-" );
 	Print( "--------------------------------\n" );
 }
 
@@ -19838,23 +19860,9 @@ void SceneThread_Render( ksSceneThreadData * threadData )
 	ksGpuContext context;
 	ksGpuContext_CreateShared( &context, threadData->shareContext, QUEUE_INDEX_SCENE );
 
-	const int resolutionTable[] =
-	{
-		1024,
-		1536,
-		2048,
-		4096
-	};
-	const int resolution = resolutionTable[threadData->sceneSettings->eyeImageResolutionLevel];
+	const int resolution = eyeResolutionTable[threadData->sceneSettings->eyeImageResolutionLevel];
 
-	const ksGpuSampleCount sampleCountTable[] =
-	{
-		GPU_SAMPLE_COUNT_1,
-		GPU_SAMPLE_COUNT_2,
-		GPU_SAMPLE_COUNT_4,
-		GPU_SAMPLE_COUNT_8
-	};
-	const ksGpuSampleCount sampleCount = sampleCountTable[threadData->sceneSettings->eyeImageSamplesLevel];
+	const ksGpuSampleCount sampleCount = eyeSampleCountTable[threadData->sceneSettings->eyeImageSamplesLevel];
 
 	ksGpuRenderPass renderPassSingleView;
 	ksGpuRenderPass_Create( &context, &renderPassSingleView, GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24,
@@ -20113,7 +20121,7 @@ bool RenderAsyncTimeWarp( ksStartupSettings * startupSettings )
 		const ksGpuWindowEvent handleEvent = ksGpuWindow_ProcessEvents( &window );
 		if ( handleEvent == GPU_WINDOW_EVENT_ACTIVATED )
 		{
-			PrintStats( &window );
+			PrintInfo( &window, sceneSettings.eyeImageResolutionLevel, startupSettings->eyeImageSamplesLevel );
 		}
 		else if ( handleEvent == GPU_WINDOW_EVENT_EXIT )
 		{
@@ -20282,7 +20290,7 @@ bool RenderTimeWarp( ksStartupSettings * startupSettings )
 		const ksGpuWindowEvent handleEvent = ksGpuWindow_ProcessEvents( &window );
 		if ( handleEvent == GPU_WINDOW_EVENT_ACTIVATED )
 		{
-			PrintStats( &window );
+			PrintInfo( &window, 0, 0 );
 		}
 		else if ( handleEvent == GPU_WINDOW_EVENT_EXIT )
 		{
@@ -20450,7 +20458,7 @@ bool RenderScene( ksStartupSettings * startupSettings )
 		const ksGpuWindowEvent handleEvent = ksGpuWindow_ProcessEvents( &window );
 		if ( handleEvent == GPU_WINDOW_EVENT_ACTIVATED )
 		{
-			PrintStats( &window );
+			PrintInfo( &window, -1, -1 );
 		}
 		else if ( handleEvent == GPU_WINDOW_EVENT_EXIT )
 		{
