@@ -1102,12 +1102,14 @@ ksSignal
 
 static void ksSignal_Create( ksSignal * signal, const bool autoReset );
 static void ksSignal_Destroy( ksSignal * signal );
-static bool ksSignal_Wait( ksSignal * signal, const int timeOutMilliseconds );
+static bool ksSignal_Wait( ksSignal * signal, const ksMicroseconds timeOutMicroseconds );
 static void ksSignal_Raise( ksSignal * signal );
 static void ksSignal_Clear( ksSignal * signal );
 
 ================================================================================================================================
 */
+
+#define SIGNAL_TIMEOUT_INFINITE		0xFFFFFFFFFFFFFFFFULL
 
 typedef struct
 {
@@ -1147,13 +1149,13 @@ static void ksSignal_Destroy( ksSignal * signal )
 
 // Waits for the object to enter the signalled state and returns true if this state is reached within the time-out period.
 // If 'autoReset' is true then the first thread that reaches the signalled state within the time-out period will clear the signalled state.
-// If 'timeOutMilliseconds' is negative then this will wait indefinitely until the signalled state is reached.
+// If 'timeOutMicroseconds' is SIGNAL_TIMEOUT_INFINITE then this will wait indefinitely until the signalled state is reached.
 // Returns true if the thread was released because the object entered the signalled state, returns false if the time-out is reached first.
-static bool ksSignal_Wait( ksSignal * signal, const int timeOutMilliseconds )
+static bool ksSignal_Wait( ksSignal * signal, const ksMicroseconds timeOutMicroseconds )
 {
 #if defined( OS_WINDOWS )
-	DWORD result = WaitForSingleObject( signal->handle, timeOutMilliseconds < 0 ? INFINITE : timeOutMilliseconds );
-	assert( result == WAIT_OBJECT_0 || ( timeOutMilliseconds >= 0 && result == WAIT_TIMEOUT ) );
+	DWORD result = WaitForSingleObject( signal->handle, ( timeOutMicroseconds == SIGNAL_TIMEOUT_INFINITE ) ? INFINITE : (DWORD)( timeOutMicroseconds / 1000 ) );
+	assert( result == WAIT_OBJECT_0 || ( timeOutMicroseconds != SIGNAL_TIMEOUT_INFINITE && result == WAIT_TIMEOUT ) );
 	return ( result == WAIT_OBJECT_0 );
 #else
 	bool released = false;
@@ -1165,7 +1167,7 @@ static bool ksSignal_Wait( ksSignal * signal, const int timeOutMilliseconds )
 	else
 	{
 		signal->waitCount++;
-		if ( timeOutMilliseconds < 0 )
+		if ( timeOutMicroseconds == SIGNAL_TIMEOUT_INFINITE )
 		{
 			do
 			{
@@ -1173,13 +1175,13 @@ static bool ksSignal_Wait( ksSignal * signal, const int timeOutMilliseconds )
 				// Must re-check condition because pthread_cond_wait may spuriously wake up.
 			} while ( signal->signaled == false );
 		}
-		else if ( timeOutMilliseconds > 0 )
+		else if ( timeOutMicroseconds > 0 )
 		{
 			struct timeval tp;
 			gettimeofday( &tp, NULL );
 			struct timespec ts;
-			ts.tv_sec = tp.tv_sec + timeOutMilliseconds / 1000;
-			ts.tv_nsec = tp.tv_usec * 1000 + ( timeOutMilliseconds % 1000 ) * 1000000;
+			ts.tv_sec = (time_t)( tp.tv_sec + timeOutMicroseconds / 1000000 );
+			ts.tv_nsec = (long)( ( tp.tv_usec + ( timeOutMicroseconds % 1000000 ) ) * 1000 );
 			do
 			{
 				if ( pthread_cond_timedwait( &signal->cond, &signal->mutex, &ts ) == ETIMEDOUT )
@@ -1550,7 +1552,7 @@ static THREAD_RETURN_TYPE ThreadFunctionInternal( void * data )
 		{
 			ksSignal_Raise( &thread->workIsDone );
 			ksMutex_Unlock( &thread->workMutex );
-			ksSignal_Wait( &thread->workIsAvailable, -1 );
+			ksSignal_Wait( &thread->workIsAvailable, SIGNAL_TIMEOUT_INFINITE );
 		}
 		if ( thread->terminate )
 		{
@@ -1595,7 +1597,7 @@ static bool ksThread_Create( ksThread * thread, const char * threadName, ksThrea
 	pthread_attr_destroy( &attr );
 #endif
 
-	ksSignal_Wait( &thread->workIsDone, -1 );
+	ksSignal_Wait( &thread->workIsDone, SIGNAL_TIMEOUT_INFINITE );
 	return true;
 }
 
@@ -1606,7 +1608,7 @@ static void ksThread_Destroy( ksThread * thread )
 	thread->terminate = true;
 	ksSignal_Raise( &thread->workIsAvailable );
 	ksMutex_Unlock( &thread->workMutex );
-	ksSignal_Wait( &thread->workIsDone, -1 );
+	ksSignal_Wait( &thread->workIsDone, SIGNAL_TIMEOUT_INFINITE );
 	ksMutex_Destroy( &thread->workMutex );
 	ksSignal_Destroy( &thread->workIsDone );
 	ksSignal_Destroy( &thread->workIsAvailable );
@@ -1628,7 +1630,7 @@ static void ksThread_Signal( ksThread * thread )
 
 static void ksThread_Join( ksThread * thread )
 {
-	ksSignal_Wait( &thread->workIsDone, -1 );
+	ksSignal_Wait( &thread->workIsDone, SIGNAL_TIMEOUT_INFINITE );
 }
 
 static void ksThread_Submit( ksThread * thread, ksThreadFunction threadFunction, void * threadData )
@@ -15041,14 +15043,14 @@ static void ksTimeWarp_SubmitFrame( ksTimeWarp * timeWarp, const int frameIndex,
 	newEyeTextures.gpuTime = eyeTexturesGpuTime;
 
 	// Wait for the previous eye textures to be consumed before overwriting them.
-	ksSignal_Wait( &timeWarp->newEyeTexturesConsumed, -1 );
+	ksSignal_Wait( &timeWarp->newEyeTexturesConsumed, SIGNAL_TIMEOUT_INFINITE );
 
 	ksMutex_Lock( &timeWarp->newEyeTexturesMutex, true );
 	timeWarp->newEyeTextures = newEyeTextures;
 	ksMutex_Unlock( &timeWarp->newEyeTexturesMutex );
 
 	// Wait for at least one V-Sync to pass to avoid piling up frames of latency.
-	ksSignal_Wait( &timeWarp->vsyncSignal, -1 );
+	ksSignal_Wait( &timeWarp->vsyncSignal, SIGNAL_TIMEOUT_INFINITE );
 
 	ksFrameTiming newFrameTiming;
 	newFrameTiming.frameIndex = frameIndex;
@@ -20039,7 +20041,7 @@ void SceneThread_Create( ksThread * sceneThread, ksSceneThreadData * sceneThread
 
 	ksThread_Create( sceneThread, "atw:scene", (ksThreadFunction) SceneThread_Render, sceneThreadData );
 	ksThread_Signal( sceneThread );
-	ksSignal_Wait( &sceneThreadData->initialized, -1 );
+	ksSignal_Wait( &sceneThreadData->initialized, SIGNAL_TIMEOUT_INFINITE );
 }
 
 void SceneThread_Destroy( ksThread * sceneThread, ksSceneThreadData * sceneThreadData )
