@@ -712,6 +712,8 @@ Default to no cache management
 #define NUM_EYES					2
 #define NUM_COLOR_CHANNELS			3
 
+typedef unsigned long long ksMicroseconds;
+
 /*
 ================================
 Fast integer operations
@@ -5980,10 +5982,10 @@ static ksAtomicUint32 ksAtomicUint32_Increment( ksAtomicUint32 * atomicUint32 )
 {
 #if defined( OS_WINDOWS )
 	return (ksAtomicUint32) InterlockedIncrement( (LONG *)atomicUint32 );
-#elif defined( OS_MAC ) || defined( OS_LINUX ) || defined( OS_ANDROID )
-	return __sync_fetch_and_add( atomicUint32, 1 );
 #elif defined( OS_HEXAGON )
 	return qurt_atomic_inc_return( atomicUint32 );
+#else
+	return __sync_fetch_and_add( atomicUint32, 1 );
 #endif
 }
 
@@ -5991,10 +5993,10 @@ static ksAtomicUint32 ksAtomicUint32_Decrement( ksAtomicUint32 * atomicUint32 )
 {
 #if defined( OS_WINDOWS )
 	return (ksAtomicUint32) InterlockedDecrement( (LONG *)atomicUint32 );
-#elif defined( OS_MAC ) || defined( OS_LINUX ) || defined( OS_ANDROID )
-	return __sync_fetch_and_add( atomicUint32, -1 );
 #elif defined( OS_HEXAGON )
 	return qurt_atomic_dec_return( atomicUint32 );
+#else
+	return __sync_fetch_and_add( atomicUint32, -1 );
 #endif
 }
 
@@ -6156,8 +6158,6 @@ static void ksSignal_Clear( ksSignal * signal );
 
 ================================================================================================================================
 */
-
-typedef unsigned long long ksMicroseconds;
 
 #define SIGNAL_TIMEOUT_INFINITE		0xFFFFFFFFFFFFFFFFULL
 
