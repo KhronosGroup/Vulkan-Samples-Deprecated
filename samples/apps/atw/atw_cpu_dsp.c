@@ -399,7 +399,7 @@ Hexagon QDSP6
 #include "hexagon_protos.h"
 #include "qurt.h"
 #include "qurt_atomic_ops.h"
-#include "TimeWarp.h"				// MeshCoord_t
+#include "TimeWarp.h"				// ksMeshCoord
 
 #if 1	// manual prefetching significantly improves the performance
 #define CACHE_LINE_SIZE				32
@@ -742,7 +742,7 @@ static int ClampInt( const int x, const int min, const int max ) { return min + 
 
 /*
 ================================
-MeshCoord_t
+ksMeshCoord
 ================================
 */
 
@@ -752,7 +752,7 @@ typedef struct
 {
 	float x;
 	float y;
-} MeshCoord_t;
+} ksMeshCoord;
 
 #endif
 
@@ -1008,7 +1008,7 @@ static void Warp32x32_SampleNearestPackedRGB(
 		const int					srcTexelsHigh,
 		unsigned char * const		dest,
 		const int					destPitchInPixels,
-		const MeshCoord_t *			meshCoords,
+		const ksMeshCoord *			meshCoords,
 		const int					meshStride )
 {
 	// The source texture needs to be sampled with the texture coordinate at the center of each destination pixel.
@@ -1439,7 +1439,7 @@ static void Warp32x32_SampleLinearPackedRGB(
 		const int					srcTexelsHigh,
 		unsigned char * const		dest,
 		const int					destPitchInPixels,
-		const MeshCoord_t *			meshCoords,
+		const ksMeshCoord *			meshCoords,
 		const int					meshStride )
 {
 	// The source texture needs to be sampled with the texture coordinate at the center of each destination pixel.
@@ -2045,7 +2045,7 @@ static void Warp32x32_SampleBilinearPackedRGB(
 		const int					srcTexelsHigh,
 		unsigned char * const		dest,
 		const int					destPitchInPixels,
-		const MeshCoord_t *			meshCoords,
+		const ksMeshCoord *			meshCoords,
 		const int					meshStride )
 {
 	// The source texture needs to be sampled with the texture coordinate at the center of each destination pixel.
@@ -2865,7 +2865,7 @@ static void Warp32x32_SampleBilinearPlanarRGB(
 		const int					srcTexelsHigh,
 		unsigned char * const		dest,
 		const int					destPitchInPixels,
-		const MeshCoord_t *			meshCoords,
+		const ksMeshCoord *			meshCoords,
 		const int					meshStride )
 {
 	// The source texture needs to be sampled with the texture coordinate at the center of each destination pixel.
@@ -3948,9 +3948,9 @@ static void Warp32x32_SampleChromaticBilinearPlanarRGB(
 		const int					srcTexelsHigh,
 		unsigned char * const		dest,
 		const int					destPitchInPixels,
-		const MeshCoord_t *			meshCoordsRed,
-		const MeshCoord_t *			meshCoordsGreen,
-		const MeshCoord_t *			meshCoordsBlue,
+		const ksMeshCoord *			meshCoordsRed,
+		const ksMeshCoord *			meshCoordsGreen,
+		const ksMeshCoord *			meshCoordsBlue,
 		const int					meshStride )
 {
 	// The source texture needs to be sampled with the texture coordinate at the center of each destination pixel.
@@ -5491,10 +5491,10 @@ static void Warp32x32_SampleChromaticBilinearPlanarRGB(
 typedef struct
 {
 	float m[4][4];
-} Matrix4x4f_t;
+} ksMatrix4x4f;
 
 // Creates an identity matrix.
-static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * matrix )
+static void ksMatrix4x4f_CreateIdentity( ksMatrix4x4f * matrix )
 {
 	matrix->m[0][0] = 1.0f; matrix->m[0][1] = 0.0f; matrix->m[0][2] = 0.0f; matrix->m[0][3] = 0.0f;
 	matrix->m[1][0] = 0.0f; matrix->m[1][1] = 1.0f; matrix->m[1][2] = 0.0f; matrix->m[1][3] = 0.0f;
@@ -5510,7 +5510,7 @@ static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * matrix )
 //		"Tightening the Precision of Perspective Rendering"
 //		Paul Upchurch, Mathieu Desbrun
 //		Journal of Graphics Tools, Volume 16, Issue 1, 2012
-static void Matrix4x4f_CreateProjection( Matrix4x4f_t * matrix, const float minX, const float maxX,
+static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * matrix, const float minX, const float maxX,
 											float const minY, const float maxY, const float nearZ, const float farZ )
 {
 	const float width = maxX - minX;
@@ -5580,7 +5580,7 @@ static void Matrix4x4f_CreateProjection( Matrix4x4f_t * matrix, const float minX
 }
 
 // Creates a projection matrix based on the specified FOV.
-static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float fovDegreesX, const float fovDegreesY,
+static void ksMatrix4x4f_CreateProjectionFov( ksMatrix4x4f * matrix, const float fovDegreesX, const float fovDegreesY,
 												const float offsetX, const float offsetY, const float nearZ, const float farZ )
 {
 	const float halfWidth = nearZ * tanf( fovDegreesX * ( 0.5f * MATH_PI / 180.0f ) );
@@ -5592,11 +5592,11 @@ static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * matrix, const float f
 	const float minY = offsetY - halfHeight;
 	const float maxY = offsetY + halfHeight;
 
-	Matrix4x4f_CreateProjection( matrix, minX, maxX, minY, maxY, nearZ, farZ );
+	ksMatrix4x4f_CreateProjection( matrix, minX, maxX, minY, maxY, nearZ, farZ );
 }
 
 // Use left-multiplication to accumulate transformations.
-static void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, const Matrix4x4f_t * b )
+static void ksMatrix4x4f_Multiply( ksMatrix4x4f * result, const ksMatrix4x4f * a, const ksMatrix4x4f * b )
 {
 	result->m[0][0] = a->m[0][0] * b->m[0][0] + a->m[0][1] * b->m[1][0] + a->m[0][2] * b->m[2][0] + a->m[0][3] * b->m[3][0];
 	result->m[0][1] = a->m[0][0] * b->m[0][1] + a->m[0][1] * b->m[1][1] + a->m[0][2] * b->m[2][1] + a->m[0][3] * b->m[3][1];
@@ -5620,7 +5620,7 @@ static void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, 
 }
 
 // Returns a 3x3 minor of a 4x4 matrix.
-static float Matrix4x4f_Minor( const Matrix4x4f_t * src, int r0, int r1, int r2, int c0, int c1, int c2 )
+static float ksMatrix4x4f_Minor( const ksMatrix4x4f * src, int r0, int r1, int r2, int c0, int c1, int c2 )
 {
 	return	src->m[r0][c0] * ( src->m[r1][c1] * src->m[r2][c2] - src->m[r2][c1] * src->m[r1][c2] ) -
 			src->m[r0][c1] * ( src->m[r1][c0] * src->m[r2][c2] - src->m[r2][c0] * src->m[r1][c2] ) +
@@ -5628,33 +5628,33 @@ static float Matrix4x4f_Minor( const Matrix4x4f_t * src, int r0, int r1, int r2,
 }
  
 // Calculates the inverse of an arbitrary 4x4 matrix.
-static void Matrix4x4f_Invert( Matrix4x4f_t * result, const Matrix4x4f_t * src )
+static void ksMatrix4x4f_Invert( ksMatrix4x4f * result, const ksMatrix4x4f * src )
 {
-	const float rcpDet = 1.0f / (	src->m[0][0] * Matrix4x4f_Minor( src, 1, 2, 3, 1, 2, 3 ) -
-									src->m[0][1] * Matrix4x4f_Minor( src, 1, 2, 3, 0, 2, 3 ) +
-									src->m[0][2] * Matrix4x4f_Minor( src, 1, 2, 3, 0, 1, 3 ) -
-									src->m[0][3] * Matrix4x4f_Minor( src, 1, 2, 3, 0, 1, 2 ) );
+	const float rcpDet = 1.0f / (	src->m[0][0] * ksMatrix4x4f_Minor( src, 1, 2, 3, 1, 2, 3 ) -
+									src->m[0][1] * ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 2, 3 ) +
+									src->m[0][2] * ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 1, 3 ) -
+									src->m[0][3] * ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 1, 2 ) );
 
-	result->m[0][0] =  Matrix4x4f_Minor( src, 1, 2, 3, 1, 2, 3 ) * rcpDet;
-	result->m[0][1] = -Matrix4x4f_Minor( src, 0, 2, 3, 1, 2, 3 ) * rcpDet;
-	result->m[0][2] =  Matrix4x4f_Minor( src, 0, 1, 3, 1, 2, 3 ) * rcpDet;
-	result->m[0][3] = -Matrix4x4f_Minor( src, 0, 1, 2, 1, 2, 3 ) * rcpDet;
-	result->m[1][0] = -Matrix4x4f_Minor( src, 1, 2, 3, 0, 2, 3 ) * rcpDet;
-	result->m[1][1] =  Matrix4x4f_Minor( src, 0, 2, 3, 0, 2, 3 ) * rcpDet;
-	result->m[1][2] = -Matrix4x4f_Minor( src, 0, 1, 3, 0, 2, 3 ) * rcpDet;
-	result->m[1][3] =  Matrix4x4f_Minor( src, 0, 1, 2, 0, 2, 3 ) * rcpDet;
-	result->m[2][0] =  Matrix4x4f_Minor( src, 1, 2, 3, 0, 1, 3 ) * rcpDet;
-	result->m[2][1] = -Matrix4x4f_Minor( src, 0, 2, 3, 0, 1, 3 ) * rcpDet;
-	result->m[2][2] =  Matrix4x4f_Minor( src, 0, 1, 3, 0, 1, 3 ) * rcpDet;
-	result->m[2][3] = -Matrix4x4f_Minor( src, 0, 1, 2, 0, 1, 3 ) * rcpDet;
-	result->m[3][0] = -Matrix4x4f_Minor( src, 1, 2, 3, 0, 1, 2 ) * rcpDet;
-	result->m[3][1] =  Matrix4x4f_Minor( src, 0, 2, 3, 0, 1, 2 ) * rcpDet;
-	result->m[3][2] = -Matrix4x4f_Minor( src, 0, 1, 3, 0, 1, 2 ) * rcpDet;
-	result->m[3][3] =  Matrix4x4f_Minor( src, 0, 1, 2, 0, 1, 2 ) * rcpDet;
+	result->m[0][0] =  ksMatrix4x4f_Minor( src, 1, 2, 3, 1, 2, 3 ) * rcpDet;
+	result->m[0][1] = -ksMatrix4x4f_Minor( src, 0, 2, 3, 1, 2, 3 ) * rcpDet;
+	result->m[0][2] =  ksMatrix4x4f_Minor( src, 0, 1, 3, 1, 2, 3 ) * rcpDet;
+	result->m[0][3] = -ksMatrix4x4f_Minor( src, 0, 1, 2, 1, 2, 3 ) * rcpDet;
+	result->m[1][0] = -ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 2, 3 ) * rcpDet;
+	result->m[1][1] =  ksMatrix4x4f_Minor( src, 0, 2, 3, 0, 2, 3 ) * rcpDet;
+	result->m[1][2] = -ksMatrix4x4f_Minor( src, 0, 1, 3, 0, 2, 3 ) * rcpDet;
+	result->m[1][3] =  ksMatrix4x4f_Minor( src, 0, 1, 2, 0, 2, 3 ) * rcpDet;
+	result->m[2][0] =  ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 1, 3 ) * rcpDet;
+	result->m[2][1] = -ksMatrix4x4f_Minor( src, 0, 2, 3, 0, 1, 3 ) * rcpDet;
+	result->m[2][2] =  ksMatrix4x4f_Minor( src, 0, 1, 3, 0, 1, 3 ) * rcpDet;
+	result->m[2][3] = -ksMatrix4x4f_Minor( src, 0, 1, 2, 0, 1, 3 ) * rcpDet;
+	result->m[3][0] = -ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 1, 2 ) * rcpDet;
+	result->m[3][1] =  ksMatrix4x4f_Minor( src, 0, 2, 3, 0, 1, 2 ) * rcpDet;
+	result->m[3][2] = -ksMatrix4x4f_Minor( src, 0, 1, 3, 0, 1, 2 ) * rcpDet;
+	result->m[3][3] =  ksMatrix4x4f_Minor( src, 0, 1, 2, 0, 1, 2 ) * rcpDet;
 }
 
 // Calculates the inverse of a homogeneous matrix.
-static void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4f_t * src )
+static void ksMatrix4x4f_InvertHomogeneous( ksMatrix4x4f * result, const ksMatrix4x4f * src )
 {
 	result->m[0][0] = src->m[0][0];
 	result->m[1][0] = src->m[0][1];
@@ -5681,11 +5681,11 @@ Time Warp
 */
 
 // Calculate a 4x4 time warp transformation matrix.
-static void CalculateTimeWarpTransform( Matrix4x4f_t * transform, const Matrix4x4f_t * renderProjectionMatrix,
-								const Matrix4x4f_t * renderViewMatrix, const Matrix4x4f_t * newViewMatrix )
+static void CalculateTimeWarpTransform( ksMatrix4x4f * transform, const ksMatrix4x4f * renderProjectionMatrix,
+								const ksMatrix4x4f * renderViewMatrix, const ksMatrix4x4f * newViewMatrix )
 {
 	// Convert the projection matrix from [-1, 1] space to [0, 1] space.
-	const Matrix4x4f_t texCoordProjection =
+	const ksMatrix4x4f texCoordProjection =
 	{ {
 		{ 0.5f * renderProjectionMatrix->m[0][0], 0.0f, 0.5f * renderProjectionMatrix->m[0][2] - 0.5f, 0.0f },
 		{ 0.0f, 0.5f * renderProjectionMatrix->m[1][1], 0.5f * renderProjectionMatrix->m[1][2] - 0.5f, 0.0f },
@@ -5695,14 +5695,14 @@ static void CalculateTimeWarpTransform( Matrix4x4f_t * transform, const Matrix4x
 
 	// Calculate the delta between the view matrix used for rendering and
 	// a more recent or predicted view matrix based on new sensor input.
-	Matrix4x4f_t inverseRenderViewMatrix;
-	Matrix4x4f_InvertHomogeneous( &inverseRenderViewMatrix, renderViewMatrix );
+	ksMatrix4x4f inverseRenderViewMatrix;
+	ksMatrix4x4f_InvertHomogeneous( &inverseRenderViewMatrix, renderViewMatrix );
 
-	Matrix4x4f_t deltaViewMatrix;
-	Matrix4x4f_Multiply( &deltaViewMatrix, &inverseRenderViewMatrix, newViewMatrix );
+	ksMatrix4x4f deltaViewMatrix;
+	ksMatrix4x4f_Multiply( &deltaViewMatrix, &inverseRenderViewMatrix, newViewMatrix );
 
-	Matrix4x4f_t inverseDeltaViewMatrix;
-	Matrix4x4f_InvertHomogeneous( &inverseDeltaViewMatrix, &deltaViewMatrix );
+	ksMatrix4x4f inverseDeltaViewMatrix;
+	ksMatrix4x4f_InvertHomogeneous( &inverseDeltaViewMatrix, &deltaViewMatrix );
 
 	// Make the delta rotation only.
 	inverseDeltaViewMatrix.m[0][3] = 0.0f;
@@ -5710,11 +5710,11 @@ static void CalculateTimeWarpTransform( Matrix4x4f_t * transform, const Matrix4x
 	inverseDeltaViewMatrix.m[2][3] = 0.0f;
 
 	// Accumulate the transforms.
-	Matrix4x4f_Multiply( transform, &texCoordProjection, &inverseDeltaViewMatrix );
+	ksMatrix4x4f_Multiply( transform, &texCoordProjection, &inverseDeltaViewMatrix );
 }
 
 // Transforms the 2D coordinates by interpreting them as 3D homogeneous coordinates with Z = -1 and W = 1.
-static void TransformCoords( float result[3], const Matrix4x4f_t * transform, const float coords[2] )
+static void TransformCoords( float result[3], const ksMatrix4x4f * transform, const float coords[2] )
 {
 	result[0] = transform->m[0][0] * coords[0] + transform->m[0][1] * coords[1] - transform->m[0][2] + transform->m[0][3];
 	result[1] = transform->m[1][0] * coords[0] + transform->m[1][1] * coords[1] - transform->m[1][2] + transform->m[1][3];
@@ -5734,7 +5734,7 @@ static void InterpolateCoords( float result[3], const float start[3], const floa
 // displayRefreshStartTransform = The time warp transform at the start of the display refresh.
 // displayRefreshEndTransform   = The time warp transform at the end of the display refresh.
 static void TimeWarpCoords( float result[2], const float coords[2], const float displayRefreshFraction,
-						const Matrix4x4f_t * displayRefreshStartTransform, const Matrix4x4f_t * displayRefreshEndTransform )
+						const ksMatrix4x4f * displayRefreshStartTransform, const ksMatrix4x4f * displayRefreshEndTransform )
 {
 	float start[3];
 	float end[3];
@@ -5755,14 +5755,14 @@ static void TimeWarp_SampleNearestPackedRGB(
 		const int				srcTexelsWide,		// in texels
 		const int				srcTexelsHigh,		// in texels
 		unsigned char *			dest,				// destination buffer with 32 bits per pixel
-		const int				destPitchInPixels,	// in pixels: 1080, 1440, etc.
+		const int				destPitchInPixels,	// in pixels
 		const int				destTilesWide,		// tiles are implicitly 32 x 32 pixels
 		const int				destTilesHigh,
 		const int				destEye,
-		const MeshCoord_t *		distortionMesh,		// [(destTilesWide+1)*(destTilesHigh+1)]
-		MeshCoord_t *			tempMeshCoords,
-		const Matrix4x4f_t *	timeWarpStartTransform,
-		const Matrix4x4f_t *	timeWarpEndTransform )
+		const ksMeshCoord *		distortionMesh,		// [(destTilesWide+1)*(destTilesHigh+1)]
+		ksMeshCoord *			tempMeshCoords,
+		const ksMatrix4x4f *	timeWarpStartTransform,
+		const ksMatrix4x4f *	timeWarpEndTransform )
 {
 	// Time warp transform the distortion mesh.
 	for ( int y = 0; y <= destTilesHigh; y++ )
@@ -5780,7 +5780,7 @@ static void TimeWarp_SampleNearestPackedRGB(
 	{
 		for ( int x = 0; x < destTilesWide; x++ )
 		{
-			const MeshCoord_t * quadCoords = tempMeshCoords + ( y * ( destTilesWide + 1 ) + x );
+			const ksMeshCoord * quadCoords = tempMeshCoords + ( y * ( destTilesWide + 1 ) + x );
 			unsigned char * tileDest = dest + ( y * destPitchInPixels + x ) * 32 * 4;
 
 			Warp32x32_SampleNearestPackedRGB( src, srcPitchInTexels, srcTexelsWide, srcTexelsHigh,
@@ -5796,14 +5796,14 @@ static void TimeWarp_SampleLinearPackedRGB(
 		const int				srcTexelsWide,		// in texels
 		const int				srcTexelsHigh,		// in texels
 		unsigned char *			dest,				// destination buffer with 32 bits per pixel
-		const int				destPitchInPixels,	// in pixels: 1080, 1440, etc.
+		const int				destPitchInPixels,	// in pixels
 		const int				destTilesWide,		// tiles are implicitly 32 x 32 pixels
 		const int				destTilesHigh,
 		const int				destEye,
-		const MeshCoord_t *		distortionMesh,		// [(destTilesWide+1)*(destTilesHigh+1)]
-		MeshCoord_t *			tempMeshCoords,
-		const Matrix4x4f_t *	timeWarpStartTransform,
-		const Matrix4x4f_t *	timeWarpEndTransform )
+		const ksMeshCoord *		distortionMesh,		// [(destTilesWide+1)*(destTilesHigh+1)]
+		ksMeshCoord *			tempMeshCoords,
+		const ksMatrix4x4f *	timeWarpStartTransform,
+		const ksMatrix4x4f *	timeWarpEndTransform )
 {
 	// Time warp transform the distortion mesh.
 	for ( int y = 0; y <= destTilesHigh; y++ )
@@ -5821,7 +5821,7 @@ static void TimeWarp_SampleLinearPackedRGB(
 	{
 		for ( int x = 0; x < destTilesWide; x++ )
 		{
-			const MeshCoord_t * quadCoords = tempMeshCoords + ( y * ( destTilesWide + 1 ) + x );
+			const ksMeshCoord * quadCoords = tempMeshCoords + ( y * ( destTilesWide + 1 ) + x );
 			unsigned char * tileDest = dest + ( y * destPitchInPixels + x ) * 32 * 4;
 
 			Warp32x32_SampleLinearPackedRGB( src, srcPitchInTexels, srcTexelsWide, srcTexelsHigh,
@@ -5837,14 +5837,14 @@ static void TimeWarp_SampleBilinearPackedRGB(
 		const int				srcTexelsWide,		// in texels
 		const int				srcTexelsHigh,		// in texels
 		unsigned char *			dest,				// destination buffer with 32 bits per pixel
-		const int				destPitchInPixels,	// in pixels: 1080, 1440, etc.
+		const int				destPitchInPixels,	// in pixels
 		const int				destTilesWide,		// tiles are implicitly 32 x 32 pixels
 		const int				destTilesHigh,
 		const int				destEye,
-		const MeshCoord_t *		distortionMesh,		// [(destTilesWide+1)*(destTilesHigh+1)]
-		MeshCoord_t *			tempMeshCoords,
-		const Matrix4x4f_t *	timeWarpStartTransform,
-		const Matrix4x4f_t *	timeWarpEndTransform )
+		const ksMeshCoord *		distortionMesh,		// [(destTilesWide+1)*(destTilesHigh+1)]
+		ksMeshCoord *			tempMeshCoords,
+		const ksMatrix4x4f *	timeWarpStartTransform,
+		const ksMatrix4x4f *	timeWarpEndTransform )
 {
 	// Time warp transform the distortion mesh.
 	for ( int y = 0; y <= destTilesHigh; y++ )
@@ -5862,7 +5862,7 @@ static void TimeWarp_SampleBilinearPackedRGB(
 	{
 		for ( int x = 0; x < destTilesWide; x++ )
 		{
-			const MeshCoord_t * quadCoords = tempMeshCoords + ( y * ( destTilesWide + 1 ) + x );
+			const ksMeshCoord * quadCoords = tempMeshCoords + ( y * ( destTilesWide + 1 ) + x );
 			unsigned char * tileDest = dest + ( y * destPitchInPixels + x ) * 32 * 4;
 
 			Warp32x32_SampleBilinearPackedRGB( src, srcPitchInTexels, srcTexelsWide, srcTexelsHigh,
@@ -5880,14 +5880,14 @@ static void TimeWarp_SampleBilinearPlanarRGB(
 		const int				srcTexelsWide,		// in texels
 		const int				srcTexelsHigh,		// in texels
 		unsigned char *			dest,				// destination buffer with 32 bits per pixel
-		const int				destPitchInPixels,	// in pixels: 1080, 1440, etc.
+		const int				destPitchInPixels,	// in pixels
 		const int				destTilesWide,		// tiles are implicitly 32 x 32 pixels
 		const int				destTilesHigh,
 		const int				destEye,
-		const MeshCoord_t *		distortionMesh,		// [(destTilesWide+1)*(destTilesHigh+1)]
-		MeshCoord_t *			tempMeshCoords,
-		const Matrix4x4f_t *	timeWarpStartTransform,
-		const Matrix4x4f_t *	timeWarpEndTransform )
+		const ksMeshCoord *		distortionMesh,		// [(destTilesWide+1)*(destTilesHigh+1)]
+		ksMeshCoord *			tempMeshCoords,
+		const ksMatrix4x4f *	timeWarpStartTransform,
+		const ksMatrix4x4f *	timeWarpEndTransform )
 {
 	// Time warp transform the distortion mesh.
 	for ( int y = 0; y <= destTilesHigh; y++ )
@@ -5905,7 +5905,7 @@ static void TimeWarp_SampleBilinearPlanarRGB(
 	{
 		for ( int x = 0; x < destTilesWide; x++ )
 		{
-			const MeshCoord_t * quadCoords = tempMeshCoords + ( y * ( destTilesWide + 1 ) + x );
+			const ksMeshCoord * quadCoords = tempMeshCoords + ( y * ( destTilesWide + 1 ) + x );
 			unsigned char * tileDest = dest + ( y * destPitchInPixels + x ) * 32 * 4;
 
 			Warp32x32_SampleBilinearPlanarRGB( srcRed, srcGreen, srcBlue, srcPitchInTexels, srcTexelsWide, srcTexelsHigh,
@@ -5923,18 +5923,18 @@ static void TimeWarp_SampleChromaticBilinearPlanarRGB(
 		const int				srcTexelsWide,		// in texels
 		const int				srcTexelsHigh,		// in texels
 		unsigned char *			dest,				// destination buffer with 32 bits per pixel
-		const int				destPitchInPixels,	// in pixels: 1080, 1440, etc.
+		const int				destPitchInPixels,	// in pixels
 		const int				destTilesWide,		// tiles are implicitly 32 x 32 pixels
 		const int				destTilesHigh,
 		const int				destEye,
-		const MeshCoord_t *		distortionMeshRed,	// [(destTilesWide+1)*(destTilesHigh+1)]
-		const MeshCoord_t *		distortionMeshGreen,
-		const MeshCoord_t *		distortionMeshBlue,
-		MeshCoord_t *			tempMeshCoordsRed,
-		MeshCoord_t *			tempMeshCoordsGreen,
-		MeshCoord_t *			tempMeshCoordsBlue,
-		const Matrix4x4f_t *	timeWarpStartTransform,
-		const Matrix4x4f_t *	timeWarpEndTransform )
+		const ksMeshCoord *		distortionMeshRed,	// [(destTilesWide+1)*(destTilesHigh+1)]
+		const ksMeshCoord *		distortionMeshGreen,
+		const ksMeshCoord *		distortionMeshBlue,
+		ksMeshCoord *			tempMeshCoordsRed,
+		ksMeshCoord *			tempMeshCoordsGreen,
+		ksMeshCoord *			tempMeshCoordsBlue,
+		const ksMatrix4x4f *	timeWarpStartTransform,
+		const ksMatrix4x4f *	timeWarpEndTransform )
 {
 	// Time warp transform the distortion mesh.
 	for ( int y = 0; y <= destTilesHigh; y++ )
@@ -5954,9 +5954,9 @@ static void TimeWarp_SampleChromaticBilinearPlanarRGB(
 	{
 		for ( int x = 0; x < destTilesWide; x++ )
 		{
-			const MeshCoord_t * quadCoordsRed = tempMeshCoordsRed + ( y * ( destTilesWide + 1 ) + x );
-			const MeshCoord_t * quadCoordsGreen = tempMeshCoordsGreen + ( y * ( destTilesWide + 1 ) + x );
-			const MeshCoord_t * quadCoordsBlue = tempMeshCoordsBlue + ( y * ( destTilesWide + 1 ) + x );
+			const ksMeshCoord * quadCoordsRed = tempMeshCoordsRed + ( y * ( destTilesWide + 1 ) + x );
+			const ksMeshCoord * quadCoordsGreen = tempMeshCoordsGreen + ( y * ( destTilesWide + 1 ) + x );
+			const ksMeshCoord * quadCoordsBlue = tempMeshCoordsBlue + ( y * ( destTilesWide + 1 ) + x );
 			unsigned char * tileDest = dest + ( y * destPitchInPixels + x ) * 32 * 4;
 
 			Warp32x32_SampleChromaticBilinearPlanarRGB( srcRed, srcGreen, srcBlue, srcPitchInTexels, srcTexelsWide, srcTexelsHigh,
@@ -5974,12 +5974,12 @@ Atomic 32-bit unsigned integer
 ================================================================================================================================
 */
 
-typedef unsigned int AtomicUint32_t;
+typedef unsigned int ksAtomicUint32;
 
-static AtomicUint32_t AtomicUint32_Increment( AtomicUint32_t * atomicUint32 )
+static ksAtomicUint32 ksAtomicUint32_Increment( ksAtomicUint32 * atomicUint32 )
 {
 #if defined( OS_WINDOWS )
-	return (AtomicUint32_t) InterlockedIncrement( (LONG *)atomicUint32 );
+	return (ksAtomicUint32) InterlockedIncrement( (LONG *)atomicUint32 );
 #elif defined( OS_MAC ) || defined( OS_LINUX ) || defined( OS_ANDROID )
 	return __sync_fetch_and_add( atomicUint32, 1 );
 #elif defined( OS_HEXAGON )
@@ -5987,10 +5987,10 @@ static AtomicUint32_t AtomicUint32_Increment( AtomicUint32_t * atomicUint32 )
 #endif
 }
 
-static AtomicUint32_t AtomicUint32_Decrement( AtomicUint32_t * atomicUint32 )
+static ksAtomicUint32 ksAtomicUint32_Decrement( ksAtomicUint32 * atomicUint32 )
 {
 #if defined( OS_WINDOWS )
-	return (AtomicUint32_t) InterlockedDecrement( (LONG *)atomicUint32 );
+	return (ksAtomicUint32) InterlockedDecrement( (LONG *)atomicUint32 );
 #elif defined( OS_MAC ) || defined( OS_LINUX ) || defined( OS_ANDROID )
 	return __sync_fetch_and_add( atomicUint32, -1 );
 #elif defined( OS_HEXAGON )
@@ -6006,12 +6006,12 @@ Mutex for mutual exclusion on shared resources within a single process.
 Equivalent to a Windows Critical Section Object which allows recursive access. This mutex cannot be
 used for mutual-exclusion synchronization between threads from different processes.
 
-Mutex_t
+ksMutex
 
-static void Mutex_Create( Mutex_t * mutex );
-static void Mutex_Destroy( Mutex_t * mutex );
-static bool Mutex_Lock( Mutex_t * mutex, const bool blocking );
-static void Mutex_Unlock( Mutex_t * mutex );
+static void ksMutex_Create( ksMutex * mutex );
+static void ksMutex_Destroy( ksMutex * mutex );
+static bool ksMutex_Lock( ksMutex * mutex, const bool blocking );
+static void ksMutex_Unlock( ksMutex * mutex );
 
 ================================================================================================================================
 */
@@ -6025,9 +6025,9 @@ typedef struct
 #else
 	pthread_mutex_t		mutex;
 #endif
-} Mutex_t;
+} ksMutex;
 
-static void Mutex_Create( Mutex_t * mutex )
+static void ksMutex_Create( ksMutex * mutex )
 {
 #if defined( OS_WINDOWS )
 	InitializeCriticalSection( &mutex->handle );
@@ -6041,7 +6041,7 @@ static void Mutex_Create( Mutex_t * mutex )
 #endif
 }
 
-static void Mutex_Destroy( Mutex_t * mutex )
+static void ksMutex_Destroy( ksMutex * mutex )
 {
 #if defined( OS_WINDOWS )
 	DeleteCriticalSection( &mutex->handle );
@@ -6052,7 +6052,7 @@ static void Mutex_Destroy( Mutex_t * mutex )
 #endif
 }
 
-static bool Mutex_Lock( Mutex_t * mutex, const bool blocking )
+static bool ksMutex_Lock( ksMutex * mutex, const bool blocking )
 {
 #if defined( OS_WINDOWS )
 	if ( TryEnterCriticalSection( &mutex->handle ) == 0 )
@@ -6087,7 +6087,7 @@ static bool Mutex_Lock( Mutex_t * mutex, const bool blocking )
 #endif
 }
 
-static void Mutex_Unlock( Mutex_t * mutex )
+static void ksMutex_Unlock( ksMutex * mutex )
 {
 #if defined( OS_WINDOWS )
 	LeaveCriticalSection( &mutex->handle );
@@ -6146,13 +6146,13 @@ state after the APC is complete. If a call to PulseEvent occurs during the time 
 been temporarily removed from the wait state, then the thread will not be released, because PulseEvent
 releases only those threads that are in the wait state at the moment PulseEvent is called.
 
-Signal_t
+ksSignal
 
-static void Signal_Create( Signal_t * signal, const bool autoReset );
-static void Signal_Destroy( Signal_t * signal );
-static bool Signal_Wait( Signal_t * signal, const int timeOutMilliseconds );
-static void Signal_Raise( Signal_t * signal );
-static void Signal_Clear( Signal_t * signal );
+static void ksSignal_Create( ksSignal * signal, const bool autoReset );
+static void ksSignal_Destroy( ksSignal * signal );
+static bool ksSignal_Wait( ksSignal * signal, const int timeOutMilliseconds );
+static void ksSignal_Raise( ksSignal * signal );
+static void ksSignal_Clear( ksSignal * signal );
 
 ================================================================================================================================
 */
@@ -6174,9 +6174,9 @@ typedef struct
 	bool			autoReset;		// automatically clear the signalled state when a single thread is released
 	bool			signaled;		// in the signalled state if true
 #endif
-} Signal_t;
+} ksSignal;
 
-static void Signal_Create( Signal_t * signal, const bool autoReset )
+static void ksSignal_Create( ksSignal * signal, const bool autoReset )
 {
 #if defined( OS_WINDOWS )
 	signal->handle = CreateEvent( NULL, !autoReset, FALSE, NULL );
@@ -6195,7 +6195,7 @@ static void Signal_Create( Signal_t * signal, const bool autoReset )
 #endif
 }
 
-static void Signal_Destroy( Signal_t * signal )
+static void ksSignal_Destroy( ksSignal * signal )
 {
 #if defined( OS_WINDOWS )
 	CloseHandle( signal->handle );
@@ -6212,7 +6212,7 @@ static void Signal_Destroy( Signal_t * signal )
 // If 'autoReset' is true then the first thread that reaches the signalled state within the time-out period will clear the signalled state.
 // If 'timeOutMilliseconds' is negative then this will wait indefinitely until the signalled state is reached.
 // Returns true if the thread was released because the object entered the signalled state, returns false if the time-out is reached first.
-static bool Signal_Wait( Signal_t * signal, const int timeOutMilliseconds )
+static bool ksSignal_Wait( ksSignal * signal, const int timeOutMilliseconds )
 {
 #if defined( OS_WINDOWS )
 	DWORD result = WaitForSingleObject( signal->handle, timeOutMilliseconds < 0 ? INFINITE : timeOutMilliseconds );
@@ -6298,7 +6298,7 @@ static bool Signal_Wait( Signal_t * signal, const int timeOutMilliseconds )
 
 // Enter the signalled state.
 // Note that if 'autoReset' is true then this will only release a single thread.
-static void Signal_Raise( Signal_t * signal )
+static void ksSignal_Raise( ksSignal * signal )
 {
 #if defined( OS_WINDOWS )
 	SetEvent( signal->handle );
@@ -6323,7 +6323,7 @@ static void Signal_Raise( Signal_t * signal )
 
 // Clear the signalled state.
 // Should not be needed for auto-reset signals (autoReset == true).
-static void Signal_Clear( Signal_t * signal )
+static void ksSignal_Clear( ksSignal * signal )
 {
 #if defined( OS_WINDOWS )
 	ResetEvent( signal->handle );
@@ -6356,22 +6356,22 @@ This worker thread will function as a normal thread by immediately signalling th
 Once the thread function returns, the thread can be destroyed. Destroying the thread always waits
 for the thread function to return first.
 
-Thread_t
+ksThread
 
-static bool Thread_Create( Thread_t * thread, const char * threadName, threadFunction_t threadFunction, void * threadData );
-static void Thread_Destroy( Thread_t * thread );
-static void Thread_Signal( Thread_t * thread );
-static void Thread_Join( Thread_t * thread );
-static void Thread_Submit( Thread_t * thread, threadFunction_t threadFunction, void * threadData );
+static bool ksThread_Create( ksThread * thread, const char * threadName, ksThreadFunction threadFunction, void * threadData );
+static void ksThread_Destroy( ksThread * thread );
+static void ksThread_Signal( ksThread * thread );
+static void ksThread_Join( ksThread * thread );
+static void ksThread_Submit( ksThread * thread, ksThreadFunction threadFunction, void * threadData );
 
-static void Thread_SetName( const char * name );
-static void Thread_SetAffinity( int mask );
-static void Thread_SetRealTimePriority( int priority );
+static void ksThread_SetName( const char * name );
+static void ksThread_SetAffinity( int mask );
+static void ksThread_SetRealTimePriority( int priority );
 
 ================================================================================================================================
 */
 
-typedef void (*threadFunction_t)( void * data );
+typedef void (*ksThreadFunction)( void * data );
 
 #if defined( OS_WINDOWS )
 #define THREAD_HANDLE			HANDLE
@@ -6392,19 +6392,19 @@ typedef void (*threadFunction_t)( void * data );
 typedef struct
 {
 	char				threadName[128];
-	threadFunction_t	threadFunction;
+	ksThreadFunction	threadFunction;
 	void *				threadData;
 
 	void *				stack;
 	THREAD_HANDLE		handle;
-	Signal_t			workIsDone;
-	Signal_t			workIsAvailable;
-	Mutex_t				workMutex;
+	ksSignal			workIsDone;
+	ksSignal			workIsAvailable;
+	ksMutex				workMutex;
 	volatile bool		terminate;
-} Thread_t;
+} ksThread;
 
 // Note that on Android AttachCurrentThread will reset the thread name.
-static void Thread_SetName( const char * name )
+static void ksThread_SetName( const char * name )
 {
 #if defined( OS_WINDOWS )
 	static const unsigned int MS_VC_EXCEPTION = 0x406D1388;
@@ -6439,7 +6439,7 @@ static void Thread_SetName( const char * name )
 #endif
 }
 
-static void Thread_SetAffinity( int mask )
+static void ksThread_SetAffinity( int mask )
 {
 #if defined( OS_WINDOWS )
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
@@ -6563,7 +6563,7 @@ static void Thread_SetAffinity( int mask )
 #endif
 }
 
-static void Thread_SetRealTimePriority( int priority )
+static void ksThread_SetRealTimePriority( int priority )
 {
 #if defined( OS_WINDOWS )
 	UNUSED_PARM( priority );
@@ -6646,26 +6646,26 @@ static void Thread_SetRealTimePriority( int priority )
 
 static THREAD_RETURN_TYPE ThreadFunctionInternal( void * data )
 {
-	Thread_t * thread = (Thread_t *)data;
+	ksThread * thread = (ksThread *)data;
 
-	Thread_SetName( thread->threadName );
+	ksThread_SetName( thread->threadName );
 
 	for ( ; ; )
 	{
-		Mutex_Lock( &thread->workMutex, true );
-		if ( Signal_Wait( &thread->workIsAvailable, 0 ) )
+		ksMutex_Lock( &thread->workMutex, true );
+		if ( ksSignal_Wait( &thread->workIsAvailable, 0 ) )
 		{
-			Mutex_Unlock( &thread->workMutex );
+			ksMutex_Unlock( &thread->workMutex );
 		}
 		else
 		{
-			Signal_Raise( &thread->workIsDone );
-			Mutex_Unlock( &thread->workMutex );
-			Signal_Wait( &thread->workIsAvailable, -1 );
+			ksSignal_Raise( &thread->workIsDone );
+			ksMutex_Unlock( &thread->workMutex );
+			ksSignal_Wait( &thread->workIsAvailable, -1 );
 		}
 		if ( thread->terminate )
 		{
-			Signal_Raise( &thread->workIsDone );
+			ksSignal_Raise( &thread->workIsDone );
 			break;
 		}
 		thread->threadFunction( thread->threadData );
@@ -6673,16 +6673,16 @@ static THREAD_RETURN_TYPE ThreadFunctionInternal( void * data )
 	return THREAD_RETURN_VALUE;
 }
 
-static bool Thread_Create( Thread_t * thread, const char * threadName, threadFunction_t threadFunction, void * threadData )
+static bool ksThread_Create( ksThread * thread, const char * threadName, ksThreadFunction threadFunction, void * threadData )
 {
 	strncpy( thread->threadName, threadName, sizeof( thread->threadName ) );
 	thread->threadName[sizeof( thread->threadName ) - 1] = '\0';
 	thread->threadFunction = threadFunction;
 	thread->threadData = threadData;
 	thread->stack = NULL;
-	Signal_Create( &thread->workIsDone, false );
-	Signal_Create( &thread->workIsAvailable, true );
-	Mutex_Create( &thread->workMutex );
+	ksSignal_Create( &thread->workIsDone, false );
+	ksSignal_Create( &thread->workIsAvailable, true );
+	ksMutex_Create( &thread->workMutex );
 	thread->terminate = false;
 
 #if defined( OS_WINDOWS )
@@ -6721,21 +6721,21 @@ static bool Thread_Create( Thread_t * thread, const char * threadName, threadFun
 	pthread_attr_destroy( &attr );
 #endif
 
-	Signal_Wait( &thread->workIsDone, -1 );
+	ksSignal_Wait( &thread->workIsDone, -1 );
 	return true;
 }
 
-static void Thread_Destroy( Thread_t * thread )
+static void ksThread_Destroy( ksThread * thread )
 {
-	Mutex_Lock( &thread->workMutex, true );
-	Signal_Clear( &thread->workIsDone );
+	ksMutex_Lock( &thread->workMutex, true );
+	ksSignal_Clear( &thread->workIsDone );
 	thread->terminate = true;
-	Signal_Raise( &thread->workIsAvailable );
-	Mutex_Unlock( &thread->workMutex );
-	Signal_Wait( &thread->workIsDone, -1 );
-	Mutex_Destroy( &thread->workMutex );
-	Signal_Destroy( &thread->workIsDone );
-	Signal_Destroy( &thread->workIsAvailable );
+	ksSignal_Raise( &thread->workIsAvailable );
+	ksMutex_Unlock( &thread->workMutex );
+	ksSignal_Wait( &thread->workIsDone, -1 );
+	ksMutex_Destroy( &thread->workMutex );
+	ksSignal_Destroy( &thread->workIsDone );
+	ksSignal_Destroy( &thread->workIsAvailable );
 #if defined( OS_WINDOWS )
 	WaitForSingleObject( thread->handle, INFINITE );
 	CloseHandle( thread->handle );
@@ -6748,25 +6748,25 @@ static void Thread_Destroy( Thread_t * thread )
 #endif
 }
 
-static void Thread_Signal( Thread_t * thread )
+static void ksThread_Signal( ksThread * thread )
 {
-	Mutex_Lock( &thread->workMutex, true );
-	Signal_Clear( &thread->workIsDone );
-	Signal_Raise( &thread->workIsAvailable );
-	Mutex_Unlock( &thread->workMutex );
+	ksMutex_Lock( &thread->workMutex, true );
+	ksSignal_Clear( &thread->workIsDone );
+	ksSignal_Raise( &thread->workIsAvailable );
+	ksMutex_Unlock( &thread->workMutex );
 }
 
-static void Thread_Join( Thread_t * thread )
+static void ksThread_Join( ksThread * thread )
 {
-	Signal_Wait( &thread->workIsDone, -1 );
+	ksSignal_Wait( &thread->workIsDone, -1 );
 }
 
-static void Thread_Submit( Thread_t * thread, threadFunction_t threadFunction, void * threadData )
+static void ksThread_Submit( ksThread * thread, ksThreadFunction threadFunction, void * threadData )
 {
-	Thread_Join( thread );
+	ksThread_Join( thread );
 	thread->threadFunction = threadFunction;
 	thread->threadData = threadData;
-	Thread_Signal( thread );
+	ksThread_Signal( thread );
 }
 
 /*
@@ -6774,12 +6774,12 @@ static void Thread_Submit( Thread_t * thread, threadFunction_t threadFunction, v
 
 Worker thread pool.
 
-ThreadPool_t
+ksThreadPool
 
-static bool ThreadPool_Create( ThreadPool_t * pool );
-static void ThreadPool_Destroy( ThreadPool_t * pool );
-static void ThreadPool_Submit( ThreadPool_t * pool, threadFunction_t threadFunction, void * threadData );
-static void ThreadPool_Join( ThreadPool_t * pool );
+static bool ksThreadPool_Create( ksThreadPool * pool );
+static void ksThreadPool_Destroy( ksThreadPool * pool );
+static void ksThreadPool_Submit( ksThreadPool * pool, ksThreadFunction threadFunction, void * threadData );
+static void ksThreadPool_Join( ksThreadPool * pool );
 
 ================================================================================================================================
 */
@@ -6788,19 +6788,19 @@ static void ThreadPool_Join( ThreadPool_t * pool );
 
 typedef struct
 {
-	Thread_t	threads[MAX_WORKERS];
+	ksThread	threads[MAX_WORKERS];
 	int			threadCount;
-} ThreadPool_t;
+} ksThreadPool;
 
 void PoolStartThread( void * data )
 {
 	UNUSED_PARM( data );
 
-	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
-	Thread_SetRealTimePriority( 1 );
+	ksThread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
+	ksThread_SetRealTimePriority( 1 );
 }
 
-static void ThreadPool_Create( ThreadPool_t * pool )
+static void ksThreadPool_Create( ksThreadPool * pool )
 {
 	pool->threadCount = MAX_WORKERS;
 #if defined( OS_HEXAGON )
@@ -6813,33 +6813,33 @@ static void ThreadPool_Create( ThreadPool_t * pool )
 
 	for ( int i = 0; i < pool->threadCount; i++ )
 	{
-		Thread_Create( &pool->threads[i], "worker", PoolStartThread, NULL );
-		Thread_Signal( &pool->threads[i] );
-		Thread_Join( &pool->threads[i] );
+		ksThread_Create( &pool->threads[i], "worker", PoolStartThread, NULL );
+		ksThread_Signal( &pool->threads[i] );
+		ksThread_Join( &pool->threads[i] );
 	}
 }
 
-static void ThreadPool_Destroy( ThreadPool_t * pool )
+static void ksThreadPool_Destroy( ksThreadPool * pool )
 {
 	for ( int i = 0; i < pool->threadCount; i++ )
 	{
-		Thread_Destroy( &pool->threads[i] );
+		ksThread_Destroy( &pool->threads[i] );
 	}
 }
 
-static void ThreadPool_Submit( ThreadPool_t * pool, threadFunction_t threadFunction, void * threadData )
+static void ksThreadPool_Submit( ksThreadPool * pool, ksThreadFunction threadFunction, void * threadData )
 {
 	for ( int i = 0; i < pool->threadCount; i++ )
 	{
-		Thread_Submit( &pool->threads[i], threadFunction, threadData );
+		ksThread_Submit( &pool->threads[i], threadFunction, threadData );
 	}
 }
 
-static void ThreadPool_Join( ThreadPool_t * pool )
+static void ksThreadPool_Join( ksThreadPool * pool )
 {
 	for ( int i = 0; i < pool->threadCount; i++ )
 	{
-		Thread_Join( &pool->threads[i] );
+		ksThread_Join( &pool->threads[i] );
 	}
 }
 
@@ -6853,9 +6853,9 @@ Threaded Time Warp
 
 typedef struct
 {
-	AtomicUint32_t		rowCount;			// atomic counter shared by all workers
-	Matrix4x4f_t		projectionMatrix;	// projection matrix used to render the source data
-	Matrix4x4f_t		viewMatrix;			// view matrix used to render the source data
+	ksAtomicUint32		rowCount;			// atomic counter shared by all workers
+	ksMatrix4x4f		projectionMatrix;	// projection matrix used to render the source data
+	ksMatrix4x4f		viewMatrix;			// view matrix used to render the source data
 	uint64_t			refreshStartTime;	// start of the display refresh
 	uint64_t			refreshEndTime;		// end of the display refresh
 	const uint8_t *		srcPackedRGB;		// source texture with 32 bits per texel
@@ -6866,20 +6866,20 @@ typedef struct
 	int32_t				srcTexelsWide;		// in texels
 	int32_t				srcTexelsHigh;		// in texels
 	uint8_t *			dest;				// destination buffer with 32 bits per pixels
-	int32_t				destPitchInPixels;	// in pixels: 1080, 1440, etc.
+	int32_t				destPitchInPixels;	// in pixels
 	int32_t				destTilesWide;		// tiles are implicitly 32 x 32 pixels
 	int32_t				destTilesHigh;
-	const MeshCoord_t *	meshCoords;
+	const ksMeshCoord *	meshCoords;
 	int32_t				sampling;
-} TimeWarpThreadData_t;
+} ksTimeWarpThreadData;
 
-static void GetHmdViewMatrixForTime( Matrix4x4f_t * viewMatrix, const uint64_t time )
+static void GetHmdViewMatrixForTime( ksMatrix4x4f * viewMatrix, const uint64_t time )
 {
 	UNUSED_PARM( time );
-	Matrix4x4f_CreateIdentity( viewMatrix );
+	ksMatrix4x4f_CreateIdentity( viewMatrix );
 }
 
-void TimeWarpThread( TimeWarpThreadData_t * data )
+void TimeWarpThread( ksTimeWarpThreadData * data )
 {
 #if defined( __HEXAGON_V60__ )
 	int r = qurt_hvx_lock( QURT_HVX_MODE_64B );
@@ -6891,28 +6891,28 @@ void TimeWarpThread( TimeWarpThreadData_t * data )
 #endif
 
 	const size_t numMeshCoords = ( data->destTilesHigh + 1 ) * ( data->destTilesWide + 1 );
-	const MeshCoord_t * meshCoordsBasePtr = (const MeshCoord_t *) data->meshCoords;
-	const MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
+	const ksMeshCoord * meshCoordsBasePtr = (const ksMeshCoord *) data->meshCoords;
+	const ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
 	{
 		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
 		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
 	};
-	MeshCoord_t * tempMeshCoords[NUM_COLOR_CHANNELS] =
+	ksMeshCoord * tempMeshCoords[NUM_COLOR_CHANNELS] =
 	{
-		(MeshCoord_t *)meshCoordsBasePtr + 6 * numMeshCoords,
-		(MeshCoord_t *)meshCoordsBasePtr + 7 * numMeshCoords,
-		(MeshCoord_t *)meshCoordsBasePtr + 8 * numMeshCoords
+		(ksMeshCoord *)meshCoordsBasePtr + 6 * numMeshCoords,
+		(ksMeshCoord *)meshCoordsBasePtr + 7 * numMeshCoords,
+		(ksMeshCoord *)meshCoordsBasePtr + 8 * numMeshCoords
 	};
 
 	// Use view matrices predicted for the start and end of the display refresh.
-	Matrix4x4f_t displayRefreshStartViewMatrix;
-	Matrix4x4f_t displayRefreshEndViewMatrix;
+	ksMatrix4x4f displayRefreshStartViewMatrix;
+	ksMatrix4x4f displayRefreshEndViewMatrix;
 	GetHmdViewMatrixForTime( &displayRefreshStartViewMatrix, data->refreshStartTime );
 	GetHmdViewMatrixForTime( &displayRefreshEndViewMatrix, data->refreshEndTime );
 
 	// Calculate the time warp transform matrices for the start and the end of the display refresh.
-	Matrix4x4f_t timeWarpStartTransform;
-	Matrix4x4f_t timeWarpEndTransform;
+	ksMatrix4x4f timeWarpStartTransform;
+	ksMatrix4x4f timeWarpEndTransform;
 	CalculateTimeWarpTransform( &timeWarpStartTransform, &data->projectionMatrix, &data->viewMatrix, &displayRefreshStartViewMatrix );
 	CalculateTimeWarpTransform( &timeWarpEndTransform, &data->projectionMatrix, &data->viewMatrix, &displayRefreshEndViewMatrix );
 
@@ -6920,7 +6920,7 @@ void TimeWarpThread( TimeWarpThreadData_t * data )
 	for ( ; ; )
 	{
 		// Atomically add 1 to claim a job.
-		unsigned int rowCount = AtomicUint32_Increment( &(data->rowCount) ) - 1;
+		unsigned int rowCount = ksAtomicUint32_Increment( &(data->rowCount) ) - 1;
 
 		// Done when all horizontal strips have been claimed for processing.
 		if ( rowCount >= (unsigned int)( 2 * data->destTilesHigh ) )
@@ -7035,7 +7035,7 @@ int TimeWarpInterface_GetDspVersion()
 
 #endif	// !OS_HEXAGON
 
-static ThreadPool_t threadPool;
+static ksThreadPool threadPool;
 
 int TimeWarpInterface_Init()
 {
@@ -7078,7 +7078,7 @@ int TimeWarpInterface_Init()
 	int reserved = qurt_hvx_reserve( QURT_HVX_RESERVE_ALL_AVAILABLE );
 #endif
 
-	ThreadPool_Create( &threadPool );
+	ksThreadPool_Create( &threadPool );
 
 #if defined( __HEXAGON_V60__ )
 	return reserved;
@@ -7089,7 +7089,7 @@ int TimeWarpInterface_Init()
 
 int TimeWarpInterface_Shutdown()
 {
-	ThreadPool_Destroy( &threadPool );
+	ksThreadPool_Destroy( &threadPool );
 
 #if defined( __HEXAGON_V60__ )
 	qurt_hvx_cancel_reserve();
@@ -7128,10 +7128,10 @@ int TimeWarpInterface_TimeWarp(
 		int32_t				srcTexelsHigh,		// in texels
 		uint8_t *			dest,				// destination buffer with 32 bits per pixels
 		int					destCount,
-		int32_t				destPitchInPixels,	// in pixels: 1080, 1440, etc.
+		int32_t				destPitchInPixels,	// in pixels
 		int32_t				destTilesWide,		// tiles are implicitly 32 x 32 pixels
 		int32_t				destTilesHigh,
-		const MeshCoord_t *	meshCoords,			// [(destTilesWide+1)*(destTilesHigh+1)]
+		const ksMeshCoord *	meshCoords,			// [(destTilesWide+1)*(destTilesHigh+1)]
 		int					meshCoordsCount,
 		int32_t				sampling
 	)
@@ -7144,14 +7144,14 @@ int TimeWarpInterface_TimeWarp(
 	UNUSED_PARM( meshCoordsCount );
 
 	// Projection matrix that was used to render the source data.
-	Matrix4x4f_t renderProjectionMatrix;
-	Matrix4x4f_CreateProjectionFov( &renderProjectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
+	ksMatrix4x4f renderProjectionMatrix;
+	ksMatrix4x4f_CreateProjectionFov( &renderProjectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 
 	// View matrix that was used to render the source data;
-	Matrix4x4f_t renderViewMatrix;
-	Matrix4x4f_CreateIdentity( &renderViewMatrix );
+	ksMatrix4x4f renderViewMatrix;
+	ksMatrix4x4f_CreateIdentity( &renderViewMatrix );
 
-	TimeWarpThreadData_t data;
+	ksTimeWarpThreadData data;
 	data.rowCount = 0;
 	data.projectionMatrix = renderProjectionMatrix;
 	data.viewMatrix = renderViewMatrix;
@@ -7171,8 +7171,8 @@ int TimeWarpInterface_TimeWarp(
 	data.meshCoords = meshCoords;
 	data.sampling = sampling;
 
-	ThreadPool_Submit( &threadPool, (threadFunction_t)TimeWarpThread, &data );
-	ThreadPool_Join( &threadPool );
+	ksThreadPool_Submit( &threadPool, (ksThreadFunction)TimeWarpThread, &data );
+	ksThreadPool_Join( &threadPool );
 
 	return 0;	// AEE_SUCCESS
 }
@@ -7232,45 +7232,44 @@ Non-DSP code
 /*
 ================================================================================================
 
-Distortion meshes
+HMD
 
 ================================================================================================
 */
 
-// Typical 16:9 resolutions: 1920 x 1080, 2560 x 1440, 3840 x 2160, 7680 x 4320
-#define DISPLAY_PIXELS_WIDE		1920
-#define DISPLAY_PIXELS_HIGH		1080
-
-#define TILE_PIXELS_WIDE		32
-#define TILE_PIXELS_HIGH		32
-
-#define EYE_TILES_WIDE			( DISPLAY_PIXELS_WIDE / TILE_PIXELS_WIDE / NUM_EYES )	// 30*32*2 = 1920
-#define EYE_TILES_HIGH			( DISPLAY_PIXELS_HIGH / TILE_PIXELS_HIGH )				// 33*32   = 1056 leaving 24 pixels untouched
-
-static float MaxFloat( float x, float y ) { return ( x > y ) ? x : y; }
-static float MinFloat( float x, float y ) { return ( x < y ) ? x : y; }
-
 typedef struct
 {
-	int		widthInPixels;
-	int		heightInPixels;
-	float	widthInMeters;
-	float	heightInMeters;
+	int		displayPixelsWide;
+	int		displayPixelsHigh;
+	int		tilePixelsWide;
+	int		tilePixelsHigh;
+	int		eyeTilesWide;
+	int		eyeTilesHigh;
+	int		visiblePixelsWide;
+	int		visiblePixelsHigh;
+	float	visibleMetersWide;
+	float	visibleMetersHigh;
 	float	lensSeparationInMeters;
 	float	metersPerTanAngleAtCenter;
 	int		numKnots;
 	float	K[11];
 	float	chromaticAberration[4];
-} hmdInfo_t;
+} ksHmdInfo;
 
-const hmdInfo_t * DefaultHmdInfo()
+static const ksHmdInfo * GetDefaultHmdInfo( const int displayPixelsWide, const int displayPixelsHigh )
 {
-	static hmdInfo_t hmdInfo;
-	hmdInfo.widthInPixels = EYE_TILES_WIDE * TILE_PIXELS_WIDE * NUM_EYES;
-	hmdInfo.heightInPixels = EYE_TILES_HIGH * TILE_PIXELS_HIGH;
-	hmdInfo.widthInMeters = 0.11047f * ( EYE_TILES_WIDE * TILE_PIXELS_WIDE * NUM_EYES ) / DISPLAY_PIXELS_WIDE;
-	hmdInfo.heightInMeters = 0.06214f * ( EYE_TILES_HIGH * TILE_PIXELS_HIGH ) / DISPLAY_PIXELS_HIGH;
-	hmdInfo.lensSeparationInMeters = hmdInfo.widthInMeters / NUM_EYES;//0.062f;
+	static ksHmdInfo hmdInfo;
+	hmdInfo.displayPixelsWide = displayPixelsWide;
+	hmdInfo.displayPixelsHigh = displayPixelsHigh;
+	hmdInfo.tilePixelsWide = 32;
+	hmdInfo.tilePixelsHigh = 32;
+	hmdInfo.eyeTilesWide = displayPixelsWide / hmdInfo.tilePixelsWide / NUM_EYES;
+	hmdInfo.eyeTilesHigh = displayPixelsHigh / hmdInfo.tilePixelsHigh;
+	hmdInfo.visiblePixelsWide = hmdInfo.eyeTilesWide * hmdInfo.tilePixelsWide * NUM_EYES;
+	hmdInfo.visiblePixelsHigh = hmdInfo.eyeTilesHigh * hmdInfo.tilePixelsHigh;
+	hmdInfo.visibleMetersWide = 0.11047f * ( hmdInfo.eyeTilesWide * hmdInfo.tilePixelsWide * NUM_EYES ) / displayPixelsWide;
+	hmdInfo.visibleMetersHigh = 0.06214f * ( hmdInfo.eyeTilesHigh * hmdInfo.tilePixelsHigh ) / displayPixelsHigh;
+	hmdInfo.lensSeparationInMeters = hmdInfo.visibleMetersWide / NUM_EYES;
 	hmdInfo.metersPerTanAngleAtCenter = 0.037f;
 	hmdInfo.numKnots = 11;
 	hmdInfo.K[0] = 1.0f;
@@ -7290,6 +7289,17 @@ const hmdInfo_t * DefaultHmdInfo()
 	hmdInfo.chromaticAberration[3] =  0.0f;
 	return &hmdInfo;
 }
+
+/*
+================================================================================================
+
+Distortion meshes
+
+================================================================================================
+*/
+
+static float MaxFloat( float x, float y ) { return ( x > y ) ? x : y; }
+static float MinFloat( float x, float y ) { return ( x < y ) ? x : y; }
 
 // A Catmull-Rom spline through the values K[0], K[1], K[2] ... K[numKnots-1] evenly spaced from 0.0 to 1.0
 static float EvaluateCatmullRomSpline( const float value, float const * K, const int numKnots )
@@ -7339,24 +7349,24 @@ static float EvaluateCatmullRomSpline( const float value, float const * K, const
 	return res;
 }
 
-void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS], const int eyeTilesWide, const int eyeTilesHigh, const hmdInfo_t * hmdInfo )
+static void BuildDistortionMeshes( ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS], const ksHmdInfo * hmdInfo )
 {
-	const float horizontalShiftMeters = ( hmdInfo->lensSeparationInMeters / 2 ) - ( hmdInfo->widthInMeters / 4 );
-	const float horizontalShiftView = horizontalShiftMeters / ( hmdInfo->widthInMeters / 2 );
+	const float horizontalShiftMeters = ( hmdInfo->lensSeparationInMeters / 2 ) - ( hmdInfo->visibleMetersWide / 4 );
+	const float horizontalShiftView = horizontalShiftMeters / ( hmdInfo->visibleMetersWide / 2 );
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		for ( int y = 0; y <= eyeTilesHigh; y++ )
+		for ( int y = 0; y <= hmdInfo->eyeTilesHigh; y++ )
 		{
-			const float yf = (float)y / (float)eyeTilesHigh;
+			const float yf = 1.0f - (float)y / (float)hmdInfo->eyeTilesHigh;
 
-			for ( int x = 0; x <= eyeTilesWide; x++ )
+			for ( int x = 0; x <= hmdInfo->eyeTilesWide; x++ )
 			{
-				const float xf = (float)x / (float)eyeTilesWide;
+				const float xf = (float)x / (float)hmdInfo->eyeTilesWide;
 
 				const float in[2] = { ( eye ? -horizontalShiftView : horizontalShiftView ) + xf, yf };
-				const float ndcToPixels[2] = { hmdInfo->widthInPixels * 0.25f, hmdInfo->heightInPixels * 0.5f };
-				const float pixelsToMeters[2] = { hmdInfo->widthInMeters / hmdInfo->widthInPixels, hmdInfo->heightInMeters / hmdInfo->heightInPixels };
+				const float ndcToPixels[2] = { hmdInfo->visiblePixelsWide * 0.25f, hmdInfo->visiblePixelsHigh * 0.5f };
+				const float pixelsToMeters[2] = { hmdInfo->visibleMetersWide / hmdInfo->visiblePixelsWide, hmdInfo->visibleMetersHigh / hmdInfo->visiblePixelsHigh };
 
 				float theta[2];
 				for ( int i = 0; i < 2; i++ )
@@ -7378,7 +7388,7 @@ void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNEL
 					scale * ( 1.0f + hmdInfo->chromaticAberration[2] + rsq * hmdInfo->chromaticAberration[3] )
 				};
 
-				const int vertNum = y * ( eyeTilesWide + 1 ) + x;
+				const int vertNum = y * ( hmdInfo->eyeTilesWide + 1 ) + x;
 				for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
 				{
 					meshCoords[eye][channel][vertNum].x = chromaScale[channel] * theta[0];
@@ -7502,10 +7512,10 @@ typedef enum
 {
 	MEMORY_CACHED,
 	MEMORY_WRITE_COMBINED
-} CachingType_t;
+} ksCachingType;
 
 // Allocates page aligned contiguous physical memory. Memory pages are typically 4kB.
-static void * AllocContiguousPhysicalMemory( size_t size, CachingType_t type )
+static void * AllocContiguousPhysicalMemory( size_t size, ksCachingType type )
 {
 #if defined( OS_WINDOWS ) && USE_DDK == 1
 	const PHYSICAL_ADDRESS min = { 0x00000000, 0x00000000 };
@@ -7806,43 +7816,43 @@ static const char * GetCPUVersion()
 	return "unknown";
 }
 
-typedef unsigned long long Microseconds_t;
+typedef unsigned long long ksMicroseconds;
 
-static Microseconds_t GetTimeMicroseconds()
+static ksMicroseconds GetTimeMicroseconds()
 {
 #if defined( OS_WINDOWS )
-	static Microseconds_t ticksPerSecond = 0;
-	static Microseconds_t timeBase = 0;
+	static ksMicroseconds ticksPerSecond = 0;
+	static ksMicroseconds timeBase = 0;
 
 	if ( ticksPerSecond == 0 )
 	{
 		LARGE_INTEGER li;
 		QueryPerformanceFrequency( &li );
-		ticksPerSecond = (Microseconds_t) li.QuadPart;
+		ticksPerSecond = (ksMicroseconds) li.QuadPart;
 		QueryPerformanceCounter( &li );
-		timeBase = (Microseconds_t) li.LowPart + 0xFFFFFFFFLL * li.HighPart;
+		timeBase = (ksMicroseconds) li.LowPart + 0xFFFFFFFFLL * li.HighPart;
 	}
 
 	LARGE_INTEGER li;
 	QueryPerformanceCounter( &li );
-	Microseconds_t counter = (Microseconds_t) li.LowPart + 0xFFFFFFFFLL * li.HighPart;
+	ksMicroseconds counter = (ksMicroseconds) li.LowPart + 0xFFFFFFFFLL * li.HighPart;
 	return ( counter - timeBase ) * 1000000LL / ticksPerSecond;
 #elif defined( OS_ANDROID )
 	struct timespec ts;
 	clock_gettime( CLOCK_MONOTONIC, &ts );
-	return (Microseconds_t) ts.tv_sec * 1000ULL * 1000ULL + ts.tv_nsec / 1000ULL;
+	return (ksMicroseconds) ts.tv_sec * 1000ULL * 1000ULL + ts.tv_nsec / 1000ULL;
 #else
-	static Microseconds_t timeBase = 0;
+	static ksMicroseconds timeBase = 0;
 
 	struct timeval tv;
 	gettimeofday( &tv, 0 );
 
 	if ( timeBase == 0 )
 	{
-		timeBase = (Microseconds_t) tv.tv_sec * 1000 * 1000;
+		timeBase = (ksMicroseconds) tv.tv_sec * 1000 * 1000;
 	}
 
-	return (Microseconds_t) tv.tv_sec * 1000 * 1000 + tv.tv_usec - timeBase;
+	return (ksMicroseconds) tv.tv_sec * 1000 * 1000 + tv.tv_usec - timeBase;
 #endif
 }
 
@@ -7952,7 +7962,8 @@ void WriteTGA( const char * fileName, const unsigned char * rgba, const int widt
 		return;
 	}
 
-	if ( fwrite( &header, sizeof( header ), 1, fp ) != 1 ) {
+	if ( fwrite( &header, sizeof( header ), 1, fp ) != 1 )
+	{
 		Print( "Failed to write TGA header to %s\n", fileName );
 		fclose( fp );
 		return;
@@ -7983,10 +7994,8 @@ void WriteTGA( const char * fileName, const unsigned char * rgba, const int widt
 	fclose( fp );
 }
 
-void TestTimeWarp()
+void TestTimeWarp( const int srcTexelsWide, const int srcTexelsHigh, const ksHmdInfo * hmdInfo )
 {
-	int srcTexelsWide = 1024;
-	int srcTexelsHigh = 1024;
 	int srcPitchInTexels = srcTexelsWide;
 	unsigned char * src = (unsigned char *)AllocAlignedMemory( srcTexelsWide * srcTexelsHigh * 4 * sizeof( unsigned char ), 128 );
 
@@ -7998,18 +8007,18 @@ void TestTimeWarp()
 	unsigned char * planarG = packedRGB + 1 * srcTexelsWide * srcTexelsHigh;
 	unsigned char * planarB = packedRGB + 2 * srcTexelsWide * srcTexelsHigh;
 
-	const size_t numMeshCoords = ( EYE_TILES_WIDE + 1 ) * ( EYE_TILES_HIGH + 1 );
-	const size_t meshSizeInBytes = ( NUM_EYES + 1 ) * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t );
-	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *)AllocContiguousPhysicalMemory( meshSizeInBytes, MEMORY_CACHED );
-	MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
+	const size_t numMeshCoords = ( hmdInfo->eyeTilesWide + 1 ) * ( hmdInfo->eyeTilesHigh + 1 );
+	const size_t meshSizeInBytes = ( NUM_EYES + 1 ) * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( ksMeshCoord );
+	ksMeshCoord * meshCoordsBasePtr = (ksMeshCoord *)AllocContiguousPhysicalMemory( meshSizeInBytes, MEMORY_CACHED );
+	ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
 	{
 		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
 		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
 	};
 
-	BuildDistortionMeshes( meshCoords, EYE_TILES_WIDE, EYE_TILES_HIGH, DefaultHmdInfo() );
+	BuildDistortionMeshes( meshCoords, hmdInfo );
 
-	const int dstSizeInBytes = DISPLAY_PIXELS_WIDE * DISPLAY_PIXELS_HIGH * 4 * sizeof( unsigned char );
+	const int dstSizeInBytes = hmdInfo->displayPixelsWide * hmdInfo->displayPixelsHigh * 4 * sizeof( unsigned char );
 	unsigned char * dst = (unsigned char *) AllocContiguousPhysicalMemory( dstSizeInBytes, MEMORY_WRITE_COMBINED );
 
 #if defined( USE_DSP_TIMEWARP )
@@ -8063,11 +8072,11 @@ void TestTimeWarp()
 		}
 		memset( dst, 0, dstSizeInBytes );
 
-		Microseconds_t bestTime = 0xFFFFFFFFFFFFFFFF;
+		ksMicroseconds bestTime = 0xFFFFFFFFFFFFFFFF;
 
 		for ( int i = 0; i < 25; i++ )
 		{
-			const Microseconds_t start = GetTimeMicroseconds();
+			const ksMicroseconds start = GetTimeMicroseconds();
 
 			TimeWarpInterface_TimeWarp(
 					packedRGB,
@@ -8083,14 +8092,14 @@ void TestTimeWarp()
 					srcTexelsHigh,
 					dst,
 					dstSizeInBytes,
-					DISPLAY_PIXELS_WIDE,
-					EYE_TILES_WIDE,
-					EYE_TILES_HIGH,
+					hmdInfo->displayPixelsWide,
+					hmdInfo->eyeTilesWide,
+					hmdInfo->eyeTilesHigh,
 					meshCoordsBasePtr,
-					(int)meshSizeInBytes / sizeof( MeshCoord_t ),
+					(int)meshSizeInBytes / sizeof( ksMeshCoord ),
 					sampling );
 
-			const Microseconds_t end = GetTimeMicroseconds();
+			const ksMicroseconds end = GetTimeMicroseconds();
 
 			if ( end - start < bestTime )
 			{
@@ -8111,11 +8120,11 @@ void TestTimeWarp()
 		Print( "%22s = %5.1f milliseconds (%1.0f Mpixels/sec)\n",
 				string,
 				bestTime / 1000.0f,
-				2.0f * EYE_TILES_WIDE * EYE_TILES_HIGH * 32 * 32 / bestTime );
+				2.0f * hmdInfo->eyeTilesWide * hmdInfo->eyeTilesHigh * 32 * 32 / bestTime );
 
 		char fileName[1024];
 		sprintf( fileName, OUTPUT "warped-%d-%s.tga", sampling, string );
-		WriteTGA( fileName, dst, DISPLAY_PIXELS_WIDE, DISPLAY_PIXELS_HIGH );
+		WriteTGA( fileName, dst, hmdInfo->displayPixelsWide, hmdInfo->displayPixelsHigh );
 	}
 
 	TimeWarpInterface_Shutdown();
@@ -8138,20 +8147,31 @@ int main( int argc, char * argv[] )
 	(void)argc;
 	(void)argv;
 
+	// Up to 2048 x 2048
+	const int srcTexelsWide = 1024;
+	const int srcTexelsHigh = 1024;
+
+	// Typical 16:9 resolutions: 1920 x 1080, 2560 x 1440, 3840 x 2160, 7680 x 4320
+	const int displayPixelsWide = 1920;
+	const int displayPixelsHigh = 1080;
+
+	const ksHmdInfo * hmdInfo = GetDefaultHmdInfo( displayPixelsWide, displayPixelsHigh );
+
 	const int dspVersion = TimeWarpInterface_GetDspVersion();
 	char dspVersionString[32];
 	sprintf( dspVersionString, "Hexagon v%d", dspVersion );
 
 	Print( "--------------------------------\n" );
-	Print( "OS     : %s\n", GetOSVersion() );
-	Print( "CPU    : %s\n", GetCPUVersion() );
-	Print( "DSP    : %s\n", dspVersion != 0 ? dspVersionString : "-" );
-	Print( "Mode   : %dx%d\n", DISPLAY_PIXELS_WIDE, DISPLAY_PIXELS_HIGH );
+	Print( "OS      : %s\n", GetOSVersion() );
+	Print( "CPU     : %s\n", GetCPUVersion() );
+	Print( "DSP     : %s\n", dspVersion != 0 ? dspVersionString : "-" );
+	Print( "Display : %4d x %4d\n", hmdInfo->displayPixelsWide, hmdInfo->displayPixelsHigh );
+	Print( "Eye Img : %4d x %4d\n", srcTexelsWide, srcTexelsHigh );
 	Print( "--------------------------------\n" );
 
 	Print( "--------------------------------\n" );
 
-	TestTimeWarp();
+	TestTimeWarp( srcTexelsWide, srcTexelsHigh, hmdInfo );
 
 	Print( "--------------------------------\n" );
 

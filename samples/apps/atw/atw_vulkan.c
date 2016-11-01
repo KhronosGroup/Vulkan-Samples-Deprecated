@@ -88,7 +88,7 @@ that is pink or green respectively reaches the top of the graph and represents a
 rendered at the display refresh rate. When the frame rate drops, the bars turn red
 and become shorter proportional to how much the frame rate drops.
 
-The next two bar graph shows the CPU and GPU time of the stereoscopic rendering (pink),
+The next two bar graphs shows the CPU and GPU time of the stereoscopic rendering (pink),
 the time warp rendering (green) and the bar graph rendering (yellow). The times are
 stacked in each graph. The full height of a graph represents a full frame time.
 For instance, with a 60Hz display refresh rate, the full graph height represents 16.7
@@ -928,43 +928,43 @@ static const char * GetCPUVersion()
 	return "unknown";
 }
 
-typedef unsigned long long Microseconds_t;
+typedef unsigned long long ksMicroseconds;
 
-static Microseconds_t GetTimeMicroseconds()
+static ksMicroseconds GetTimeMicroseconds()
 {
 #if defined( OS_WINDOWS )
-	static Microseconds_t ticksPerSecond = 0;
-	static Microseconds_t timeBase = 0;
+	static ksMicroseconds ticksPerSecond = 0;
+	static ksMicroseconds timeBase = 0;
 
 	if ( ticksPerSecond == 0 )
 	{
 		LARGE_INTEGER li;
 		QueryPerformanceFrequency( &li );
-		ticksPerSecond = (Microseconds_t) li.QuadPart;
+		ticksPerSecond = (ksMicroseconds) li.QuadPart;
 		QueryPerformanceCounter( &li );
-		timeBase = (Microseconds_t) li.LowPart + 0xFFFFFFFFULL * li.HighPart;
+		timeBase = (ksMicroseconds) li.LowPart + 0xFFFFFFFFULL * li.HighPart;
 	}
 
 	LARGE_INTEGER li;
 	QueryPerformanceCounter( &li );
-	Microseconds_t counter = (Microseconds_t) li.LowPart + 0xFFFFFFFFULL * li.HighPart;
+	ksMicroseconds counter = (ksMicroseconds) li.LowPart + 0xFFFFFFFFULL * li.HighPart;
 	return ( counter - timeBase ) * 1000ULL * 1000ULL / ticksPerSecond;
 #elif defined( OS_ANDROID )
 	struct timespec ts;
 	clock_gettime( CLOCK_MONOTONIC, &ts );
-	return (Microseconds_t) ts.tv_sec * 1000ULL * 1000ULL + ts.tv_nsec / 1000ULL;
+	return (ksMicroseconds) ts.tv_sec * 1000ULL * 1000ULL + ts.tv_nsec / 1000ULL;
 #else
-	static Microseconds_t timeBase = 0;
+	static ksMicroseconds timeBase = 0;
 
 	struct timeval tv;
 	gettimeofday( &tv, 0 );
 
 	if ( timeBase == 0 )
 	{
-		timeBase = (Microseconds_t) tv.tv_sec * 1000ULL * 1000ULL;
+		timeBase = (ksMicroseconds) tv.tv_sec * 1000ULL * 1000ULL;
 	}
 
-	return (Microseconds_t) tv.tv_sec * 1000ULL * 1000ULL + tv.tv_usec - timeBase;
+	return (ksMicroseconds) tv.tv_sec * 1000ULL * 1000ULL + tv.tv_usec - timeBase;
 #endif
 }
 
@@ -976,12 +976,12 @@ Mutex for mutual exclusion on shared resources within a single process.
 Equivalent to a Windows Critical Section Object which allows recursive access. This mutex cannot be
 used for mutual-exclusion synchronization between threads from different processes.
 
-Mutex_t
+ksMutex
 
-static void Mutex_Create( Mutex_t * mutex );
-static void Mutex_Destroy( Mutex_t * mutex );
-static bool Mutex_Lock( Mutex_t * mutex, const bool blocking );
-static void Mutex_Unlock( Mutex_t * mutex );
+static void ksMutex_Create( ksMutex * mutex );
+static void ksMutex_Destroy( ksMutex * mutex );
+static bool ksMutex_Lock( ksMutex * mutex, const bool blocking );
+static void ksMutex_Unlock( ksMutex * mutex );
 
 ================================================================================================================================
 */
@@ -993,9 +993,9 @@ typedef struct
 #else
 	pthread_mutex_t		mutex;
 #endif
-} Mutex_t;
+} ksMutex;
 
-static void Mutex_Create( Mutex_t * mutex )
+static void ksMutex_Create( ksMutex * mutex )
 {
 #if defined( OS_WINDOWS )
 	InitializeCriticalSection( &mutex->handle );
@@ -1007,7 +1007,7 @@ static void Mutex_Create( Mutex_t * mutex )
 #endif
 }
 
-static void Mutex_Destroy( Mutex_t * mutex )
+static void ksMutex_Destroy( ksMutex * mutex )
 {
 #if defined( OS_WINDOWS )
 	DeleteCriticalSection( &mutex->handle );
@@ -1016,7 +1016,7 @@ static void Mutex_Destroy( Mutex_t * mutex )
 #endif
 }
 
-static bool Mutex_Lock( Mutex_t * mutex, const bool blocking )
+static bool ksMutex_Lock( ksMutex * mutex, const bool blocking )
 {
 #if defined( OS_WINDOWS )
 	if ( TryEnterCriticalSection( &mutex->handle ) == 0 )
@@ -1041,7 +1041,7 @@ static bool Mutex_Lock( Mutex_t * mutex, const bool blocking )
 #endif
 }
 
-static void Mutex_Unlock( Mutex_t * mutex )
+static void ksMutex_Unlock( ksMutex * mutex )
 {
 #if defined( OS_WINDOWS )
 	LeaveCriticalSection( &mutex->handle );
@@ -1098,13 +1098,13 @@ state after the APC is complete. If a call to PulseEvent occurs during the time 
 been temporarily removed from the wait state, then the thread will not be released, because PulseEvent
 releases only those threads that are in the wait state at the moment PulseEvent is called.
 
-Signal_t
+ksSignal
 
-static void Signal_Create( Signal_t * signal, const bool autoReset );
-static void Signal_Destroy( Signal_t * signal );
-static bool Signal_Wait( Signal_t * signal, const int timeOutMilliseconds );
-static void Signal_Raise( Signal_t * signal );
-static void Signal_Clear( Signal_t * signal );
+static void ksSignal_Create( ksSignal * signal, const bool autoReset );
+static void ksSignal_Destroy( ksSignal * signal );
+static bool ksSignal_Wait( ksSignal * signal, const int timeOutMilliseconds );
+static void ksSignal_Raise( ksSignal * signal );
+static void ksSignal_Clear( ksSignal * signal );
 
 ================================================================================================================================
 */
@@ -1120,9 +1120,9 @@ typedef struct
 	bool			autoReset;		// automatically clear the signalled state when a single thread is released
 	bool			signaled;		// in the signalled state if true
 #endif
-} Signal_t;
+} ksSignal;
 
-static void Signal_Create( Signal_t * signal, const bool autoReset )
+static void ksSignal_Create( ksSignal * signal, const bool autoReset )
 {
 #if defined( OS_WINDOWS )
 	signal->handle = CreateEvent( NULL, !autoReset, FALSE, NULL );
@@ -1135,7 +1135,7 @@ static void Signal_Create( Signal_t * signal, const bool autoReset )
 #endif
 }
 
-static void Signal_Destroy( Signal_t * signal )
+static void ksSignal_Destroy( ksSignal * signal )
 {
 #if defined( OS_WINDOWS )
 	CloseHandle( signal->handle );
@@ -1149,7 +1149,7 @@ static void Signal_Destroy( Signal_t * signal )
 // If 'autoReset' is true then the first thread that reaches the signalled state within the time-out period will clear the signalled state.
 // If 'timeOutMilliseconds' is negative then this will wait indefinitely until the signalled state is reached.
 // Returns true if the thread was released because the object entered the signalled state, returns false if the time-out is reached first.
-static bool Signal_Wait( Signal_t * signal, const int timeOutMilliseconds )
+static bool ksSignal_Wait( ksSignal * signal, const int timeOutMilliseconds )
 {
 #if defined( OS_WINDOWS )
 	DWORD result = WaitForSingleObject( signal->handle, timeOutMilliseconds < 0 ? INFINITE : timeOutMilliseconds );
@@ -1203,7 +1203,7 @@ static bool Signal_Wait( Signal_t * signal, const int timeOutMilliseconds )
 
 // Enter the signalled state.
 // Note that if 'autoReset' is true then this will only release a single thread.
-static void Signal_Raise( Signal_t * signal )
+static void ksSignal_Raise( ksSignal * signal )
 {
 #if defined( OS_WINDOWS )
 	SetEvent( signal->handle );
@@ -1220,7 +1220,7 @@ static void Signal_Raise( Signal_t * signal )
 
 // Clear the signalled state.
 // Should not be needed for auto-reset signals (autoReset == true).
-static void Signal_Clear( Signal_t * signal )
+static void ksSignal_Clear( ksSignal * signal )
 {
 #if defined( OS_WINDOWS )
 	ResetEvent( signal->handle );
@@ -1249,22 +1249,22 @@ This worker thread will function as a normal thread by immediately signalling th
 Once the thread function returns, the thread can be destroyed. Destroying the thread always waits
 for the thread function to return first.
 
-Thread_t
+ksThread
 
-static bool Thread_Create( Thread_t * thread, const char * threadName, threadFunction_t threadFunction, void * threadData );
-static void Thread_Destroy( Thread_t * thread );
-static void Thread_Signal( Thread_t * thread );
-static void Thread_Join( Thread_t * thread );
-static void Thread_Submit( Thread_t * thread, threadFunction_t threadFunction, void * threadData );
+static bool ksThread_Create( ksThread * thread, const char * threadName, ksThreadFunction threadFunction, void * threadData );
+static void ksThread_Destroy( ksThread * thread );
+static void ksThread_Signal( ksThread * thread );
+static void ksThread_Join( ksThread * thread );
+static void ksThread_Submit( ksThread * thread, ksThreadFunction threadFunction, void * threadData );
 
-static void Thread_SetName( const char * name );
-static void Thread_SetAffinity( int mask );
-static void Thread_SetRealTimePriority( int priority );
+static void ksThread_SetName( const char * name );
+static void ksThread_SetAffinity( int mask );
+static void ksThread_SetRealTimePriority( int priority );
 
 ================================================================================================================================
 */
 
-typedef void (*threadFunction_t)( void * data );
+typedef void (*ksThreadFunction)( void * data );
 
 #if defined( OS_WINDOWS )
 #define THREAD_HANDLE			HANDLE
@@ -1281,19 +1281,19 @@ typedef void (*threadFunction_t)( void * data );
 typedef struct
 {
 	char				threadName[128];
-	threadFunction_t	threadFunction;
+	ksThreadFunction	threadFunction;
 	void *				threadData;
 
 	void *				stack;
 	THREAD_HANDLE		handle;
-	Signal_t			workIsDone;
-	Signal_t			workIsAvailable;
-	Mutex_t				workMutex;
+	ksSignal			workIsDone;
+	ksSignal			workIsAvailable;
+	ksMutex				workMutex;
 	volatile bool		terminate;
-} Thread_t;
+} ksThread;
 
 // Note that on Android AttachCurrentThread will reset the thread name.
-static void Thread_SetName( const char * name )
+static void ksThread_SetName( const char * name )
 {
 #if defined( OS_WINDOWS )
 	static const unsigned int MS_VC_EXCEPTION = 0x406D1388;
@@ -1328,7 +1328,7 @@ static void Thread_SetName( const char * name )
 #endif
 }
 
-static void Thread_SetAffinity( int mask )
+static void ksThread_SetAffinity( int mask )
 {
 #if defined( OS_WINDOWS )
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
@@ -1452,7 +1452,7 @@ static void Thread_SetAffinity( int mask )
 #endif
 }
 
-static void Thread_SetRealTimePriority( int priority )
+static void ksThread_SetRealTimePriority( int priority )
 {
 #if defined( OS_WINDOWS )
 	UNUSED_PARM( priority );
@@ -1535,26 +1535,26 @@ static void Thread_SetRealTimePriority( int priority )
 
 static THREAD_RETURN_TYPE ThreadFunctionInternal( void * data )
 {
-	Thread_t * thread = (Thread_t *)data;
+	ksThread * thread = (ksThread *)data;
 
-	Thread_SetName( thread->threadName );
+	ksThread_SetName( thread->threadName );
 
 	for ( ; ; )
 	{
-		Mutex_Lock( &thread->workMutex, true );
-		if ( Signal_Wait( &thread->workIsAvailable, 0 ) )
+		ksMutex_Lock( &thread->workMutex, true );
+		if ( ksSignal_Wait( &thread->workIsAvailable, 0 ) )
 		{
-			Mutex_Unlock( &thread->workMutex );
+			ksMutex_Unlock( &thread->workMutex );
 		}
 		else
 		{
-			Signal_Raise( &thread->workIsDone );
-			Mutex_Unlock( &thread->workMutex );
-			Signal_Wait( &thread->workIsAvailable, -1 );
+			ksSignal_Raise( &thread->workIsDone );
+			ksMutex_Unlock( &thread->workMutex );
+			ksSignal_Wait( &thread->workIsAvailable, -1 );
 		}
 		if ( thread->terminate )
 		{
-			Signal_Raise( &thread->workIsDone );
+			ksSignal_Raise( &thread->workIsDone );
 			break;
 		}
 		thread->threadFunction( thread->threadData );
@@ -1562,16 +1562,16 @@ static THREAD_RETURN_TYPE ThreadFunctionInternal( void * data )
 	return THREAD_RETURN_VALUE;
 }
 
-static bool Thread_Create( Thread_t * thread, const char * threadName, threadFunction_t threadFunction, void * threadData )
+static bool ksThread_Create( ksThread * thread, const char * threadName, ksThreadFunction threadFunction, void * threadData )
 {
 	strncpy( thread->threadName, threadName, sizeof( thread->threadName ) );
 	thread->threadName[sizeof( thread->threadName ) - 1] = '\0';
 	thread->threadFunction = threadFunction;
 	thread->threadData = threadData;
 	thread->stack = NULL;
-	Signal_Create( &thread->workIsDone, false );
-	Signal_Create( &thread->workIsAvailable, true );
-	Mutex_Create( &thread->workMutex );
+	ksSignal_Create( &thread->workIsDone, false );
+	ksSignal_Create( &thread->workIsAvailable, true );
+	ksMutex_Create( &thread->workMutex );
 	thread->terminate = false;
 
 #if defined( OS_WINDOWS )
@@ -1595,21 +1595,21 @@ static bool Thread_Create( Thread_t * thread, const char * threadName, threadFun
 	pthread_attr_destroy( &attr );
 #endif
 
-	Signal_Wait( &thread->workIsDone, -1 );
+	ksSignal_Wait( &thread->workIsDone, -1 );
 	return true;
 }
 
-static void Thread_Destroy( Thread_t * thread )
+static void ksThread_Destroy( ksThread * thread )
 {
-	Mutex_Lock( &thread->workMutex, true );
-	Signal_Clear( &thread->workIsDone );
+	ksMutex_Lock( &thread->workMutex, true );
+	ksSignal_Clear( &thread->workIsDone );
 	thread->terminate = true;
-	Signal_Raise( &thread->workIsAvailable );
-	Mutex_Unlock( &thread->workMutex );
-	Signal_Wait( &thread->workIsDone, -1 );
-	Mutex_Destroy( &thread->workMutex );
-	Signal_Destroy( &thread->workIsDone );
-	Signal_Destroy( &thread->workIsAvailable );
+	ksSignal_Raise( &thread->workIsAvailable );
+	ksMutex_Unlock( &thread->workMutex );
+	ksSignal_Wait( &thread->workIsDone, -1 );
+	ksMutex_Destroy( &thread->workMutex );
+	ksSignal_Destroy( &thread->workIsDone );
+	ksSignal_Destroy( &thread->workIsAvailable );
 #if defined( OS_WINDOWS )
 	WaitForSingleObject( thread->handle, INFINITE );
 	CloseHandle( thread->handle );
@@ -1618,25 +1618,25 @@ static void Thread_Destroy( Thread_t * thread )
 #endif
 }
 
-static void Thread_Signal( Thread_t * thread )
+static void ksThread_Signal( ksThread * thread )
 {
-	Mutex_Lock( &thread->workMutex, true );
-	Signal_Clear( &thread->workIsDone );
-	Signal_Raise( &thread->workIsAvailable );
-	Mutex_Unlock( &thread->workMutex );
+	ksMutex_Lock( &thread->workMutex, true );
+	ksSignal_Clear( &thread->workIsDone );
+	ksSignal_Raise( &thread->workIsAvailable );
+	ksMutex_Unlock( &thread->workMutex );
 }
 
-static void Thread_Join( Thread_t * thread )
+static void ksThread_Join( ksThread * thread )
 {
-	Signal_Wait( &thread->workIsDone, -1 );
+	ksSignal_Wait( &thread->workIsDone, -1 );
 }
 
-static void Thread_Submit( Thread_t * thread, threadFunction_t threadFunction, void * threadData )
+static void ksThread_Submit( ksThread * thread, ksThreadFunction threadFunction, void * threadData )
 {
-	Thread_Join( thread );
+	ksThread_Join( thread );
 	thread->threadFunction = threadFunction;
 	thread->threadData = threadData;
-	Thread_Signal( thread );
+	ksThread_Signal( thread );
 }
 
 /*
@@ -1644,17 +1644,17 @@ static void Thread_Submit( Thread_t * thread, threadFunction_t threadFunction, v
 
 Frame logging.
 
-Each thread that calls FrameLog_Open will open its own log.
+Each thread that calls ksFrameLog_Open will open its own log.
 A frame log is always opened for a specified number of frames, and will
 automatically close after the specified number of frames have been recorded.
 The CPU and GPU times for the recorded frames will be listed at the end of the log.
 
-FrameLog_t
+ksFrameLog
 
-static void FrameLog_Open( const char * fileName, const int frameCount );
-static void FrameLog_Write( const char * fileName, const int lineNumber, const char * function );
-static void FrameLog_BeginFrame();
-static void FrameLog_EndFrame( const float cpuTimeMilliseconds, const float gpuTimeMilliseconds, const int gpuTimeFramesDelayed );
+static void ksFrameLog_Open( const char * fileName, const int frameCount );
+static void ksFrameLog_Write( const char * fileName, const int lineNumber, const char * function );
+static void ksFrameLog_BeginFrame();
+static void ksFrameLog_EndFrame( const float cpuTimeMilliseconds, const float gpuTimeMilliseconds, const int gpuTimeFramesDelayed );
 
 ================================================================================================================================
 */
@@ -1666,25 +1666,25 @@ typedef struct
 	float *		frameGpuTimes;
 	int			frameCount;
 	int			frame;
-} FrameLog_t;
+} ksFrameLog;
 
-__thread FrameLog_t * threadFrameLog;
+__thread ksFrameLog * threadFrameLog;
 
-static FrameLog_t * FrameLog_Get()
+static ksFrameLog * ksFrameLog_Get()
 {
-	FrameLog_t * l = threadFrameLog;
+	ksFrameLog * l = threadFrameLog;
 	if ( l == NULL )
 	{
-		l = (FrameLog_t *) malloc( sizeof( FrameLog_t ) );
-		memset( l, 0, sizeof( FrameLog_t ) );
+		l = (ksFrameLog *) malloc( sizeof( ksFrameLog ) );
+		memset( l, 0, sizeof( ksFrameLog ) );
 		threadFrameLog = l;
 	}
 	return l;
 }
 
-static void FrameLog_Open( const char * fileName, const int frameCount )
+static void ksFrameLog_Open( const char * fileName, const int frameCount )
 {
-	FrameLog_t * l = FrameLog_Get();
+	ksFrameLog * l = ksFrameLog_Get();
 	if ( l != NULL && l->fp == NULL )
 	{
 		l->fp = fopen( fileName, "wb" );
@@ -1705,9 +1705,9 @@ static void FrameLog_Open( const char * fileName, const int frameCount )
 	}
 }
 
-static void FrameLog_Write( const char * fileName, const int lineNumber, const char * function )
+static void ksFrameLog_Write( const char * fileName, const int lineNumber, const char * function )
 {
-	FrameLog_t * l = FrameLog_Get();
+	ksFrameLog * l = ksFrameLog_Get();
 	if ( l != NULL && l->fp != NULL )
 	{
 		if ( l->frame < l->frameCount )
@@ -1717,9 +1717,9 @@ static void FrameLog_Write( const char * fileName, const int lineNumber, const c
 	}
 }
 
-static void FrameLog_BeginFrame()
+static void ksFrameLog_BeginFrame()
 {
-	FrameLog_t * l = FrameLog_Get();
+	ksFrameLog * l = ksFrameLog_Get();
 	if ( l != NULL && l->fp != NULL )
 	{
 		if ( l->frame < l->frameCount )
@@ -1731,9 +1731,9 @@ static void FrameLog_BeginFrame()
 	}
 }
 
-static void FrameLog_EndFrame( const float cpuTimeMilliseconds, const float gpuTimeMilliseconds, const int gpuTimeFramesDelayed )
+static void ksFrameLog_EndFrame( const float cpuTimeMilliseconds, const float gpuTimeMilliseconds, const int gpuTimeFramesDelayed )
 {
-	FrameLog_t * l = FrameLog_Get();
+	ksFrameLog * l = ksFrameLog_Get();
 	if ( l != NULL && l->fp != NULL )
 	{
 		if ( l->frame < l->frameCount )
@@ -1761,7 +1761,7 @@ static void FrameLog_EndFrame( const float cpuTimeMilliseconds, const float gpuT
 			fclose( l->fp );
 			free( l->frameCpuTimes );
 			free( l->frameGpuTimes );
-			memset( l, 0, sizeof( FrameLog_t ) );
+			memset( l, 0, sizeof( ksFrameLog ) );
 		}
 	}
 }
@@ -1771,68 +1771,68 @@ static void FrameLog_EndFrame( const float cpuTimeMilliseconds, const float gpuT
 
 Vectors and matrices. All matrices are column-major.
 
-Vector2i_t
-Vector3i_t
-Vector4i_t
-Vector2f_t
-Vector3f_t
-Vector4f_t
-Quatf_t
-Matrix2x2f_t
-Matrix2x3f_t
-Matrix2x4f_t
-Matrix3x2f_t
-Matrix3x3f_t
-Matrix3x4f_t
-Matrix4x2f_t
-Matrix4x3f_t
-Matrix4x4f_t
+ksVector2i
+ksVector3i
+ksVector4i
+ksVector2f
+ksVector3f
+ksVector4f
+ksQuatf
+ksMatrix2x2f
+ksMatrix2x3f
+ksMatrix2x4f
+ksMatrix3x2f
+ksMatrix3x3f
+ksMatrix3x4f
+ksMatrix4x2f
+ksMatrix4x3f
+ksMatrix4x4f
 
-static void Vector3f_Set( Vector3f_t * v, const float value );
-static void Vector3f_Add( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
-static void Vector3f_Sub( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
-static void Vector3f_Min( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
-static void Vector3f_Max( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b );
-static void Vector3f_Decay( Vector3f_t * result, const Vector3f_t * a, const float value );
-static void Vector3f_Lerp( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b, const float fraction );
-static void Vector3f_Normalize( Vector3f_t * v );
+static void ksVector3f_Set( ksVector3f * v, const float value );
+static void ksVector3f_Add( ksVector3f * result, const ksVector3f * a, const ksVector3f * b );
+static void ksVector3f_Sub( ksVector3f * result, const ksVector3f * a, const ksVector3f * b );
+static void ksVector3f_Min( ksVector3f * result, const ksVector3f * a, const ksVector3f * b );
+static void ksVector3f_Max( ksVector3f * result, const ksVector3f * a, const ksVector3f * b );
+static void ksVector3f_Decay( ksVector3f * result, const ksVector3f * a, const float value );
+static void ksVector3f_Lerp( ksVector3f * result, const ksVector3f * a, const ksVector3f * b, const float fraction );
+static void ksVector3f_Normalize( ksVector3f * v );
 
-static void Quatf_Lerp( Quatf_t * result, const Quatf_t * a, const Quatf_t * b, const float fraction );
+static void ksQuatf_Lerp( ksQuatf * result, const ksQuatf * a, const ksQuatf * b, const float fraction );
 
-static void Matrix3x3f_CreateTransposeFromMatrix4x4f( Matrix3x3f_t * result, const Matrix4x4f_t * src );
-static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * result, const Matrix4x4f_t * src );
+static void ksMatrix3x3f_CreateTransposeFromMatrix4x4f( ksMatrix3x3f * result, const ksMatrix4x4f * src );
+static void ksMatrix3x4f_CreateFromMatrix4x4f( ksMatrix3x4f * result, const ksMatrix4x4f * src );
 
-static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * result );
-static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * result, const float x, const float y, const float z );
-static void Matrix4x4f_CreateRotation( Matrix4x4f_t * result, const float degreesX, const float degreesY, const float degreesZ );
-static void Matrix4x4f_CreateScale( Matrix4x4f_t * result, const float x, const float y, const float z );
-static void Matrix4x4f_CreateTranslationRotationScale( Matrix4x4f_t * result, const Vector3f_t * scale, const Quatf_t * rotation, const Vector3f_t * translation );
-static void Matrix4x4f_CreateProjection( Matrix4x4f_t * result, const float minX, const float maxX,
+static void ksMatrix4x4f_CreateIdentity( ksMatrix4x4f * result );
+static void ksMatrix4x4f_CreateTranslation( ksMatrix4x4f * result, const float x, const float y, const float z );
+static void ksMatrix4x4f_CreateRotation( ksMatrix4x4f * result, const float degreesX, const float degreesY, const float degreesZ );
+static void ksMatrix4x4f_CreateScale( ksMatrix4x4f * result, const float x, const float y, const float z );
+static void ksMatrix4x4f_CreateTranslationRotationScale( ksMatrix4x4f * result, const ksVector3f * scale, const ksQuatf * rotation, const ksVector3f * translation );
+static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float minX, const float maxX,
 											float const minY, const float maxY, const float nearZ, const float farZ );
-static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * result, const float fovDegreesX, const float fovDegreesY,
+static void ksMatrix4x4f_CreateProjectionFov( ksMatrix4x4f * result, const float fovDegreesX, const float fovDegreesY,
 											const float offsetX, const float offsetY, const float nearZ, const float farZ );
-static void Matrix4x4f_CreateFromQuaternion( Matrix3x4f_t * result, const Quatf_t * src );
-static void Matrix4x4f_CreateOffsetScaleForBounds( Matrix4x4f_t * result, const Matrix4x4f_t * matrix, const Vector3f_t * mins, const Vector3f_t * maxs );
+static void ksMatrix4x4f_CreateFromQuaternion( ksMatrix3x4f * result, const ksQuatf * src );
+static void ksMatrix4x4f_CreateOffsetScaleForBounds( ksMatrix4x4f * result, const ksMatrix4x4f * matrix, const ksVector3f * mins, const ksVector3f * maxs );
 
-static bool Matrix4x4f_IsAffine( const Matrix4x4f_t * matrix, const float epsilon );
-static bool Matrix4x4f_IsOrthogonal( const Matrix4x4f_t * matrix, const float epsilon );
-static bool Matrix4x4f_IsOrthonormal( const Matrix4x4f_t * matrix, const float epsilon );
-static bool Matrix4x4f_IsHomogeneous( const Matrix4x4f_t * matrix, const float epsilon );
+static bool ksMatrix4x4f_IsAffine( const ksMatrix4x4f * matrix, const float epsilon );
+static bool ksMatrix4x4f_IsOrthogonal( const ksMatrix4x4f * matrix, const float epsilon );
+static bool ksMatrix4x4f_IsOrthonormal( const ksMatrix4x4f * matrix, const float epsilon );
+static bool ksMatrix4x4f_IsHomogeneous( const ksMatrix4x4f * matrix, const float epsilon );
 
-static void Matrix4x4f_GetTranslation( Vector3f_t * result, const Matrix4x4f_t * src );
-static void Matrix4x4f_GetRotation( Quatf_t * result, const Matrix4x4f_t * src );
-static void Matrix4x4f_GetScale( Vector3f_t * result, const Matrix4x4f_t * src );
+static void ksMatrix4x4f_GetTranslation( ksVector3f * result, const ksMatrix4x4f * src );
+static void ksMatrix4x4f_GetRotation( ksQuatf * result, const ksMatrix4x4f * src );
+static void ksMatrix4x4f_GetScale( ksVector3f * result, const ksMatrix4x4f * src );
 
-static void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, const Matrix4x4f_t * b );
-static void Matrix4x4f_Transpose( Matrix4x4f_t * result, const Matrix4x4f_t * src );
-static void Matrix4x4f_Invert( Matrix4x4f_t * result, const Matrix4x4f_t * src );
-static void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4f_t * src );
+static void ksMatrix4x4f_Multiply( ksMatrix4x4f * result, const ksMatrix4x4f * a, const ksMatrix4x4f * b );
+static void ksMatrix4x4f_Transpose( ksMatrix4x4f * result, const ksMatrix4x4f * src );
+static void ksMatrix4x4f_Invert( ksMatrix4x4f * result, const ksMatrix4x4f * src );
+static void ksMatrix4x4f_InvertHomogeneous( ksMatrix4x4f * result, const ksMatrix4x4f * src );
 
-static void Matrix4x4f_TransformVector3f( Vector3f_t * result, const Matrix4x4f_t * m, const Vector3f_t * v );
-static void Matrix4x4f_TransformVector4f( Vector4f_t * result, const Matrix4x4f_t * m, const Vector4f_t * v );
+static void ksMatrix4x4f_TransformVector3f( ksVector3f * result, const ksMatrix4x4f * m, const ksVector3f * v );
+static void ksMatrix4x4f_TransformVector4f( ksVector4f * result, const ksMatrix4x4f * m, const ksVector4f * v );
 
-static void Matrix4x4f_TransformBounds( Vector3f_t * resultMins, Vector3f_t * resultMaxs, const Matrix4x4f_t * matrix, const Vector3f_t * mins, const Vector3f_t * maxs );
-static bool Matrix4x4f_CullBounds( const Matrix4x4f_t * mvp, const Vector3f_t * mins, const Vector3f_t * maxs );
+static void ksMatrix4x4f_TransformBounds( ksVector3f * resultMins, ksVector3f * resultMaxs, const ksMatrix4x4f * matrix, const ksVector3f * mins, const ksVector3f * maxs );
+static bool ksMatrix4x4f_CullBounds( const ksMatrix4x4f * mvp, const ksVector3f * mins, const ksVector3f * maxs );
 
 ================================================================================================================================
 */
@@ -1842,7 +1842,7 @@ typedef struct
 {
 	int x;
 	int y;
-} Vector2i_t;
+} ksVector2i;
 
 // 3D integer vector
 typedef struct
@@ -1850,7 +1850,7 @@ typedef struct
 	int x;
 	int y;
 	int z;
-} Vector3i_t;
+} ksVector3i;
 
 // 4D integer vector
 typedef struct
@@ -1859,14 +1859,14 @@ typedef struct
 	int y;
 	int z;
 	int w;
-} Vector4i_t;
+} ksVector4i;
 
 // 2D float vector
 typedef struct
 {
 	float x;
 	float y;
-} Vector2f_t;
+} ksVector2f;
 
 // 3D float vector
 typedef struct
@@ -1874,7 +1874,7 @@ typedef struct
 	float x;
 	float y;
 	float z;
-} Vector3f_t;
+} ksVector3f;
 
 // 4D float vector
 typedef struct
@@ -1883,7 +1883,7 @@ typedef struct
 	float y;
 	float z;
 	float w;
-} Vector4f_t;
+} ksVector4f;
 
 // Quaternion
 typedef struct
@@ -1892,70 +1892,70 @@ typedef struct
 	float y;
 	float z;
 	float w;
-} Quatf_t;
+} ksQuatf;
 
 // Column-major 2x2 matrix
 typedef struct
 {
 	float m[2][2];
-} Matrix2x2f_t;
+} ksMatrix2x2f;
 
 // Column-major 2x3 matrix
 typedef struct
 {
 	float m[2][3];
-} Matrix2x3f_t;
+} ksMatrix2x3f;
 
 // Column-major 2x4 matrix
 typedef struct
 {
 	float m[2][4];
-} Matrix2x4f_t;
+} ksMatrix2x4f;
 
 // Column-major 3x2 matrix
 typedef struct
 {
 	float m[3][2];
-} Matrix3x2f_t;
+} ksMatrix3x2f;
 
 // Column-major 3x3 matrix
 typedef struct
 {
 	float m[3][3];
-} Matrix3x3f_t;
+} ksMatrix3x3f;
 
 // Column-major 3x4 matrix
 typedef struct
 {
 	float m[3][4];
-} Matrix3x4f_t;
+} ksMatrix3x4f;
 
 // Column-major 4x2 matrix
 typedef struct
 {
 	float m[4][2];
-} Matrix4x2f_t;
+} ksMatrix4x2f;
 
 // Column-major 4x3 matrix
 typedef struct
 {
 	float m[4][3];
-} Matrix4x3f_t;
+} ksMatrix4x3f;
 
 // Column-major 4x4 matrix
 typedef struct
 {
 	float m[4][4];
-} Matrix4x4f_t;
+} ksMatrix4x4f;
 
-static const Vector4f_t colorRed		= { 1.0f, 0.0f, 0.0f, 1.0f };
-static const Vector4f_t colorGreen		= { 0.0f, 1.0f, 0.0f, 1.0f };
-static const Vector4f_t colorBlue		= { 0.0f, 0.0f, 1.0f, 1.0f };
-static const Vector4f_t colorYellow		= { 1.0f, 1.0f, 0.0f, 1.0f };
-static const Vector4f_t colorPurple		= { 1.0f, 0.0f, 1.0f, 1.0f };
-static const Vector4f_t colorCyan		= { 0.0f, 1.0f, 1.0f, 1.0f };
-static const Vector4f_t colorLightGrey	= { 0.7f, 0.7f, 0.7f, 1.0f };
-static const Vector4f_t colorDarkGrey	= { 0.3f, 0.3f, 0.3f, 1.0f };
+static const ksVector4f colorRed		= { 1.0f, 0.0f, 0.0f, 1.0f };
+static const ksVector4f colorGreen		= { 0.0f, 1.0f, 0.0f, 1.0f };
+static const ksVector4f colorBlue		= { 0.0f, 0.0f, 1.0f, 1.0f };
+static const ksVector4f colorYellow		= { 1.0f, 1.0f, 0.0f, 1.0f };
+static const ksVector4f colorPurple		= { 1.0f, 0.0f, 1.0f, 1.0f };
+static const ksVector4f colorCyan		= { 0.0f, 1.0f, 1.0f, 1.0f };
+static const ksVector4f colorLightGrey	= { 0.7f, 0.7f, 0.7f, 1.0f };
+static const ksVector4f colorDarkGrey	= { 0.3f, 0.3f, 0.3f, 1.0f };
 
 static float RcpSqrt( const float x )
 {
@@ -1964,56 +1964,56 @@ static float RcpSqrt( const float x )
 	return rcp;
 }
 
-static void Vector3f_Set( Vector3f_t * v, const float value )
+static void ksVector3f_Set( ksVector3f * v, const float value )
 {
 	v->x = value;
 	v->y = value;
 	v->z = value;
 }
 
-static void Vector3f_Add( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b )
+static void ksVector3f_Add( ksVector3f * result, const ksVector3f * a, const ksVector3f * b )
 {
 	result->x = a->x + b->x;
 	result->y = a->y + b->y;
 	result->z = a->z + b->z;
 }
 
-static void Vector3f_Sub( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b )
+static void ksVector3f_Sub( ksVector3f * result, const ksVector3f * a, const ksVector3f * b )
 {
 	result->x = a->x - b->x;
 	result->y = a->y - b->y;
 	result->z = a->z - b->z;
 }
 
-static void Vector3f_Min( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b )
+static void ksVector3f_Min( ksVector3f * result, const ksVector3f * a, const ksVector3f * b )
 {
 	result->x = ( a->x < b->x ) ? a->x : b->x;
 	result->y = ( a->y < b->y ) ? a->y : b->y;
 	result->z = ( a->z < b->z ) ? a->z : b->z;
 }
 
-static void Vector3f_Max( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b )
+static void ksVector3f_Max( ksVector3f * result, const ksVector3f * a, const ksVector3f * b )
 {
 	result->x = ( a->x > b->x ) ? a->x : b->x;
 	result->y = ( a->y > b->y ) ? a->y : b->y;
 	result->z = ( a->z > b->z ) ? a->z : b->z;
 }
 
-static void Vector3f_Decay( Vector3f_t * result, const Vector3f_t * a, const float value )
+static void ksVector3f_Decay( ksVector3f * result, const ksVector3f * a, const float value )
 {
 	result->x = ( fabsf( a->x ) > value ) ? ( ( a->x > 0.0f ) ? ( a->x - value ) : ( a->x + value ) ) : 0.0f;
 	result->y = ( fabsf( a->y ) > value ) ? ( ( a->y > 0.0f ) ? ( a->y - value ) : ( a->y + value ) ) : 0.0f;
 	result->z = ( fabsf( a->z ) > value ) ? ( ( a->z > 0.0f ) ? ( a->z - value ) : ( a->z + value ) ) : 0.0f;
 }
 
-static void Vector3f_Lerp( Vector3f_t * result, const Vector3f_t * a, const Vector3f_t * b, const float fraction )
+static void ksVector3f_Lerp( ksVector3f * result, const ksVector3f * a, const ksVector3f * b, const float fraction )
 {
 	result->x = a->x + fraction * ( b->x - a->x );
 	result->y = a->y + fraction * ( b->y - a->y );
 	result->z = a->z + fraction * ( b->z - a->z );
 }
 
-static void Vector3f_Normalize( Vector3f_t * v )
+static void ksVector3f_Normalize( ksVector3f * v )
 {
 	const float lengthRcp = RcpSqrt( v->x * v->x + v->y * v->y + v->z * v->z );
 	v->x *= lengthRcp;
@@ -2021,7 +2021,7 @@ static void Vector3f_Normalize( Vector3f_t * v )
 	v->z *= lengthRcp;
 }
 
-static void Quatf_Lerp( Quatf_t * result, const Quatf_t * a, const Quatf_t * b, const float fraction )
+static void ksQuatf_Lerp( ksQuatf * result, const ksQuatf * a, const ksQuatf * b, const float fraction )
 {
 	const float s = a->x * b->x + a->y * b->y + a->z * b->z + a->w * b->w;
 	const float fa = 1.0f - fraction;
@@ -2037,7 +2037,7 @@ static void Quatf_Lerp( Quatf_t * result, const Quatf_t * a, const Quatf_t * b, 
 	result->w = w * lengthRcp;
 }
 
-static void Matrix3x3f_CreateTransposeFromMatrix4x4f( Matrix3x3f_t * result, const Matrix4x4f_t * src )
+static void ksMatrix3x3f_CreateTransposeFromMatrix4x4f( ksMatrix3x3f * result, const ksMatrix4x4f * src )
 {
 	result->m[0][0] = src->m[0][0];
 	result->m[0][1] = src->m[1][0];
@@ -2052,7 +2052,7 @@ static void Matrix3x3f_CreateTransposeFromMatrix4x4f( Matrix3x3f_t * result, con
 	result->m[2][2] = src->m[2][2];
 }
 
-static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * result, const Matrix4x4f_t * src )
+static void ksMatrix3x4f_CreateFromMatrix4x4f( ksMatrix3x4f * result, const ksMatrix4x4f * src )
 {
 	result->m[0][0] = src->m[0][0];
 	result->m[0][1] = src->m[1][0];
@@ -2069,7 +2069,7 @@ static void Matrix3x4f_CreateFromMatrix4x4f( Matrix3x4f_t * result, const Matrix
 }
 
 // Use left-multiplication to accumulate transformations.
-static void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, const Matrix4x4f_t * b )
+static void ksMatrix4x4f_Multiply( ksMatrix4x4f * result, const ksMatrix4x4f * a, const ksMatrix4x4f * b )
 {
 	result->m[0][0] = a->m[0][0] * b->m[0][0] + a->m[1][0] * b->m[0][1] + a->m[2][0] * b->m[0][2] + a->m[3][0] * b->m[0][3];
 	result->m[0][1] = a->m[0][1] * b->m[0][0] + a->m[1][1] * b->m[0][1] + a->m[2][1] * b->m[0][2] + a->m[3][1] * b->m[0][3];
@@ -2093,7 +2093,7 @@ static void Matrix4x4f_Multiply( Matrix4x4f_t * result, const Matrix4x4f_t * a, 
 }
 
 // Creates the transpose of the given matrix.
-static void Matrix4x4f_Transpose( Matrix4x4f_t * result, const Matrix4x4f_t * src )
+static void ksMatrix4x4f_Transpose( ksMatrix4x4f * result, const ksMatrix4x4f * src )
 {
 	result->m[0][0] = src->m[0][0];
 	result->m[0][1] = src->m[1][0];
@@ -2117,7 +2117,7 @@ static void Matrix4x4f_Transpose( Matrix4x4f_t * result, const Matrix4x4f_t * sr
 }
 
 // Returns a 3x3 minor of a 4x4 matrix.
-static float Matrix4x4f_Minor( const Matrix4x4f_t * matrix, int r0, int r1, int r2, int c0, int c1, int c2 )
+static float ksMatrix4x4f_Minor( const ksMatrix4x4f * matrix, int r0, int r1, int r2, int c0, int c1, int c2 )
 {
 	return	matrix->m[r0][c0] * ( matrix->m[r1][c1] * matrix->m[r2][c2] - matrix->m[r2][c1] * matrix->m[r1][c2] ) -
 			matrix->m[r0][c1] * ( matrix->m[r1][c0] * matrix->m[r2][c2] - matrix->m[r2][c0] * matrix->m[r1][c2] ) +
@@ -2125,33 +2125,33 @@ static float Matrix4x4f_Minor( const Matrix4x4f_t * matrix, int r0, int r1, int 
 }
  
 // Calculates the inverse of a 4x4 matrix.
-static void Matrix4x4f_Invert( Matrix4x4f_t * result, const Matrix4x4f_t * src )
+static void ksMatrix4x4f_Invert( ksMatrix4x4f * result, const ksMatrix4x4f * src )
 {
-	const float rcpDet = 1.0f / (	src->m[0][0] * Matrix4x4f_Minor( src, 1, 2, 3, 1, 2, 3 ) -
-									src->m[0][1] * Matrix4x4f_Minor( src, 1, 2, 3, 0, 2, 3 ) +
-									src->m[0][2] * Matrix4x4f_Minor( src, 1, 2, 3, 0, 1, 3 ) -
-									src->m[0][3] * Matrix4x4f_Minor( src, 1, 2, 3, 0, 1, 2 ) );
+	const float rcpDet = 1.0f / (	src->m[0][0] * ksMatrix4x4f_Minor( src, 1, 2, 3, 1, 2, 3 ) -
+									src->m[0][1] * ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 2, 3 ) +
+									src->m[0][2] * ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 1, 3 ) -
+									src->m[0][3] * ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 1, 2 ) );
 
-	result->m[0][0] =  Matrix4x4f_Minor( src, 1, 2, 3, 1, 2, 3 ) * rcpDet;
-	result->m[0][1] = -Matrix4x4f_Minor( src, 0, 2, 3, 1, 2, 3 ) * rcpDet;
-	result->m[0][2] =  Matrix4x4f_Minor( src, 0, 1, 3, 1, 2, 3 ) * rcpDet;
-	result->m[0][3] = -Matrix4x4f_Minor( src, 0, 1, 2, 1, 2, 3 ) * rcpDet;
-	result->m[1][0] = -Matrix4x4f_Minor( src, 1, 2, 3, 0, 2, 3 ) * rcpDet;
-	result->m[1][1] =  Matrix4x4f_Minor( src, 0, 2, 3, 0, 2, 3 ) * rcpDet;
-	result->m[1][2] = -Matrix4x4f_Minor( src, 0, 1, 3, 0, 2, 3 ) * rcpDet;
-	result->m[1][3] =  Matrix4x4f_Minor( src, 0, 1, 2, 0, 2, 3 ) * rcpDet;
-	result->m[2][0] =  Matrix4x4f_Minor( src, 1, 2, 3, 0, 1, 3 ) * rcpDet;
-	result->m[2][1] = -Matrix4x4f_Minor( src, 0, 2, 3, 0, 1, 3 ) * rcpDet;
-	result->m[2][2] =  Matrix4x4f_Minor( src, 0, 1, 3, 0, 1, 3 ) * rcpDet;
-	result->m[2][3] = -Matrix4x4f_Minor( src, 0, 1, 2, 0, 1, 3 ) * rcpDet;
-	result->m[3][0] = -Matrix4x4f_Minor( src, 1, 2, 3, 0, 1, 2 ) * rcpDet;
-	result->m[3][1] =  Matrix4x4f_Minor( src, 0, 2, 3, 0, 1, 2 ) * rcpDet;
-	result->m[3][2] = -Matrix4x4f_Minor( src, 0, 1, 3, 0, 1, 2 ) * rcpDet;
-	result->m[3][3] =  Matrix4x4f_Minor( src, 0, 1, 2, 0, 1, 2 ) * rcpDet;
+	result->m[0][0] =  ksMatrix4x4f_Minor( src, 1, 2, 3, 1, 2, 3 ) * rcpDet;
+	result->m[0][1] = -ksMatrix4x4f_Minor( src, 0, 2, 3, 1, 2, 3 ) * rcpDet;
+	result->m[0][2] =  ksMatrix4x4f_Minor( src, 0, 1, 3, 1, 2, 3 ) * rcpDet;
+	result->m[0][3] = -ksMatrix4x4f_Minor( src, 0, 1, 2, 1, 2, 3 ) * rcpDet;
+	result->m[1][0] = -ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 2, 3 ) * rcpDet;
+	result->m[1][1] =  ksMatrix4x4f_Minor( src, 0, 2, 3, 0, 2, 3 ) * rcpDet;
+	result->m[1][2] = -ksMatrix4x4f_Minor( src, 0, 1, 3, 0, 2, 3 ) * rcpDet;
+	result->m[1][3] =  ksMatrix4x4f_Minor( src, 0, 1, 2, 0, 2, 3 ) * rcpDet;
+	result->m[2][0] =  ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 1, 3 ) * rcpDet;
+	result->m[2][1] = -ksMatrix4x4f_Minor( src, 0, 2, 3, 0, 1, 3 ) * rcpDet;
+	result->m[2][2] =  ksMatrix4x4f_Minor( src, 0, 1, 3, 0, 1, 3 ) * rcpDet;
+	result->m[2][3] = -ksMatrix4x4f_Minor( src, 0, 1, 2, 0, 1, 3 ) * rcpDet;
+	result->m[3][0] = -ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 1, 2 ) * rcpDet;
+	result->m[3][1] =  ksMatrix4x4f_Minor( src, 0, 2, 3, 0, 1, 2 ) * rcpDet;
+	result->m[3][2] = -ksMatrix4x4f_Minor( src, 0, 1, 3, 0, 1, 2 ) * rcpDet;
+	result->m[3][3] =  ksMatrix4x4f_Minor( src, 0, 1, 2, 0, 1, 2 ) * rcpDet;
 }
 
 // Calculates the inverse of a 4x4 homogeneous matrix.
-static void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4f_t * src )
+static void ksMatrix4x4f_InvertHomogeneous( ksMatrix4x4f * result, const ksMatrix4x4f * src )
 {
 	result->m[0][0] = src->m[0][0];
 	result->m[0][1] = src->m[1][0];
@@ -2172,7 +2172,7 @@ static void Matrix4x4f_InvertHomogeneous( Matrix4x4f_t * result, const Matrix4x4
 }
 
 // Creates an identity matrix.
-static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * result )
+static void ksMatrix4x4f_CreateIdentity( ksMatrix4x4f * result )
 {
 	result->m[0][0] = 1.0f; result->m[0][1] = 0.0f; result->m[0][2] = 0.0f; result->m[0][3] = 0.0f;
 	result->m[1][0] = 0.0f; result->m[1][1] = 1.0f; result->m[1][2] = 0.0f; result->m[1][3] = 0.0f;
@@ -2181,7 +2181,7 @@ static void Matrix4x4f_CreateIdentity( Matrix4x4f_t * result )
 }
 
 // Creates a translation matrix.
-static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * result, const float x, const float y, const float z )
+static void ksMatrix4x4f_CreateTranslation( ksMatrix4x4f * result, const float x, const float y, const float z )
 {
 	result->m[0][0] = 1.0f; result->m[0][1] = 0.0f; result->m[0][2] = 0.0f; result->m[0][3] = 0.0f;
 	result->m[1][0] = 0.0f; result->m[1][1] = 1.0f; result->m[1][2] = 0.0f; result->m[1][3] = 0.0f;
@@ -2191,11 +2191,11 @@ static void Matrix4x4f_CreateTranslation( Matrix4x4f_t * result, const float x, 
 
 // Creates a rotation matrix.
 // If -Z=forward, +Y=up, +X=right, then degreesX=pitch, degreesY=yaw, degreesZ=roll.
-static void Matrix4x4f_CreateRotation( Matrix4x4f_t * result, const float degreesX, const float degreesY, const float degreesZ )
+static void ksMatrix4x4f_CreateRotation( ksMatrix4x4f * result, const float degreesX, const float degreesY, const float degreesZ )
 {
 	const float sinX = sinf( degreesX * ( MATH_PI / 180.0f ) );
 	const float cosX = cosf( degreesX * ( MATH_PI / 180.0f ) );
-	const Matrix4x4f_t rotationX =
+	const ksMatrix4x4f rotationX =
 	{ {
 		{ 1,     0,    0, 0 },
 		{ 0,  cosX, sinX, 0 },
@@ -2204,7 +2204,7 @@ static void Matrix4x4f_CreateRotation( Matrix4x4f_t * result, const float degree
 	} };
 	const float sinY = sinf( degreesY * ( MATH_PI / 180.0f ) );
 	const float cosY = cosf( degreesY * ( MATH_PI / 180.0f ) );
-	const Matrix4x4f_t rotationY =
+	const ksMatrix4x4f rotationY =
 	{ {
 		{ cosY, 0, -sinY, 0 },
 		{    0, 1,     0, 0 },
@@ -2213,20 +2213,20 @@ static void Matrix4x4f_CreateRotation( Matrix4x4f_t * result, const float degree
 	} };
 	const float sinZ = sinf( degreesZ * ( MATH_PI / 180.0f ) );
 	const float cosZ = cosf( degreesZ * ( MATH_PI / 180.0f ) );
-	const Matrix4x4f_t rotationZ =
+	const ksMatrix4x4f rotationZ =
 	{ {
 		{  cosZ, sinZ, 0, 0 },
 		{ -sinZ, cosZ, 0, 0 },
 		{     0,    0, 1, 0 },
 		{     0,    0, 0, 1 }
 	} };
-	Matrix4x4f_t rotationXY;
-	Matrix4x4f_Multiply( &rotationXY, &rotationY, &rotationX );
-	Matrix4x4f_Multiply( result, &rotationZ, &rotationXY );
+	ksMatrix4x4f rotationXY;
+	ksMatrix4x4f_Multiply( &rotationXY, &rotationY, &rotationX );
+	ksMatrix4x4f_Multiply( result, &rotationZ, &rotationXY );
 }
 
 // Creates a scale matrix.
-static void Matrix4x4f_CreateScale( Matrix4x4f_t * result, const float x, const float y, const float z )
+static void ksMatrix4x4f_CreateScale( ksMatrix4x4f * result, const float x, const float y, const float z )
 {
 	result->m[0][0] =    x; result->m[0][1] = 0.0f; result->m[0][2] = 0.0f; result->m[0][3] = 0.0f;
 	result->m[1][0] = 0.0f; result->m[1][1] =    y; result->m[1][2] = 0.0f; result->m[1][3] = 0.0f;
@@ -2235,7 +2235,7 @@ static void Matrix4x4f_CreateScale( Matrix4x4f_t * result, const float x, const 
 }
 
 // Creates a matrix from a quaternion.
-static void Matrix4x4f_CreateFromQuaternion( Matrix4x4f_t * result, const Quatf_t * quat )
+static void ksMatrix4x4f_CreateFromQuaternion( ksMatrix4x4f * result, const ksQuatf * quat )
 {
 	const float x2 = quat->x + quat->x;
 	const float y2 = quat->y + quat->y;
@@ -2274,20 +2274,20 @@ static void Matrix4x4f_CreateFromQuaternion( Matrix4x4f_t * result, const Quatf_
 }
 
 // Creates a combined translation(rotation(scale(object))) matrix.
-static void Matrix4x4f_CreateTranslationRotationScale( Matrix4x4f_t * result, const Vector3f_t * scale, const Quatf_t * rotation, const Vector3f_t * translation )
+static void ksMatrix4x4f_CreateTranslationRotationScale( ksMatrix4x4f * result, const ksVector3f * scale, const ksQuatf * rotation, const ksVector3f * translation )
 {
-	Matrix4x4f_t scaleMatrix;
-	Matrix4x4f_CreateScale( &scaleMatrix, scale->x, scale->y, scale->z );
+	ksMatrix4x4f scaleMatrix;
+	ksMatrix4x4f_CreateScale( &scaleMatrix, scale->x, scale->y, scale->z );
 
-	Matrix4x4f_t rotationMatrix;
-	Matrix4x4f_CreateFromQuaternion( &rotationMatrix, rotation );
+	ksMatrix4x4f rotationMatrix;
+	ksMatrix4x4f_CreateFromQuaternion( &rotationMatrix, rotation );
 
-	Matrix4x4f_t translationMatrix;
-	Matrix4x4f_CreateTranslation( &translationMatrix, translation->x, translation->y, translation->z );
+	ksMatrix4x4f translationMatrix;
+	ksMatrix4x4f_CreateTranslation( &translationMatrix, translation->x, translation->y, translation->z );
 
-	Matrix4x4f_t combinedMatrix;
-	Matrix4x4f_Multiply( &combinedMatrix, &rotationMatrix, &scaleMatrix );
-	Matrix4x4f_Multiply( result, &translationMatrix, &combinedMatrix );
+	ksMatrix4x4f combinedMatrix;
+	ksMatrix4x4f_Multiply( &combinedMatrix, &rotationMatrix, &scaleMatrix );
+	ksMatrix4x4f_Multiply( result, &translationMatrix, &combinedMatrix );
 }
 
 // Creates a projection matrix based on the specified dimensions.
@@ -2298,7 +2298,7 @@ static void Matrix4x4f_CreateTranslationRotationScale( Matrix4x4f_t * result, co
 //		"Tightening the Precision of Perspective Rendering"
 //		Paul Upchurch, Mathieu Desbrun
 //		Journal of Graphics Tools, Volume 16, Issue 1, 2012
-static void Matrix4x4f_CreateProjection( Matrix4x4f_t * result, const float minX, const float maxX,
+static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float minX, const float maxX,
 											float const minY, const float maxY, const float nearZ, const float farZ )
 {
 	const float width = maxX - minX;
@@ -2368,7 +2368,7 @@ static void Matrix4x4f_CreateProjection( Matrix4x4f_t * result, const float minX
 }
 
 // Creates a projection matrix based on the specified FOV.
-static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * result, const float fovDegreesX, const float fovDegreesY,
+static void ksMatrix4x4f_CreateProjectionFov( ksMatrix4x4f * result, const float fovDegreesX, const float fovDegreesY,
 												const float offsetX, const float offsetY, const float nearZ, const float farZ )
 {
 	const float halfWidth = nearZ * tanf( fovDegreesX * ( 0.5f * MATH_PI / 180.0f ) );
@@ -2380,14 +2380,14 @@ static void Matrix4x4f_CreateProjectionFov( Matrix4x4f_t * result, const float f
 	const float minY = offsetY - halfHeight;
 	const float maxY = offsetY + halfHeight;
 
-	Matrix4x4f_CreateProjection( result, minX, maxX, minY, maxY, nearZ, farZ );
+	ksMatrix4x4f_CreateProjection( result, minX, maxX, minY, maxY, nearZ, farZ );
 }
 
 // Creates a matrix that transforms the -1 to 1 cube to cover the given 'mins' and 'maxs' transformed with the given 'matrix'.
-static void Matrix4x4f_CreateOffsetScaleForBounds( Matrix4x4f_t * result, const Matrix4x4f_t * matrix, const Vector3f_t * mins, const Vector3f_t * maxs )
+static void ksMatrix4x4f_CreateOffsetScaleForBounds( ksMatrix4x4f * result, const ksMatrix4x4f * matrix, const ksVector3f * mins, const ksVector3f * maxs )
 {
-	const Vector3f_t offset = { ( maxs->x + mins->x ) * 0.5f, ( maxs->y + mins->y ) * 0.5f, ( maxs->z + mins->z ) * 0.5f };
-	const Vector3f_t scale = { ( maxs->x - mins->x ) * 0.5f, ( maxs->y - mins->y ) * 0.5f, ( maxs->z - mins->z ) * 0.5f };
+	const ksVector3f offset = { ( maxs->x + mins->x ) * 0.5f, ( maxs->y + mins->y ) * 0.5f, ( maxs->z + mins->z ) * 0.5f };
+	const ksVector3f scale = { ( maxs->x - mins->x ) * 0.5f, ( maxs->y - mins->y ) * 0.5f, ( maxs->z - mins->z ) * 0.5f };
 
 	result->m[0][0] = matrix->m[0][0] * scale.x;
 	result->m[0][1] = matrix->m[0][1] * scale.x;
@@ -2411,7 +2411,7 @@ static void Matrix4x4f_CreateOffsetScaleForBounds( Matrix4x4f_t * result, const 
 }
 
 // Returns true if the given matrix is affine.
-static bool Matrix4x4f_IsAffine( const Matrix4x4f_t * matrix, const float epsilon )
+static bool ksMatrix4x4f_IsAffine( const ksMatrix4x4f * matrix, const float epsilon )
 {
 	return	fabsf( matrix->m[0][3] ) <= epsilon &&
 			fabsf( matrix->m[1][3] ) <= epsilon &&
@@ -2420,7 +2420,7 @@ static bool Matrix4x4f_IsAffine( const Matrix4x4f_t * matrix, const float epsilo
 }
 
 // Returns true if the given matrix is orthogonal.
-static bool Matrix4x4f_IsOrthogonal( const Matrix4x4f_t * matrix, const float epsilon )
+static bool ksMatrix4x4f_IsOrthogonal( const ksMatrix4x4f * matrix, const float epsilon )
 {
 	for ( int i = 0; i < 3; i++ )
 	{
@@ -2443,7 +2443,7 @@ static bool Matrix4x4f_IsOrthogonal( const Matrix4x4f_t * matrix, const float ep
 }
 
 // Returns true if the given matrix is orthonormal.
-static bool Matrix4x4f_IsOrthonormal( const Matrix4x4f_t * matrix, const float epsilon )
+static bool ksMatrix4x4f_IsOrthonormal( const ksMatrix4x4f * matrix, const float epsilon )
 {
 	for ( int i = 0; i < 3; i++ )
 	{
@@ -2464,16 +2464,16 @@ static bool Matrix4x4f_IsOrthonormal( const Matrix4x4f_t * matrix, const float e
 }
 
 // Returns true if the given matrix is homogeneous.
-static bool Matrix4x4f_IsHomogeneous( const Matrix4x4f_t * matrix, const float epsilon )
+static bool ksMatrix4x4f_IsHomogeneous( const ksMatrix4x4f * matrix, const float epsilon )
 {
-	return Matrix4x4f_IsAffine( matrix, epsilon ) && Matrix4x4f_IsOrthonormal( matrix, epsilon );
+	return ksMatrix4x4f_IsAffine( matrix, epsilon ) && ksMatrix4x4f_IsOrthonormal( matrix, epsilon );
 }
 
 // Get the translation from a combined translation(rotation(scale(object))) matrix.
-static void Matrix4x4f_GetTranslation( Vector3f_t * result, const Matrix4x4f_t * src )
+static void ksMatrix4x4f_GetTranslation( ksVector3f * result, const ksMatrix4x4f * src )
 {
-	assert( Matrix4x4f_IsAffine( src, 1e-4f ) );
-	assert( Matrix4x4f_IsOrthogonal( src, 1e-4f ) );
+	assert( ksMatrix4x4f_IsAffine( src, 1e-4f ) );
+	assert( ksMatrix4x4f_IsOrthogonal( src, 1e-4f ) );
 
 	result->x = src->m[3][0];
 	result->y = src->m[3][1];
@@ -2481,10 +2481,10 @@ static void Matrix4x4f_GetTranslation( Vector3f_t * result, const Matrix4x4f_t *
 }
 
 // Get the rotation from a combined translation(rotation(scale(object))) matrix.
-static void Matrix4x4f_GetRotation( Quatf_t * result, const Matrix4x4f_t * src )
+static void ksMatrix4x4f_GetRotation( ksQuatf * result, const ksMatrix4x4f * src )
 {
-	assert( Matrix4x4f_IsAffine( src, 1e-4f ) );
-	assert( Matrix4x4f_IsOrthogonal( src, 1e-4f ) );
+	assert( ksMatrix4x4f_IsAffine( src, 1e-4f ) );
+	assert( ksMatrix4x4f_IsOrthogonal( src, 1e-4f ) );
 
 	const float scaleX = RcpSqrt( src->m[0][0] * src->m[0][0] + src->m[0][1] * src->m[0][1] + src->m[0][2] * src->m[0][2] );
 	const float scaleY = RcpSqrt( src->m[1][0] * src->m[1][0] + src->m[1][1] * src->m[1][1] + src->m[1][2] * src->m[1][2] );
@@ -2534,10 +2534,10 @@ static void Matrix4x4f_GetRotation( Quatf_t * result, const Matrix4x4f_t * src )
 }
 
 // Get the scale from a combined translation(rotation(scale(object))) matrix.
-static void Matrix4x4f_GetScale( Vector3f_t * result, const Matrix4x4f_t * src )
+static void ksMatrix4x4f_GetScale( ksVector3f * result, const ksMatrix4x4f * src )
 {
-	assert( Matrix4x4f_IsAffine( src, 1e-4f ) );
-	assert( Matrix4x4f_IsOrthogonal( src, 1e-4f ) );
+	assert( ksMatrix4x4f_IsAffine( src, 1e-4f ) );
+	assert( ksMatrix4x4f_IsOrthogonal( src, 1e-4f ) );
 
 	result->x = sqrtf( src->m[0][0] * src->m[0][0] + src->m[0][1] * src->m[0][1] + src->m[0][2] * src->m[0][2] );
 	result->y = sqrtf( src->m[1][0] * src->m[1][0] + src->m[1][1] * src->m[1][1] + src->m[1][2] * src->m[1][2] );
@@ -2545,7 +2545,7 @@ static void Matrix4x4f_GetScale( Vector3f_t * result, const Matrix4x4f_t * src )
 }
 
 // Transforms a 3D vector.
-static void Matrix4x4f_TransformVector3f( Vector3f_t * result, const Matrix4x4f_t * m, const Vector3f_t * v )
+static void ksMatrix4x4f_TransformVector3f( ksVector3f * result, const ksMatrix4x4f * m, const ksVector3f * v )
 {
 	const float w = m->m[0][3] * v->x + m->m[1][3] * v->y + m->m[2][3] * v->z + m->m[3][3];
 	const float rcpW = 1.0f / w;
@@ -2555,7 +2555,7 @@ static void Matrix4x4f_TransformVector3f( Vector3f_t * result, const Matrix4x4f_
 }
 
 // Transforms a 4D vector.
-static void Matrix4x4f_TransformVector4f( Vector4f_t * result, const Matrix4x4f_t * m, const Vector4f_t * v )
+static void ksMatrix4x4f_TransformVector4f( ksVector4f * result, const ksMatrix4x4f * m, const ksVector4f * v )
 {
 	result->x = m->m[0][0] * v->x + m->m[1][0] * v->y + m->m[2][0] * v->z + m->m[3][0];
 	result->y = m->m[0][1] * v->x + m->m[1][1] * v->y + m->m[2][1] * v->z + m->m[3][1];
@@ -2564,47 +2564,47 @@ static void Matrix4x4f_TransformVector4f( Vector4f_t * result, const Matrix4x4f_
 }
 
 // Transforms the 'mins' and 'maxs' bounds with the given 'matrix'.
-static void Matrix4x4f_TransformBounds( Vector3f_t * resultMins, Vector3f_t * resultMaxs, const Matrix4x4f_t * matrix, const Vector3f_t * mins, const Vector3f_t * maxs )
+static void ksMatrix4x4f_TransformBounds( ksVector3f * resultMins, ksVector3f * resultMaxs, const ksMatrix4x4f * matrix, const ksVector3f * mins, const ksVector3f * maxs )
 {
-	assert( Matrix4x4f_IsAffine( matrix, 1e-4f ) );
+	assert( ksMatrix4x4f_IsAffine( matrix, 1e-4f ) );
 
-	const Vector3f_t center = { ( mins->x + maxs->x ) * 0.5f, ( mins->y + maxs->y ) * 0.5f, ( mins->z + maxs->z ) * 0.5f };
-	const Vector3f_t extents = { maxs->x - center.x, maxs->y - center.y, maxs->z - center.z };
-	const Vector3f_t newCenter =
+	const ksVector3f center = { ( mins->x + maxs->x ) * 0.5f, ( mins->y + maxs->y ) * 0.5f, ( mins->z + maxs->z ) * 0.5f };
+	const ksVector3f extents = { maxs->x - center.x, maxs->y - center.y, maxs->z - center.z };
+	const ksVector3f newCenter =
 	{
 		matrix->m[0][0] * center.x + matrix->m[1][0] * center.y + matrix->m[2][0] * center.z + matrix->m[3][0],
 		matrix->m[0][1] * center.x + matrix->m[1][1] * center.y + matrix->m[2][1] * center.z + matrix->m[3][1],
 		matrix->m[0][2] * center.x + matrix->m[1][2] * center.y + matrix->m[2][2] * center.z + matrix->m[3][2]
 	};
-	const Vector3f_t newExtents =
+	const ksVector3f newExtents =
 	{
 		fabsf( extents.x * matrix->m[0][0] ) + fabsf( extents.y * matrix->m[1][0] ) + fabsf( extents.z * matrix->m[2][0] ),
 		fabsf( extents.x * matrix->m[0][1] ) + fabsf( extents.y * matrix->m[1][1] ) + fabsf( extents.z * matrix->m[2][1] ),
 		fabsf( extents.x * matrix->m[0][2] ) + fabsf( extents.y * matrix->m[1][2] ) + fabsf( extents.z * matrix->m[2][2] )
 	};
-	Vector3f_Sub( resultMins, &newCenter, &newExtents );
-	Vector3f_Add( resultMaxs, &newCenter, &newExtents );
+	ksVector3f_Sub( resultMins, &newCenter, &newExtents );
+	ksVector3f_Add( resultMaxs, &newCenter, &newExtents );
 }
 
 // Returns true if the 'mins' and 'maxs' bounds is completely off to one side of the projection matrix.
-static bool Matrix4x4f_CullBounds( const Matrix4x4f_t * mvp, const Vector3f_t * mins, const Vector3f_t * maxs )
+static bool ksMatrix4x4f_CullBounds( const ksMatrix4x4f * mvp, const ksVector3f * mins, const ksVector3f * maxs )
 {
 	if ( maxs->x <= mins->x && maxs->y <= mins->y && maxs->z <= mins->z )
 	{
 		return false;
 	}
 
-	Vector4f_t c[8];
+	ksVector4f c[8];
 	for ( int i = 0; i < 8; i++ )
 	{
-		const Vector4f_t corner =
+		const ksVector4f corner =
 		{
 			( i & 1 ) ? maxs->x : mins->x,
 			( i & 2 ) ? maxs->y : mins->y,
 			( i & 4 ) ? maxs->z : mins->z,
 			1.0f
 		};
-		Matrix4x4f_TransformVector4f( &c[i], mvp, &corner );
+		ksMatrix4x4f_TransformVector4f( &c[i], mvp, &corner );
 	}
 
 	int i;
@@ -2684,14 +2684,14 @@ static bool Matrix4x4f_CullBounds( const Matrix4x4f_t * mvp, const Vector3f_t * 
  
 Rectangles.
 
-ScreenRect_t
-ClipRect_t
+ksScreenRect
+ksClipRect
 
-ScreenRect_t is specified in pixels with 0,0 at the left-bottom.
-ClipRect_t is specified in clip space in the range [-1,1], with -1,-1 at the left-bottom.
+ksScreenRect is specified in pixels with 0,0 at the left-bottom.
+ksClipRect is specified in clip space in the range [-1,1], with -1,-1 at the left-bottom.
 
-static ClipRect_t ScreenRect_ToClipRect( const ScreenRect_t * screenRect, const int resolutionX, const int resolutionY );
-static ScreenRect_t ClipRect_ToScreenRect( const ClipRect_t * clipRect, const int resolutionX, const int resolutionY );
+static ksClipRect ksScreenRect_ToClipRect( const ksScreenRect * screenRect, const int resolutionX, const int resolutionY );
+static ksScreenRect ksClipRect_ToScreenRect( const ksClipRect * clipRect, const int resolutionX, const int resolutionY );
 
 ================================================================================================================================
 */
@@ -2702,7 +2702,7 @@ typedef struct
 	int y;
 	int width;
 	int height;
-} ScreenRect_t;
+} ksScreenRect;
 
 typedef struct
 {
@@ -2710,11 +2710,11 @@ typedef struct
 	float y;
 	float width;
 	float height;
-} ClipRect_t;
+} ksClipRect;
 
-static ClipRect_t ScreenRect_ToClipRect( const ScreenRect_t * screenRect, const int resolutionX, const int resolutionY )
+static ksClipRect ksScreenRect_ToClipRect( const ksScreenRect * screenRect, const int resolutionX, const int resolutionY )
 {
-	ClipRect_t clipRect;
+	ksClipRect clipRect;
 	clipRect.x = 2.0f * screenRect->x / resolutionX - 1.0f;
 	clipRect.y = 2.0f * screenRect->y / resolutionY - 1.0f;
 	clipRect.width = 2.0f * screenRect->width / resolutionX;
@@ -2722,9 +2722,9 @@ static ClipRect_t ScreenRect_ToClipRect( const ScreenRect_t * screenRect, const 
 	return clipRect;
 }
 
-static ScreenRect_t ClipRect_ToScreenRect( const ClipRect_t * clipRect, const int resolutionX, const int resolutionY )
+static ksScreenRect ksClipRect_ToScreenRect( const ksClipRect * clipRect, const int resolutionX, const int resolutionY )
 {
-	ScreenRect_t screenRect;
+	ksScreenRect screenRect;
 	screenRect.x = (int)( ( clipRect->x * 0.5f + 0.5f ) * resolutionX + 0.5f );
 	screenRect.y = (int)( ( clipRect->y * 0.5f + 0.5f ) * resolutionY + 0.5f );
 	screenRect.width = (int)( clipRect->width * 0.5f * resolutionX + 0.5f );
@@ -2741,8 +2741,8 @@ Vulkan error checking.
 */
 
 #if defined( _DEBUG )
-	#define VK( func )		VkCheckErrors( func, #func ); FrameLog_Write( __FILE__, __LINE__, #func );
-	#define VC( func )		func; FrameLog_Write( __FILE__, __LINE__, #func );
+	#define VK( func )		VkCheckErrors( func, #func ); ksFrameLog_Write( __FILE__, __LINE__, #func );
+	#define VC( func )		func; ksFrameLog_Write( __FILE__, __LINE__, #func );
 #else
 	#define VK( func )		VkCheckErrors( func, #func );
 	#define VC( func )		func;
@@ -2801,10 +2801,10 @@ static void VkCheckErrors( VkResult result, const char * function )
 
 Driver Instance.
 
-DriverInstance_t
+ksDriverInstance
 
-static bool DriverInstance_Create( DriverInstance_t * intance );
-static void DriverInstance_Destroy( DriverInstance_t * instance );
+static bool ksDriverInstance_Create( ksDriverInstance * intance );
+static void ksDriverInstance_Destroy( ksDriverInstance * instance );
 
 ================================================================================================================================
 */
@@ -2848,7 +2848,7 @@ typedef struct
 	PFN_vkCreateDebugReportCallbackEXT					vkCreateDebugReportCallbackEXT;
 	PFN_vkDestroyDebugReportCallbackEXT					vkDestroyDebugReportCallbackEXT;
 	VkDebugReportCallbackEXT							debugReportCallback;
-} DriverInstance_t;
+} ksDriverInstance;
 
 // Match strings except for hexadecimal numbers.
 static bool MatchStrings( const char * str1, const char * str2 )
@@ -2904,11 +2904,11 @@ typedef struct
 	const char *	name;
 	bool			validationOnly;
 	bool			required;
-} DriverFeature_t;
+} ksDriverFeature;
 
 // Returns true if all the required features are present.
 static bool CheckFeatures( const char * label, const bool validationEnabled, const bool extensions,
-							const DriverFeature_t * requested, const uint32_t requestedCount,
+							const ksDriverFeature * requested, const uint32_t requestedCount,
 							const void * available, const uint32_t availableCount,
 							const char * enabledNames[], uint32_t * enabledCount )
 {
@@ -2942,9 +2942,9 @@ static bool CheckFeatures( const char * label, const bool validationEnabled, con
 	return foundAllRequired;
 }
 
-static bool DriverInstance_Create( DriverInstance_t * instance )
+static bool ksDriverInstance_Create( ksDriverInstance * instance )
 {
-	memset( instance, 0, sizeof( DriverInstance_t ) );
+	memset( instance, 0, sizeof( ksDriverInstance ) );
 
 #if defined( _DEBUG )
 	instance->validate = VK_TRUE;
@@ -2987,7 +2987,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	Print( "--------------------------------\n" );
 
 	// Get the instance extensions.
-	const DriverFeature_t requestedExtensions[] =
+	const ksDriverFeature requestedExtensions[] =
 	{
 		{ VK_KHR_SURFACE_EXTENSION_NAME,			false, true },
 		{ VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME,	false, true },
@@ -3017,7 +3017,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	}
 
 	// Get the instance layers.
-	const DriverFeature_t requestedLayers[] =
+	const ksDriverFeature requestedLayers[] =
 	{
 		{ "VK_LAYER_OCULUS_glsl_shader",			false, false },
 		{ "VK_LAYER_OCULUS_queue_muxer",			false, false },
@@ -3133,7 +3133,7 @@ static bool DriverInstance_Create( DriverInstance_t * instance )
 	return true;
 }
 
-static void DriverInstance_Destroy( DriverInstance_t * instance )
+static void ksDriverInstance_Destroy( ksDriverInstance * instance )
 {
 	if ( instance->validate && instance->vkDestroyDebugReportCallbackEXT != NULL )
 	{
@@ -3157,14 +3157,14 @@ static void DriverInstance_Destroy( DriverInstance_t * instance )
 
 GPU device.
 
-GpuQueueProperty_t
-GpuQueuePriority_t
-GpuQueueInfo_t
-GpuDevice_t
+ksGpuQueueProperty
+ksGpuQueuePriority
+ksGpuQueueInfo
+ksGpuDevice
 
-static bool GpuDevice_Create( GpuDevice_t * device, DriverInstance_t * instance,
-							const GpuQueueInfo_t * queueInfo, const VkSurfaceKHR presentSurface );
-static void GpuDevice_Destroy( GpuDevice_t * device );
+static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instance,
+							const ksGpuQueueInfo * queueInfo, const VkSurfaceKHR presentSurface );
+static void ksGpuDevice_Destroy( ksGpuDevice * device );
 
 ================================================================================================================================
 */
@@ -3174,28 +3174,28 @@ typedef enum
 	GPU_QUEUE_PROPERTY_GRAPHICS		= BIT( 0 ),
 	GPU_QUEUE_PROPERTY_COMPUTE		= BIT( 1 ),
 	GPU_QUEUE_PROPERTY_TRANSFER		= BIT( 2 )
-} GpuQueueProperty_t;
+} ksGpuQueueProperty;
 
 typedef enum
 {
 	GPU_QUEUE_PRIORITY_LOW,
 	GPU_QUEUE_PRIORITY_MEDIUM,
 	GPU_QUEUE_PRIORITY_HIGH
-} GpuQueuePriority_t;
+} ksGpuQueuePriority;
 
 #define MAX_QUEUES	16
 
 typedef struct
 {
 	int					queueCount;						// number of queues
-	GpuQueueProperty_t	queueProperties;				// desired queue family properties
-	GpuQueuePriority_t	queuePriorities[MAX_QUEUES];	// individual queue priorities
-} GpuQueueInfo_t;
+	ksGpuQueueProperty	queueProperties;				// desired queue family properties
+	ksGpuQueuePriority	queuePriorities[MAX_QUEUES];	// individual queue priorities
+} ksGpuQueueInfo;
 
 typedef struct
 {
 	VkBool32								foundSwapchainExtension;
-	DriverInstance_t *						instance;
+	ksDriverInstance *						instance;
 	VkDevice								device;
 	VkPhysicalDevice						physicalDevice;
 	VkPhysicalDeviceFeatures				physicalDeviceFeatures;
@@ -3204,7 +3204,7 @@ typedef struct
 	uint32_t								queueFamilyCount;
 	VkQueueFamilyProperties *				queueFamilyProperties;
 	uint32_t *								queueFamilyUsedQueues;
-	Mutex_t									queueFamilyMutex;
+	ksMutex									queueFamilyMutex;
 	int										workQueueFamilyIndex;
 	int										presentQueueFamilyIndex;
 
@@ -3336,15 +3336,15 @@ typedef struct
 	PFN_vkGetSwapchainImagesKHR				vkGetSwapchainImagesKHR;
 	PFN_vkAcquireNextImageKHR				vkAcquireNextImageKHR;
 	PFN_vkQueuePresentKHR					vkQueuePresentKHR;
-} GpuDevice_t;
+} ksGpuDevice;
 
 #define GET_DEVICE_PROC_ADDR_EXP( function )	device->function = (PFN_##function)( device->instance->vkGetDeviceProcAddr( device->device, #function ) ); assert( device->function != NULL );
 #define GET_DEVICE_PROC_ADDR( function )		GET_DEVICE_PROC_ADDR_EXP( function )
 
-static bool GpuDevice_Create( GpuDevice_t * device, DriverInstance_t * instance,
-								const GpuQueueInfo_t * queueInfo, const VkSurfaceKHR presentSurface )
+static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instance,
+								const ksGpuQueueInfo * queueInfo, const VkSurfaceKHR presentSurface )
 {
-	memset( device, 0, sizeof( GpuDevice_t ) );
+	memset( device, 0, sizeof( ksGpuDevice ) );
 
 	device->instance = instance;
 
@@ -3465,7 +3465,7 @@ static bool GpuDevice_Create( GpuDevice_t * device, DriverInstance_t * instance,
 		Print( "Work Queue Family    : %d\n", workQueueFamilyIndex );
 		Print( "Present Queue Family : %d\n", presentQueueFamilyIndex );
 
-		const DriverFeature_t requestedExtensions[] =
+		const ksDriverFeature requestedExtensions[] =
 		{
 			{ VK_KHR_SWAPCHAIN_EXTENSION_NAME,	false, true },
 			{ "VK_NV_glsl_shader",				false, false },
@@ -3496,7 +3496,7 @@ static bool GpuDevice_Create( GpuDevice_t * device, DriverInstance_t * instance,
 		}
 
 		// Check the device layers.
-		const DriverFeature_t requestedLayers[] =
+		const ksDriverFeature requestedLayers[] =
 		{
 			{ "VK_LAYER_OCULUS_glsl_shader",			false, false },
 			{ "VK_LAYER_OCULUS_queue_muxer",			false, false },
@@ -3565,7 +3565,7 @@ static bool GpuDevice_Create( GpuDevice_t * device, DriverInstance_t * instance,
 		device->queueFamilyUsedQueues[queueFamilyIndex] = 0xFFFFFFFF << device->queueFamilyProperties[queueFamilyIndex].queueCount;
 	}
 
-	Mutex_Create( &device->queueFamilyMutex );
+	ksMutex_Create( &device->queueFamilyMutex );
 
 	//
 	// Create the logical device
@@ -3762,19 +3762,19 @@ static bool GpuDevice_Create( GpuDevice_t * device, DriverInstance_t * instance,
 	return true;
 }
 
-static void GpuDevice_Destroy( GpuDevice_t * device )
+static void ksGpuDevice_Destroy( ksGpuDevice * device )
 {
 	VK( device->vkDeviceWaitIdle( device->device ) );
 
 	free( device->queueFamilyProperties );
 	free( device->queueFamilyUsedQueues );
 
-	Mutex_Destroy( &device->queueFamilyMutex );
+	ksMutex_Destroy( &device->queueFamilyMutex );
 
 	VC( device->vkDestroyDevice( device->device, VK_ALLOCATOR ) );
 }
 
-static uint32_t GpuDevice_GetMemoryTypeIndex( GpuDevice_t * device, const uint32_t typeBits,
+static uint32_t ksGpuDevice_GetMemoryTypeIndex( ksGpuDevice * device, const uint32_t typeBits,
 											const VkMemoryPropertyFlags requiredProperties )
 {
 	// Search memory types to find the index with the requested properties.
@@ -3794,7 +3794,7 @@ static uint32_t GpuDevice_GetMemoryTypeIndex( GpuDevice_t * device, const uint32
 	return 0;
 }
 
-static void GpuDevice_CreateShader( GpuDevice_t * device, VkShaderModule * shaderModule,
+static void ksGpuDevice_CreateShader( ksGpuDevice * device, VkShaderModule * shaderModule,
 									const VkShaderStageFlagBits stage, const void * code, size_t codeSize )
 {
 	UNUSED_PARM( stage );
@@ -3838,16 +3838,16 @@ A context encapsulates a queue that is used to submit command buffers.
 A context can only be used by a single thread.
 For optimal performance a context should only be created at load time, not at runtime.
 
-GpuContext_t
-GpuSurfaceColorFormat_t
-GpuSurfaceDepthFormat_t
-GpuSampleCount_t
+ksGpuContext
+ksGpuSurfaceColorFormat
+ksGpuSurfaceDepthFormat
+ksGpuSampleCount
 
-static bool GpuContext_CreateShared( GpuContext_t * context, const GpuContext_t * other, const int queueIndex );
-static void GpuContext_Destroy( GpuContext_t * context );
-static void GpuContext_WaitIdle( GpuContext_t * context );
+static bool ksGpuContext_CreateShared( ksGpuContext * context, const ksGpuContext * other, const int queueIndex );
+static void ksGpuContext_Destroy( ksGpuContext * context );
+static void ksGpuContext_WaitIdle( ksGpuContext * context );
 
-static bool GpuContext_Create( GpuContext_t * context, GpuDevice_t * device, const int queueIndex );
+static bool ksGpuContext_Create( ksGpuContext * context, ksGpuDevice * device, const int queueIndex );
 
 ================================================================================================================================
 */
@@ -3859,7 +3859,7 @@ typedef enum
 	GPU_SURFACE_COLOR_FORMAT_R8G8B8A8,
 	GPU_SURFACE_COLOR_FORMAT_B8G8R8A8,
 	GPU_SURFACE_COLOR_FORMAT_MAX
-} GpuSurfaceColorFormat_t;
+} ksGpuSurfaceColorFormat;
 
 typedef enum
 {
@@ -3867,7 +3867,7 @@ typedef enum
 	GPU_SURFACE_DEPTH_FORMAT_D16,
 	GPU_SURFACE_DEPTH_FORMAT_D24,
 	GPU_SURFACE_DEPTH_FORMAT_MAX
-} GpuSurfaceDepthFormat_t;
+} ksGpuSurfaceDepthFormat;
 
 typedef enum
 {
@@ -3878,27 +3878,27 @@ typedef enum
 	GPU_SAMPLE_COUNT_16		= VK_SAMPLE_COUNT_16_BIT,
 	GPU_SAMPLE_COUNT_32		= VK_SAMPLE_COUNT_32_BIT,
 	GPU_SAMPLE_COUNT_64		= VK_SAMPLE_COUNT_64_BIT,
-} GpuSampleCount_t;
+} ksGpuSampleCount;
 
 typedef struct
 {
-	GpuDevice_t *	device;
+	ksGpuDevice *	device;
 	uint32_t		queueFamilyIndex;
 	uint32_t		queueIndex;
 	VkQueue			queue;
 	VkCommandPool	commandPool;
 	VkPipelineCache	pipelineCache;
 	VkCommandBuffer	setupCommandBuffer;
-} GpuContext_t;
+} ksGpuContext;
 
-static bool GpuContext_Create( GpuContext_t * context, GpuDevice_t * device, const int queueIndex )
+static bool ksGpuContext_Create( ksGpuContext * context, ksGpuDevice * device, const int queueIndex )
 {
-	memset( context, 0, sizeof( GpuContext_t ) );
+	memset( context, 0, sizeof( ksGpuContext ) );
 
-	Mutex_Lock( &device->queueFamilyMutex, true );
+	ksMutex_Lock( &device->queueFamilyMutex, true );
 	assert( ( device->queueFamilyUsedQueues[device->workQueueFamilyIndex] & ( 1 << queueIndex ) ) == 0 );
 	device->queueFamilyUsedQueues[device->workQueueFamilyIndex] |= ( 1 << queueIndex );
-	Mutex_Unlock( &device->queueFamilyMutex );
+	ksMutex_Unlock( &device->queueFamilyMutex );
 
 	context->device = device;
 	context->queueFamilyIndex = device->workQueueFamilyIndex;
@@ -3926,12 +3926,12 @@ static bool GpuContext_Create( GpuContext_t * context, GpuDevice_t * device, con
 	return true;
 }
 
-static bool GpuContext_CreateShared( GpuContext_t * context, const GpuContext_t * other, const int queueIndex )
+static bool ksGpuContext_CreateShared( ksGpuContext * context, const ksGpuContext * other, const int queueIndex )
 {
-	return GpuContext_Create( context, other->device, queueIndex );
+	return ksGpuContext_Create( context, other->device, queueIndex );
 }
 
-static void GpuContext_Destroy( GpuContext_t * context )
+static void ksGpuContext_Destroy( ksGpuContext * context )
 {
 	if ( context->device == NULL )
 	{
@@ -3939,10 +3939,10 @@ static void GpuContext_Destroy( GpuContext_t * context )
 	}
 
 	// Mark the queue as no longer in use.
-	Mutex_Lock( &context->device->queueFamilyMutex, true );
+	ksMutex_Lock( &context->device->queueFamilyMutex, true );
 	assert( ( context->device->queueFamilyUsedQueues[context->queueFamilyIndex] & ( 1 << context->queueIndex ) ) != 0 );
 	context->device->queueFamilyUsedQueues[context->queueFamilyIndex] &= ~( 1 << context->queueIndex );
-	Mutex_Unlock( &context->device->queueFamilyMutex );
+	ksMutex_Unlock( &context->device->queueFamilyMutex );
 
 	if ( context->setupCommandBuffer )
 	{
@@ -3952,12 +3952,12 @@ static void GpuContext_Destroy( GpuContext_t * context )
 	VC( context->device->vkDestroyPipelineCache( context->device->device, context->pipelineCache, VK_ALLOCATOR ) );
 }
 
-static void GpuContext_WaitIdle( GpuContext_t * context )
+static void ksGpuContext_WaitIdle( ksGpuContext * context )
 {
 	VK( context->device->vkQueueWaitIdle( context->queue ) );
 }
 
-static void GpuContext_CreateSetupCmdBuffer( GpuContext_t * context )
+static void ksGpuContext_CreateSetupCmdBuffer( ksGpuContext * context )
 {
 	if ( context->setupCommandBuffer != VK_NULL_HANDLE )
 	{
@@ -3982,7 +3982,7 @@ static void GpuContext_CreateSetupCmdBuffer( GpuContext_t * context )
 	VK( context->device->vkBeginCommandBuffer( context->setupCommandBuffer, &commandBufferBeginInfo ) );
 }
 
-static void GpuContext_FlushSetupCmdBuffer( GpuContext_t * context )
+static void ksGpuContext_FlushSetupCmdBuffer( ksGpuContext * context )
 {
     if ( context->setupCommandBuffer == VK_NULL_HANDLE )
 	{
@@ -4019,12 +4019,12 @@ For optimal performance a swapchain should only be created at load time, not at 
 Swapchain images are never multi-sampled.
 For multi-sampled rendering, a regular multi-sampled texture is resolved to a swapchain image
 
-GpuSwapchain_t
+ksGpuSwapchain
 
-static bool GpuSwapchain_Create( GpuContext_t * context, GpuSwapchain_t * swapchain, const VkSurfaceKHR surface,
-								const GpuSurfaceColorFormat_t colorFormat, const int width, const int height, const int swapInterval );
-static void GpuSwapchain_Destroy( GpuContext_t * context, GpuSwapchain_t * swapchain );
-static Microseconds_t GpuSwapchain_SwapBuffers( GpuContext_t * context, GpuSwapchain_t * swapchain );
+static bool ksGpuSwapchain_Create( ksGpuContext * context, ksGpuSwapchain * swapchain, const VkSurfaceKHR surface,
+								const ksGpuSurfaceColorFormat colorFormat, const int width, const int height, const int swapInterval );
+static void ksGpuSwapchain_Destroy( ksGpuContext * context, ksGpuSwapchain * swapchain );
+static ksMicroseconds ksGpuSwapchain_SwapBuffers( ksGpuContext * context, ksGpuSwapchain * swapchain );
 
 ================================================================================================================================
 */
@@ -4034,11 +4034,11 @@ typedef struct
 	uint32_t		imageIndex;
 	VkSemaphore		presentCompleteSemaphore;
 	VkSemaphore		renderingCompleteSemaphore;
-} GpuSwapchainBuffer_t;
+} ksGpuSwapchainBuffer;
 
 typedef struct
 {
-	GpuSurfaceColorFormat_t	format;
+	ksGpuSurfaceColorFormat	format;
 	VkFormat				internalFormat;
 	VkColorSpaceKHR			colorSpace;
 	int						width;
@@ -4050,10 +4050,10 @@ typedef struct
 	VkImageView *			views;
 	uint32_t				bufferCount;
 	uint32_t				currentBuffer;
-	GpuSwapchainBuffer_t *	buffers;
-} GpuSwapchain_t;
+	ksGpuSwapchainBuffer *	buffers;
+} ksGpuSwapchain;
 
-static VkFormat GpuSwapchain_InternalSurfaceColorFormat( const GpuSurfaceColorFormat_t colorFormat )
+static VkFormat ksGpuSwapchain_InternalSurfaceColorFormat( const ksGpuSurfaceColorFormat colorFormat )
 {
 	return	( ( colorFormat == GPU_SURFACE_COLOR_FORMAT_R8G8B8A8 ) ? VK_FORMAT_R8G8B8A8_UNORM :
 			( ( colorFormat == GPU_SURFACE_COLOR_FORMAT_B8G8R8A8 ) ? VK_FORMAT_B8G8R8A8_UNORM :
@@ -4062,12 +4062,12 @@ static VkFormat GpuSwapchain_InternalSurfaceColorFormat( const GpuSurfaceColorFo
 			( ( VK_FORMAT_UNDEFINED ) ) ) ) ) );
 }
 
-static bool GpuSwapchain_Create( GpuContext_t * context, GpuSwapchain_t * swapchain, const VkSurfaceKHR surface,
-								const GpuSurfaceColorFormat_t colorFormat, const int width, const int height, const int swapInterval )
+static bool ksGpuSwapchain_Create( ksGpuContext * context, ksGpuSwapchain * swapchain, const VkSurfaceKHR surface,
+								const ksGpuSurfaceColorFormat colorFormat, const int width, const int height, const int swapInterval )
 {
-	memset( swapchain, 0, sizeof( GpuSwapchain_t ) );
+	memset( swapchain, 0, sizeof( ksGpuSwapchain ) );
 
-	GpuDevice_t * device = context->device;
+	ksGpuDevice * device = context->device;
 
 	if ( !device->foundSwapchainExtension )
 	{
@@ -4081,7 +4081,7 @@ static bool GpuSwapchain_Create( GpuContext_t * context, GpuSwapchain_t * swapch
 	VkSurfaceFormatKHR * surfaceFormats = (VkSurfaceFormatKHR *)malloc( formatCount * sizeof( VkSurfaceFormatKHR ) );
 	VK( device->instance->vkGetPhysicalDeviceSurfaceFormatsKHR( device->physicalDevice, surface, &formatCount, surfaceFormats ) );
 
-	const GpuSurfaceColorFormat_t desiredFormatTable[GPU_SURFACE_COLOR_FORMAT_MAX][GPU_SURFACE_COLOR_FORMAT_MAX] =
+	const ksGpuSurfaceColorFormat desiredFormatTable[GPU_SURFACE_COLOR_FORMAT_MAX][GPU_SURFACE_COLOR_FORMAT_MAX] =
 	{
 		{ GPU_SURFACE_COLOR_FORMAT_R5G6B5, GPU_SURFACE_COLOR_FORMAT_B5G6R5, GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_COLOR_FORMAT_B8G8R8A8 },
 		{ GPU_SURFACE_COLOR_FORMAT_B5G6R5, GPU_SURFACE_COLOR_FORMAT_R5G6B5, GPU_SURFACE_COLOR_FORMAT_B8G8R8A8, GPU_SURFACE_COLOR_FORMAT_R8G8B8A8 },
@@ -4094,7 +4094,7 @@ static bool GpuSwapchain_Create( GpuContext_t * context, GpuSwapchain_t * swapch
 	assert( GPU_SURFACE_COLOR_FORMAT_B8G8R8A8 == 3 );
 	assert( colorFormat >= 0 && colorFormat < GPU_SURFACE_COLOR_FORMAT_MAX );
 
-	const GpuSurfaceColorFormat_t * desiredFormat = desiredFormatTable[colorFormat];
+	const ksGpuSurfaceColorFormat * desiredFormat = desiredFormatTable[colorFormat];
 	const VkColorSpaceKHR desiredColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
 
 	// If the format list includes just one entry of VK_FORMAT_UNDEFINED, then the surface has no preferred format.
@@ -4102,7 +4102,7 @@ static bool GpuSwapchain_Create( GpuContext_t * context, GpuSwapchain_t * swapch
 	if ( formatCount == 1 && surfaceFormats[0].format == VK_FORMAT_UNDEFINED )
 	{
 		swapchain->format = colorFormat;
-		swapchain->internalFormat = GpuSwapchain_InternalSurfaceColorFormat( desiredFormat[0] );
+		swapchain->internalFormat = ksGpuSwapchain_InternalSurfaceColorFormat( desiredFormat[0] );
 		swapchain->colorSpace = desiredColorSpace;
 	}
 	else
@@ -4111,7 +4111,7 @@ static bool GpuSwapchain_Create( GpuContext_t * context, GpuSwapchain_t * swapch
 		assert( formatCount >= 1 );
 		for ( uint32_t desired = 0; desired < GPU_SURFACE_COLOR_FORMAT_MAX; desired++ )
 		{
-			const VkFormat internalFormat = GpuSwapchain_InternalSurfaceColorFormat( desiredFormat[desired] );
+			const VkFormat internalFormat = ksGpuSwapchain_InternalSurfaceColorFormat( desiredFormat[desired] );
 			for ( uint32_t available = 0; available < formatCount; available++ )
 			{
 				if ( surfaceFormats[available].format == internalFormat &&
@@ -4312,7 +4312,7 @@ static bool GpuSwapchain_Create( GpuContext_t * context, GpuSwapchain_t * swapch
 	}
 
 	swapchain->bufferCount = swapchain->imageCount;
-	swapchain->buffers = (GpuSwapchainBuffer_t *) malloc( swapchain->bufferCount * sizeof( GpuSwapchainBuffer_t ) );
+	swapchain->buffers = (ksGpuSwapchainBuffer *) malloc( swapchain->bufferCount * sizeof( ksGpuSwapchainBuffer ) );
 	for ( uint32_t i = 0; i < swapchain->bufferCount; i++ )
 	{
 		VkSemaphoreCreateInfo semaphoreCreateInfo;
@@ -4337,9 +4337,9 @@ static bool GpuSwapchain_Create( GpuContext_t * context, GpuSwapchain_t * swapch
 	return true;
 }
 
-static void GpuSwapchain_Destroy( GpuContext_t * context, GpuSwapchain_t * swapchain )
+static void ksGpuSwapchain_Destroy( ksGpuContext * context, ksGpuSwapchain * swapchain )
 {
-	GpuDevice_t * device = context->device;
+	ksGpuDevice * device = context->device;
 
 	if ( !device->foundSwapchainExtension )
 	{
@@ -4363,12 +4363,12 @@ static void GpuSwapchain_Destroy( GpuContext_t * context, GpuSwapchain_t * swapc
 	free( swapchain->images );
 	free( swapchain->views );
 
-	memset( swapchain, 0, sizeof( GpuSwapchain_t ) );
+	memset( swapchain, 0, sizeof( ksGpuSwapchain ) );
 }
 
-static Microseconds_t GpuSwapchain_SwapBuffers( GpuContext_t * context, GpuSwapchain_t * swapchain )
+static ksMicroseconds ksGpuSwapchain_SwapBuffers( ksGpuContext * context, ksGpuSwapchain * swapchain )
 {
-	GpuDevice_t * device = context->device;
+	ksGpuDevice * device = context->device;
 
 	if ( !device->foundSwapchainExtension )
 	{
@@ -4392,7 +4392,7 @@ static Microseconds_t GpuSwapchain_SwapBuffers( GpuContext_t * context, GpuSwapc
 	// There should be no need to handle VK_SUBOPTIMAL_WSI and VK_ERROR_OUT_OF_DATE_WSI because the window size is fixed.
 	VK( device->vkQueuePresentKHR( swapchain->presentQueue, &presentInfo ) );
 
-	const Microseconds_t swapTime = GetTimeMicroseconds();
+	const ksMicroseconds swapTime = GetTimeMicroseconds();
 
 	//
 	// Fetch the next image from the swapchain.
@@ -4416,42 +4416,42 @@ GPU depth buffer.
 This encapsulates a platform agnostic depth buffer.
 For optimal performance a depth buffer should only be created at load time, not at runtime.
 
-GpuDepthBuffer_t
+ksGpuDepthBuffer
 
-static void GpuDepthBuffer_Create( GpuContext_t * context, GpuDepthBuffer_t * depthBuffer,
-									const GpuSurfaceDepthFormat_t depthFormat, const GpuSampleCount_t sampleCount,
+static void ksGpuDepthBuffer_Create( ksGpuContext * context, ksGpuDepthBuffer * depthBuffer,
+									const ksGpuSurfaceDepthFormat depthFormat, const ksGpuSampleCount sampleCount,
 									const int width, const int height, const int numLayers );
-static void GpuDepthBuffer_Destroy( GpuContext_t * context, GpuDepthBuffer_t * depthBuffer );
+static void ksGpuDepthBuffer_Destroy( ksGpuContext * context, ksGpuDepthBuffer * depthBuffer );
 
 ================================================================================================================================
 */
 
 typedef struct
 {
-	GpuSurfaceDepthFormat_t	format;
+	ksGpuSurfaceDepthFormat	format;
 	VkFormat				internalFormat;
 	VkImageLayout			imageLayout;
 	VkImage					image;
 	VkDeviceMemory			memory;
 	VkImageView *			views;
 	int						numViews;
-} GpuDepthBuffer_t;
+} ksGpuDepthBuffer;
 
-static VkFormat GpuDepthBuffer_InternalSurfaceDepthFormat( const GpuSurfaceDepthFormat_t depthFormat )
+static VkFormat ksGpuDepthBuffer_InternalSurfaceDepthFormat( const ksGpuSurfaceDepthFormat depthFormat )
 {
 	return	( ( depthFormat == GPU_SURFACE_DEPTH_FORMAT_D16 ) ? VK_FORMAT_D16_UNORM :
 			( ( depthFormat == GPU_SURFACE_DEPTH_FORMAT_D24 ) ? VK_FORMAT_D24_UNORM_S8_UINT :
 			VK_FORMAT_UNDEFINED ) );
 }
-static void GpuDepthBuffer_Create( GpuContext_t * context, GpuDepthBuffer_t * depthBuffer,
-									const GpuSurfaceDepthFormat_t depthFormat, const GpuSampleCount_t sampleCount,
+static void ksGpuDepthBuffer_Create( ksGpuContext * context, ksGpuDepthBuffer * depthBuffer,
+									const ksGpuSurfaceDepthFormat depthFormat, const ksGpuSampleCount sampleCount,
 									const int width, const int height, const int numLayers )
 {
 	assert( width >= 1 );
 	assert( height >= 1 );
 	assert( numLayers >= 1 );
 
-	memset( depthBuffer, 0, sizeof( GpuDepthBuffer_t ) );
+	memset( depthBuffer, 0, sizeof( ksGpuDepthBuffer ) );
 
 	depthBuffer->format = depthFormat;
 
@@ -4461,7 +4461,7 @@ static void GpuDepthBuffer_Create( GpuContext_t * context, GpuDepthBuffer_t * de
 		return;
 	}
 
-	depthBuffer->internalFormat = GpuDepthBuffer_InternalSurfaceDepthFormat( depthFormat );
+	depthBuffer->internalFormat = ksGpuDepthBuffer_InternalSurfaceDepthFormat( depthFormat );
 
 	VkImageCreateInfo imageCreateInfo;
 	imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -4491,7 +4491,7 @@ static void GpuDepthBuffer_Create( GpuContext_t * context, GpuDepthBuffer_t * de
 	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	memoryAllocateInfo.pNext = NULL;
 	memoryAllocateInfo.allocationSize = memoryRequirements.size;
-	memoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
+	memoryAllocateInfo.memoryTypeIndex = ksGpuDevice_GetMemoryTypeIndex( context->device, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
 
 	VK( context->device->vkAllocateMemory( context->device->device, &memoryAllocateInfo, VK_ALLOCATOR, &depthBuffer->memory ) );
 	VK( context->device->vkBindImageMemory( context->device->device, depthBuffer->image, depthBuffer->memory, 0 ) );
@@ -4526,7 +4526,7 @@ static void GpuDepthBuffer_Create( GpuContext_t * context, GpuDepthBuffer_t * de
 	//
 
 	{
-		GpuContext_CreateSetupCmdBuffer( context );
+		ksGpuContext_CreateSetupCmdBuffer( context );
 
 		VkImageMemoryBarrier imageMemoryBarrier;
 		imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -4550,13 +4550,13 @@ static void GpuDepthBuffer_Create( GpuContext_t * context, GpuDepthBuffer_t * de
 
 		VC( context->device->vkCmdPipelineBarrier( context->setupCommandBuffer, src_stages, dst_stages, flags, 0, NULL, 0, NULL, 1, &imageMemoryBarrier ) );
 
-		GpuContext_FlushSetupCmdBuffer( context );
+		ksGpuContext_FlushSetupCmdBuffer( context );
 	}
 
 	depthBuffer->imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 }
 
-static void GpuDepthBuffer_Destroy( GpuContext_t * context, GpuDepthBuffer_t * depthBuffer )
+static void ksGpuDepthBuffer_Destroy( ksGpuContext * context, ksGpuDepthBuffer * depthBuffer )
 {
 	if ( depthBuffer->internalFormat == VK_FORMAT_UNDEFINED )
 	{
@@ -4581,26 +4581,28 @@ GPU Window.
 Window with associated GPU context for GPU accelerated rendering.
 For optimal performance a window should only be created at load time, not at runtime.
 
-GpuWindow_t
-GpuWindowEvent_t
-KeyboardKey_t
-MouseButton_t
+ksGpuWindow
+ksGpuWindowEvent
+ksGpuWindowInput
+ksKeyboardKey
+ksMouseButton
 
-static bool GpuWindow_SupportedResolution( const int width, const int height );
-static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
-								const GpuQueueInfo_t * queueInfo, const int queueIndex,
-								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen );
-static void GpuWindow_Destroy( GpuWindow_t * window );
-static void GpuWindow_Exit( GpuWindow_t * window );
-static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window );
-static void GpuWindow_SwapInterval( GpuWindow_t * window, const int swapInterval );
-static void GpuWindow_SwapBuffers( GpuWindow_t * window );
-static Microseconds_t GpuWindow_GetNextSwapTimeMicroseconds( GpuWindow_t * window );
-static Microseconds_t GpuWindow_GetFrameTimeMicroseconds( GpuWindow_t * window );
-static bool GpuWindowInput_ConsumeKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
-static bool GpuWindowInput_ConsumeMouseButton( GpuWindow_t * window, const MouseButton_t button );
-static bool GpuWindowInput_CheckKeyboardKey( GpuWindow_t * window, const KeyboardKey_t key );
+static bool ksGpuWindow_SupportedResolution( const int width, const int height );
+static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
+								const ksGpuQueueInfo * queueInfo, const int queueIndex,
+								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen );
+static void ksGpuWindow_Destroy( ksGpuWindow * window );
+static void ksGpuWindow_Exit( ksGpuWindow * window );
+static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window );
+static void ksGpuWindow_SwapInterval( ksGpuWindow * window, const int swapInterval );
+static void ksGpuWindow_SwapBuffers( ksGpuWindow * window );
+static ksMicroseconds ksGpuWindow_GetNextSwapTimeMicroseconds( ksGpuWindow * window );
+static ksMicroseconds ksGpuWindow_GetFrameTimeMicroseconds( ksGpuWindow * window );
+
+static bool ksGpuWindowInput_ConsumeKeyboardKey( ksGpuWindowInput * input, const ksKeyboardKey key );
+static bool ksGpuWindowInput_ConsumeMouseButton( ksGpuWindowInput * input, const ksMouseButton button );
+static bool ksGpuWindowInput_CheckKeyboardKey( ksGpuWindowInput * input, const ksKeyboardKey key );
 
 ================================================================================================================================
 */
@@ -4611,7 +4613,7 @@ typedef enum
 	GPU_WINDOW_EVENT_ACTIVATED,
 	GPU_WINDOW_EVENT_DEACTIVATED,
 	GPU_WINDOW_EVENT_EXIT
-} GpuWindowEvent_t;
+} ksGpuWindowEvent;
 
 typedef struct
 {
@@ -4619,15 +4621,15 @@ typedef struct
 	bool					mouseInput[8];
 	int						mouseInputX[8];
 	int						mouseInputY[8];
-} GpuWindowInput_t;
+} ksGpuWindowInput;
 
 typedef struct
 {
-	GpuDevice_t				device;
-	GpuContext_t			context;
-	GpuSurfaceColorFormat_t	colorFormat;
-	GpuSurfaceDepthFormat_t	depthFormat;
-	GpuSampleCount_t		sampleCount;
+	ksGpuDevice				device;
+	ksGpuContext			context;
+	ksGpuSurfaceColorFormat	colorFormat;
+	ksGpuSurfaceDepthFormat	depthFormat;
+	ksGpuSampleCount		sampleCount;
 	int						windowWidth;
 	int						windowHeight;
 	int						windowSwapInterval;
@@ -4635,14 +4637,14 @@ typedef struct
 	bool					windowFullscreen;
 	bool					windowActive;
 	bool					windowExit;
-	GpuWindowInput_t		input;
-	Microseconds_t			lastSwapTime;
+	ksGpuWindowInput		input;
+	ksMicroseconds			lastSwapTime;
 
 	// The swapchain and depth buffer could be stored on the context like OpenGL but this makes more sense.
 	VkSurfaceKHR			surface;
 	int						swapchainCreateCount;
-	GpuSwapchain_t			swapchain;
-	GpuDepthBuffer_t		depthBuffer;
+	ksGpuSwapchain			swapchain;
+	ksGpuDepthBuffer		depthBuffer;
 
 #if defined( OS_WINDOWS )
 	HINSTANCE				hInstance;
@@ -4679,12 +4681,12 @@ typedef struct
 	ANativeWindow *			nativeWindow;
 	bool					resumed;
 #endif
-} GpuWindow_t;
+} ksGpuWindow;
 
-static void GpuWindow_CreateFromSurface( GpuWindow_t * window, const VkSurfaceKHR surface )
+static void ksGpuWindow_CreateFromSurface( ksGpuWindow * window, const VkSurfaceKHR surface )
 {
-	GpuSwapchain_Create( &window->context, &window->swapchain, surface, window->colorFormat, window->windowWidth, window->windowHeight, window->windowSwapInterval );
-	GpuDepthBuffer_Create( &window->context, &window->depthBuffer, window->depthFormat, window->sampleCount, window->windowWidth, window->windowHeight, 1 );
+	ksGpuSwapchain_Create( &window->context, &window->swapchain, surface, window->colorFormat, window->windowWidth, window->windowHeight, window->windowSwapInterval );
+	ksGpuDepthBuffer_Create( &window->context, &window->depthBuffer, window->depthFormat, window->sampleCount, window->windowWidth, window->windowHeight, 1 );
 
 #if defined( OS_APPLE )
 	window->windowWidth = window->swapchain.width;			// iOS/macOS patch for Retina displays
@@ -4699,10 +4701,10 @@ static void GpuWindow_CreateFromSurface( GpuWindow_t * window, const VkSurfaceKH
 	window->swapchainCreateCount++;
 }
 
-static void GpuWindow_DestroySurface( GpuWindow_t * window )
+static void ksGpuWindow_DestroySurface( ksGpuWindow * window )
 {
-	GpuDepthBuffer_Destroy( &window->context, &window->depthBuffer );
-	GpuSwapchain_Destroy( &window->context, &window->swapchain );
+	ksGpuDepthBuffer_Destroy( &window->context, &window->depthBuffer );
+	ksGpuSwapchain_Destroy( &window->context, &window->swapchain );
 	VC( window->device.instance->vkDestroySurfaceKHR( window->device.instance->instance, window->surface, VK_ALLOCATOR ) );
 }
 
@@ -4746,17 +4748,17 @@ typedef enum
 	KEY_CURSOR_DOWN		= VK_DOWN,
 	KEY_CURSOR_LEFT		= VK_LEFT,
 	KEY_CURSOR_RIGHT	= VK_RIGHT
-} KeyboardKey_t;
+} ksKeyboardKey;
 
 typedef enum
 {
 	MOUSE_LEFT		= 0,
 	MOUSE_RIGHT		= 1
-} MouseButton_t;
+} ksMouseButton;
 
 LRESULT APIENTRY WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
 {
-	GpuWindow_t * window = (GpuWindow_t *) GetWindowLongPtr( hWnd, GWLP_USERDATA );
+	ksGpuWindow * window = (ksGpuWindow *) GetWindowLongPtr( hWnd, GWLP_USERDATA );
 
 	switch ( message )
 	{
@@ -4824,11 +4826,11 @@ LRESULT APIENTRY WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 	return DefWindowProc( hWnd, message, wParam, lParam );
 }
 
-static void GpuWindow_Destroy( GpuWindow_t * window )
+static void ksGpuWindow_Destroy( ksGpuWindow * window )
 {
-	GpuWindow_DestroySurface( window );
-	GpuContext_Destroy( &window->context );
-	GpuDevice_Destroy( &window->device );
+	ksGpuWindow_DestroySurface( window );
+	ksGpuContext_Destroy( &window->context );
+	ksGpuDevice_Destroy( &window->device );
 
 	if ( window->windowFullscreen )
 	{
@@ -4855,12 +4857,12 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 	}
 }
 
-static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
-								const GpuQueueInfo_t * queueInfo, const int queueIndex,
-								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
+static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
+								const ksGpuQueueInfo * queueInfo, const int queueIndex,
+								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
 {
-	memset( window, 0, sizeof( GpuWindow_t ) );
+	memset( window, 0, sizeof( ksGpuWindow ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
@@ -4875,6 +4877,8 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	window->windowActiveState = false;
 	window->lastSwapTime = GetTimeMicroseconds();
 
+	const LPCTSTR displayDevice = NULL;
+
 	if ( window->windowFullscreen )
 	{
 		DEVMODE dmScreenSettings;
@@ -4885,7 +4889,7 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 		dmScreenSettings.dmBitsPerPel	= 32;
 		dmScreenSettings.dmFields		= DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL;
 
-		if ( ChangeDisplaySettings( &dmScreenSettings, CDS_FULLSCREEN ) != DISP_CHANGE_SUCCESSFUL )
+		if ( ChangeDisplaySettingsEx( displayDevice, &dmScreenSettings, NULL, CDS_FULLSCREEN, NULL ) != DISP_CHANGE_SUCCESSFUL )
 		{
 			Error( "The requested fullscreen mode is not supported." );
 			return false;
@@ -4897,7 +4901,7 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	lpDevMode.dmSize = sizeof( DEVMODE );
 	lpDevMode.dmDriverExtra = 0;
 
-	if ( EnumDisplaySettings( NULL, ENUM_CURRENT_SETTINGS, &lpDevMode ) != FALSE )
+	if ( EnumDisplaySettings( displayDevice, ENUM_CURRENT_SETTINGS, &lpDevMode ) != FALSE )
 	{
 		window->windowRefreshRate = (float)lpDevMode.dmDisplayFrequency;
 	}
@@ -4972,10 +4976,10 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 								NULL,								// No parent window
 								NULL,								// No menu
 								window->hInstance,					// Instance
-								NULL );
+								NULL );								// No WM_CREATE parameter
 	if ( !window->hWnd )
 	{
-		GpuWindow_Destroy( window );
+		ksGpuWindow_Destroy( window );
 		Error( "Failed to create window." );
 		return false;
 	}
@@ -4992,9 +4996,9 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	VkSurfaceKHR surface;
 	VK( instance->vkCreateSurfaceKHR( instance->instance, &win32SurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
 
-	GpuDevice_Create( &window->device, instance, queueInfo, surface );
-	GpuContext_Create( &window->context, &window->device, queueIndex );
-	GpuWindow_CreateFromSurface( window, surface );
+	ksGpuDevice_Create( &window->device, instance, queueInfo, surface );
+	ksGpuContext_Create( &window->context, &window->device, queueIndex );
+	ksGpuWindow_CreateFromSurface( window, surface );
 
 	ShowWindow( window->hWnd, SW_SHOW );
 	SetForegroundWindow( window->hWnd );
@@ -5003,7 +5007,7 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	return true;
 }
 
-static bool GpuWindow_SupportedResolution( const int width, const int height )
+static bool ksGpuWindow_SupportedResolution( const int width, const int height )
 {
 	DEVMODE dm = { 0 };
 	dm.dmSize = sizeof( dm );
@@ -5017,12 +5021,12 @@ static bool GpuWindow_SupportedResolution( const int width, const int height )
 	return false;
 }
 
-static void GpuWindow_Exit( GpuWindow_t * window )
+static void ksGpuWindow_Exit( ksGpuWindow * window )
 {
 	window->windowExit = true;
 }
 
-static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
+static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
 {
 	MSG msg;
 	while ( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) > 0 )
@@ -5098,13 +5102,13 @@ typedef enum
 	KEY_CURSOR_DOWN		= 0x7D,
 	KEY_CURSOR_LEFT		= 0x7B,
 	KEY_CURSOR_RIGHT	= 0x7C
-} KeyboardKey_t;
+} ksKeyboardKey;
 
 typedef enum
 {
 	MOUSE_LEFT			= 0,
 	MOUSE_RIGHT			= 1
-} MouseButton_t;
+} ksMouseButton;
 
 static NSAutoreleasePool * autoReleasePool;
 static UIView* myUIView;
@@ -5138,11 +5142,11 @@ static UIWindow* myUIWindow;
 
 @end
 
-static void GpuWindow_Destroy( GpuWindow_t * window )
+static void ksGpuWindow_Destroy( ksGpuWindow * window )
 {
-	GpuWindow_DestroySurface( window );
-	GpuContext_Destroy( &window->context );
-	GpuDevice_Destroy( &window->device );
+	ksGpuWindow_DestroySurface( window );
+	ksGpuContext_Destroy( &window->context );
+	ksGpuDevice_Destroy( &window->device );
 
 	if ( window->uiWindow )
 	{
@@ -5156,12 +5160,12 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 	}
 }
 
-static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
-								const GpuQueueInfo_t * queueInfo, const int queueIndex,
-								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
+static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
+								const ksGpuQueueInfo * queueInfo, const int queueIndex,
+								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
 {
-	memset( window, 0, sizeof( GpuWindow_t ) );
+	memset( window, 0, sizeof( ksGpuWindow ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
@@ -5186,14 +5190,14 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	VkSurfaceKHR surface;
 	VK( instance->vkCreateSurfaceKHR( instance->instance, &iosSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
 
-	GpuDevice_Create( &window->device, instance, queueInfo, surface );
-	GpuContext_Create( &window->context, &window->device, queueIndex );
-	GpuWindow_CreateFromSurface( window, surface );
+	ksGpuDevice_Create( &window->device, instance, queueInfo, surface );
+	ksGpuContext_Create( &window->context, &window->device, queueIndex );
+	ksGpuWindow_CreateFromSurface( window, surface );
 
 	return true;
 }
 
-static bool GpuWindow_SupportedResolution( const int width, const int height )
+static bool ksGpuWindow_SupportedResolution( const int width, const int height )
 {
 	UNUSED_PARM( width );
 	UNUSED_PARM( height );
@@ -5201,12 +5205,12 @@ static bool GpuWindow_SupportedResolution( const int width, const int height )
 	return true;
 }
 
-static void GpuWindow_Exit( GpuWindow_t * window )
+static void ksGpuWindow_Exit( ksGpuWindow * window )
 {
 	window->windowExit = true;
 }
 
-static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
+static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
 {
 	[autoReleasePool release];
 	autoReleasePool = [[NSAutoreleasePool alloc] init];
@@ -5265,13 +5269,13 @@ typedef enum
 	KEY_CURSOR_DOWN		= 0x7D,
 	KEY_CURSOR_LEFT		= 0x7B,
 	KEY_CURSOR_RIGHT	= 0x7C
-} KeyboardKey_t;
+} ksKeyboardKey;
 
 typedef enum
 {
 	MOUSE_LEFT			= 0,
 	MOUSE_RIGHT			= 1
-} MouseButton_t;
+} ksMouseButton;
 
 NSAutoreleasePool * autoReleasePool;
 
@@ -5323,11 +5327,11 @@ NSAutoreleasePool * autoReleasePool;
 
 @end
 
-static void GpuWindow_Destroy( GpuWindow_t * window )
+static void ksGpuWindow_Destroy( ksGpuWindow * window )
 {
-	GpuWindow_DestroySurface( window );
-	GpuContext_Destroy( &window->context );
-	GpuDevice_Destroy( &window->device );
+	ksGpuWindow_DestroySurface( window );
+	ksGpuContext_Destroy( &window->context );
+	ksGpuDevice_Destroy( &window->device );
 
 	if ( window->windowFullscreen )
 	{
@@ -5347,12 +5351,12 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 	}
 }
 
-static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
-								const GpuQueueInfo_t * queueInfo, const int queueIndex,
-								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
+static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
+								const ksGpuQueueInfo * queueInfo, const int queueIndex,
+								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
 {
-	memset( window, 0, sizeof( GpuWindow_t ) );
+	memset( window, 0, sizeof( ksGpuWindow ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
@@ -5486,14 +5490,14 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	VkSurfaceKHR surface;
 	VK( instance->vkCreateSurfaceKHR( instance->instance, &macosSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
 
-	GpuDevice_Create( &window->device, instance, queueInfo, surface );
-	GpuContext_Create( &window->context, &window->device, queueIndex );
-	GpuWindow_CreateFromSurface( window, surface );
+	ksGpuDevice_Create( &window->device, instance, queueInfo, surface );
+	ksGpuContext_Create( &window->context, &window->device, queueIndex );
+	ksGpuWindow_CreateFromSurface( window, surface );
 
 	return true;
 }
 
-static bool GpuWindow_SupportedResolution( const int width, const int height )
+static bool ksGpuWindow_SupportedResolution( const int width, const int height )
 {
 	UNUSED_PARM( width );
 	UNUSED_PARM( height );
@@ -5501,12 +5505,12 @@ static bool GpuWindow_SupportedResolution( const int width, const int height )
 	return true;
 }
 
-static void GpuWindow_Exit( GpuWindow_t * window )
+static void ksGpuWindow_Exit( ksGpuWindow * window )
 {
 	window->windowExit = true;
 }
 
-static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
+static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
 {
 	[autoReleasePool release];
 	autoReleasePool = [[NSAutoreleasePool alloc] init];
@@ -5599,13 +5603,13 @@ typedef enum	// keysym.h
 	KEY_CURSOR_DOWN		= ( XK_Down & 0xFF ),
 	KEY_CURSOR_LEFT		= ( XK_Left & 0xFF ),
 	KEY_CURSOR_RIGHT	= ( XK_Right & 0xFF )
-} KeyboardKey_t;
+} ksKeyboardKey;
 
 typedef enum
 {
 	MOUSE_LEFT		= Button1,
 	MOUSE_RIGHT		= Button2
-} MouseButton_t;
+} ksMouseButton;
 
 /*
 	Change video mode using the XFree86-VidMode X extension.
@@ -5947,11 +5951,11 @@ static bool ChangeVideoMode_XRandR_1_2( Display * xDisplay, int xScreen, Window 
 	return true;
 }
 
-static void GpuWindow_Destroy( GpuWindow_t * window )
+static void ksGpuWindow_Destroy( ksGpuWindow * window )
 {
-	GpuWindow_DestroySurface( window );
-	GpuContext_Destroy( &window->context );
-	GpuDevice_Destroy( &window->device );
+	ksGpuWindow_DestroySurface( window );
+	ksGpuContext_Destroy( &window->context );
+	ksGpuDevice_Destroy( &window->device );
 
 	if ( window->windowFullscreen )
 	{
@@ -5975,12 +5979,12 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 	window->xDisplay = NULL;
 }
 
-static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
-								const GpuQueueInfo_t * queueInfo, const int queueIndex,
-								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
+static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
+								const ksGpuQueueInfo * queueInfo, const int queueIndex,
+								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
 {
-	memset( window, 0, sizeof( GpuWindow_t ) );
+	memset( window, 0, sizeof( ksGpuWindow ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
@@ -6049,7 +6053,7 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	if ( !window->xWindow )
 	{
 		Error( "Failed to create window." );
-		GpuWindow_Destroy( window );
+		ksGpuWindow_Destroy( window );
 		return false;
 	}
 
@@ -6111,14 +6115,14 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	VkSurfaceKHR surface;
 	VK( instance->vkCreateSurfaceKHR( instance->instance, &xlibSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
 
-	GpuDevice_Create( &window->device, instance, queueInfo, surface );
-	GpuContext_Create( &window->context, &window->device, queueIndex );
-	GpuWindow_CreateFromSurface( window, surface );
+	ksGpuDevice_Create( &window->device, instance, queueInfo, surface );
+	ksGpuContext_Create( &window->context, &window->device, queueIndex );
+	ksGpuWindow_CreateFromSurface( window, surface );
 
 	return true;
 }
 
-static bool GpuWindow_SupportedResolution( const int width, const int height )
+static bool ksGpuWindow_SupportedResolution( const int width, const int height )
 {
 	UNUSED_PARM( width );
 	UNUSED_PARM( height );
@@ -6126,12 +6130,12 @@ static bool GpuWindow_SupportedResolution( const int width, const int height )
 	return true;
 }
 
-static void GpuWindow_Exit( GpuWindow_t * window )
+static void ksGpuWindow_Exit( ksGpuWindow * window )
 {
 	window->windowExit = true;
 }
 
-static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
+static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
 {
 	int count = XPending( window->xDisplay );
 	for ( int i = 0; i < count; i++ )
@@ -6243,13 +6247,13 @@ typedef enum	// keysym.h
 	KEY_CURSOR_DOWN		= ( XK_Down & 0xFF ),
 	KEY_CURSOR_LEFT		= ( XK_Left & 0xFF ),
 	KEY_CURSOR_RIGHT	= ( XK_Right & 0xFF )
-} KeyboardKey_t;
+} ksKeyboardKey;
 
 typedef enum
 {
 	MOUSE_LEFT		= 0,
 	MOUSE_RIGHT		= 1
-} MouseButton_t;
+} ksMouseButton;
 
 typedef enum
 {
@@ -6416,11 +6420,11 @@ static bool ChangeVideoMode_XcbRandR_1_4( xcb_connection_t * connection, xcb_scr
 	return true;
 }
 
-static void GpuWindow_Destroy( GpuWindow_t * window )
+static void ksGpuWindow_Destroy( ksGpuWindow * window )
 {
-	GpuWindow_DestroySurface( window );
-	GpuContext_Destroy( &window->context );
-	GpuDevice_Destroy( &window->device );
+	ksGpuWindow_DestroySurface( window );
+	ksGpuContext_Destroy( &window->context );
+	ksGpuDevice_Destroy( &window->device );
 
 	if ( window->windowFullscreen )
 	{
@@ -6435,12 +6439,12 @@ static void GpuWindow_Destroy( GpuWindow_t * window )
 	xcb_key_symbols_free( window->key_symbols );
 }
 
-static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
-								const GpuQueueInfo_t * queueInfo, const int queueIndex,
-								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
+static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
+								const ksGpuQueueInfo * queueInfo, const int queueIndex,
+								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
 {
-	memset( window, 0, sizeof( GpuWindow_t ) );
+	memset( window, 0, sizeof( ksGpuWindow ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
@@ -6459,7 +6463,7 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	window->connection = xcb_connect( displayName, &screen_number );
 	if ( xcb_connection_has_error( window->connection ) )
 	{
-		GpuWindow_Destroy( window );
+		ksGpuWindow_Destroy( window );
 		Error( "Failed to open XCB connection." );
 		return false;
 	}
@@ -6595,14 +6599,14 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 	VkSurfaceKHR surface;
 	VK( instance->vkCreateSurfaceKHR( instance->instance, &xcbSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
 
-	GpuDevice_Create( &window->device, instance, queueInfo, surface );
-	GpuContext_Create( &window->context, &window->device, queueIndex );
-	GpuWindow_CreateFromSurface( window, surface );
+	ksGpuDevice_Create( &window->device, instance, queueInfo, surface );
+	ksGpuContext_Create( &window->context, &window->device, queueIndex );
+	ksGpuWindow_CreateFromSurface( window, surface );
 
 	return true;
 }
 
-static bool GpuWindow_SupportedResolution( const int width, const int height )
+static bool ksGpuWindow_SupportedResolution( const int width, const int height )
 {
 	UNUSED_PARM( width );
 	UNUSED_PARM( height );
@@ -6610,12 +6614,12 @@ static bool GpuWindow_SupportedResolution( const int width, const int height )
 	return true;
 }
 
-static void GpuWindow_Exit( GpuWindow_t * window )
+static void ksGpuWindow_Exit( ksGpuWindow * window )
 {
 	window->windowExit = true;
 }
 
-static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
+static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
 {
 	xcb_generic_event_t * event = xcb_poll_for_event( window->connection );
 	if ( event != NULL )
@@ -6720,17 +6724,17 @@ typedef enum	// https://developer.android.com/ndk/reference/group___input.html
 	KEY_CURSOR_DOWN		= AKEYCODE_DPAD_DOWN,
 	KEY_CURSOR_LEFT		= AKEYCODE_DPAD_LEFT,
 	KEY_CURSOR_RIGHT	= AKEYCODE_DPAD_RIGHT
-} KeyboardKey_t;
+} ksKeyboardKey;
 
 typedef enum
 {
 	MOUSE_LEFT		= 0,
 	MOUSE_RIGHT		= 1
-} MouseButton_t;
+} ksMouseButton;
 
 static void app_handle_cmd( struct android_app * app, int32_t cmd )
 {
-	GpuWindow_t * window = (GpuWindow_t *)app->userData;
+	ksGpuWindow * window = (ksGpuWindow *)app->userData;
 
 	switch ( cmd )
 	{
@@ -6789,7 +6793,7 @@ static void app_handle_cmd( struct android_app * app, int32_t cmd )
 
 static int32_t app_handle_input( struct android_app * app, AInputEvent * event )
 {
-	GpuWindow_t * window = (GpuWindow_t *)app->userData;
+	ksGpuWindow * window = (ksGpuWindow *)app->userData;
 
 	const int type = AInputEvent_getType( event );
 	if ( type == AINPUT_EVENT_TYPE_KEY )
@@ -6839,10 +6843,10 @@ static int32_t app_handle_input( struct android_app * app, AInputEvent * event )
 	return 0;
 }
 
-static void GpuWindow_Destroy( GpuWindow_t * window )
+static void ksGpuWindow_Destroy( ksGpuWindow * window )
 {
-	GpuContext_Destroy( &window->context );
-	GpuDevice_Destroy( &window->device );
+	ksGpuContext_Destroy( &window->context );
+	ksGpuDevice_Destroy( &window->device );
 
 	if ( window->app != NULL )
 	{
@@ -6888,12 +6892,12 @@ static float GetDisplayRefreshRate( const Java_t * java )
 
 struct android_app * global_app;
 
-static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
-								const GpuQueueInfo_t * queueInfo, const int queueIndex,
-								const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-								const GpuSampleCount_t sampleCount, const int width, const int height, const bool fullscreen )
+static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
+								const ksGpuQueueInfo * queueInfo, const int queueIndex,
+								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
 {
-	memset( window, 0, sizeof( GpuWindow_t ) );
+	memset( window, 0, sizeof( ksGpuWindow ) );
 
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
@@ -6927,13 +6931,13 @@ static bool GpuWindow_Create( GpuWindow_t * window, DriverInstance_t * instance,
 		ANativeActivity_setWindowFlags( window->app->activity, AWINDOW_FLAG_FULLSCREEN | AWINDOW_FLAG_KEEP_SCREEN_ON, 0 );
 	}
 
-	GpuDevice_Create( &window->device, instance, queueInfo, VK_NULL_HANDLE );
-	GpuContext_Create( &window->context, &window->device, queueIndex );
+	ksGpuDevice_Create( &window->device, instance, queueInfo, VK_NULL_HANDLE );
+	ksGpuContext_Create( &window->context, &window->device, queueIndex );
 
 	return true;
 }
 
-static bool GpuWindow_SupportedResolution( const int width, const int height )
+static bool ksGpuWindow_SupportedResolution( const int width, const int height )
 {
 	UNUSED_PARM( width );
 	UNUSED_PARM( height );
@@ -6942,13 +6946,13 @@ static bool GpuWindow_SupportedResolution( const int width, const int height )
 	return true;
 }
 
-static void GpuWindow_Exit( GpuWindow_t * window )
+static void ksGpuWindow_Exit( ksGpuWindow * window )
 {
-	// Call finish() on the activity and GpuWindow_ProcessEvents will handle the rest.
+	// Call finish() on the activity and ksGpuWindow_ProcessEvents will handle the rest.
 	ANativeActivity_finish( window->app->activity );
 }
 
-static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
+static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
 {
 	if ( window->app == NULL )
 	{
@@ -6986,7 +6990,7 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 			VkSurfaceKHR surface;
 			VK( window->device.instance->vkCreateSurfaceKHR( window->device.instance->instance, &androidSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
 
-			GpuWindow_CreateFromSurface( window, surface );
+			ksGpuWindow_CreateFromSurface( window, surface );
 		}
 
 		if ( window->resumed != false && window->nativeWindow != NULL )
@@ -7000,7 +7004,7 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 		if ( window->nativeWindow == NULL && window->swapchain.swapchain != VK_NULL_HANDLE )
 		{
-			GpuWindow_DestroySurface( window );
+			ksGpuWindow_DestroySurface( window );
 		}
 	}
 
@@ -7017,28 +7021,28 @@ static GpuWindowEvent_t GpuWindow_ProcessEvents( GpuWindow_t * window )
 
 #endif
 
-static void GpuWindow_SwapInterval( GpuWindow_t * window, const int swapInterval )
+static void ksGpuWindow_SwapInterval( ksGpuWindow * window, const int swapInterval )
 {
 	if ( swapInterval != window->windowSwapInterval )
 	{
-		GpuContext_WaitIdle( &window->context );
-		GpuSwapchain_Destroy( &window->context, &window->swapchain );
-		GpuSwapchain_Create( &window->context, &window->swapchain, window->surface, window->colorFormat, window->windowWidth, window->windowHeight, swapInterval );
+		ksGpuContext_WaitIdle( &window->context );
+		ksGpuSwapchain_Destroy( &window->context, &window->swapchain );
+		ksGpuSwapchain_Create( &window->context, &window->swapchain, window->surface, window->colorFormat, window->windowWidth, window->windowHeight, swapInterval );
 		window->windowSwapInterval = swapInterval;
 		window->swapchainCreateCount++;
 	}
 }
 
-static void GpuWindow_SwapBuffers( GpuWindow_t * window )
+static void ksGpuWindow_SwapBuffers( ksGpuWindow * window )
 {
-	Microseconds_t newTimeMicroseconds = GpuSwapchain_SwapBuffers( &window->context, &window->swapchain );
+	ksMicroseconds newTimeMicroseconds = ksGpuSwapchain_SwapBuffers( &window->context, &window->swapchain );
 
 	// Even with smoothing, this is not particularly accurate.
 	const float frameTimeMicroseconds = 1000.0f * 1000.0f / window->windowRefreshRate;
 	const float deltaTimeMicroseconds = (float)newTimeMicroseconds - window->lastSwapTime - frameTimeMicroseconds;
 	if ( fabs( deltaTimeMicroseconds ) < frameTimeMicroseconds * 0.75f )
 	{
-		newTimeMicroseconds = (Microseconds_t)( window->lastSwapTime + frameTimeMicroseconds + 0.025f * deltaTimeMicroseconds );
+		newTimeMicroseconds = (ksMicroseconds)( window->lastSwapTime + frameTimeMicroseconds + 0.025f * deltaTimeMicroseconds );
 	}
 	//const float smoothDeltaMicroseconds = (float)( newTimeMicroseconds - window->lastSwapTime );
 	//Print( "frame delta = %1.3f (error = %1.3f)\n", smoothDeltaMicroseconds * ( 1.0f / 1000.0f ),
@@ -7046,25 +7050,25 @@ static void GpuWindow_SwapBuffers( GpuWindow_t * window )
 	window->lastSwapTime = newTimeMicroseconds;
 }
 
-static Microseconds_t GpuWindow_GetNextSwapTimeMicroseconds( GpuWindow_t * window )
+static ksMicroseconds ksGpuWindow_GetNextSwapTimeMicroseconds( ksGpuWindow * window )
 {
 	const float frameTimeMicroseconds = 1000.0f * 1000.0f / window->windowRefreshRate;
-	return window->lastSwapTime + (Microseconds_t)( frameTimeMicroseconds );
+	return window->lastSwapTime + (ksMicroseconds)( frameTimeMicroseconds );
 }
 
-static Microseconds_t GpuWindow_GetFrameTimeMicroseconds( GpuWindow_t * window )
+static ksMicroseconds ksGpuWindow_GetFrameTimeMicroseconds( ksGpuWindow * window )
 {
 	const float frameTimeMicroseconds = 1000.0f * 1000.0f / window->windowRefreshRate;
-	return (Microseconds_t)( frameTimeMicroseconds );
+	return (ksMicroseconds)( frameTimeMicroseconds );
 }
 
-static void GpuWindow_DelayBeforeSwap( GpuWindow_t * window, const Microseconds_t delay )
+static void ksGpuWindow_DelayBeforeSwap( ksGpuWindow * window, const ksMicroseconds delay )
 {
 	UNUSED_PARM( window );
 	UNUSED_PARM( delay );
 }
 
-static bool GpuWindowInput_ConsumeKeyboardKey( GpuWindowInput_t * input, const KeyboardKey_t key )
+static bool ksGpuWindowInput_ConsumeKeyboardKey( ksGpuWindowInput * input, const ksKeyboardKey key )
 {
 	if ( input->keyInput[key] )
 	{
@@ -7074,7 +7078,7 @@ static bool GpuWindowInput_ConsumeKeyboardKey( GpuWindowInput_t * input, const K
 	return false;
 }
 
-static bool GpuWindowInput_ConsumeMouseButton( GpuWindowInput_t * input, const MouseButton_t button )
+static bool ksGpuWindowInput_ConsumeMouseButton( ksGpuWindowInput * input, const ksMouseButton button )
 {
 	if ( input->mouseInput[button] )
 	{
@@ -7084,7 +7088,7 @@ static bool GpuWindowInput_ConsumeMouseButton( GpuWindowInput_t * input, const M
 	return false;
 }
 
-static bool GpuWindowInput_CheckKeyboardKey( GpuWindowInput_t * input, const KeyboardKey_t key )
+static bool ksGpuWindowInput_CheckKeyboardKey( ksGpuWindowInput * input, const ksKeyboardKey key )
 {
 	return ( input->keyInput[key] != false );
 }
@@ -7098,12 +7102,12 @@ A buffer maintains a block of memory for a specific use by GPU programs (vertex,
 For optimal performance a buffer should only be created at load time, not at runtime.
 The best performance is typically achieved when the buffer is not host visible.
 
-GpuBufferType_t
-GpuBuffer_t
+ksGpuBufferType
+ksGpuBuffer
 
-static bool GpuBuffer_Create( GpuContext_t * context, GpuBuffer_t * buffer, const GpuBufferType_t type,
+static bool ksGpuBuffer_Create( ksGpuContext * context, ksGpuBuffer * buffer, const ksGpuBufferType type,
 							const size_t dataSize, const void * data, const bool hostVisible );
-static void GpuBuffer_Destroy( GpuContext_t * context, GpuBuffer_t * buffer );
+static void ksGpuBuffer_Destroy( ksGpuContext * context, ksGpuBuffer * buffer );
 
 ================================================================================================================================
 */
@@ -7114,21 +7118,21 @@ typedef enum
 	GPU_BUFFER_TYPE_INDEX,
 	GPU_BUFFER_TYPE_UNIFORM,
 	GPU_BUFFER_TYPE_STORAGE
-} GpuBufferType_t;
+} ksGpuBufferType;
 
-typedef struct GpuBuffer_s
+typedef struct ksGpuBuffer_s
 {
-	struct GpuBuffer_s *	next;
+	struct ksGpuBuffer_s *	next;
 	int						unusedCount;
-	GpuBufferType_t			type;
+	ksGpuBufferType			type;
 	size_t					size;
 	VkMemoryPropertyFlags	flags;
 	VkBuffer				buffer;
 	VkDeviceMemory			memory;
 	void *					mapped;
-} GpuBuffer_t;
+} ksGpuBuffer;
 
-static VkBufferUsageFlags GpuBuffer_GetBufferUsage( const GpuBufferType_t type )
+static VkBufferUsageFlags ksGpuBuffer_GetBufferUsage( const ksGpuBufferType type )
 {
 	return	( ( type == GPU_BUFFER_TYPE_VERTEX ) ?	VK_BUFFER_USAGE_VERTEX_BUFFER_BIT :
 			( ( type == GPU_BUFFER_TYPE_INDEX ) ?	VK_BUFFER_USAGE_INDEX_BUFFER_BIT :
@@ -7136,7 +7140,7 @@ static VkBufferUsageFlags GpuBuffer_GetBufferUsage( const GpuBufferType_t type )
 			( ( type == GPU_BUFFER_TYPE_STORAGE ) ?	VK_BUFFER_USAGE_STORAGE_BUFFER_BIT : 0 ) ) ) );
 }
 
-static VkAccessFlags GpuBuffer_GetBufferAccess( const GpuBufferType_t type )
+static VkAccessFlags ksGpuBuffer_GetBufferAccess( const ksGpuBufferType type )
 {
 	return	( ( type == GPU_BUFFER_TYPE_INDEX ) ?	VK_ACCESS_INDEX_READ_BIT :
 			( ( type == GPU_BUFFER_TYPE_VERTEX ) ?	VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT :
@@ -7144,10 +7148,10 @@ static VkAccessFlags GpuBuffer_GetBufferAccess( const GpuBufferType_t type )
 			( ( type == GPU_BUFFER_TYPE_STORAGE ) ?	( VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT ) : 0 ) ) ) );
 }
 
-static bool GpuBuffer_Create( GpuContext_t * context, GpuBuffer_t * buffer, const GpuBufferType_t type,
+static bool ksGpuBuffer_Create( ksGpuContext * context, ksGpuBuffer * buffer, const ksGpuBufferType type,
 							const size_t dataSize, const void * data, const bool hostVisible )
 {
-	memset( buffer, 0, sizeof( GpuBuffer_t ) );
+	memset( buffer, 0, sizeof( ksGpuBuffer ) );
 
 	assert( dataSize <= context->device->physicalDeviceProperties.limits.maxStorageBufferRange );
 
@@ -7159,7 +7163,7 @@ static bool GpuBuffer_Create( GpuContext_t * context, GpuBuffer_t * buffer, cons
 	bufferCreateInfo.pNext = NULL;
 	bufferCreateInfo.flags = 0;
 	bufferCreateInfo.size = dataSize;
-	bufferCreateInfo.usage = GpuBuffer_GetBufferUsage( type ) |
+	bufferCreateInfo.usage = ksGpuBuffer_GetBufferUsage( type ) |
 							( hostVisible ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT : VK_BUFFER_USAGE_TRANSFER_DST_BIT );
 	bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	bufferCreateInfo.queueFamilyIndexCount = 0;
@@ -7176,7 +7180,7 @@ static bool GpuBuffer_Create( GpuContext_t * context, GpuBuffer_t * buffer, cons
 	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	memoryAllocateInfo.pNext = NULL;
 	memoryAllocateInfo.allocationSize = memoryRequirements.size;
-	memoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, memoryRequirements.memoryTypeBits, buffer->flags );
+	memoryAllocateInfo.memoryTypeIndex = ksGpuDevice_GetMemoryTypeIndex( context->device, memoryRequirements.memoryTypeBits, buffer->flags );
 
 	VK( context->device->vkAllocateMemory( context->device->device, &memoryAllocateInfo, VK_ALLOCATOR, &buffer->memory ) );
 	VK( context->device->vkBindBufferMemory( context->device->device, buffer->buffer, buffer->memory, 0 ) );
@@ -7220,7 +7224,7 @@ static bool GpuBuffer_Create( GpuContext_t * context, GpuBuffer_t * buffer, cons
 			stagingMemoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 			stagingMemoryAllocateInfo.pNext = NULL;
 			stagingMemoryAllocateInfo.allocationSize = stagingMemoryRequirements.size;
-			stagingMemoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, stagingMemoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
+			stagingMemoryAllocateInfo.memoryTypeIndex = ksGpuDevice_GetMemoryTypeIndex( context->device, stagingMemoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
 
 			VkDeviceMemory srcMemory;
 			VK( context->device->vkAllocateMemory( context->device->device, &stagingMemoryAllocateInfo, VK_ALLOCATOR, &srcMemory ) );
@@ -7239,7 +7243,7 @@ static bool GpuBuffer_Create( GpuContext_t * context, GpuBuffer_t * buffer, cons
 			mappedMemoryRange.size = VK_WHOLE_SIZE;
 			VC( context->device->vkFlushMappedMemoryRanges( context->device->device, 1, &mappedMemoryRange ) );
 
-			GpuContext_CreateSetupCmdBuffer( context );
+			ksGpuContext_CreateSetupCmdBuffer( context );
 
 			VkBufferCopy bufferCopy;
 			bufferCopy.srcOffset = 0;
@@ -7248,7 +7252,7 @@ static bool GpuBuffer_Create( GpuContext_t * context, GpuBuffer_t * buffer, cons
 
 			VC( context->device->vkCmdCopyBuffer( context->setupCommandBuffer, srcBuffer, buffer->buffer, 1, &bufferCopy ) );
 
-			GpuContext_FlushSetupCmdBuffer( context );
+			ksGpuContext_FlushSetupCmdBuffer( context );
 
 			VC( context->device->vkDestroyBuffer( context->device->device, srcBuffer, VK_ALLOCATOR ) );
 			VC( context->device->vkFreeMemory( context->device->device, srcMemory, VK_ALLOCATOR ) );
@@ -7258,7 +7262,7 @@ static bool GpuBuffer_Create( GpuContext_t * context, GpuBuffer_t * buffer, cons
 	return true;
 }
 
-static void GpuBuffer_Destroy( GpuContext_t * context, GpuBuffer_t * buffer )
+static void ksGpuBuffer_Destroy( ksGpuContext * context, ksGpuBuffer * buffer )
 {
 	if ( buffer->mapped != NULL )
 	{
@@ -7278,31 +7282,31 @@ For optimal performance a texture should only be created or modified at load tim
 Note that the geometry code assumes the texture origin 0,0 = left-top as opposed to left-bottom.
 In other words, textures are expected to be stored top-down as opposed to bottom-up.
 
-GpuTextureFormat_t
-GpuTextureUsage_t
-GpuTextureWrapMode_t
-GpuTextureFilter_t
-GpuTextureDefault_t
-GpuTexture_t
+ksGpuTextureFormat
+ksGpuTextureUsage
+ksGpuTextureWrapMode
+ksGpuTextureFilter
+ksGpuTextureDefault
+ksGpuTexture
 
-static bool GpuTexture_Create2D( GpuContext_t * context, GpuTexture_t * texture,
-								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
-								const int width, const int height, const int mipCount,
-								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize );
-static bool GpuTexture_Create2DArray( GpuContext_t * context, GpuTexture_t * texture,
-								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
-								const int width, const int height, const int layerCount, const int mipCount,
-								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize );
-static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureDefault_t defaultType,
-								const int width, const int height, const int depth,
-								const int layerCount, const int faceCount, const bool mipmaps, const bool border );
-static bool GpuTexture_CreateFromSwapChain( GpuContext_t * context, GpuTexture_t * texture, const GpuWindow_t * window, int index );
-static bool GpuTexture_CreateFromFile( GpuContext_t * context, GpuTexture_t * texture, const char * fileName );
-static void GpuTexture_Destroy( GpuContext_t * context, GpuTexture_t * texture );
+static bool ksGpuTexture_Create2D( ksGpuContext * context, ksGpuTexture * texture,
+									const ksGpuTextureFormat format, const ksGpuSampleCount sampleCount,
+									const int width, const int height, const int mipCount,
+									const ksGpuTextureUsageFlags usageFlags, const void * data, const size_t dataSize );
+static bool ksGpuTexture_Create2DArray( ksGpuContext * context, ksGpuTexture * texture,
+									const ksGpuTextureFormat format, const ksGpuSampleCount sampleCount,
+									const int width, const int height, const int layerCount, const int mipCount,
+									const ksGpuTextureUsageFlags usageFlags, const void * data, const size_t dataSize );
+static bool ksGpuTexture_CreateDefault( ksGpuContext * context, ksGpuTexture * texture, const ksGpuTextureDefault defaultType,
+									const int width, const int height, const int depth,
+									const int layerCount, const int faceCount, const bool mipmaps, const bool border );
+static bool ksGpuTexture_CreateFromSwapChain( ksGpuContext * context, ksGpuTexture * texture, const ksGpuWindow * window, int index );
+static bool ksGpuTexture_CreateFromFile( ksGpuContext * context, ksGpuTexture * texture, const char * fileName );
+static void ksGpuTexture_Destroy( ksGpuContext * context, ksGpuTexture * texture );
 
-static void GpuTexture_SetFilter( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureFilter_t filter );
-static void GpuTexture_SetAniso( GpuContext_t * context, GpuTexture_t * texture, const float maxAniso );
-static void GpuTexture_SetWrapMode( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureWrapMode_t wrapMode );
+static void ksGpuTexture_SetFilter( ksGpuContext * context, ksGpuTexture * texture, const ksGpuTextureFilter filter );
+static void ksGpuTexture_SetAniso( ksGpuContext * context, ksGpuTexture * texture, const float maxAniso );
+static void ksGpuTexture_SetWrapMode( ksGpuContext * context, ksGpuTexture * texture, const ksGpuTextureWrapMode wrapMode );
 
 ================================================================================================================================
 */
@@ -7439,7 +7443,7 @@ typedef enum
 	GPU_TEXTURE_FORMAT_ASTC_10x10_SRGB		= VK_FORMAT_ASTC_10x10_SRGB_BLOCK,		// 4-component ASTC, 10x10 blocks, sRGB
 	GPU_TEXTURE_FORMAT_ASTC_12x10_SRGB		= VK_FORMAT_ASTC_12x10_SRGB_BLOCK,		// 4-component ASTC, 12x10 blocks, sRGB
 	GPU_TEXTURE_FORMAT_ASTC_12x12_SRGB		= VK_FORMAT_ASTC_12x12_SRGB_BLOCK,		// 4-component ASTC, 12x12 blocks, sRGB
-} GpuTextureFormat_t;
+} ksGpuTextureFormat;
 
 typedef enum
 {
@@ -7451,30 +7455,30 @@ typedef enum
 	GPU_TEXTURE_USAGE_STORAGE			= BIT( 5 ),
 	GPU_TEXTURE_USAGE_COLOR_ATTACHMENT	= BIT( 6 ),
 	GPU_TEXTURE_USAGE_PRESENTATION		= BIT( 7 )
-} GpuTextureUsage_t;
+} ksGpuTextureUsage;
 
-typedef unsigned int GpuTextureUsageFlags_t;
+typedef unsigned int ksGpuTextureUsageFlags;
 
 typedef enum
 {
 	GPU_TEXTURE_WRAP_MODE_REPEAT,
 	GPU_TEXTURE_WRAP_MODE_CLAMP_TO_EDGE,
 	GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER
-} GpuTextureWrapMode_t;
+} ksGpuTextureWrapMode;
 
 typedef enum
 {
 	GPU_TEXTURE_FILTER_NEAREST,
 	GPU_TEXTURE_FILTER_LINEAR,
 	GPU_TEXTURE_FILTER_BILINEAR
-} GpuTextureFilter_t;
+} ksGpuTextureFilter;
 
 typedef enum
 {
 	GPU_TEXTURE_DEFAULT_CHECKERBOARD,	// 32x32 checkerboard pattern (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
 	GPU_TEXTURE_DEFAULT_PYRAMIDS,		// 32x32 block pattern of pyramids (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
 	GPU_TEXTURE_DEFAULT_CIRCLES			// 32x32 block pattern with circles (GPU_TEXTURE_FORMAT_R8G8B8A8_UNORM)
-} GpuTextureDefault_t;
+} ksGpuTextureDefault;
 
 typedef struct
 {
@@ -7483,11 +7487,11 @@ typedef struct
 	int						depth;
 	int						layerCount;
 	int						mipCount;
-	GpuSampleCount_t		sampleCount;
-	GpuTextureUsage_t		usage;
-	GpuTextureUsageFlags_t	usageFlags;
-	GpuTextureWrapMode_t	wrapMode;
-	GpuTextureFilter_t		filter;
+	ksGpuSampleCount		sampleCount;
+	ksGpuTextureUsage		usage;
+	ksGpuTextureUsageFlags	usageFlags;
+	ksGpuTextureWrapMode	wrapMode;
+	ksGpuTextureFilter		filter;
 	float					maxAnisotropy;
 	VkFormat				format;
 	VkImageLayout			imageLayout;
@@ -7495,9 +7499,9 @@ typedef struct
 	VkDeviceMemory			memory;
 	VkImageView				view;
 	VkSampler				sampler;
-} GpuTexture_t;
+} ksGpuTexture;
 
-static void GpuTexture_UpdateSampler( GpuContext_t * context, GpuTexture_t * texture )
+static void ksGpuTexture_UpdateSampler( ksGpuContext * context, ksGpuTexture * texture )
 {
 	if ( texture->sampler != VK_NULL_HANDLE )
 	{
@@ -7534,7 +7538,7 @@ static void GpuTexture_UpdateSampler( GpuContext_t * context, GpuTexture_t * tex
 	VK( context->device->vkCreateSampler( context->device->device, &samplerCreateInfo, VK_ALLOCATOR, &texture->sampler ) );
 }
 
-static VkImageLayout LayoutForTextureUsage( const GpuTextureUsage_t usage )
+static VkImageLayout LayoutForTextureUsage( const ksGpuTextureUsage usage )
 {
 	return	( ( usage == GPU_TEXTURE_USAGE_UNDEFINED ) ?		VK_IMAGE_LAYOUT_UNDEFINED :
 			( ( usage == GPU_TEXTURE_USAGE_GENERAL ) ?			VK_IMAGE_LAYOUT_GENERAL :
@@ -7546,7 +7550,7 @@ static VkImageLayout LayoutForTextureUsage( const GpuTextureUsage_t usage )
 			( ( usage == GPU_TEXTURE_USAGE_PRESENTATION ) ?		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : 0 ) ) ) ) ) ) ) );
 }
 
-static VkAccessFlags AccessForTextureUsage( const GpuTextureUsage_t usage )
+static VkAccessFlags AccessForTextureUsage( const ksGpuTextureUsage usage )
 {
 	return	( ( usage == GPU_TEXTURE_USAGE_UNDEFINED ) ?		( 0 ) :
 			( ( usage == GPU_TEXTURE_USAGE_GENERAL ) ?			( 0 ) :
@@ -7558,7 +7562,7 @@ static VkAccessFlags AccessForTextureUsage( const GpuTextureUsage_t usage )
 			( ( usage == GPU_TEXTURE_USAGE_PRESENTATION ) ?		( VK_ACCESS_MEMORY_READ_BIT ) : 0 ) ) ) ) ) ) ) );
 }
 
-static VkPipelineStageFlags PipelineStagesForTextureUsage( const GpuTextureUsage_t usage, const bool from )
+static VkPipelineStageFlags PipelineStagesForTextureUsage( const ksGpuTextureUsage usage, const bool from )
 {
 	return	( ( usage == GPU_TEXTURE_USAGE_UNDEFINED ) ?		( VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT ) :
 			( ( usage == GPU_TEXTURE_USAGE_GENERAL ) ?			( VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT ) :
@@ -7570,7 +7574,7 @@ static VkPipelineStageFlags PipelineStagesForTextureUsage( const GpuTextureUsage
 			( ( usage == GPU_TEXTURE_USAGE_PRESENTATION ) ?		( from ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : VK_PIPELINE_STAGE_ALL_COMMANDS_BIT ) : 0 ) ) ) ) ) ) ) );
 }
 
-static void GpuTexture_ChangeUsage( GpuContext_t * context, VkCommandBuffer cmdBuffer, GpuTexture_t * texture, const GpuTextureUsage_t usage )
+static void ksGpuTexture_ChangeUsage( ksGpuContext * context, VkCommandBuffer cmdBuffer, ksGpuTexture * texture, const ksGpuTextureUsage usage )
 {
 	assert( ( texture->usageFlags & usage ) != 0 );
 
@@ -7625,16 +7629,16 @@ static int IntegerLog2( int i )
 // 'dataSize' is the full data size in bytes.
 // The 'data' is expected to be stored packed on a per mip level basis.
 // If 'data' != NULL and 'mipCount' <= 0, then the full mip chain will be generated from the finest data level.
-static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * texture, const char * fileName,
-										const VkFormat format, const GpuSampleCount_t sampleCount,
+static bool ksGpuTexture_CreateInternal( ksGpuContext * context, ksGpuTexture * texture, const char * fileName,
+										const VkFormat format, const ksGpuSampleCount sampleCount,
 										const int width, const int height, const int depth,
 										const int layerCount, const int faceCount, const int mipCount,
-										const GpuTextureUsageFlags_t usageFlags,
+										const ksGpuTextureUsageFlags usageFlags,
 										const void * data, const size_t dataSize, const bool mipSizeStored )
 {
 	UNUSED_PARM( dataSize );
 
-	memset( texture, 0, sizeof( GpuTexture_t ) );
+	memset( texture, 0, sizeof( ksGpuTexture ) );
 
 	assert( depth >= 0 );
 	assert( layerCount >= 0 );
@@ -7761,14 +7765,14 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	memoryAllocateInfo.pNext = NULL;
 	memoryAllocateInfo.allocationSize = memoryRequirements.size;
-	memoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
+	memoryAllocateInfo.memoryTypeIndex = ksGpuDevice_GetMemoryTypeIndex( context->device, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT );
 
 	VK( context->device->vkAllocateMemory( context->device->device, &memoryAllocateInfo, VK_ALLOCATOR, &texture->memory ) );
 	VK( context->device->vkBindImageMemory( context->device->device, texture->image, texture->memory, 0 ) );
 
 	if ( data == NULL )
 	{
-		GpuContext_CreateSetupCmdBuffer( context );
+		ksGpuContext_CreateSetupCmdBuffer( context );
 
 		// Set optimal image layout for shader read access.
 		{
@@ -7795,13 +7799,13 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 			VC( context->device->vkCmdPipelineBarrier( context->setupCommandBuffer, src_stages, dst_stages, flags, 0, NULL, 0, NULL, 1, &imageMemoryBarrier ) );
 		}
 
-		GpuContext_FlushSetupCmdBuffer( context );
+		ksGpuContext_FlushSetupCmdBuffer( context );
 	}
 	else	// Copy source data through a staging buffer.
 	{
 		assert( sampleCount == GPU_SAMPLE_COUNT_1 );
 
-		GpuContext_CreateSetupCmdBuffer( context );
+		ksGpuContext_CreateSetupCmdBuffer( context );
 
 		// Set optimal image layout for transfer destination.
 		{
@@ -7852,7 +7856,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 		stagingMemoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		stagingMemoryAllocateInfo.pNext = NULL;
 		stagingMemoryAllocateInfo.allocationSize = stagingMemoryRequirements.size;
-		stagingMemoryAllocateInfo.memoryTypeIndex = GpuDevice_GetMemoryTypeIndex( context->device, stagingMemoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
+		stagingMemoryAllocateInfo.memoryTypeIndex = ksGpuDevice_GetMemoryTypeIndex( context->device, stagingMemoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT );
 
 		VkDeviceMemory stagingMemory;
 		VK( context->device->vkAllocateMemory( context->device->device, &stagingMemoryAllocateInfo, VK_ALLOCATOR, &stagingMemory ) );
@@ -8177,7 +8181,7 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 			VC( context->device->vkCmdPipelineBarrier( context->setupCommandBuffer, src_stages, dst_stages, flags, 0, NULL, 0, NULL, 1, &imageMemoryBarrier ) );
 		}
 
-		GpuContext_FlushSetupCmdBuffer( context );
+		ksGpuContext_FlushSetupCmdBuffer( context );
 
 		VC( context->device->vkFreeMemory( context->device->device, stagingMemory, VK_ALLOCATOR ) );
 		VC( context->device->vkDestroyBuffer( context->device->device, stagingBuffer, VK_ALLOCATOR ) );
@@ -8211,37 +8215,37 @@ static bool GpuTexture_CreateInternal( GpuContext_t * context, GpuTexture_t * te
 
 	VK( context->device->vkCreateImageView( context->device->device, &imageViewCreateInfo, VK_ALLOCATOR, &texture->view ) );
 
-	GpuTexture_UpdateSampler( context, texture );
+	ksGpuTexture_UpdateSampler( context, texture );
 
 	return true;
 }
 
-static bool GpuTexture_Create2D( GpuContext_t * context, GpuTexture_t * texture,
-								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
-								const int width, const int height, const int mipCount,
-								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize )
+static bool ksGpuTexture_Create2D( ksGpuContext * context, ksGpuTexture * texture,
+									const ksGpuTextureFormat format, const ksGpuSampleCount sampleCount,
+									const int width, const int height, const int mipCount,
+									const ksGpuTextureUsageFlags usageFlags, const void * data, const size_t dataSize )
 {
 	const int depth = 0;
 	const int layerCount = 0;
 	const int faceCount = 1;
-	return GpuTexture_CreateInternal( context, texture, "data", (VkFormat)format, sampleCount, width, height, depth,
+	return ksGpuTexture_CreateInternal( context, texture, "data", (VkFormat)format, sampleCount, width, height, depth,
 										layerCount, faceCount, mipCount,
 										usageFlags, data, dataSize, false );
 }
 
-static bool GpuTexture_Create2DArray( GpuContext_t * context, GpuTexture_t * texture,
-								const GpuTextureFormat_t format, const GpuSampleCount_t sampleCount,
-								const int width, const int height, const int layerCount, const int mipCount,
-								const GpuTextureUsageFlags_t usageFlags, const void * data, const size_t dataSize )
+static bool ksGpuTexture_Create2DArray( ksGpuContext * context, ksGpuTexture * texture,
+										const ksGpuTextureFormat format, const ksGpuSampleCount sampleCount,
+										const int width, const int height, const int layerCount, const int mipCount,
+										const ksGpuTextureUsageFlags usageFlags, const void * data, const size_t dataSize )
 {
 	const int depth = 0;
 	const int faceCount = 1;
-	return GpuTexture_CreateInternal( context, texture, "data", (VkFormat)format, sampleCount, width, height, depth,
+	return ksGpuTexture_CreateInternal( context, texture, "data", (VkFormat)format, sampleCount, width, height, depth,
 										layerCount, faceCount, mipCount,
 										usageFlags, data, dataSize, false );
 }
 
-static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureDefault_t defaultType,
+static bool ksGpuTexture_CreateDefault( ksGpuContext * context, ksGpuTexture * texture, const ksGpuTextureDefault defaultType,
 										const int width, const int height, const int depth,
 										const int layerCount, const int faceCount,
 										const bool mipmaps, const bool border )
@@ -8379,7 +8383,7 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 	}
 
 	const int mipCount = ( mipmaps ) ? -1 : 1;
-	bool success = GpuTexture_CreateInternal( context, texture, "data", VK_FORMAT_R8G8B8A8_UNORM, GPU_SAMPLE_COUNT_1,
+	bool success = ksGpuTexture_CreateInternal( context, texture, "data", VK_FORMAT_R8G8B8A8_UNORM, GPU_SAMPLE_COUNT_1,
 												width, height, depth,
 												layerCount, faceCount, mipCount,
 												GPU_TEXTURE_USAGE_SAMPLED, data, dataSize, false );
@@ -8389,7 +8393,7 @@ static bool GpuTexture_CreateDefault( GpuContext_t * context, GpuTexture_t * tex
 	return success;
 }
 
-static bool GpuTexture_CreateFromSwapChain( GpuContext_t * context, GpuTexture_t * texture, const GpuWindow_t * window, int index )
+static bool ksGpuTexture_CreateFromSwapChain( ksGpuContext * context, ksGpuTexture * texture, const ksGpuWindow * window, int index )
 {
 	assert( index >= 0 && index < (int)window->swapchain.imageCount );
 
@@ -8410,17 +8414,17 @@ static bool GpuTexture_CreateFromSwapChain( GpuContext_t * context, GpuTexture_t
 	texture->memory = VK_NULL_HANDLE;
 	texture->view = window->swapchain.views[index];
 	texture->sampler = VK_NULL_HANDLE;
-	GpuTexture_UpdateSampler( context, texture );
+	ksGpuTexture_UpdateSampler( context, texture );
 
 	return true;
 }
 
 // This KTX loader does not do any conversions. In other words, the format
 // stored in the KTX file must be the same as the glInternaltFormat.
-static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * texture, const char * fileName,
+static bool ksGpuTexture_CreateFromKTX( ksGpuContext * context, ksGpuTexture * texture, const char * fileName,
 									const unsigned char * buffer, const size_t bufferSize )
 {
-	memset( texture, 0, sizeof( GpuTexture_t ) );
+	memset( texture, 0, sizeof( ksGpuTexture ) );
 
 #pragma pack(1)
 	typedef struct
@@ -8497,16 +8501,16 @@ static bool GpuTexture_CreateFromKTX( GpuContext_t * context, GpuTexture_t * tex
 	const int numberOfFaces = ( header->numberOfFaces >= 1 ) ? header->numberOfFaces : 1;
 	const VkFormat format = vkGetFormatFromOpenGLInternalFormat( header->glInternalFormat );
 
-	return GpuTexture_CreateInternal( context, texture, fileName,
+	return ksGpuTexture_CreateInternal( context, texture, fileName,
 									format, GPU_SAMPLE_COUNT_1,
 									header->pixelWidth, header->pixelHeight, header->pixelDepth,
 									header->numberOfArrayElements, numberOfFaces, header->numberOfMipmapLevels,
 									GPU_TEXTURE_USAGE_SAMPLED, buffer + startTex, bufferSize - startTex, true );
 }
 
-static bool GpuTexture_CreateFromFile( GpuContext_t * context, GpuTexture_t * texture, const char * fileName )
+static bool ksGpuTexture_CreateFromFile( ksGpuContext * context, ksGpuTexture * texture, const char * fileName )
 {
-	memset( texture, 0, sizeof( GpuTexture_t ) );
+	memset( texture, 0, sizeof( ksGpuTexture ) );
 
 	FILE * fp = fopen( fileName, "rb" );
 	if ( fp == NULL )
@@ -8529,14 +8533,14 @@ static bool GpuTexture_CreateFromFile( GpuContext_t * context, GpuTexture_t * te
 	}
 	fclose( fp );
 
-	bool success = GpuTexture_CreateFromKTX( context, texture, fileName, buffer, bufferSize );
+	bool success = ksGpuTexture_CreateFromKTX( context, texture, fileName, buffer, bufferSize );
 
 	free( buffer );
 
 	return success;
 }
 
-static void GpuTexture_Destroy( GpuContext_t * context, GpuTexture_t * texture )
+static void ksGpuTexture_Destroy( ksGpuContext * context, ksGpuTexture * texture )
 {
 	VC( context->device->vkDestroySampler( context->device->device, texture->sampler, VK_ALLOCATOR ) );
 	// A texture created from a swapchain does not own the view, image or memory.
@@ -8546,28 +8550,28 @@ static void GpuTexture_Destroy( GpuContext_t * context, GpuTexture_t * texture )
 		VC( context->device->vkDestroyImage( context->device->device, texture->image, VK_ALLOCATOR ) );
 		VC( context->device->vkFreeMemory( context->device->device, texture->memory, VK_ALLOCATOR ) );
 	}
-	memset( texture, 0, sizeof( GpuTexture_t ) );
+	memset( texture, 0, sizeof( ksGpuTexture ) );
 }
 
-static void GpuTexture_SetWrapMode( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureWrapMode_t wrapMode )
+static void ksGpuTexture_SetWrapMode( ksGpuContext * context, ksGpuTexture * texture, const ksGpuTextureWrapMode wrapMode )
 {
 	texture->wrapMode = wrapMode;
 
-	GpuTexture_UpdateSampler( context, texture );
+	ksGpuTexture_UpdateSampler( context, texture );
 }
 
-static void GpuTexture_SetFilter( GpuContext_t * context, GpuTexture_t * texture, const GpuTextureFilter_t filter )
+static void ksGpuTexture_SetFilter( ksGpuContext * context, ksGpuTexture * texture, const ksGpuTextureFilter filter )
 {
 	texture->filter = filter;
 
-	GpuTexture_UpdateSampler( context, texture );
+	ksGpuTexture_UpdateSampler( context, texture );
 }
 
-static void GpuTexture_SetAniso( GpuContext_t * context, GpuTexture_t * texture, const float maxAniso )
+static void ksGpuTexture_SetAniso( ksGpuContext * context, ksGpuTexture * texture, const float maxAniso )
 {
 	texture->maxAnisotropy = maxAniso;
 
-	GpuTexture_UpdateSampler( context, texture );
+	ksGpuTexture_UpdateSampler( context, texture );
 }
 
 /*
@@ -8575,36 +8579,36 @@ static void GpuTexture_SetAniso( GpuContext_t * context, GpuTexture_t * texture,
 
 GPU vertex attributes.
 
-GpuTriangleIndex_t
-GpuVertexAttribute_t
-GpuVertexAttributeArraysBase_t
+ksGpuTriangleIndex
+ksGpuVertexAttribute
+ksGpuVertexAttributeArraysBase
 
 ================================================================================================================================
 */
 
-typedef unsigned short GpuTriangleIndex_t;
+typedef unsigned short ksGpuTriangleIndex;
 
 typedef struct
 {
 	int				attributeFlag;		// VERTEX_ATTRIBUTE_FLAG_
-	size_t			attributeOffset;	// Offset in bytes to the pointer in GpuVertexAttributeArraysBase_t
+	size_t			attributeOffset;	// Offset in bytes to the pointer in ksGpuVertexAttributeArraysBase
 	size_t			attributeSize;		// Size in bytes of a single attribute
 	int				attributeFormat;	// VkFormat of the attribute
 	int				locationCount;		// Number of attribute locations
 	const char *	name;				// Name in vertex program
-} GpuVertexAttribute_t;
+} ksGpuVertexAttribute;
 
 typedef struct
 {
-	const GpuVertexAttribute_t *	layout;
-} GpuVertexAttributeArraysBase_t;
+	const ksGpuVertexAttribute *	layout;
+} ksGpuVertexAttributeArraysBase;
 
-static size_t GpuVertexAttributeArrays_GetDataSize( const GpuVertexAttribute_t * layout, const int vertexCount, const int attribsFlags )
+static size_t ksGpuVertexAttributeArrays_GetDataSize( const ksGpuVertexAttribute * layout, const int vertexCount, const int attribsFlags )
 {
 	size_t totalSize = 0;
 	for ( int i = 0; layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &layout[i];
+		const ksGpuVertexAttribute * v = &layout[i];
 		if ( ( v->attributeFlag & attribsFlags ) != 0 )
 		{
 			totalSize += v->attributeSize;
@@ -8613,11 +8617,11 @@ static size_t GpuVertexAttributeArrays_GetDataSize( const GpuVertexAttribute_t *
 	return vertexCount * totalSize;
 }
 
-static void * GpuVertexAttributeArrays_GetDataPointer( const GpuVertexAttributeArraysBase_t * attribs )
+static void * ksGpuVertexAttributeArrays_GetDataPointer( const ksGpuVertexAttributeArraysBase * attribs )
 {
 	for ( int i = 0; attribs->layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &attribs->layout[i];
+		const ksGpuVertexAttribute * v = &attribs->layout[i];
 		void * attribPtr = *(void **) ( ((char *)attribs) + v->attributeOffset );
 		if ( attribPtr != NULL )
 		{
@@ -8627,12 +8631,12 @@ static void * GpuVertexAttributeArrays_GetDataPointer( const GpuVertexAttributeA
 	return NULL;
 }
 
-static int GpuVertexAttributeArrays_GetAttribsFlags( const GpuVertexAttributeArraysBase_t * attribs )
+static int ksGpuVertexAttributeArrays_GetAttribsFlags( const ksGpuVertexAttributeArraysBase * attribs )
 {
 	int attribsFlags = 0;
 	for ( int i = 0; attribs->layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &attribs->layout[i];
+		const ksGpuVertexAttribute * v = &attribs->layout[i];
 		void * attribPtr = *(void **) ( ((char *)attribs) + v->attributeOffset );
 		if ( attribPtr != NULL )
 		{
@@ -8642,14 +8646,14 @@ static int GpuVertexAttributeArrays_GetAttribsFlags( const GpuVertexAttributeArr
 	return attribsFlags;
 }
 
-static void GpuVertexAttributeArrays_Map( GpuVertexAttributeArraysBase_t * attribs, void * data, const size_t dataSize, const int vertexCount, const int attribsFlags )
+static void ksGpuVertexAttributeArrays_Map( ksGpuVertexAttributeArraysBase * attribs, void * data, const size_t dataSize, const int vertexCount, const int attribsFlags )
 {
 	unsigned char * dataBytePtr = (unsigned char *) data;
 	size_t offset = 0;
 
 	for ( int i = 0; attribs->layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &attribs->layout[i];
+		const ksGpuVertexAttribute * v = &attribs->layout[i];
 		void ** attribPtr = (void **) ( ((char *)attribs) + v->attributeOffset );
 		if ( ( v->attributeFlag & attribsFlags ) != 0 )
 		{
@@ -8666,25 +8670,25 @@ static void GpuVertexAttributeArrays_Map( GpuVertexAttributeArraysBase_t * attri
 	UNUSED_PARM( dataSize );
 }
 
-static void GpuVertexAttributeArrays_Alloc( GpuVertexAttributeArraysBase_t * attribs, const GpuVertexAttribute_t * layout, const int vertexCount, const int attribsFlags )
+static void ksGpuVertexAttributeArrays_Alloc( ksGpuVertexAttributeArraysBase * attribs, const ksGpuVertexAttribute * layout, const int vertexCount, const int attribsFlags )
 {
-	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( layout, vertexCount, attribsFlags );
+	const size_t dataSize = ksGpuVertexAttributeArrays_GetDataSize( layout, vertexCount, attribsFlags );
 	void * data = malloc( dataSize );
 	attribs->layout = layout;
-	GpuVertexAttributeArrays_Map( attribs, data, dataSize, vertexCount, attribsFlags );
+	ksGpuVertexAttributeArrays_Map( attribs, data, dataSize, vertexCount, attribsFlags );
 }
 
-static void GpuVertexAttributeArrays_Free( GpuVertexAttributeArraysBase_t * attribs )
+static void ksGpuVertexAttributeArrays_Free( ksGpuVertexAttributeArraysBase * attribs )
 {
-	void * data = GpuVertexAttributeArrays_GetDataPointer( attribs );
+	void * data = ksGpuVertexAttributeArrays_GetDataPointer( attribs );
 	free( data );
 }
 
-static void * GpuVertexAttributeArrays_FindAtribute( GpuVertexAttributeArraysBase_t * attribs, const char * name )
+static void * ksGpuVertexAttributeArrays_FindAtribute( ksGpuVertexAttributeArraysBase * attribs, const char * name )
 {
 	for ( int i = 0; attribs->layout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &attribs->layout[i];
+		const ksGpuVertexAttribute * v = &attribs->layout[i];
 		if ( strcmp( v->name, name ) == 0 ) 
 		{
 			void ** attribPtr = (void **) ( ((char *)attribs) + v->attributeOffset );
@@ -8694,14 +8698,14 @@ static void * GpuVertexAttributeArrays_FindAtribute( GpuVertexAttributeArraysBas
 	return NULL;
 }
 
-static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArraysBase_t * attribs, const int vertexCount,
-														const GpuTriangleIndex_t * indices, const int indexCount )
+static void ksGpuVertexAttributeArrays_CalculateTangents( ksGpuVertexAttributeArraysBase * attribs, const int vertexCount,
+														const ksGpuTriangleIndex * indices, const int indexCount )
 {
-	Vector3f_t * vertexPosition	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexPosition" );
-	Vector3f_t * vertexNormal	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexNormal" );
-	Vector3f_t * vertexTangent	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexTangent" );
-	Vector3f_t * vertexBinormal	= (Vector3f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexBinormal" );
-	Vector2f_t * vertexUv0		= (Vector2f_t *)GpuVertexAttributeArrays_FindAtribute( attribs, "vertexUv0" );
+	ksVector3f * vertexPosition	= (ksVector3f *)ksGpuVertexAttributeArrays_FindAtribute( attribs, "vertexPosition" );
+	ksVector3f * vertexNormal	= (ksVector3f *)ksGpuVertexAttributeArrays_FindAtribute( attribs, "vertexNormal" );
+	ksVector3f * vertexTangent	= (ksVector3f *)ksGpuVertexAttributeArrays_FindAtribute( attribs, "vertexTangent" );
+	ksVector3f * vertexBinormal	= (ksVector3f *)ksGpuVertexAttributeArrays_FindAtribute( attribs, "vertexBinormal" );
+	ksVector2f * vertexUv0		= (ksVector2f *)ksGpuVertexAttributeArrays_FindAtribute( attribs, "vertexUv0" );
 
 	if ( vertexPosition == NULL || vertexNormal == NULL || vertexTangent == NULL || vertexBinormal == NULL || vertexUv0 == NULL )
 	{
@@ -8710,19 +8714,19 @@ static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays
 
 	for ( int i = 0; i < vertexCount; i++ )
 	{
-		Vector3f_Set( &vertexTangent[i], 0.0f );
-		Vector3f_Set( &vertexBinormal[i], 0.0f );
+		ksVector3f_Set( &vertexTangent[i], 0.0f );
+		ksVector3f_Set( &vertexBinormal[i], 0.0f );
 	}
 
 	for ( int i = 0; i < indexCount; i += 3 )
 	{
-		const GpuTriangleIndex_t * v = indices + i;
-		const Vector3f_t * pos = vertexPosition;
-		const Vector2f_t * uv0 = vertexUv0;
+		const ksGpuTriangleIndex * v = indices + i;
+		const ksVector3f * pos = vertexPosition;
+		const ksVector2f * uv0 = vertexUv0;
 
-		const Vector3f_t delta0 = { pos[v[1]].x - pos[v[0]].x, pos[v[1]].y - pos[v[0]].y, pos[v[1]].z - pos[v[0]].z };
-		const Vector3f_t delta1 = { pos[v[2]].x - pos[v[1]].x, pos[v[2]].y - pos[v[1]].y, pos[v[2]].z - pos[v[1]].z };
-		const Vector3f_t delta2 = { pos[v[0]].x - pos[v[2]].x, pos[v[0]].y - pos[v[2]].y, pos[v[0]].z - pos[v[2]].z };
+		const ksVector3f delta0 = { pos[v[1]].x - pos[v[0]].x, pos[v[1]].y - pos[v[0]].y, pos[v[1]].z - pos[v[0]].z };
+		const ksVector3f delta1 = { pos[v[2]].x - pos[v[1]].x, pos[v[2]].y - pos[v[1]].y, pos[v[2]].z - pos[v[1]].z };
+		const ksVector3f delta2 = { pos[v[0]].x - pos[v[2]].x, pos[v[0]].y - pos[v[2]].y, pos[v[0]].z - pos[v[2]].z };
 
 		const float l0 = delta0.x * delta0.x + delta0.y * delta0.y + delta0.z * delta0.z;
 		const float l1 = delta1.x * delta1.x + delta1.y * delta1.y + delta1.z * delta1.z;
@@ -8732,19 +8736,19 @@ static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays
 		const int i1 = ( i0 + 1 ) % 3;
 		const int i2 = ( i0 + 2 ) % 3;
 
-		const Vector3f_t d0 = { pos[v[i1]].x - pos[v[i0]].x, pos[v[i1]].y - pos[v[i0]].y, pos[v[i1]].z - pos[v[i0]].z };
-		const Vector3f_t d1 = { pos[v[i2]].x - pos[v[i0]].x, pos[v[i2]].y - pos[v[i0]].y, pos[v[i2]].z - pos[v[i0]].z };
+		const ksVector3f d0 = { pos[v[i1]].x - pos[v[i0]].x, pos[v[i1]].y - pos[v[i0]].y, pos[v[i1]].z - pos[v[i0]].z };
+		const ksVector3f d1 = { pos[v[i2]].x - pos[v[i0]].x, pos[v[i2]].y - pos[v[i0]].y, pos[v[i2]].z - pos[v[i0]].z };
 
-		const Vector2f_t s0 = { uv0[v[i1]].x - uv0[v[i0]].x, uv0[v[i1]].y - uv0[v[i0]].y };
-		const Vector2f_t s1 = { uv0[v[i2]].x - uv0[v[i0]].x, uv0[v[i2]].y - uv0[v[i0]].y };
+		const ksVector2f s0 = { uv0[v[i1]].x - uv0[v[i0]].x, uv0[v[i1]].y - uv0[v[i0]].y };
+		const ksVector2f s1 = { uv0[v[i2]].x - uv0[v[i0]].x, uv0[v[i2]].y - uv0[v[i0]].y };
 
 		const float sign = ( s0.x * s1.y - s0.y * s1.x ) < 0.0f ? -1.0f : 1.0f;
 
-		Vector3f_t tangent  = { ( d0.x * s1.y - d1.x * s0.y ) * sign, ( d0.y * s1.y - d1.y * s0.y ) * sign, ( d0.z * s1.y - d1.z * s0.y ) * sign };
-		Vector3f_t binormal = { ( d1.x * s0.x - d0.x * s1.x ) * sign, ( d1.y * s0.x - d0.y * s1.x ) * sign, ( d1.z * s0.x - d0.z * s1.x ) * sign };
+		ksVector3f tangent  = { ( d0.x * s1.y - d1.x * s0.y ) * sign, ( d0.y * s1.y - d1.y * s0.y ) * sign, ( d0.z * s1.y - d1.z * s0.y ) * sign };
+		ksVector3f binormal = { ( d1.x * s0.x - d0.x * s1.x ) * sign, ( d1.y * s0.x - d0.y * s1.x ) * sign, ( d1.z * s0.x - d0.z * s1.x ) * sign };
 
-		Vector3f_Normalize( &tangent );
-		Vector3f_Normalize( &binormal );
+		ksVector3f_Normalize( &tangent );
+		ksVector3f_Normalize( &binormal );
 
 		for ( int j = 0; j < 3; j++ )
 		{
@@ -8760,8 +8764,8 @@ static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays
 
 	for ( int i = 0; i < vertexCount; i++ )
 	{
-		Vector3f_Normalize( &vertexTangent[i] );
-		Vector3f_Normalize( &vertexBinormal[i] );
+		ksVector3f_Normalize( &vertexTangent[i] );
+		ksVector3f_Normalize( &vertexBinormal[i] );
 	}
 }
 
@@ -8770,8 +8774,8 @@ static void GpuVertexAttributeArrays_CalculateTangents( GpuVertexAttributeArrays
 
 GPU default vertex attribute layout.
 
-GpuVertexAttributeFlags_t
-GpuVertexAttributeArrays_t
+ksGpuVertexAttributeFlags
+ksGpuVertexAttributeArrays
 
 ================================================================================================================================
 */
@@ -8789,37 +8793,37 @@ typedef enum
 	VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES	= BIT( 8 ),		// vec4 jointIndices
 	VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS	= BIT( 9 ),		// vec4 jointWeights
 	VERTEX_ATTRIBUTE_FLAG_TRANSFORM		= BIT( 10 )		// mat4 vertexTransform (NOTE this mat4 takes up 4 attribute locations)
-} GpuVertexAttributeFlags_t;
+} ksGpuVertexAttributeFlags;
 
 typedef struct
 {
-	GpuVertexAttributeArraysBase_t	base;
-	Vector3f_t *					position;
-	Vector3f_t *					normal;
-	Vector3f_t *					tangent;
-	Vector3f_t *					binormal;
-	Vector4f_t *					color;
-	Vector2f_t *					uv0;
-	Vector2f_t *					uv1;
-	Vector2f_t *					uv2;
-	Vector4f_t *					jointIndices;
-	Vector4f_t *					jointWeights;
-	Matrix4x4f_t *					transform;
-} GpuVertexAttributeArrays_t;
+	ksGpuVertexAttributeArraysBase	base;
+	ksVector3f *					position;
+	ksVector3f *					normal;
+	ksVector3f *					tangent;
+	ksVector3f *					binormal;
+	ksVector4f *					color;
+	ksVector2f *					uv0;
+	ksVector2f *					uv1;
+	ksVector2f *					uv2;
+	ksVector4f *					jointIndices;
+	ksVector4f *					jointWeights;
+	ksMatrix4x4f *					transform;
+} ksGpuVertexAttributeArrays;
 
-static const GpuVertexAttribute_t DefaultVertexAttributeLayout[] =
+static const ksGpuVertexAttribute DefaultVertexAttributeLayout[] =
 {
-	{ VERTEX_ATTRIBUTE_FLAG_POSITION,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, position ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, position[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexPosition" },
-	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, normal ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, normal[0] ),			VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexNormal" },
-	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, tangent ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, tangent[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexTangent" },
-	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, binormal ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, binormal[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexBinormal" },
-	{ VERTEX_ATTRIBUTE_FLAG_COLOR,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, color ),		SIZEOF_MEMBER( GpuVertexAttributeArrays_t, color[0] ),			VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexColor" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV0,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv0 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv0[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv0" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV1,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv1 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv1[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv1" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV2,			OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, uv2 ),			SIZEOF_MEMBER( GpuVertexAttributeArrays_t, uv2[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv2" },
-	{ VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, jointIndices ),SIZEOF_MEMBER( GpuVertexAttributeArrays_t, jointIndices[0] ),	VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointIndices" },
-	{ VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS,	OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, jointWeights ),SIZEOF_MEMBER( GpuVertexAttributeArrays_t, jointWeights[0] ),	VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointWeights" },
-	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,		OFFSETOF_MEMBER( GpuVertexAttributeArrays_t, transform ),	SIZEOF_MEMBER( GpuVertexAttributeArrays_t, transform[0] ),		VK_FORMAT_R32G32B32A32_SFLOAT,	4,	"vertexTransform" },
+	{ VERTEX_ATTRIBUTE_FLAG_POSITION,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, position ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, position[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexPosition" },
+	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, normal ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, normal[0] ),			VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexNormal" },
+	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, tangent ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, tangent[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexTangent" },
+	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, binormal ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, binormal[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexBinormal" },
+	{ VERTEX_ATTRIBUTE_FLAG_COLOR,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, color ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, color[0] ),			VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexColor" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV0,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv0 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv0[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv0" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV1,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv1 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv1[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv1" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV2,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv2 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv2[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv2" },
+	{ VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES,	OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, jointIndices ),SIZEOF_MEMBER( ksGpuVertexAttributeArrays, jointIndices[0] ),	VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointIndices" },
+	{ VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS,	OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, jointWeights ),SIZEOF_MEMBER( ksGpuVertexAttributeArrays, jointWeights[0] ),	VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointWeights" },
+	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, transform ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, transform[0] ),		VK_FORMAT_R32G32B32A32_SFLOAT,	4,	"vertexTransform" },
 	{ 0, 0, 0, 0, 0, "" }
 };
 
@@ -8835,77 +8839,77 @@ optimal binning on tiling GPUs that only transform the vertex position for the b
 Storing each attribute in a saparate array is preferred even on immediate-mode GPUs to avoid
 wasting cache space for attributes that are not used by a particular vertex shader.
 
-GpuGeometry_t
+ksGpuGeometry
 
-static void GpuGeometry_Create( GpuContext_t * context, GpuGeometry_t * geometry,
-								const GpuVertexAttributeArraysBase_t * attribs, const int vertexCount,
-								const GpuTriangleIndex_t * indices, const int indexCount );
-static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale );
-static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale );
-static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geometry, const int tesselation, const float offset, const float scale );
-static void GpuGeometry_Destroy( GpuContext_t * context, GpuGeometry_t * geometry );
+static void ksGpuGeometry_Create( ksGpuContext * context, ksGpuGeometry * geometry,
+								const ksGpuVertexAttributeArraysBase * attribs, const int vertexCount,
+								const ksGpuTriangleIndex * indices, const int indexCount );
+static void ksGpuGeometry_CreateQuad( ksGpuContext * context, ksGpuGeometry * geometry, const float offset, const float scale );
+static void ksGpuGeometry_CreateCube( ksGpuContext * context, ksGpuGeometry * geometry, const float offset, const float scale );
+static void ksGpuGeometry_CreateTorus( ksGpuContext * context, ksGpuGeometry * geometry, const int tesselation, const float offset, const float scale );
+static void ksGpuGeometry_Destroy( ksGpuContext * context, ksGpuGeometry * geometry );
 
-static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeometry_t * geometry, const int numInstances, const int instanceAttribsFlags );
+static void ksGpuGeometry_AddInstanceAttributes( ksGpuContext * context, ksGpuGeometry * geometry, const int numInstances, const int instanceAttribsFlags );
 
 ================================================================================================================================
 */
 
 typedef struct
 {
-	const GpuVertexAttribute_t *	layout;
+	const ksGpuVertexAttribute *	layout;
 	int								vertexCount;
 	int								instanceCount;
 	int 							indexCount;
 	int								vertexAttribsFlags;
 	int								instanceAttribsFlags;
-	GpuBuffer_t						vertexBuffer;
-	GpuBuffer_t						instanceBuffer;
-	GpuBuffer_t						indexBuffer;
-} GpuGeometry_t;
+	ksGpuBuffer						vertexBuffer;
+	ksGpuBuffer						instanceBuffer;
+	ksGpuBuffer						indexBuffer;
+} ksGpuGeometry;
 
-static void GpuGeometry_Create( GpuContext_t * context, GpuGeometry_t * geometry,
-								const GpuVertexAttributeArraysBase_t * attribs, const int vertexCount,
-								const GpuTriangleIndex_t * indices, const int indexCount )
+static void ksGpuGeometry_Create( ksGpuContext * context, ksGpuGeometry * geometry,
+								const ksGpuVertexAttributeArraysBase * attribs, const int vertexCount,
+								const ksGpuTriangleIndex * indices, const int indexCount )
 {
-	memset( geometry, 0, sizeof( GpuGeometry_t ) );
+	memset( geometry, 0, sizeof( ksGpuGeometry ) );
 
 	geometry->layout = attribs->layout;
 	geometry->vertexCount = vertexCount;
 	geometry->indexCount = indexCount;
-	geometry->vertexAttribsFlags = GpuVertexAttributeArrays_GetAttribsFlags( attribs );
+	geometry->vertexAttribsFlags = ksGpuVertexAttributeArrays_GetAttribsFlags( attribs );
 
-	const void * data = GpuVertexAttributeArrays_GetDataPointer( attribs );
-	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( attribs->layout, geometry->vertexCount, geometry->vertexAttribsFlags );
+	const void * data = ksGpuVertexAttributeArrays_GetDataPointer( attribs );
+	const size_t dataSize = ksGpuVertexAttributeArrays_GetDataSize( attribs->layout, geometry->vertexCount, geometry->vertexAttribsFlags );
 
-	GpuBuffer_Create( context, &geometry->vertexBuffer, GPU_BUFFER_TYPE_VERTEX, dataSize, data, false );
-	GpuBuffer_Create( context, &geometry->indexBuffer, GPU_BUFFER_TYPE_INDEX, indexCount * sizeof( indices[0] ), indices, false );
+	ksGpuBuffer_Create( context, &geometry->vertexBuffer, GPU_BUFFER_TYPE_VERTEX, dataSize, data, false );
+	ksGpuBuffer_Create( context, &geometry->indexBuffer, GPU_BUFFER_TYPE_INDEX, indexCount * sizeof( indices[0] ), indices, false );
 }
 
 // The quad is centered about the origin and without offset/scale spans the [-1, 1] X-Y range.
-static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale )
+static void ksGpuGeometry_CreateQuad( ksGpuContext * context, ksGpuGeometry * geometry, const float offset, const float scale )
 {
-	const Vector3f_t quadPositions[4] =
+	const ksVector3f quadPositions[4] =
 	{
 		{ -1.0f, -1.0f, 0.0f }, { +1.0f, -1.0f, 0.0f }, { +1.0f, +1.0f, 0.0f }, { -1.0f, +1.0f, 0.0f }
 	};
 
-	const Vector3f_t quadNormals[4] =
+	const ksVector3f quadNormals[4] =
 	{
 		{ 0.0f, 0.0f, +1.0f }, { 0.0f, 0.0f, +1.0f }, { 0.0f, 0.0f, +1.0f }, { 0.0f, 0.0f, +1.0f }
 	};
 
-	const Vector2f_t quadUvs[4] =
+	const ksVector2f quadUvs[4] =
 	{
 		{ 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f },	{ 0.0f, 0.0f }
 	};
 
-	const GpuTriangleIndex_t quadIndices[6] =
+	const ksGpuTriangleIndex quadIndices[6] =
 	{
 		 0,  1,  2,  2,  3,  0
 	};
 
-	GpuVertexAttributeArrays_t quadAttribs;
-	GpuVertexAttributeArrays_Alloc( &quadAttribs.base,
+	ksGpuVertexAttributeArrays quadAttribs;
+	ksGpuVertexAttributeArrays_Alloc( &quadAttribs.base,
 									DefaultVertexAttributeLayout, 4,
 									VERTEX_ATTRIBUTE_FLAG_POSITION |
 									VERTEX_ATTRIBUTE_FLAG_NORMAL |
@@ -8925,17 +8929,17 @@ static void GpuGeometry_CreateQuad( GpuContext_t * context, GpuGeometry_t * geom
 		quadAttribs.uv0[i].y = quadUvs[i].y;
 	}
 
-	GpuVertexAttributeArrays_CalculateTangents( &quadAttribs.base, 4, quadIndices, 6 );
+	ksGpuVertexAttributeArrays_CalculateTangents( &quadAttribs.base, 4, quadIndices, 6 );
 
-	GpuGeometry_Create( context, geometry, &quadAttribs.base, 4, quadIndices, 6 );
+	ksGpuGeometry_Create( context, geometry, &quadAttribs.base, 4, quadIndices, 6 );
 
-	GpuVertexAttributeArrays_Free( &quadAttribs.base );
+	ksGpuVertexAttributeArrays_Free( &quadAttribs.base );
 }
 
 // The cube is centered about the origin and without offset/scale spans the [-1, 1] X-Y-Z range.
-static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geometry, const float offset, const float scale )
+static void ksGpuGeometry_CreateCube( ksGpuContext * context, ksGpuGeometry * geometry, const float offset, const float scale )
 {
-	const Vector3f_t cubePositions[24] =
+	const ksVector3f cubePositions[24] =
 	{
 		{ +1.0f, -1.0f, -1.0f }, { +1.0f, +1.0f, -1.0f }, { +1.0f, +1.0f, +1.0f }, { +1.0f, -1.0f, +1.0f },
 		{ -1.0f, -1.0f, -1.0f }, { -1.0f, -1.0f, +1.0f }, { -1.0f, +1.0f, +1.0f }, { -1.0f, +1.0f, -1.0f },
@@ -8947,7 +8951,7 @@ static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geom
 		{ -1.0f, -1.0f, -1.0f }, { -1.0f, +1.0f, -1.0f }, { +1.0f, +1.0f, -1.0f }, { +1.0f, -1.0f, -1.0f }
 	};
 
-	const Vector3f_t cubeNormals[24] =
+	const ksVector3f cubeNormals[24] =
 	{
 		{ +1.0f, 0.0f, 0.0f }, { +1.0f, 0.0f, 0.0f }, { +1.0f, 0.0f, 0.0f }, { +1.0f, 0.0f, 0.0f },
 		{ -1.0f, 0.0f, 0.0f }, { -1.0f, 0.0f, 0.0f }, { -1.0f, 0.0f, 0.0f }, { -1.0f, 0.0f, 0.0f },
@@ -8959,7 +8963,7 @@ static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geom
 		{ 0.0f, 0.0f, -1.0f }, { 0.0f, 0.0f, -1.0f }, { 0.0f, 0.0f, -1.0f }, { 0.0f, 0.0f, -1.0f }
 	};
 
-	const Vector2f_t cubeUvs[24] =
+	const ksVector2f cubeUvs[24] =
 	{
 		{ 0.0f, 1.0f }, { 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },
 		{ 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },	{ 0.0f, 1.0f },
@@ -8971,7 +8975,7 @@ static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geom
 		{ 1.0f, 1.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },	{ 0.0f, 1.0f },
 	};
 
-	const GpuTriangleIndex_t cubeIndices[36] =
+	const ksGpuTriangleIndex cubeIndices[36] =
 	{
 		 0,  1,  2,  2,  3,  0,
 		 4,  5,  6,  6,  7,  4,
@@ -8981,8 +8985,8 @@ static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geom
 		20, 21, 22, 22, 23, 20
 	};
 
-	GpuVertexAttributeArrays_t cubeAttribs;
-	GpuVertexAttributeArrays_Alloc( &cubeAttribs.base,
+	ksGpuVertexAttributeArrays cubeAttribs;
+	ksGpuVertexAttributeArrays_Alloc( &cubeAttribs.base,
 									DefaultVertexAttributeLayout, 24,
 									VERTEX_ATTRIBUTE_FLAG_POSITION |
 									VERTEX_ATTRIBUTE_FLAG_NORMAL |
@@ -9002,15 +9006,15 @@ static void GpuGeometry_CreateCube( GpuContext_t * context, GpuGeometry_t * geom
 		cubeAttribs.uv0[i].y = cubeUvs[i].y;
 	}
 
-	GpuVertexAttributeArrays_CalculateTangents( &cubeAttribs.base, 24, cubeIndices, 36 );
+	ksGpuVertexAttributeArrays_CalculateTangents( &cubeAttribs.base, 24, cubeIndices, 36 );
 
-	GpuGeometry_Create( context, geometry, &cubeAttribs.base, 24, cubeIndices, 36 );
+	ksGpuGeometry_Create( context, geometry, &cubeAttribs.base, 24, cubeIndices, 36 );
 
-	GpuVertexAttributeArrays_Free( &cubeAttribs.base );
+	ksGpuVertexAttributeArrays_Free( &cubeAttribs.base );
 }
 
 // The torus is centered about the origin and without offset/scale spans the [-1, 1] X-Y range and the [-0.3, 0.3] Z range.
-static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geometry, const int tesselation, const float offset, const float scale )
+static void ksGpuGeometry_CreateTorus( ksGpuContext * context, ksGpuGeometry * geometry, const int tesselation, const float offset, const float scale )
 {
 	const int minorTesselation = tesselation;
 	const int majorTesselation = tesselation;
@@ -9019,8 +9023,8 @@ static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geo
 	const int vertexCount = ( majorTesselation + 1 ) * ( minorTesselation + 1 );
 	const int indexCount = majorTesselation * minorTesselation * 6;
 
-	GpuVertexAttributeArrays_t torusAttribs;
-	GpuVertexAttributeArrays_Alloc( &torusAttribs.base,
+	ksGpuVertexAttributeArrays torusAttribs;
+	ksGpuVertexAttributeArrays_Alloc( &torusAttribs.base,
 									DefaultVertexAttributeLayout, vertexCount,
 									VERTEX_ATTRIBUTE_FLAG_POSITION |
 									VERTEX_ATTRIBUTE_FLAG_NORMAL |
@@ -9028,7 +9032,7 @@ static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geo
 									VERTEX_ATTRIBUTE_FLAG_BINORMAL |
 									VERTEX_ATTRIBUTE_FLAG_UV0 );
 
-	GpuTriangleIndex_t * torusIndices = (GpuTriangleIndex_t *) malloc( indexCount * sizeof( torusIndices[0] ) );
+	ksGpuTriangleIndex * torusIndices = (ksGpuTriangleIndex *) malloc( indexCount * sizeof( torusIndices[0] ) );
 
 	for ( int u = 0; u <= majorTesselation; u++ )
 	{
@@ -9062,36 +9066,36 @@ static void GpuGeometry_CreateTorus( GpuContext_t * context, GpuGeometry_t * geo
 		for ( int v = 0; v < minorTesselation; v++ )
 		{
 			const int index = ( u * minorTesselation + v ) * 6;
-			torusIndices[index + 0] = (GpuTriangleIndex_t)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
-			torusIndices[index + 1] = (GpuTriangleIndex_t)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
-			torusIndices[index + 2] = (GpuTriangleIndex_t)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
-			torusIndices[index + 3] = (GpuTriangleIndex_t)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
-			torusIndices[index + 4] = (GpuTriangleIndex_t)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
-			torusIndices[index + 5] = (GpuTriangleIndex_t)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
+			torusIndices[index + 0] = (ksGpuTriangleIndex)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
+			torusIndices[index + 1] = (ksGpuTriangleIndex)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
+			torusIndices[index + 2] = (ksGpuTriangleIndex)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
+			torusIndices[index + 3] = (ksGpuTriangleIndex)( ( u + 1 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
+			torusIndices[index + 4] = (ksGpuTriangleIndex)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 1 ) );
+			torusIndices[index + 5] = (ksGpuTriangleIndex)( ( u + 0 ) * ( minorTesselation + 1 ) + ( v + 0 ) );
 		}
 	}
 
-	GpuVertexAttributeArrays_CalculateTangents( &torusAttribs.base, vertexCount, torusIndices, indexCount );
+	ksGpuVertexAttributeArrays_CalculateTangents( &torusAttribs.base, vertexCount, torusIndices, indexCount );
 
-	GpuGeometry_Create( context, geometry, &torusAttribs.base, vertexCount, torusIndices, indexCount );
+	ksGpuGeometry_Create( context, geometry, &torusAttribs.base, vertexCount, torusIndices, indexCount );
 
-	GpuVertexAttributeArrays_Free( &torusAttribs.base );
+	ksGpuVertexAttributeArrays_Free( &torusAttribs.base );
 	free( torusIndices );
 }
 
-static void GpuGeometry_Destroy( GpuContext_t * context, GpuGeometry_t * geometry )
+static void ksGpuGeometry_Destroy( ksGpuContext * context, ksGpuGeometry * geometry )
 {
-	GpuBuffer_Destroy( context, &geometry->indexBuffer );
-	GpuBuffer_Destroy( context, &geometry->vertexBuffer );
+	ksGpuBuffer_Destroy( context, &geometry->indexBuffer );
+	ksGpuBuffer_Destroy( context, &geometry->vertexBuffer );
 	if ( geometry->instanceBuffer.size != 0 )
 	{
-		GpuBuffer_Destroy( context, &geometry->instanceBuffer );
+		ksGpuBuffer_Destroy( context, &geometry->instanceBuffer );
 	}
 
-	memset( geometry, 0, sizeof( GpuGeometry_t ) );
+	memset( geometry, 0, sizeof( ksGpuGeometry ) );
 }
 
-static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeometry_t * geometry, const int numInstances, const int instanceAttribsFlags )
+static void ksGpuGeometry_AddInstanceAttributes( ksGpuContext * context, ksGpuGeometry * geometry, const int numInstances, const int instanceAttribsFlags )
 {
 	assert( geometry->layout != NULL );
 	assert( ( geometry->vertexAttribsFlags & instanceAttribsFlags ) == 0 );
@@ -9099,9 +9103,9 @@ static void GpuGeometry_AddInstanceAttributes( GpuContext_t * context, GpuGeomet
 	geometry->instanceCount = numInstances;
 	geometry->instanceAttribsFlags = instanceAttribsFlags;
 
-	const size_t dataSize = GpuVertexAttributeArrays_GetDataSize( geometry->layout, numInstances, geometry->instanceAttribsFlags );
+	const size_t dataSize = ksGpuVertexAttributeArrays_GetDataSize( geometry->layout, numInstances, geometry->instanceAttribsFlags );
 
-	GpuBuffer_Create( context, &geometry->instanceBuffer, GPU_BUFFER_TYPE_VERTEX, dataSize, NULL, false );
+	ksGpuBuffer_Create( context, &geometry->instanceBuffer, GPU_BUFFER_TYPE_VERTEX, dataSize, NULL, false );
 }
 
 /*
@@ -9113,14 +9117,14 @@ A render pass encapsulates a sequence of graphics commands that can be executed 
 For optimal performance a render pass should only be created at load time, not at runtime.
 Render passes cannot overlap and cannot be nested.
 
-GpuRenderPassType_t
-GpuRenderPassFlags_t
-GpuRenderPass_t
+ksGpuRenderPassType
+ksGpuRenderPassFlags
+ksGpuRenderPass
 
-static bool GpuRenderPass_Create( GpuContext_t * context, GpuRenderPass_t * renderPass,
-									const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-									const GpuSampleCount_t sampleCount, const GpuRenderPassType_t type, const uint32_t flags );
-static void GpuRenderPass_Destroy( GpuContext_t * context, GpuRenderPass_t * renderPass );
+static bool ksGpuRenderPass_Create( ksGpuContext * context, ksGpuRenderPass * renderPass,
+									const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+									const ksGpuSampleCount sampleCount, const ksGpuRenderPassType type, const uint32_t flags );
+static void ksGpuRenderPass_Destroy( ksGpuContext * context, ksGpuRenderPass * renderPass );
 
 ================================================================================================================================
 */
@@ -9131,29 +9135,29 @@ typedef enum
 {
 	GPU_RENDERPASS_TYPE_INLINE,
 	GPU_RENDERPASS_TYPE_SECONDARY_COMMAND_BUFFERS
-} GpuRenderPassType_t;
+} ksGpuRenderPassType;
 
 typedef enum
 {
 	GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER		= BIT( 0 ),
 	GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER		= BIT( 1 )
-} GpuRenderPassFlags_t;
+} ksGpuRenderPassFlags;
 
 typedef struct
 {
-	GpuRenderPassType_t			type;
+	ksGpuRenderPassType			type;
 	int							flags;
-	GpuSurfaceColorFormat_t		colorFormat;
-	GpuSurfaceDepthFormat_t		depthFormat;
-	GpuSampleCount_t			sampleCount;
+	ksGpuSurfaceColorFormat		colorFormat;
+	ksGpuSurfaceDepthFormat		depthFormat;
+	ksGpuSampleCount			sampleCount;
 	VkFormat					internalColorFormat;
 	VkFormat					internalDepthFormat;
 	VkRenderPass				renderPass;
-} GpuRenderPass_t;
+} ksGpuRenderPass;
 
-static bool GpuRenderPass_Create( GpuContext_t * context, GpuRenderPass_t * renderPass,
-									const GpuSurfaceColorFormat_t colorFormat, const GpuSurfaceDepthFormat_t depthFormat,
-									const GpuSampleCount_t sampleCount, const GpuRenderPassType_t type, const int flags )
+static bool ksGpuRenderPass_Create( ksGpuContext * context, ksGpuRenderPass * renderPass,
+									const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+									const ksGpuSampleCount sampleCount, const ksGpuRenderPassType type, const int flags )
 {
 	assert( ( context->device->physicalDeviceProperties.limits.framebufferColorSampleCounts & (VkSampleCountFlags) sampleCount ) != 0 );
 	assert( ( context->device->physicalDeviceProperties.limits.framebufferDepthSampleCounts & (VkSampleCountFlags) sampleCount ) != 0 );
@@ -9163,8 +9167,8 @@ static bool GpuRenderPass_Create( GpuContext_t * context, GpuRenderPass_t * rend
 	renderPass->colorFormat = colorFormat;
 	renderPass->depthFormat = depthFormat;
 	renderPass->sampleCount = sampleCount;
-	renderPass->internalColorFormat = GpuSwapchain_InternalSurfaceColorFormat( colorFormat );
-	renderPass->internalDepthFormat = GpuDepthBuffer_InternalSurfaceDepthFormat( depthFormat );
+	renderPass->internalColorFormat = ksGpuSwapchain_InternalSurfaceColorFormat( colorFormat );
+	renderPass->internalDepthFormat = ksGpuDepthBuffer_InternalSurfaceDepthFormat( depthFormat );
 
 	uint32_t attachmentCount = 0;
 	VkAttachmentDescription attachments[3];
@@ -9252,7 +9256,7 @@ static bool GpuRenderPass_Create( GpuContext_t * context, GpuRenderPass_t * rend
 	return true;
 }
 
-static void GpuRenderPass_Destroy( GpuContext_t * context, GpuRenderPass_t * renderPass )
+static void ksGpuRenderPass_Destroy( ksGpuContext * context, ksGpuRenderPass * renderPass )
 {
 	VC( context->device->vkDestroyRenderPass( context->device->device, renderPass->renderPass, VK_ALLOCATOR ) );
 }
@@ -9265,34 +9269,34 @@ GPU framebuffer.
 A framebuffer encapsulates either a swapchain or a buffered set of textures.
 For optimal performance a framebuffer should only be created at load time, not at runtime.
 
-GpuFramebuffer_t
+ksGpuFramebuffer
 
-static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass );
-static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
+static bool ksGpuFramebuffer_CreateFromSwapchain( ksGpuWindow * window, ksGpuFramebuffer * framebuffer, ksGpuRenderPass * renderPass );
+static bool ksGpuFramebuffer_CreateFromTextures( ksGpuContext * context, ksGpuFramebuffer * framebuffer, ksGpuRenderPass * renderPass,
 												const int width, const int height, const int numBuffers );
-static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
+static bool ksGpuFramebuffer_CreateFromTextureArrays( ksGpuContext * context, ksGpuFramebuffer * framebuffer, ksGpuRenderPass * renderPass,
 												const int width, const int height, const int numLayers, const int numBuffers, const bool multiview );
-static void GpuFramebuffer_Destroy( GpuContext_t * context, GpuFramebuffer_t * framebuffer );
+static void ksGpuFramebuffer_Destroy( ksGpuContext * context, ksGpuFramebuffer * framebuffer );
 
-static int GpuFramebuffer_GetWidth( const GpuFramebuffer_t * framebuffer );
-static int GpuFramebuffer_GetHeight( const GpuFramebuffer_t * framebuffer );
-static ScreenRect_t GpuFramebuffer_GetRect( const GpuFramebuffer_t * framebuffer );
-static int GpuFramebuffer_GetBufferCount( const GpuFramebuffer_t * framebuffer );
-static GpuTexture_t * GpuFramebuffer_GetColorTexture( const GpuFramebuffer_t * framebuffer );
+static int ksGpuFramebuffer_GetWidth( const ksGpuFramebuffer * framebuffer );
+static int ksGpuFramebuffer_GetHeight( const ksGpuFramebuffer * framebuffer );
+static ksScreenRect ksGpuFramebuffer_GetRect( const ksGpuFramebuffer * framebuffer );
+static int ksGpuFramebuffer_GetBufferCount( const ksGpuFramebuffer * framebuffer );
+static ksGpuTexture * ksGpuFramebuffer_GetColorTexture( const ksGpuFramebuffer * framebuffer );
 
 ================================================================================================================================
 */
 
 typedef struct
 {
-	GpuTexture_t *		colorTextures;
-	GpuTexture_t		renderTexture;
-	GpuDepthBuffer_t	depthBuffer;
+	ksGpuTexture *		colorTextures;
+	ksGpuTexture		renderTexture;
+	ksGpuDepthBuffer	depthBuffer;
 	VkImageView *		textureViews;
 	VkImageView *		renderViews;
 	VkFramebuffer *		framebuffers;
-	GpuRenderPass_t *	renderPass;
-	GpuWindow_t *		window;
+	ksGpuRenderPass *	renderPass;
+	ksGpuWindow *		window;
 	int					swapchainCreateCount;
 	int					width;
 	int					height;
@@ -9300,15 +9304,15 @@ typedef struct
 	int					numBuffers;
 	int					currentBuffer;
 	int					currentLayer;
-} GpuFramebuffer_t;
+} ksGpuFramebuffer;
 
-static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass )
+static bool ksGpuFramebuffer_CreateFromSwapchain( ksGpuWindow * window, ksGpuFramebuffer * framebuffer, ksGpuRenderPass * renderPass )
 {
 	assert( window->windowWidth >= 1 && window->windowWidth <= (int)window->context.device->physicalDeviceProperties.limits.maxFramebufferWidth );
 	assert( window->windowHeight >= 1 && window->windowHeight <= (int)window->context.device->physicalDeviceProperties.limits.maxFramebufferHeight );
 	assert( window->sampleCount == renderPass->sampleCount );
 
-	memset( framebuffer, 0, sizeof( GpuFramebuffer_t ) );
+	memset( framebuffer, 0, sizeof( ksGpuFramebuffer ) );
 
 	framebuffer->renderPass = renderPass;
 	framebuffer->window = window;
@@ -9329,7 +9333,7 @@ static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebu
 	assert( renderPass->internalDepthFormat == window->depthBuffer.internalFormat );
 	assert( framebuffer->numBuffers >= (int)window->swapchain.imageCount );
 
-	framebuffer->colorTextures = (GpuTexture_t *) malloc( window->swapchain.imageCount * sizeof( GpuTexture_t ) );
+	framebuffer->colorTextures = (ksGpuTexture *) malloc( window->swapchain.imageCount * sizeof( ksGpuTexture ) );
 	framebuffer->textureViews = NULL;
 	framebuffer->renderViews = NULL;
 	framebuffer->framebuffers = (VkFramebuffer *) malloc( window->swapchain.imageCount * sizeof( VkFramebuffer ) );
@@ -9337,11 +9341,11 @@ static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebu
 
 	if ( renderPass->sampleCount > GPU_SAMPLE_COUNT_1 )
 	{
-		GpuTexture_Create2D( &window->context, &framebuffer->renderTexture, (GpuTextureFormat_t)renderPass->internalColorFormat, renderPass->sampleCount,
+		ksGpuTexture_Create2D( &window->context, &framebuffer->renderTexture, (ksGpuTextureFormat)renderPass->internalColorFormat, renderPass->sampleCount,
 			window->windowWidth, window->windowHeight, 1, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT, NULL, 0 );
-		GpuContext_CreateSetupCmdBuffer( &window->context );
-		GpuTexture_ChangeUsage( &window->context, window->context.setupCommandBuffer, &framebuffer->renderTexture, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
-		GpuContext_FlushSetupCmdBuffer( &window->context );
+		ksGpuContext_CreateSetupCmdBuffer( &window->context );
+		ksGpuTexture_ChangeUsage( &window->context, window->context.setupCommandBuffer, &framebuffer->renderTexture, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
+		ksGpuContext_FlushSetupCmdBuffer( &window->context );
 	}
 
 	for ( uint32_t imageIndex = 0; imageIndex < window->swapchain.imageCount; imageIndex++ )
@@ -9349,7 +9353,7 @@ static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebu
 		assert( renderPass->colorFormat == window->colorFormat );
 		assert( renderPass->depthFormat == window->depthFormat );
 
-		GpuTexture_CreateFromSwapChain( &window->context, &framebuffer->colorTextures[imageIndex], window, imageIndex );
+		ksGpuTexture_CreateFromSwapChain( &window->context, &framebuffer->colorTextures[imageIndex], window, imageIndex );
 
 		assert( window->windowWidth == framebuffer->colorTextures[imageIndex].width );
 		assert( window->windowHeight == framebuffer->colorTextures[imageIndex].height );
@@ -9387,15 +9391,15 @@ static bool GpuFramebuffer_CreateFromSwapchain( GpuWindow_t * window, GpuFramebu
 	return true;
 }
 
-static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
+static bool ksGpuFramebuffer_CreateFromTextures( ksGpuContext * context, ksGpuFramebuffer * framebuffer, ksGpuRenderPass * renderPass,
 												const int width, const int height, const int numBuffers )
 {
 	assert( width >= 1 && width <= (int)context->device->physicalDeviceProperties.limits.maxFramebufferWidth );
 	assert( height >= 1 && height <= (int)context->device->physicalDeviceProperties.limits.maxFramebufferHeight );
 
-	memset( framebuffer, 0, sizeof( GpuFramebuffer_t ) );
+	memset( framebuffer, 0, sizeof( ksGpuFramebuffer ) );
 
-	framebuffer->colorTextures = (GpuTexture_t *) malloc( numBuffers * sizeof( GpuTexture_t ) );
+	framebuffer->colorTextures = (ksGpuTexture *) malloc( numBuffers * sizeof( ksGpuTexture ) );
 	framebuffer->textureViews = NULL;
 	framebuffer->renderViews = NULL;	framebuffer->framebuffers = (VkFramebuffer *) malloc( numBuffers * sizeof( VkFramebuffer ) );
 	framebuffer->renderPass = renderPass;
@@ -9410,23 +9414,23 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 
 	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
 	{
-		GpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)renderPass->internalColorFormat, GPU_SAMPLE_COUNT_1,
+		ksGpuTexture_Create2D( context, &framebuffer->colorTextures[bufferIndex], (ksGpuTextureFormat)renderPass->internalColorFormat, GPU_SAMPLE_COUNT_1,
 			width, height, 1, GPU_TEXTURE_USAGE_SAMPLED | GPU_TEXTURE_USAGE_COLOR_ATTACHMENT | GPU_TEXTURE_USAGE_STORAGE, NULL, 0 );
-		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
+		ksGpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 	}
 
 	if ( renderPass->sampleCount > GPU_SAMPLE_COUNT_1 )
 	{
-		GpuTexture_Create2D( context, &framebuffer->renderTexture, (GpuTextureFormat_t)renderPass->internalColorFormat, renderPass->sampleCount,
+		ksGpuTexture_Create2D( context, &framebuffer->renderTexture, (ksGpuTextureFormat)renderPass->internalColorFormat, renderPass->sampleCount,
 			width, height, 1, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT, NULL, 0 );
-		GpuContext_CreateSetupCmdBuffer( context );
-		GpuTexture_ChangeUsage( context, context->setupCommandBuffer, &framebuffer->renderTexture, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
-		GpuContext_FlushSetupCmdBuffer( context );
+		ksGpuContext_CreateSetupCmdBuffer( context );
+		ksGpuTexture_ChangeUsage( context, context->setupCommandBuffer, &framebuffer->renderTexture, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
+		ksGpuContext_FlushSetupCmdBuffer( context );
 	}
 
 	if ( renderPass->internalDepthFormat != VK_FORMAT_UNDEFINED )
 	{
-		GpuDepthBuffer_Create( context, &framebuffer->depthBuffer, renderPass->depthFormat, renderPass->sampleCount, width, height, 1 );
+		ksGpuDepthBuffer_Create( context, &framebuffer->depthBuffer, renderPass->depthFormat, renderPass->sampleCount, width, height, 1 );
 	}
 
 	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
@@ -9464,7 +9468,7 @@ static bool GpuFramebuffer_CreateFromTextures( GpuContext_t * context, GpuFrameb
 	return true;
 }
 
-static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
+static bool ksGpuFramebuffer_CreateFromTextureArrays( ksGpuContext * context, ksGpuFramebuffer * framebuffer, ksGpuRenderPass * renderPass,
 												const int width, const int height, const int numLayers, const int numBuffers, const bool multiview )
 {
 	UNUSED_PARM( multiview );
@@ -9473,9 +9477,9 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 	assert( height >= 1 && height <= (int)context->device->physicalDeviceProperties.limits.maxFramebufferHeight );
 	assert( numLayers >= 1 && numLayers <= (int)context->device->physicalDeviceProperties.limits.maxFramebufferLayers );
 
-	memset( framebuffer, 0, sizeof( GpuFramebuffer_t ) );
+	memset( framebuffer, 0, sizeof( ksGpuFramebuffer ) );
 
-	framebuffer->colorTextures = (GpuTexture_t *) malloc( numBuffers * sizeof( GpuTexture_t ) );
+	framebuffer->colorTextures = (ksGpuTexture *) malloc( numBuffers * sizeof( ksGpuTexture ) );
 	framebuffer->textureViews = NULL;
 	framebuffer->renderViews = NULL;
 	framebuffer->framebuffers = (VkFramebuffer *) malloc( numBuffers * numLayers * sizeof( VkFramebuffer ) );
@@ -9491,9 +9495,9 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 
 	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
 	{
-		GpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], (GpuTextureFormat_t)renderPass->internalColorFormat, GPU_SAMPLE_COUNT_1,
+		ksGpuTexture_Create2DArray( context, &framebuffer->colorTextures[bufferIndex], (ksGpuTextureFormat)renderPass->internalColorFormat, GPU_SAMPLE_COUNT_1,
 			width, height, numLayers, 1, GPU_TEXTURE_USAGE_SAMPLED | GPU_TEXTURE_USAGE_COLOR_ATTACHMENT | GPU_TEXTURE_USAGE_STORAGE, NULL, 0 );
-		GpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
+		ksGpuTexture_SetWrapMode( context, &framebuffer->colorTextures[bufferIndex], GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 	}
 
 	if ( renderPass->sampleCount <= GPU_SAMPLE_COUNT_1 || EXPLICIT_RESOLVE == 0 )
@@ -9505,17 +9509,17 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 	{
 		framebuffer->renderViews = (VkImageView *) malloc( numBuffers * numLayers * sizeof( VkImageView ) );
 
-		GpuTexture_Create2DArray( context, &framebuffer->renderTexture, (GpuTextureFormat_t)renderPass->internalColorFormat, renderPass->sampleCount,
+		ksGpuTexture_Create2DArray( context, &framebuffer->renderTexture, (ksGpuTextureFormat)renderPass->internalColorFormat, renderPass->sampleCount,
 			width, height, numLayers, 1, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT, NULL, 0 );
-		GpuContext_CreateSetupCmdBuffer( context );
-		GpuTexture_ChangeUsage( context, context->setupCommandBuffer, &framebuffer->renderTexture, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
-		GpuContext_FlushSetupCmdBuffer( context );
+		ksGpuContext_CreateSetupCmdBuffer( context );
+		ksGpuTexture_ChangeUsage( context, context->setupCommandBuffer, &framebuffer->renderTexture, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
+		ksGpuContext_FlushSetupCmdBuffer( context );
 	}
 
 	if ( renderPass->internalDepthFormat != VK_FORMAT_UNDEFINED )
 	{
 		// Note: share a single depth buffer between all array layers.
-		GpuDepthBuffer_Create( context, &framebuffer->depthBuffer, renderPass->depthFormat, renderPass->sampleCount, width, height, 1 );
+		ksGpuDepthBuffer_Create( context, &framebuffer->depthBuffer, renderPass->depthFormat, renderPass->sampleCount, width, height, 1 );
 	}
 
 	for ( int bufferIndex = 0; bufferIndex < numBuffers; bufferIndex++ )
@@ -9597,7 +9601,7 @@ static bool GpuFramebuffer_CreateFromTextureArrays( GpuContext_t * context, GpuF
 	return true;
 }
 
-static void GpuFramebuffer_Destroy( GpuContext_t * context, GpuFramebuffer_t * framebuffer )
+static void ksGpuFramebuffer_Destroy( ksGpuContext * context, ksGpuFramebuffer * framebuffer )
 {
 	for ( int bufferIndex = 0; bufferIndex < framebuffer->numBuffers; bufferIndex++ )
 	{
@@ -9619,17 +9623,17 @@ static void GpuFramebuffer_Destroy( GpuContext_t * context, GpuFramebuffer_t * f
 	}
 	if ( framebuffer->depthBuffer.image != VK_NULL_HANDLE )
 	{
-		GpuDepthBuffer_Destroy( context, &framebuffer->depthBuffer );
+		ksGpuDepthBuffer_Destroy( context, &framebuffer->depthBuffer );
 	}
 	if ( framebuffer->renderTexture.image != VK_NULL_HANDLE )
 	{
-		GpuTexture_Destroy( context, &framebuffer->renderTexture );
+		ksGpuTexture_Destroy( context, &framebuffer->renderTexture );
 	}
 	for ( int bufferIndex = 0; bufferIndex < framebuffer->numBuffers; bufferIndex++ )
 	{
 		if ( framebuffer->colorTextures != NULL )
 		{
-			GpuTexture_Destroy( context, &framebuffer->colorTextures[bufferIndex] );
+			ksGpuTexture_Destroy( context, &framebuffer->colorTextures[bufferIndex] );
 		}
 	}
 
@@ -9638,22 +9642,22 @@ static void GpuFramebuffer_Destroy( GpuContext_t * context, GpuFramebuffer_t * f
 	free( framebuffer->textureViews );
 	free( framebuffer->colorTextures );
 
-	memset( framebuffer, 0, sizeof( GpuFramebuffer_t ) );
+	memset( framebuffer, 0, sizeof( ksGpuFramebuffer ) );
 }
 
-static int GpuFramebuffer_GetWidth( const GpuFramebuffer_t * framebuffer )
+static int ksGpuFramebuffer_GetWidth( const ksGpuFramebuffer * framebuffer )
 {
 	return framebuffer->width;
 }
 
-static int GpuFramebuffer_GetHeight( const GpuFramebuffer_t * framebuffer )
+static int ksGpuFramebuffer_GetHeight( const ksGpuFramebuffer * framebuffer )
 {
 	return framebuffer->height;
 }
 
-static ScreenRect_t GpuFramebuffer_GetRect( const GpuFramebuffer_t * framebuffer )
+static ksScreenRect ksGpuFramebuffer_GetRect( const ksGpuFramebuffer * framebuffer )
 {
-	ScreenRect_t rect;
+	ksScreenRect rect;
 	rect.x = 0;
 	rect.y = 0;
 	rect.width = framebuffer->width;
@@ -9661,12 +9665,12 @@ static ScreenRect_t GpuFramebuffer_GetRect( const GpuFramebuffer_t * framebuffer
 	return rect;
 }
 
-static int GpuFramebuffer_GetBufferCount( const GpuFramebuffer_t * framebuffer )
+static int ksGpuFramebuffer_GetBufferCount( const ksGpuFramebuffer * framebuffer )
 {
 	return framebuffer->numBuffers;
 }
 
-static GpuTexture_t * GpuFramebuffer_GetColorTexture( const GpuFramebuffer_t * framebuffer )
+static ksGpuTexture * ksGpuFramebuffer_GetColorTexture( const ksGpuFramebuffer * framebuffer )
 {
 	assert( framebuffer->colorTextures != NULL );
 	return &framebuffer->colorTextures[framebuffer->currentBuffer];
@@ -9677,15 +9681,15 @@ static GpuTexture_t * GpuFramebuffer_GetColorTexture( const GpuFramebuffer_t * f
 
 GPU program parms and layout.
 
-GpuProgramStage_t
-GpuProgramParmType_t
-GpuProgramParmAccess_t
-GpuProgramParm_t
-GpuProgramParmLayout_t
+ksGpuProgramStage
+ksGpuProgramParmType
+ksGpuProgramParmAccess
+ksGpuProgramParm
+ksGpuProgramParmLayout
 
-static void GpuProgramParmLayout_Create( GpuContext_t * context, GpuProgramParmLayout_t * layout,
-										const GpuProgramParm_t * parms, const int numParms );
-static void GpuProgramParmLayout_Destroy( GpuContext_t * context, GpuProgramParmLayout_t * layout );
+static void ksGpuProgramParmLayout_Create( ksGpuContext * context, ksGpuProgramParmLayout * layout,
+										const ksGpuProgramParm * parms, const int numParms );
+static void ksGpuProgramParmLayout_Destroy( ksGpuContext * context, ksGpuProgramParmLayout * layout );
 
 ================================================================================================================================
 */
@@ -9698,7 +9702,7 @@ typedef enum
 	GPU_PROGRAM_STAGE_FRAGMENT,
 	GPU_PROGRAM_STAGE_COMPUTE,
 	GPU_PROGRAM_STAGE_MAX
-} GpuProgramStage_t;
+} ksGpuProgramStage;
 
 typedef enum
 {
@@ -9724,42 +9728,42 @@ typedef enum
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3,	// float[4][3]
 	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	// float[4][4]
 	GPU_PROGRAM_PARM_TYPE_MAX
-} GpuProgramParmType_t;
+} ksGpuProgramParmType;
 
 typedef enum
 {
 	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,
 	GPU_PROGRAM_PARM_ACCESS_WRITE_ONLY,
 	GPU_PROGRAM_PARM_ACCESS_READ_WRITE
-} GpuProgramParmAccess_t;
+} ksGpuProgramParmAccess;
 
 typedef struct
 {
-	GpuProgramStage_t			stage;		// vertex, fragment or compute
-	GpuProgramParmType_t		type;		// texture, buffer or push constant
-	GpuProgramParmAccess_t		access;		// read and/or write
-	int							index;		// index into GpuProgramParmState_t::parms
+	ksGpuProgramStage			stage;		// vertex, fragment or compute
+	ksGpuProgramParmType		type;		// texture, buffer or push constant
+	ksGpuProgramParmAccess		access;		// read and/or write
+	int							index;		// index into ksGpuProgramParmState::parms
 	const char * 				name;		// GLSL name
 	int							binding;	// texture/buffer binding, or push constant offset
 											// Note that Vulkan bindings must be unique per descriptor set across all stages of the pipeline.
 											// Note that Vulkan push constant ranges must be unique across all stages of the pipeline.
-} GpuProgramParm_t;
+} ksGpuProgramParm;
 
 typedef struct
 {
 	int							numParms;
-	const GpuProgramParm_t *	parms;
+	const ksGpuProgramParm *	parms;
 	VkDescriptorSetLayout		descriptorSetLayout;
 	VkPipelineLayout			pipelineLayout;
-	int							offsetForIndex[MAX_PROGRAM_PARMS];	// push constant offsets into GpuProgramParmState_t::data based on GpuProgramParm_t::index
-	const GpuProgramParm_t *	bindings[MAX_PROGRAM_PARMS];		// descriptor bindings
-	const GpuProgramParm_t *	pushConstants[MAX_PROGRAM_PARMS];	// push constants
+	int							offsetForIndex[MAX_PROGRAM_PARMS];	// push constant offsets into ksGpuProgramParmState::data based on ksGpuProgramParm::index
+	const ksGpuProgramParm *	bindings[MAX_PROGRAM_PARMS];		// descriptor bindings
+	const ksGpuProgramParm *	pushConstants[MAX_PROGRAM_PARMS];	// push constants
 	int							numBindings;
 	int							numPushConstants;
 	unsigned int				hash;
-} GpuProgramParmLayout_t;
+} ksGpuProgramParmLayout;
 
-static bool GpuProgramParm_IsDescriptor( const GpuProgramParmType_t type )
+static bool ksGpuProgramParm_IsDescriptor( const ksGpuProgramParmType type )
 {
 	return	( ( type == GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED ) ?	true :
 			( ( type == GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE ) ?	true :
@@ -9768,7 +9772,7 @@ static bool GpuProgramParm_IsDescriptor( const GpuProgramParmType_t type )
 																	false ) ) ) );
 }
 
-static VkDescriptorType GpuProgramParm_GetDescriptorType( const GpuProgramParmType_t type )
+static VkDescriptorType ksGpuProgramParm_GetDescriptorType( const ksGpuProgramParmType type )
 {
 	return	( ( type == GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED ) ?	VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER :
 			( ( type == GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE ) ?	VK_DESCRIPTOR_TYPE_STORAGE_IMAGE :
@@ -9777,7 +9781,7 @@ static VkDescriptorType GpuProgramParm_GetDescriptorType( const GpuProgramParmTy
 																	VK_DESCRIPTOR_TYPE_MAX_ENUM ) ) ) );
 }
 
-static int GpuProgramParm_GetPushConstantSize( GpuProgramParmType_t type )
+static int ksGpuProgramParm_GetPushConstantSize( ksGpuProgramParmType type )
 {
 	static const int parmSize[] =
 	{
@@ -9807,7 +9811,7 @@ static int GpuProgramParm_GetPushConstantSize( GpuProgramParmType_t type )
 	return parmSize[type];
 }
 
-static VkShaderStageFlags GpuProgramParm_GetShaderStageFlags( const GpuProgramStage_t stage )
+static VkShaderStageFlags ksGpuProgramParm_GetShaderStageFlags( const ksGpuProgramStage stage )
 {
 	return	( ( stage == GPU_PROGRAM_STAGE_VERTEX ) ?	VK_SHADER_STAGE_VERTEX_BIT :
 			( ( stage == GPU_PROGRAM_STAGE_FRAGMENT ) ?	VK_SHADER_STAGE_FRAGMENT_BIT :
@@ -9815,10 +9819,10 @@ static VkShaderStageFlags GpuProgramParm_GetShaderStageFlags( const GpuProgramSt
 														0 ) ) );
 }
 
-static void GpuProgramParmLayout_Create( GpuContext_t * context, GpuProgramParmLayout_t * layout,
-										const GpuProgramParm_t * parms, const int numParms )
+static void ksGpuProgramParmLayout_Create( ksGpuContext * context, ksGpuProgramParmLayout * layout,
+										const ksGpuProgramParm * parms, const int numParms )
 {
-	memset( layout, 0, sizeof( GpuProgramParmLayout_t ) );
+	memset( layout, 0, sizeof( ksGpuProgramParmLayout ) );
 
 	layout->numParms = numParms;
 	layout->parms = parms;
@@ -9860,7 +9864,7 @@ static void GpuProgramParmLayout_Create( GpuContext_t * context, GpuProgramParmL
 			layout->pushConstants[layout->numPushConstants++] = &parms[i];
 
 			layout->offsetForIndex[parms[i].index] = offset;
-			offset += GpuProgramParm_GetPushConstantSize( parms[i].type );
+			offset += ksGpuProgramParm_GetPushConstantSize( parms[i].type );
 		}
 	}
 
@@ -9874,12 +9878,12 @@ static void GpuProgramParmLayout_Create( GpuContext_t * context, GpuProgramParmL
 	for ( int push0 = 0; push0 < layout->numPushConstants; push0++ )
 	{
 		// The push constants for a pipeline cannot use more than 'maxPushConstantsSize' bytes.
-		assert( layout->pushConstants[push0]->binding + GpuProgramParm_GetPushConstantSize( layout->pushConstants[push0]->type ) <= (int)context->device->physicalDeviceProperties.limits.maxPushConstantsSize );
+		assert( layout->pushConstants[push0]->binding + ksGpuProgramParm_GetPushConstantSize( layout->pushConstants[push0]->type ) <= (int)context->device->physicalDeviceProperties.limits.maxPushConstantsSize );
 		// Make sure no push constants overlap.
 		for ( int push1 = push0 + 1; push1 < layout->numPushConstants; push1++ )
 		{
-			assert( layout->pushConstants[push0]->binding >= layout->pushConstants[push1]->binding + GpuProgramParm_GetPushConstantSize( layout->pushConstants[push1]->type ) ||
-					layout->pushConstants[push0]->binding + GpuProgramParm_GetPushConstantSize( layout->pushConstants[push0]->type ) <= layout->pushConstants[push1]->binding );
+			assert( layout->pushConstants[push0]->binding >= layout->pushConstants[push1]->binding + ksGpuProgramParm_GetPushConstantSize( layout->pushConstants[push1]->type ) ||
+					layout->pushConstants[push0]->binding + ksGpuProgramParm_GetPushConstantSize( layout->pushConstants[push0]->type ) <= layout->pushConstants[push1]->binding );
 		}
 	}
 
@@ -9918,20 +9922,20 @@ static void GpuProgramParmLayout_Create( GpuContext_t * context, GpuProgramParmL
 		int numPushConstantRanges = 0;
 		for ( int i = 0; i < numParms; i++ )
 		{
-			if ( GpuProgramParm_IsDescriptor( parms[i].type ) )
+			if ( ksGpuProgramParm_IsDescriptor( parms[i].type ) )
 			{
 				descriptorSetBindings[numDescriptorSetBindings].binding = parms[i].binding;
-				descriptorSetBindings[numDescriptorSetBindings].descriptorType = GpuProgramParm_GetDescriptorType( parms[i].type );
+				descriptorSetBindings[numDescriptorSetBindings].descriptorType = ksGpuProgramParm_GetDescriptorType( parms[i].type );
 				descriptorSetBindings[numDescriptorSetBindings].descriptorCount = 1;
-				descriptorSetBindings[numDescriptorSetBindings].stageFlags = GpuProgramParm_GetShaderStageFlags( parms[i].stage );
+				descriptorSetBindings[numDescriptorSetBindings].stageFlags = ksGpuProgramParm_GetShaderStageFlags( parms[i].stage );
 				descriptorSetBindings[numDescriptorSetBindings].pImmutableSamplers = NULL;
 				numDescriptorSetBindings++;
 			}
 			else // push constant
 			{
-				pushConstantRanges[numPushConstantRanges].stageFlags = GpuProgramParm_GetShaderStageFlags( parms[i].stage );
+				pushConstantRanges[numPushConstantRanges].stageFlags = ksGpuProgramParm_GetShaderStageFlags( parms[i].stage );
 				pushConstantRanges[numPushConstantRanges].offset = parms[i].binding;
-				pushConstantRanges[numPushConstantRanges].size = GpuProgramParm_GetPushConstantSize( parms[i].type );
+				pushConstantRanges[numPushConstantRanges].size = ksGpuProgramParm_GetPushConstantSize( parms[i].type );
 				numPushConstantRanges++;
 			}
 		}
@@ -9966,7 +9970,7 @@ static void GpuProgramParmLayout_Create( GpuContext_t * context, GpuProgramParmL
 	layout->hash = hash;
 }
 
-static void GpuProgramParmLayout_Destroy( GpuContext_t * context, GpuProgramParmLayout_t * layout )
+static void ksGpuProgramParmLayout_Destroy( ksGpuContext * context, ksGpuProgramParmLayout * layout )
 {
 	VC( context->device->vkDestroyPipelineLayout( context->device->device, layout->pipelineLayout, VK_ALLOCATOR ) );
 	VC( context->device->vkDestroyDescriptorSetLayout( context->device->device, layout->descriptorSetLayout, VK_ALLOCATOR ) );
@@ -9980,14 +9984,14 @@ GPU graphics program.
 A graphics program encapsulates a vertex and fragment program that are used to render geometry.
 For optimal performance a graphics program should only be created at load time, not at runtime.
 
-GpuGraphicsProgram_t
+ksGpuGraphicsProgram
 
-static bool GpuGraphicsProgram_Create( GpuContext_t * context, GpuGraphicsProgram_t * program,
+static bool ksGpuGraphicsProgram_Create( ksGpuContext * context, ksGpuGraphicsProgram * program,
 										const void * vertexSourceData, const size_t vertexSourceSize,
 										const void * fragmentSourceData, const size_t fragmentSourceSize,
-										const GpuProgramParm_t * parms, const int numParms,
-										const GpuVertexAttribute_t * vertexLayout, const int vertexAttribsFlags );
-static void GpuGraphicsProgram_Destroy( GpuContext_t * context, GpuGraphicsProgram_t * program );
+										const ksGpuProgramParm * parms, const int numParms,
+										const ksGpuVertexAttribute * vertexLayout, const int vertexAttribsFlags );
+static void ksGpuGraphicsProgram_Destroy( ksGpuContext * context, ksGpuGraphicsProgram * program );
 
 ================================================================================================================================
 */
@@ -9997,22 +10001,22 @@ typedef struct
 	VkShaderModule						vertexShaderModule;
 	VkShaderModule						fragmentShaderModule;
 	VkPipelineShaderStageCreateInfo		pipelineStages[2];
-	GpuProgramParmLayout_t				parmLayout;
+	ksGpuProgramParmLayout				parmLayout;
 	int									vertexAttribsFlags;
-} GpuGraphicsProgram_t;
+} ksGpuGraphicsProgram;
 
-static bool GpuGraphicsProgram_Create( GpuContext_t * context, GpuGraphicsProgram_t * program,
+static bool ksGpuGraphicsProgram_Create( ksGpuContext * context, ksGpuGraphicsProgram * program,
 										const void * vertexSourceData, const size_t vertexSourceSize,
 										const void * fragmentSourceData, const size_t fragmentSourceSize,
-										const GpuProgramParm_t * parms, const int numParms,
-										const GpuVertexAttribute_t * vertexLayout, const int vertexAttribsFlags )
+										const ksGpuProgramParm * parms, const int numParms,
+										const ksGpuVertexAttribute * vertexLayout, const int vertexAttribsFlags )
 {
 	UNUSED_PARM( vertexLayout );
 
 	program->vertexAttribsFlags = vertexAttribsFlags;
 
-	GpuDevice_CreateShader( context->device, &program->vertexShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertexSourceData, vertexSourceSize );
-	GpuDevice_CreateShader( context->device, &program->fragmentShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragmentSourceData, fragmentSourceSize );
+	ksGpuDevice_CreateShader( context->device, &program->vertexShaderModule, VK_SHADER_STAGE_VERTEX_BIT, vertexSourceData, vertexSourceSize );
+	ksGpuDevice_CreateShader( context->device, &program->fragmentShaderModule, VK_SHADER_STAGE_FRAGMENT_BIT, fragmentSourceData, fragmentSourceSize );
 
 	program->pipelineStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	program->pipelineStages[0].pNext = NULL;
@@ -10030,14 +10034,14 @@ static bool GpuGraphicsProgram_Create( GpuContext_t * context, GpuGraphicsProgra
 	program->pipelineStages[1].pName = "main";
 	program->pipelineStages[1].pSpecializationInfo = NULL;
 
-	GpuProgramParmLayout_Create( context, &program->parmLayout, parms, numParms );
+	ksGpuProgramParmLayout_Create( context, &program->parmLayout, parms, numParms );
 
 	return true;
 }
 
-static void GpuGraphicsProgram_Destroy( GpuContext_t * context, GpuGraphicsProgram_t * program )
+static void ksGpuGraphicsProgram_Destroy( ksGpuContext * context, ksGpuGraphicsProgram * program )
 {
-	GpuProgramParmLayout_Destroy( context, &program->parmLayout );
+	ksGpuProgramParmLayout_Destroy( context, &program->parmLayout );
 
 	VC( context->device->vkDestroyShaderModule( context->device->device, program->vertexShaderModule, VK_ALLOCATOR ) );
 	VC( context->device->vkDestroyShaderModule( context->device->device, program->fragmentShaderModule, VK_ALLOCATOR ) );
@@ -10050,12 +10054,12 @@ GPU compute program.
 
 For optimal performance a compute program should only be created at load time, not at runtime.
 
-GpuComputeProgram_t
+ksGpuComputeProgram
 
-static bool GpuComputeProgram_Create( GpuContext_t * context, GpuComputeProgram_t * program,
-									const void * computeSourceData, const size_t computeSourceSize,
-									const GpuProgramParm_t * parms, const int numParms );
-static void GpuComputeProgram_Destroy( GpuContext_t * context, GpuComputeProgram_t * program );
+static bool ksGpuComputeProgram_Create( ksGpuContext * context, ksGpuComputeProgram * program,
+										const void * computeSourceData, const size_t computeSourceSize,
+										const ksGpuProgramParm * parms, const int numParms );
+static void ksGpuComputeProgram_Destroy( ksGpuContext * context, ksGpuComputeProgram * program );
 
 ================================================================================================================================
 */
@@ -10064,14 +10068,14 @@ typedef struct
 {
 	VkShaderModule						computeShaderModule;
 	VkPipelineShaderStageCreateInfo		pipelineStage;
-	GpuProgramParmLayout_t				parmLayout;
-} GpuComputeProgram_t;
+	ksGpuProgramParmLayout				parmLayout;
+} ksGpuComputeProgram;
 
-static bool GpuComputeProgram_Create( GpuContext_t * context, GpuComputeProgram_t * program,
+static bool ksGpuComputeProgram_Create( ksGpuContext * context, ksGpuComputeProgram * program,
 									const void * computeSourceData, const size_t computeSourceSize,
-									const GpuProgramParm_t * parms, const int numParms )
+									const ksGpuProgramParm * parms, const int numParms )
 {
-	GpuDevice_CreateShader( context->device, &program->computeShaderModule, VK_SHADER_STAGE_COMPUTE_BIT, computeSourceData, computeSourceSize );
+	ksGpuDevice_CreateShader( context->device, &program->computeShaderModule, VK_SHADER_STAGE_COMPUTE_BIT, computeSourceData, computeSourceSize );
 
 	program->pipelineStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	program->pipelineStage.pNext = NULL;
@@ -10081,14 +10085,14 @@ static bool GpuComputeProgram_Create( GpuContext_t * context, GpuComputeProgram_
 	program->pipelineStage.pName = "main";
 	program->pipelineStage.pSpecializationInfo = NULL;
 
-	GpuProgramParmLayout_Create( context, &program->parmLayout, parms, numParms );
+	ksGpuProgramParmLayout_Create( context, &program->parmLayout, parms, numParms );
 
 	return true;
 }
 
-static void GpuComputeProgram_Destroy( GpuContext_t * context, GpuComputeProgram_t * program )
+static void ksGpuComputeProgram_Destroy( ksGpuContext * context, ksGpuComputeProgram * program )
 {
-	GpuProgramParmLayout_Destroy( context, &program->parmLayout );
+	ksGpuProgramParmLayout_Destroy( context, &program->parmLayout );
 
 	VC( context->device->vkDestroyShaderModule( context->device->device, program->computeShaderModule, VK_ALLOCATOR ) );
 }
@@ -10104,17 +10108,17 @@ The vertex attribute locations are assigned here, when both the geometry and pro
 to avoid binding vertex attributes that are not used by the vertex shader, and to avoid binding
 to a discontinuous set of vertex attribute locations.
 
-GpuFrontFace_t
-GpuCullMode_t
-GpuCompareOp_t
-GpuBlendOp_t
-GpuBlendFactor_t
-GpuRasterOperations_t
-GpuGraphicsPipelineParms_t
-GpuGraphicsPipeline_t
+ksGpuFrontFace
+ksGpuCullMode
+ksGpuCompareOp
+ksGpuBlendOp
+ksGpuBlendFactor
+ksGpuRasterOperations
+ksGpuGraphicsPipelineParms
+ksGpuGraphicsPipeline
 
-static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipeline_t * pipeline, const GpuGraphicsPipelineParms_t * parms );
-static void GpuGraphicsPipeline_Destroy( GpuContext_t * context, GpuGraphicsPipeline_t * pipeline );
+static bool ksGpuGraphicsPipeline_Create( ksGpuContext * context, ksGpuGraphicsPipeline * pipeline, const ksGpuGraphicsPipelineParms * parms );
+static void ksGpuGraphicsPipeline_Destroy( ksGpuContext * context, ksGpuGraphicsPipeline * pipeline );
 
 ================================================================================================================================
 */
@@ -10123,14 +10127,14 @@ typedef enum
 {
 	GPU_FRONT_FACE_COUNTER_CLOCKWISE			= VK_FRONT_FACE_COUNTER_CLOCKWISE,
     GPU_FRONT_FACE_CLOCKWISE					= VK_FRONT_FACE_CLOCKWISE
-} GpuFrontFace_t;
+} ksGpuFrontFace;
 
 typedef enum
 {
 	GPU_CULL_MODE_NONE							= 0,
 	GPU_CULL_MODE_FRONT							= VK_CULL_MODE_FRONT_BIT,
 	GPU_CULL_MODE_BACK							= VK_CULL_MODE_BACK_BIT
-} GpuCullMode_t;
+} ksGpuCullMode;
 
 typedef enum
 {
@@ -10142,7 +10146,7 @@ typedef enum
 	GPU_COMPARE_OP_NOT_EQUAL					= VK_COMPARE_OP_NOT_EQUAL,
 	GPU_COMPARE_OP_GREATER_OR_EQUAL				= VK_COMPARE_OP_GREATER_OR_EQUAL,
 	GPU_COMPARE_OP_ALWAYS						= VK_COMPARE_OP_ALWAYS
-} GpuCompareOp_t;
+} ksGpuCompareOp;
 
 typedef enum
 {
@@ -10151,7 +10155,7 @@ typedef enum
 	GPU_BLEND_OP_REVERSE_SUBTRACT				= VK_BLEND_OP_REVERSE_SUBTRACT,
 	GPU_BLEND_OP_MIN							= VK_BLEND_OP_MIN,
 	GPU_BLEND_OP_MAX							= VK_BLEND_OP_MAX
-} GpuBlendOp_t;
+} ksGpuBlendOp;
 
 typedef enum
 {
@@ -10170,7 +10174,7 @@ typedef enum
 	GPU_BLEND_FACTOR_CONSTANT_ALPHA				= VK_BLEND_FACTOR_CONSTANT_ALPHA,
 	GPU_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA	= VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA,
 	GPU_BLEND_FACTOR_SRC_ALPHA_SATURAT			= VK_BLEND_FACTOR_SRC_ALPHA_SATURATE
-} GpuBlendFactor_t;
+} ksGpuBlendFactor;
 
 typedef struct
 {
@@ -10181,33 +10185,33 @@ typedef struct
 	bool							alphaWriteEnable;
 	bool							depthTestEnable;
 	bool							depthWriteEnable;
-	GpuFrontFace_t					frontFace;
-	GpuCullMode_t					cullMode;
-	GpuCompareOp_t					depthCompare;
-	Vector4f_t						blendColor;
-	GpuBlendOp_t					blendOpColor;
-	GpuBlendFactor_t				blendSrcColor;
-	GpuBlendFactor_t				blendDstColor;
-	GpuBlendOp_t					blendOpAlpha;
-	GpuBlendFactor_t				blendSrcAlpha;
-	GpuBlendFactor_t				blendDstAlpha;
-} GpuRasterOperations_t;
+	ksGpuFrontFace					frontFace;
+	ksGpuCullMode					cullMode;
+	ksGpuCompareOp					depthCompare;
+	ksVector4f						blendColor;
+	ksGpuBlendOp					blendOpColor;
+	ksGpuBlendFactor				blendSrcColor;
+	ksGpuBlendFactor				blendDstColor;
+	ksGpuBlendOp					blendOpAlpha;
+	ksGpuBlendFactor				blendSrcAlpha;
+	ksGpuBlendFactor				blendDstAlpha;
+} ksGpuRasterOperations;
 
 typedef struct
 {
-	GpuRasterOperations_t			rop;
-	const GpuRenderPass_t *			renderPass;
-	const GpuGraphicsProgram_t *	program;
-	const GpuGeometry_t *			geometry;
-} GpuGraphicsPipelineParms_t;
+	ksGpuRasterOperations			rop;
+	const ksGpuRenderPass *			renderPass;
+	const ksGpuGraphicsProgram *	program;
+	const ksGpuGeometry *			geometry;
+} ksGpuGraphicsPipelineParms;
 
 #define MAX_VERTEX_ATTRIBUTES		16
 
 typedef struct
 {
-	GpuRasterOperations_t					rop;
-	const GpuGraphicsProgram_t *			program;
-	const GpuGeometry_t *					geometry;
+	ksGpuRasterOperations					rop;
+	const ksGpuGraphicsProgram *			program;
+	const ksGpuGeometry *					geometry;
 	int										vertexAttributeCount;
 	int										vertexBindingCount;
 	int										firstInstanceBinding;
@@ -10217,9 +10221,9 @@ typedef struct
 	VkPipelineVertexInputStateCreateInfo	vertexInputState;
 	VkPipelineInputAssemblyStateCreateInfo	inputAssemblyState;
 	VkPipeline								pipeline;
-} GpuGraphicsPipeline_t;
+} ksGpuGraphicsPipeline;
 
-static void GpuGraphicsPipelineParms_Init( GpuGraphicsPipelineParms_t * parms )
+static void ksGpuGraphicsPipelineParms_Init( ksGpuGraphicsPipelineParms * parms )
 {
 	parms->rop.blendEnable = false;
 	parms->rop.redWriteEnable = true;
@@ -10247,7 +10251,7 @@ static void GpuGraphicsPipelineParms_Init( GpuGraphicsPipelineParms_t * parms )
 }
 
 static void InitVertexAttributes( const bool instance,
-								const GpuVertexAttribute_t * vertexLayout, const int numAttribs,
+								const ksGpuVertexAttribute * vertexLayout, const int numAttribs,
 								const int storedAttribsFlags, const int usedAttribsFlags,
 								VkVertexInputAttributeDescription * attributes, int * attributeCount,
 								VkVertexInputBindingDescription * bindings, int * bindingCount,
@@ -10256,7 +10260,7 @@ static void InitVertexAttributes( const bool instance,
 	size_t offset = 0;
 	for ( int i = 0; vertexLayout[i].attributeFlag != 0; i++ )
 	{
-		const GpuVertexAttribute_t * v = &vertexLayout[i];
+		const ksGpuVertexAttribute * v = &vertexLayout[i];
 		if ( ( v->attributeFlag & storedAttribsFlags ) != 0 )
 		{
 			if ( ( v->attributeFlag & usedAttribsFlags ) != 0 )
@@ -10283,7 +10287,7 @@ static void InitVertexAttributes( const bool instance,
 	}
 }
 
-static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipeline_t * pipeline, const GpuGraphicsPipelineParms_t * parms )
+static bool ksGpuGraphicsPipeline_Create( ksGpuContext * context, ksGpuGraphicsPipeline * pipeline, const ksGpuGraphicsPipelineParms * parms )
 {
 	// Make sure the geometry provides all the attributes needed by the program.
 	assert( ( ( parms->geometry->vertexAttribsFlags | parms->geometry->instanceAttribsFlags ) & parms->program->vertexAttribsFlags ) == parms->program->vertexAttribsFlags );
@@ -10448,11 +10452,11 @@ static bool GpuGraphicsPipeline_Create( GpuContext_t * context, GpuGraphicsPipel
 	return true;
 }
 
-static void GpuGraphicsPipeline_Destroy( GpuContext_t * context, GpuGraphicsPipeline_t * pipeline )
+static void ksGpuGraphicsPipeline_Destroy( ksGpuContext * context, ksGpuGraphicsPipeline * pipeline )
 {
 	VC( context->device->vkDestroyPipeline( context->device->device, pipeline->pipeline, VK_ALLOCATOR ) );
 
-	memset( pipeline, 0, sizeof( GpuGraphicsPipeline_t ) );
+	memset( pipeline, 0, sizeof( ksGpuGraphicsPipeline ) );
 }
 
 /*
@@ -10463,21 +10467,21 @@ GPU compute pipeline.
 A compute pipeline encapsulates a compute program.
 For optimal performance a compute pipeline should only be created at load time, not at runtime.
 
-GpuComputePipeline_t
+ksGpuComputePipeline
 
-static bool GpuComputePipeline_Create( GpuContext_t * context, GpuComputePipeline_t * pipeline, const GpuComputeProgram_t * program );
-static void GpuComputePipeline_Destroy( GpuContext_t * context, GpuComputePipeline_t * pipeline );
+static bool ksGpuComputePipeline_Create( ksGpuContext * context, ksGpuComputePipeline * pipeline, const ksGpuComputeProgram * program );
+static void ksGpuComputePipeline_Destroy( ksGpuContext * context, ksGpuComputePipeline * pipeline );
 
 ================================================================================================================================
 */
 
 typedef struct
 {
-	const GpuComputeProgram_t *	program;
+	const ksGpuComputeProgram *	program;
 	VkPipeline					pipeline;
-} GpuComputePipeline_t;
+} ksGpuComputePipeline;
 
-static bool GpuComputePipeline_Create( GpuContext_t * context, GpuComputePipeline_t * pipeline, const GpuComputeProgram_t * program )
+static bool ksGpuComputePipeline_Create( ksGpuContext * context, ksGpuComputePipeline * pipeline, const ksGpuComputeProgram * program )
 {
 	pipeline->program = program;
 
@@ -10495,11 +10499,11 @@ static bool GpuComputePipeline_Create( GpuContext_t * context, GpuComputePipelin
 	return true;
 }
 
-static void GpuComputePipeline_Destroy( GpuContext_t * context, GpuComputePipeline_t * pipeline )
+static void ksGpuComputePipeline_Destroy( ksGpuContext * context, ksGpuComputePipeline * pipeline )
 {
 	VC( context->device->vkDestroyPipeline( context->device->device, pipeline->pipeline, VK_ALLOCATOR ) );
 
-	memset( pipeline, 0, sizeof( GpuComputePipeline_t ) );
+	memset( pipeline, 0, sizeof( ksGpuComputePipeline ) );
 }
 
 /*
@@ -10510,12 +10514,12 @@ GPU fence.
 A fence is used to notify completion of a command buffer.
 For optimal performance a fence should only be created at load time, not at runtime.
 
-GpuFence_t
+ksGpuFence
 
-static void GpuFence_Create( GpuContext_t * context, GpuFence_t * fence );
-static void GpuFence_Destroy( GpuContext_t * context, GpuFence_t * fence );
-static void GpuFence_Submit( GpuContext_t * context, GpuFence_t * fence );
-static void GpuFence_IsSignalled( GpuContext_t * context, GpuFence_t * fence );
+static void ksGpuFence_Create( ksGpuContext * context, ksGpuFence * fence );
+static void ksGpuFence_Destroy( ksGpuContext * context, ksGpuFence * fence );
+static void ksGpuFence_Submit( ksGpuContext * context, ksGpuFence * fence );
+static void ksGpuFence_IsSignalled( ksGpuContext * context, ksGpuFence * fence );
 
 ================================================================================================================================
 */
@@ -10524,9 +10528,9 @@ typedef struct
 {
 	VkFence			fence;
 	bool			submitted;
-} GpuFence_t;
+} ksGpuFence;
 
-static void GpuFence_Create( GpuContext_t * context, GpuFence_t * fence )
+static void ksGpuFence_Create( ksGpuContext * context, ksGpuFence * fence )
 {
 	VkFenceCreateInfo fenceCreateInfo;
 	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -10538,20 +10542,20 @@ static void GpuFence_Create( GpuContext_t * context, GpuFence_t * fence )
 	fence->submitted = false;
 }
 
-static void GpuFence_Destroy( GpuContext_t * context, GpuFence_t * fence )
+static void ksGpuFence_Destroy( ksGpuContext * context, ksGpuFence * fence )
 {
 	VC( context->device->vkDestroyFence( context->device->device, fence->fence, VK_ALLOCATOR ) );
 	fence->fence = VK_NULL_HANDLE;
 	fence->submitted = false;
 }
 
-static void GpuFence_Submit( GpuContext_t * context, GpuFence_t * fence )
+static void ksGpuFence_Submit( ksGpuContext * context, ksGpuFence * fence )
 {
 	UNUSED_PARM( context );
 	fence->submitted = true;
 }
 
-static bool GpuFence_IsSignalled( GpuContext_t * context, GpuFence_t * fence )
+static bool ksGpuFence_IsSignalled( ksGpuContext * context, ksGpuFence * fence )
 {
 	if ( fence == NULL || !fence->submitted )
 	{
@@ -10568,15 +10572,15 @@ GPU timer.
 
 A timer is used to measure the amount of time it takes to complete GPU commands.
 For optimal performance a timer should only be created at load time, not at runtime.
-To avoid synchronization, GpuTimer_GetMilliseconds() reports the time from GPU_TIMER_FRAMES_DELAYED frames ago.
+To avoid synchronization, ksGpuTimer_GetMilliseconds() reports the time from GPU_TIMER_FRAMES_DELAYED frames ago.
 Timer queries are allowed to overlap and can be nested.
 Timer queries that are issued inside a render pass may not produce accurate times on tiling GPUs.
 
-GpuTimer_t
+ksGpuTimer
 
-static void GpuTimer_Create( GpuContext_t * context, GpuTimer_t * timer );
-static void GpuTimer_Destroy( GpuContext_t * context, GpuTimer_t * timer );
-static float GpuTimer_GetMilliseconds( GpuTimer_t * timer );
+static void ksGpuTimer_Create( ksGpuContext * context, ksGpuTimer * timer );
+static void ksGpuTimer_Destroy( ksGpuContext * context, ksGpuTimer * timer );
+static float ksGpuTimer_GetMilliseconds( ksGpuTimer * timer );
 
 ================================================================================================================================
 */
@@ -10591,11 +10595,11 @@ typedef struct
 	uint32_t			init;
 	uint32_t			index;
 	uint64_t			data[2];
-} GpuTimer_t;
+} ksGpuTimer;
 
-static void GpuTimer_Create( GpuContext_t * context, GpuTimer_t * timer )
+static void ksGpuTimer_Create( ksGpuContext * context, ksGpuTimer * timer )
 {
-	memset( timer, 0, sizeof( GpuTimer_t ) );
+	memset( timer, 0, sizeof( ksGpuTimer ) );
 
 	timer->supported = context->device->queueFamilyProperties[context->queueFamilyIndex].timestampValidBits != 0;
 	timer->period = context->device->physicalDeviceProperties.limits.timestampPeriod;
@@ -10612,17 +10616,17 @@ static void GpuTimer_Create( GpuContext_t * context, GpuTimer_t * timer )
 
 	VK( context->device->vkCreateQueryPool( context->device->device, &queryPoolCreateInfo, VK_ALLOCATOR, &timer->pool ) );
 
-	GpuContext_CreateSetupCmdBuffer( context );
+	ksGpuContext_CreateSetupCmdBuffer( context );
 	VC( context->device->vkCmdResetQueryPool( context->setupCommandBuffer, timer->pool, 0, queryCount ) );
-	GpuContext_FlushSetupCmdBuffer( context );
+	ksGpuContext_FlushSetupCmdBuffer( context );
 }
 
-static void GpuTimer_Destroy( GpuContext_t * context, GpuTimer_t * timer )
+static void ksGpuTimer_Destroy( ksGpuContext * context, ksGpuTimer * timer )
 {
 	VC( context->device->vkDestroyQueryPool( context->device->device, timer->pool, VK_ALLOCATOR ) );
 }
 
-static float GpuTimer_GetMilliseconds( GpuTimer_t * timer )
+static float ksGpuTimer_GetMilliseconds( ksGpuTimer * timer )
 {
 	return ( timer->data[1] - timer->data[0] ) * timer->period * ( 1.0f / 1000.0f / 1000.0f );
 }
@@ -10632,7 +10636,7 @@ static float GpuTimer_GetMilliseconds( GpuTimer_t * timer )
 
 GPU program parm state.
 
-GpuProgramParmState_t
+ksGpuProgramParmState
 
 ================================================================================================================================
 */
@@ -10645,10 +10649,10 @@ typedef struct
 #if SAVE_PUSH_CONSTANT_STATE == 1
 	unsigned char	data[MAX_PROGRAM_PARMS * sizeof( float[4] )];
 #endif
-} GpuProgramParmState_t;
+} ksGpuProgramParmState;
 
-static void GpuProgramParmState_SetParm( GpuProgramParmState_t * parmState, const GpuProgramParmLayout_t * parmLayout,
-											const int index, const GpuProgramParmType_t parmType, const void * pointer )
+static void ksGpuProgramParmState_SetParm( ksGpuProgramParmState * parmState, const ksGpuProgramParmLayout * parmLayout,
+											const int index, const ksGpuProgramParmType parmType, const void * pointer )
 {
 	assert( index >= 0 && index < MAX_PROGRAM_PARMS );
 	if ( pointer != NULL )
@@ -10671,7 +10675,7 @@ static void GpuProgramParmState_SetParm( GpuProgramParmState_t * parmState, cons
 	parmState->parms[index] = pointer;
 
 #if SAVE_PUSH_CONSTANT_STATE == 1
-	const int pushConstantSize = GpuProgramParm_GetPushConstantSize( parmType );
+	const int pushConstantSize = ksGpuProgramParm_GetPushConstantSize( parmType );
 	if ( pushConstantSize > 0 )
 	{
 		assert( parmLayout->offsetForIndex[index] >= 0 );
@@ -10681,24 +10685,24 @@ static void GpuProgramParmState_SetParm( GpuProgramParmState_t * parmState, cons
 #endif
 }
 
-static const void * GpuProgramParmState_NewPushConstantData( const GpuProgramParmLayout_t * newLayout, const int newPushConstantIndex, const GpuProgramParmState_t * newParmState,
-													const GpuProgramParmLayout_t * oldLayout, const int oldPushConstantIndex, const GpuProgramParmState_t * oldParmState,
+static const void * ksGpuProgramParmState_NewPushConstantData( const ksGpuProgramParmLayout * newLayout, const int newPushConstantIndex, const ksGpuProgramParmState * newParmState,
+													const ksGpuProgramParmLayout * oldLayout, const int oldPushConstantIndex, const ksGpuProgramParmState * oldParmState,
 													const bool force )
 {
 #if SAVE_PUSH_CONSTANT_STATE == 1
-	const GpuProgramParm_t * newParm = newLayout->pushConstants[newPushConstantIndex];
+	const ksGpuProgramParm * newParm = newLayout->pushConstants[newPushConstantIndex];
 	const unsigned char * newData = &newParmState->data[newLayout->offsetForIndex[newParm->index]];
 	if ( force || oldLayout == NULL || oldPushConstantIndex >= oldLayout->numPushConstants )
 	{
 		return newData;
 	}
-	const GpuProgramParm_t * oldParm = oldLayout->pushConstants[oldPushConstantIndex];
+	const ksGpuProgramParm * oldParm = oldLayout->pushConstants[oldPushConstantIndex];
 	const unsigned char * oldData = &oldParmState->data[oldLayout->offsetForIndex[oldParm->index]];
 	if ( newParm->type != oldParm->type || newParm->binding != oldParm->binding )
 	{
 		return newData;
 	}
-	const int pushConstantSize = GpuProgramParm_GetPushConstantSize( newParm->type );
+	const int pushConstantSize = ksGpuProgramParm_GetPushConstantSize( newParm->type );
 	if ( memcmp( newData, oldData, pushConstantSize ) != 0 )
 	{
 		return newData;
@@ -10716,8 +10720,8 @@ static const void * GpuProgramParmState_NewPushConstantData( const GpuProgramPar
 #endif
 }
 
-static bool GpuProgramParmState_DescriptorsMatch( const GpuProgramParmLayout_t * layout1, const GpuProgramParmState_t * parmState1,
-													const GpuProgramParmLayout_t * layout2, const GpuProgramParmState_t * parmState2 )
+static bool ksGpuProgramParmState_DescriptorsMatch( const ksGpuProgramParmLayout * layout1, const ksGpuProgramParmState * parmState1,
+													const ksGpuProgramParmLayout * layout2, const ksGpuProgramParmState * parmState2 )
 {
 	if ( layout1 == NULL || layout2 == NULL )
 	{
@@ -10748,48 +10752,48 @@ at least past the submission of the command buffer into which the graphics comma
 submitted. Because pointers are maintained as state, DO NOT use pointers to local
 variables that will go out of scope before the command buffer is submitted.
 
-GpuGraphicsCommand_t
+ksGpuGraphicsCommand
 
-static void GpuGraphicsCommand_Init( GpuGraphicsCommand_t * command );
-static void GpuGraphicsCommand_SetPipeline( GpuGraphicsCommand_t * command, const GpuGraphicsPipeline_t * pipeline );
-static void GpuGraphicsCommand_SetVertexBuffer( GpuGraphicsCommand_t * command, const GpuBuffer_t * vertexBuffer );
-static void GpuGraphicsCommand_SetInstanceBuffer( GpuGraphicsCommand_t * command, const GpuBuffer_t * instanceBuffer );
-static void GpuGraphicsCommand_SetParmTextureSampled( GpuGraphicsCommand_t * command, const int index, const GpuTexture_t * texture );
-static void GpuGraphicsCommand_SetParmTextureStorage( GpuGraphicsCommand_t * command, const int index, const GpuTexture_t * texture );
-static void GpuGraphicsCommand_SetParmBufferUniform( GpuGraphicsCommand_t * command, const int index, const GpuBuffer_t * buffer );
-static void GpuGraphicsCommand_SetParmBufferStorage( GpuGraphicsCommand_t * command, const int index, const GpuBuffer_t * buffer );
-static void GpuGraphicsCommand_SetParmInt( GpuGraphicsCommand_t * command, const int index, const int * value );
-static void GpuGraphicsCommand_SetParmIntVector2( GpuGraphicsCommand_t * command, const int index, const Vector2i_t * value );
-static void GpuGraphicsCommand_SetParmIntVector3( GpuGraphicsCommand_t * command, const int index, const Vector3i_t * value );
-static void GpuGraphicsCommand_SetParmIntVector4( GpuGraphicsCommand_t * command, const int index, const Vector4i_t * value );
-static void GpuGraphicsCommand_SetParmFloat( GpuGraphicsCommand_t * command, const int index, const float * value );
-static void GpuGraphicsCommand_SetParmFloatVector2( GpuGraphicsCommand_t * command, const int index, const Vector2f_t * value );
-static void GpuGraphicsCommand_SetParmFloatVector3( GpuGraphicsCommand_t * command, const int index, const Vector3f_t * value );
-static void GpuGraphicsCommand_SetParmFloatVector4( GpuGraphicsCommand_t * command, const int index, const Vector3f_t * value );
-static void GpuGraphicsCommand_SetParmFloatMatrix2x2( GpuGraphicsCommand_t * command, const int index, const Matrix2x2f_t * value );
-static void GpuGraphicsCommand_SetParmFloatMatrix2x3( GpuGraphicsCommand_t * command, const int index, const Matrix2x3f_t * value );
-static void GpuGraphicsCommand_SetParmFloatMatrix2x4( GpuGraphicsCommand_t * command, const int index, const Matrix2x4f_t * value );
-static void GpuGraphicsCommand_SetParmFloatMatrix3x2( GpuGraphicsCommand_t * command, const int index, const Matrix3x2f_t * value );
-static void GpuGraphicsCommand_SetParmFloatMatrix3x3( GpuGraphicsCommand_t * command, const int index, const Matrix3x3f_t * value );
-static void GpuGraphicsCommand_SetParmFloatMatrix3x4( GpuGraphicsCommand_t * command, const int index, const Matrix3x4f_t * value );
-static void GpuGraphicsCommand_SetParmFloatMatrix4x2( GpuGraphicsCommand_t * command, const int index, const Matrix4x2f_t * value );
-static void GpuGraphicsCommand_SetParmFloatMatrix4x3( GpuGraphicsCommand_t * command, const int index, const Matrix4x3f_t * value );
-static void GpuGraphicsCommand_SetParmFloatMatrix4x4( GpuGraphicsCommand_t * command, const int index, const Matrix4x4f_t * value );
-static void GpuGraphicsCommand_SetNumInstances( GpuGraphicsCommand_t * command, const int numInstances );
+static void ksGpuGraphicsCommand_Init( ksGpuGraphicsCommand * command );
+static void ksGpuGraphicsCommand_SetPipeline( ksGpuGraphicsCommand * command, const ksGpuGraphicsPipeline * pipeline );
+static void ksGpuGraphicsCommand_SetVertexBuffer( ksGpuGraphicsCommand * command, const ksGpuBuffer * vertexBuffer );
+static void ksGpuGraphicsCommand_SetInstanceBuffer( ksGpuGraphicsCommand * command, const ksGpuBuffer * instanceBuffer );
+static void ksGpuGraphicsCommand_SetParmTextureSampled( ksGpuGraphicsCommand * command, const int index, const ksGpuTexture * texture );
+static void ksGpuGraphicsCommand_SetParmTextureStorage( ksGpuGraphicsCommand * command, const int index, const ksGpuTexture * texture );
+static void ksGpuGraphicsCommand_SetParmBufferUniform( ksGpuGraphicsCommand * command, const int index, const ksGpuBuffer * buffer );
+static void ksGpuGraphicsCommand_SetParmBufferStorage( ksGpuGraphicsCommand * command, const int index, const ksGpuBuffer * buffer );
+static void ksGpuGraphicsCommand_SetParmInt( ksGpuGraphicsCommand * command, const int index, const int * value );
+static void ksGpuGraphicsCommand_SetParmIntVector2( ksGpuGraphicsCommand * command, const int index, const ksVector2i * value );
+static void ksGpuGraphicsCommand_SetParmIntVector3( ksGpuGraphicsCommand * command, const int index, const ksVector3i * value );
+static void ksGpuGraphicsCommand_SetParmIntVector4( ksGpuGraphicsCommand * command, const int index, const ksVector4i * value );
+static void ksGpuGraphicsCommand_SetParmFloat( ksGpuGraphicsCommand * command, const int index, const float * value );
+static void ksGpuGraphicsCommand_SetParmFloatVector2( ksGpuGraphicsCommand * command, const int index, const ksVector2f * value );
+static void ksGpuGraphicsCommand_SetParmFloatVector3( ksGpuGraphicsCommand * command, const int index, const ksVector3f * value );
+static void ksGpuGraphicsCommand_SetParmFloatVector4( ksGpuGraphicsCommand * command, const int index, const ksVector3f * value );
+static void ksGpuGraphicsCommand_SetParmFloatMatrix2x2( ksGpuGraphicsCommand * command, const int index, const ksMatrix2x2f * value );
+static void ksGpuGraphicsCommand_SetParmFloatMatrix2x3( ksGpuGraphicsCommand * command, const int index, const ksMatrix2x3f * value );
+static void ksGpuGraphicsCommand_SetParmFloatMatrix2x4( ksGpuGraphicsCommand * command, const int index, const ksMatrix2x4f * value );
+static void ksGpuGraphicsCommand_SetParmFloatMatrix3x2( ksGpuGraphicsCommand * command, const int index, const ksMatrix3x2f * value );
+static void ksGpuGraphicsCommand_SetParmFloatMatrix3x3( ksGpuGraphicsCommand * command, const int index, const ksMatrix3x3f * value );
+static void ksGpuGraphicsCommand_SetParmFloatMatrix3x4( ksGpuGraphicsCommand * command, const int index, const ksMatrix3x4f * value );
+static void ksGpuGraphicsCommand_SetParmFloatMatrix4x2( ksGpuGraphicsCommand * command, const int index, const ksMatrix4x2f * value );
+static void ksGpuGraphicsCommand_SetParmFloatMatrix4x3( ksGpuGraphicsCommand * command, const int index, const ksMatrix4x3f * value );
+static void ksGpuGraphicsCommand_SetParmFloatMatrix4x4( ksGpuGraphicsCommand * command, const int index, const ksMatrix4x4f * value );
+static void ksGpuGraphicsCommand_SetNumInstances( ksGpuGraphicsCommand * command, const int numInstances );
 
 ================================================================================================================================
 */
 
 typedef struct
 {
-	const GpuGraphicsPipeline_t *	pipeline;
-	const GpuBuffer_t *				vertexBuffer;		// vertex buffer returned by GpuCommandBuffer_MapVertexAttributes
-	const GpuBuffer_t *				instanceBuffer;		// instance buffer returned by GpuCommandBuffer_MapInstanceAttributes
-	GpuProgramParmState_t			parmState;
+	const ksGpuGraphicsPipeline *	pipeline;
+	const ksGpuBuffer *				vertexBuffer;		// vertex buffer returned by ksGpuCommandBuffer_MapVertexAttributes
+	const ksGpuBuffer *				instanceBuffer;		// instance buffer returned by ksGpuCommandBuffer_MapInstanceAttributes
+	ksGpuProgramParmState			parmState;
 	int								numInstances;
-} GpuGraphicsCommand_t;
+} ksGpuGraphicsCommand;
 
-static void GpuGraphicsCommand_Init( GpuGraphicsCommand_t * command )
+static void ksGpuGraphicsCommand_Init( ksGpuGraphicsCommand * command )
 {
 	command->pipeline = NULL;
 	command->vertexBuffer = NULL;
@@ -10798,127 +10802,127 @@ static void GpuGraphicsCommand_Init( GpuGraphicsCommand_t * command )
 	command->numInstances = 1;
 }
 
-static void GpuGraphicsCommand_SetPipeline( GpuGraphicsCommand_t * command, const GpuGraphicsPipeline_t * pipeline )
+static void ksGpuGraphicsCommand_SetPipeline( ksGpuGraphicsCommand * command, const ksGpuGraphicsPipeline * pipeline )
 {
 	command->pipeline = pipeline;
 }
 
-static void GpuGraphicsCommand_SetVertexBuffer( GpuGraphicsCommand_t * command, const GpuBuffer_t * vertexBuffer )
+static void ksGpuGraphicsCommand_SetVertexBuffer( ksGpuGraphicsCommand * command, const ksGpuBuffer * vertexBuffer )
 {
 	command->vertexBuffer = vertexBuffer;
 }
 
-static void GpuGraphicsCommand_SetInstanceBuffer( GpuGraphicsCommand_t * command, const GpuBuffer_t * instanceBuffer )
+static void ksGpuGraphicsCommand_SetInstanceBuffer( ksGpuGraphicsCommand * command, const ksGpuBuffer * instanceBuffer )
 {
 	command->instanceBuffer = instanceBuffer;
 }
 
-static void GpuGraphicsCommand_SetParmTextureSampled( GpuGraphicsCommand_t * command, const int index, const GpuTexture_t * texture )
+static void ksGpuGraphicsCommand_SetParmTextureSampled( ksGpuGraphicsCommand * command, const int index, const ksGpuTexture * texture )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED, texture );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED, texture );
 }
 
-static void GpuGraphicsCommand_SetParmTextureStorage( GpuGraphicsCommand_t * command, const int index, const GpuTexture_t * texture )
+static void ksGpuGraphicsCommand_SetParmTextureStorage( ksGpuGraphicsCommand * command, const int index, const ksGpuTexture * texture )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE, texture );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE, texture );
 }
 
-static void GpuGraphicsCommand_SetParmBufferUniform( GpuGraphicsCommand_t * command, const int index, const GpuBuffer_t * buffer )
+static void ksGpuGraphicsCommand_SetParmBufferUniform( ksGpuGraphicsCommand * command, const int index, const ksGpuBuffer * buffer )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM, buffer );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM, buffer );
 }
 
-static void GpuGraphicsCommand_SetParmBufferStorage( GpuGraphicsCommand_t * command, const int index, const GpuBuffer_t * buffer )
+static void ksGpuGraphicsCommand_SetParmBufferStorage( ksGpuGraphicsCommand * command, const int index, const ksGpuBuffer * buffer )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_BUFFER_STORAGE, buffer );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_BUFFER_STORAGE, buffer );
 }
 
-static void GpuGraphicsCommand_SetParmInt( GpuGraphicsCommand_t * command, const int index, const int * value )
+static void ksGpuGraphicsCommand_SetParmInt( ksGpuGraphicsCommand * command, const int index, const int * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT, value );
 }
 
-static void GpuGraphicsCommand_SetParmIntVector2( GpuGraphicsCommand_t * command, const int index, const Vector2i_t * value )
+static void ksGpuGraphicsCommand_SetParmIntVector2( ksGpuGraphicsCommand * command, const int index, const ksVector2i * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2, value );
 }
 
-static void GpuGraphicsCommand_SetParmIntVector3( GpuGraphicsCommand_t * command, const int index, const Vector3i_t * value )
+static void ksGpuGraphicsCommand_SetParmIntVector3( ksGpuGraphicsCommand * command, const int index, const ksVector3i * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3, value );
 }
 
-static void GpuGraphicsCommand_SetParmIntVector4( GpuGraphicsCommand_t * command, const int index, const Vector4i_t * value )
+static void ksGpuGraphicsCommand_SetParmIntVector4( ksGpuGraphicsCommand * command, const int index, const ksVector4i * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4, value );
 }
 
-static void GpuGraphicsCommand_SetParmFloat( GpuGraphicsCommand_t * command, const int index, const float * value )
+static void ksGpuGraphicsCommand_SetParmFloat( ksGpuGraphicsCommand * command, const int index, const float * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT, value );
 }
 
-static void GpuGraphicsCommand_SetParmFloatVector2( GpuGraphicsCommand_t * command, const int index, const Vector2f_t * value )
+static void ksGpuGraphicsCommand_SetParmFloatVector2( ksGpuGraphicsCommand * command, const int index, const ksVector2f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2, value );
 }
 
-static void GpuGraphicsCommand_SetParmFloatVector3( GpuGraphicsCommand_t * command, const int index, const Vector3f_t * value )
+static void ksGpuGraphicsCommand_SetParmFloatVector3( ksGpuGraphicsCommand * command, const int index, const ksVector3f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3, value );
 }
 
-static void GpuGraphicsCommand_SetParmFloatVector4( GpuGraphicsCommand_t * command, const int index, const Vector4f_t * value )
+static void ksGpuGraphicsCommand_SetParmFloatVector4( ksGpuGraphicsCommand * command, const int index, const ksVector4f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4, value );
 }
 
-static void GpuGraphicsCommand_SetParmFloatMatrix2x2( GpuGraphicsCommand_t * command, const int index, const Matrix2x2f_t * value )
+static void ksGpuGraphicsCommand_SetParmFloatMatrix2x2( ksGpuGraphicsCommand * command, const int index, const ksMatrix2x2f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2, value );
 }
 
-static void GpuGraphicsCommand_SetParmFloatMatrix2x3( GpuGraphicsCommand_t * command, const int index, const Matrix2x3f_t * value )
+static void ksGpuGraphicsCommand_SetParmFloatMatrix2x3( ksGpuGraphicsCommand * command, const int index, const ksMatrix2x3f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3, value );
 }
 
-static void GpuGraphicsCommand_SetParmFloatMatrix2x4( GpuGraphicsCommand_t * command, const int index, const Matrix2x4f_t * value )
+static void ksGpuGraphicsCommand_SetParmFloatMatrix2x4( ksGpuGraphicsCommand * command, const int index, const ksMatrix2x4f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4, value );
 }
 
-static void GpuGraphicsCommand_SetParmFloatMatrix3x2( GpuGraphicsCommand_t * command, const int index, const Matrix3x2f_t * value )
+static void ksGpuGraphicsCommand_SetParmFloatMatrix3x2( ksGpuGraphicsCommand * command, const int index, const ksMatrix3x2f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2, value );
 }
 
-static void GpuGraphicsCommand_SetParmFloatMatrix3x3( GpuGraphicsCommand_t * command, const int index, const Matrix3x3f_t * value )
+static void ksGpuGraphicsCommand_SetParmFloatMatrix3x3( ksGpuGraphicsCommand * command, const int index, const ksMatrix3x3f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3, value );
 }
 
-static void GpuGraphicsCommand_SetParmFloatMatrix3x4( GpuGraphicsCommand_t * command, const int index, const Matrix3x4f_t * value )
+static void ksGpuGraphicsCommand_SetParmFloatMatrix3x4( ksGpuGraphicsCommand * command, const int index, const ksMatrix3x4f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4, value );
 }
 
-static void GpuGraphicsCommand_SetParmFloatMatrix4x2( GpuGraphicsCommand_t * command, const int index, const Matrix4x2f_t * value )
+static void ksGpuGraphicsCommand_SetParmFloatMatrix4x2( ksGpuGraphicsCommand * command, const int index, const ksMatrix4x2f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2, value );
 }
 
-static void GpuGraphicsCommand_SetParmFloatMatrix4x3( GpuGraphicsCommand_t * command, const int index, const Matrix4x3f_t * value )
+static void ksGpuGraphicsCommand_SetParmFloatMatrix4x3( ksGpuGraphicsCommand * command, const int index, const ksMatrix4x3f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3, value );
 }
 
-static void GpuGraphicsCommand_SetParmFloatMatrix4x4( GpuGraphicsCommand_t * command, const int index, const Matrix4x4f_t * value )
+static void ksGpuGraphicsCommand_SetParmFloatMatrix4x4( ksGpuGraphicsCommand * command, const int index, const ksMatrix4x4f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4, value );
 }
 
-static void GpuGraphicsCommand_SetNumInstances( GpuGraphicsCommand_t * command, const int numInstances )
+static void ksGpuGraphicsCommand_SetNumInstances( ksGpuGraphicsCommand * command, const int numInstances )
 {
 	command->numInstances = numInstances;
 }
@@ -10934,46 +10938,46 @@ at least past the submission of the command buffer into which the compute comman
 submitted. Because various pointer are maintained as state, DO NOT use pointers to local
 variables that will go out of scope before the command buffer is submitted.
 
-GpuComputeCommand_t
+ksGpuComputeCommand
 
-static void GpuComputeCommand_Init( GpuComputeCommand_t * command );
-static void GpuComputeCommand_SetPipeline( GpuComputeCommand_t * command, const GpuComputePipeline_t * pipeline );
-static void GpuComputeCommand_SetParmTextureSampled( GpuComputeCommand_t * command, const int index, const GpuTexture_t * texture );
-static void GpuComputeCommand_SetParmTextureStorage( GpuComputeCommand_t * command, const int index, const GpuTexture_t * texture );
-static void GpuComputeCommand_SetParmBufferUniform( GpuComputeCommand_t * command, const int index, const GpuBuffer_t * buffer );
-static void GpuComputeCommand_SetParmBufferStorage( GpuComputeCommand_t * command, const int index, const GpuBuffer_t * buffer );
-static void GpuComputeCommand_SetParmInt( GpuComputeCommand_t * command, const int index, const int * value );
-static void GpuComputeCommand_SetParmIntVector2( GpuComputeCommand_t * command, const int index, const Vector2i_t * value );
-static void GpuComputeCommand_SetParmIntVector3( GpuComputeCommand_t * command, const int index, const Vector3i_t * value );
-static void GpuComputeCommand_SetParmIntVector4( GpuComputeCommand_t * command, const int index, const Vector4i_t * value );
-static void GpuComputeCommand_SetParmFloat( GpuComputeCommand_t * command, const int index, const float * value );
-static void GpuComputeCommand_SetParmFloatVector2( GpuComputeCommand_t * command, const int index, const Vector2f_t * value );
-static void GpuComputeCommand_SetParmFloatVector3( GpuComputeCommand_t * command, const int index, const Vector3f_t * value );
-static void GpuComputeCommand_SetParmFloatVector4( GpuComputeCommand_t * command, const int index, const Vector3f_t * value );
-static void GpuComputeCommand_SetParmFloatMatrix2x2( GpuComputeCommand_t * command, const int index, const Matrix2x2f_t * value );
-static void GpuComputeCommand_SetParmFloatMatrix2x3( GpuComputeCommand_t * command, const int index, const Matrix2x3f_t * value );
-static void GpuComputeCommand_SetParmFloatMatrix2x4( GpuComputeCommand_t * command, const int index, const Matrix2x4f_t * value );
-static void GpuComputeCommand_SetParmFloatMatrix3x2( GpuComputeCommand_t * command, const int index, const Matrix3x2f_t * value );
-static void GpuComputeCommand_SetParmFloatMatrix3x3( GpuComputeCommand_t * command, const int index, const Matrix3x3f_t * value );
-static void GpuComputeCommand_SetParmFloatMatrix3x4( GpuComputeCommand_t * command, const int index, const Matrix3x4f_t * value );
-static void GpuComputeCommand_SetParmFloatMatrix4x2( GpuComputeCommand_t * command, const int index, const Matrix4x2f_t * value );
-static void GpuComputeCommand_SetParmFloatMatrix4x3( GpuComputeCommand_t * command, const int index, const Matrix4x3f_t * value );
-static void GpuComputeCommand_SetParmFloatMatrix4x4( GpuComputeCommand_t * command, const int index, const Matrix4x4f_t * value );
-static void GpuComputeCommand_SetDimensions( GpuComputeCommand_t * command, const int x, const int y, const int z );
+static void ksGpuComputeCommand_Init( ksGpuComputeCommand * command );
+static void ksGpuComputeCommand_SetPipeline( ksGpuComputeCommand * command, const ksGpuComputePipeline * pipeline );
+static void ksGpuComputeCommand_SetParmTextureSampled( ksGpuComputeCommand * command, const int index, const ksGpuTexture * texture );
+static void ksGpuComputeCommand_SetParmTextureStorage( ksGpuComputeCommand * command, const int index, const ksGpuTexture * texture );
+static void ksGpuComputeCommand_SetParmBufferUniform( ksGpuComputeCommand * command, const int index, const ksGpuBuffer * buffer );
+static void ksGpuComputeCommand_SetParmBufferStorage( ksGpuComputeCommand * command, const int index, const ksGpuBuffer * buffer );
+static void ksGpuComputeCommand_SetParmInt( ksGpuComputeCommand * command, const int index, const int * value );
+static void ksGpuComputeCommand_SetParmIntVector2( ksGpuComputeCommand * command, const int index, const ksVector2i * value );
+static void ksGpuComputeCommand_SetParmIntVector3( ksGpuComputeCommand * command, const int index, const ksVector3i * value );
+static void ksGpuComputeCommand_SetParmIntVector4( ksGpuComputeCommand * command, const int index, const ksVector4i * value );
+static void ksGpuComputeCommand_SetParmFloat( ksGpuComputeCommand * command, const int index, const float * value );
+static void ksGpuComputeCommand_SetParmFloatVector2( ksGpuComputeCommand * command, const int index, const ksVector2f * value );
+static void ksGpuComputeCommand_SetParmFloatVector3( ksGpuComputeCommand * command, const int index, const ksVector3f * value );
+static void ksGpuComputeCommand_SetParmFloatVector4( ksGpuComputeCommand * command, const int index, const ksVector3f * value );
+static void ksGpuComputeCommand_SetParmFloatMatrix2x2( ksGpuComputeCommand * command, const int index, const ksMatrix2x2f * value );
+static void ksGpuComputeCommand_SetParmFloatMatrix2x3( ksGpuComputeCommand * command, const int index, const ksMatrix2x3f * value );
+static void ksGpuComputeCommand_SetParmFloatMatrix2x4( ksGpuComputeCommand * command, const int index, const ksMatrix2x4f * value );
+static void ksGpuComputeCommand_SetParmFloatMatrix3x2( ksGpuComputeCommand * command, const int index, const ksMatrix3x2f * value );
+static void ksGpuComputeCommand_SetParmFloatMatrix3x3( ksGpuComputeCommand * command, const int index, const ksMatrix3x3f * value );
+static void ksGpuComputeCommand_SetParmFloatMatrix3x4( ksGpuComputeCommand * command, const int index, const ksMatrix3x4f * value );
+static void ksGpuComputeCommand_SetParmFloatMatrix4x2( ksGpuComputeCommand * command, const int index, const ksMatrix4x2f * value );
+static void ksGpuComputeCommand_SetParmFloatMatrix4x3( ksGpuComputeCommand * command, const int index, const ksMatrix4x3f * value );
+static void ksGpuComputeCommand_SetParmFloatMatrix4x4( ksGpuComputeCommand * command, const int index, const ksMatrix4x4f * value );
+static void ksGpuComputeCommand_SetDimensions( ksGpuComputeCommand * command, const int x, const int y, const int z );
 
 ================================================================================================================================
 */
 
 typedef struct
 {
-	const GpuComputePipeline_t *	pipeline;
-	GpuProgramParmState_t			parmState;
+	const ksGpuComputePipeline *	pipeline;
+	ksGpuProgramParmState			parmState;
 	int								x;
 	int								y;
 	int								z;
-} GpuComputeCommand_t;
+} ksGpuComputeCommand;
 
-static void GpuComputeCommand_Init( GpuComputeCommand_t * command )
+static void ksGpuComputeCommand_Init( ksGpuComputeCommand * command )
 {
 	command->pipeline = NULL;
 	memset( (void *)&command->parmState, 0, sizeof( command->parmState ) );
@@ -10982,117 +10986,117 @@ static void GpuComputeCommand_Init( GpuComputeCommand_t * command )
 	command->z = 1;
 }
 
-static void GpuComputeCommand_SetPipeline( GpuComputeCommand_t * command, const GpuComputePipeline_t * pipeline )
+static void ksGpuComputeCommand_SetPipeline( ksGpuComputeCommand * command, const ksGpuComputePipeline * pipeline )
 {
 	command->pipeline = pipeline;
 }
 
-static void GpuComputeCommand_SetParmTextureSampled( GpuComputeCommand_t * command, const int index, const GpuTexture_t * texture )
+static void ksGpuComputeCommand_SetParmTextureSampled( ksGpuComputeCommand * command, const int index, const ksGpuTexture * texture )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED, texture );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED, texture );
 }
 
-static void GpuComputeCommand_SetParmTextureStorage( GpuComputeCommand_t * command, const int index, const GpuTexture_t * texture )
+static void ksGpuComputeCommand_SetParmTextureStorage( ksGpuComputeCommand * command, const int index, const ksGpuTexture * texture )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE, texture );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE, texture );
 }
 
-static void GpuComputeCommand_SetParmBufferUniform( GpuComputeCommand_t * command, const int index, const GpuBuffer_t * buffer )
+static void ksGpuComputeCommand_SetParmBufferUniform( ksGpuComputeCommand * command, const int index, const ksGpuBuffer * buffer )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM, buffer );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM, buffer );
 }
 
-static void GpuComputeCommand_SetParmBufferStorage( GpuComputeCommand_t * command, const int index, const GpuBuffer_t * buffer )
+static void ksGpuComputeCommand_SetParmBufferStorage( ksGpuComputeCommand * command, const int index, const ksGpuBuffer * buffer )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_BUFFER_STORAGE, buffer );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_BUFFER_STORAGE, buffer );
 }
 
-static void GpuComputeCommand_SetParmInt( GpuComputeCommand_t * command, const int index, const int * value )
+static void ksGpuComputeCommand_SetParmInt( ksGpuComputeCommand * command, const int index, const int * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT, value );
 }
 
-static void GpuComputeCommand_SetParmIntVector2( GpuComputeCommand_t * command, const int index, const Vector2i_t * value )
+static void ksGpuComputeCommand_SetParmIntVector2( ksGpuComputeCommand * command, const int index, const ksVector2i * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2, value );
 }
 
-static void GpuComputeCommand_SetParmIntVector3( GpuComputeCommand_t * command, const int index, const Vector3i_t * value )
+static void ksGpuComputeCommand_SetParmIntVector3( ksGpuComputeCommand * command, const int index, const ksVector3i * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3, value );
 }
 
-static void GpuComputeCommand_SetParmIntVector4( GpuComputeCommand_t * command, const int index, const Vector4i_t * value )
+static void ksGpuComputeCommand_SetParmIntVector4( ksGpuComputeCommand * command, const int index, const ksVector4i * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4, value );
 }
 
-static void GpuComputeCommand_SetParmFloat( GpuComputeCommand_t * command, const int index, const float * value )
+static void ksGpuComputeCommand_SetParmFloat( ksGpuComputeCommand * command, const int index, const float * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT, value );
 }
 
-static void GpuComputeCommand_SetParmFloatVector2( GpuComputeCommand_t * command, const int index, const Vector2f_t * value )
+static void ksGpuComputeCommand_SetParmFloatVector2( ksGpuComputeCommand * command, const int index, const ksVector2f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2, value );
 }
 
-static void GpuComputeCommand_SetParmFloatVector3( GpuComputeCommand_t * command, const int index, const Vector3f_t * value )
+static void ksGpuComputeCommand_SetParmFloatVector3( ksGpuComputeCommand * command, const int index, const ksVector3f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3, value );
 }
 
-static void GpuComputeCommand_SetParmFloatVector4( GpuComputeCommand_t * command, const int index, const Vector4f_t * value )
+static void ksGpuComputeCommand_SetParmFloatVector4( ksGpuComputeCommand * command, const int index, const ksVector4f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4, value );
 }
 
-static void GpuComputeCommand_SetParmFloatMatrix2x2( GpuComputeCommand_t * command, const int index, const Matrix2x2f_t * value )
+static void ksGpuComputeCommand_SetParmFloatMatrix2x2( ksGpuComputeCommand * command, const int index, const ksMatrix2x2f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2, value );
 }
 
-static void GpuComputeCommand_SetParmFloatMatrix2x3( GpuComputeCommand_t * command, const int index, const Matrix2x3f_t * value )
+static void ksGpuComputeCommand_SetParmFloatMatrix2x3( ksGpuComputeCommand * command, const int index, const ksMatrix2x3f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3, value );
 }
 
-static void GpuComputeCommand_SetParmFloatMatrix2x4( GpuComputeCommand_t * command, const int index, const Matrix2x4f_t * value )
+static void ksGpuComputeCommand_SetParmFloatMatrix2x4( ksGpuComputeCommand * command, const int index, const ksMatrix2x4f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4, value );
 }
 
-static void GpuComputeCommand_SetParmFloatMatrix3x2( GpuComputeCommand_t * command, const int index, const Matrix3x2f_t * value )
+static void ksGpuComputeCommand_SetParmFloatMatrix3x2( ksGpuComputeCommand * command, const int index, const ksMatrix3x2f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2, value );
 }
 
-static void GpuComputeCommand_SetParmFloatMatrix3x3( GpuComputeCommand_t * command, const int index, const Matrix3x3f_t * value )
+static void ksGpuComputeCommand_SetParmFloatMatrix3x3( ksGpuComputeCommand * command, const int index, const ksMatrix3x3f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3, value );
 }
 
-static void GpuComputeCommand_SetParmFloatMatrix3x4( GpuComputeCommand_t * command, const int index, const Matrix3x4f_t * value )
+static void ksGpuComputeCommand_SetParmFloatMatrix3x4( ksGpuComputeCommand * command, const int index, const ksMatrix3x4f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4, value );
 }
 
-static void GpuComputeCommand_SetParmFloatMatrix4x2( GpuComputeCommand_t * command, const int index, const Matrix4x2f_t * value )
+static void ksGpuComputeCommand_SetParmFloatMatrix4x2( ksGpuComputeCommand * command, const int index, const ksMatrix4x2f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2, value );
 }
 
-static void GpuComputeCommand_SetParmFloatMatrix4x3( GpuComputeCommand_t * command, const int index, const Matrix4x3f_t * value )
+static void ksGpuComputeCommand_SetParmFloatMatrix4x3( ksGpuComputeCommand * command, const int index, const ksMatrix4x3f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3, value );
 }
 
-static void GpuComputeCommand_SetParmFloatMatrix4x4( GpuComputeCommand_t * command, const int index, const Matrix4x4f_t * value )
+static void ksGpuComputeCommand_SetParmFloatMatrix4x4( ksGpuComputeCommand * command, const int index, const ksMatrix4x4f * value )
 {
-	GpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4, value );
+	ksGpuProgramParmState_SetParm( &command->parmState, &command->pipeline->program->parmLayout, index, GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4, value );
 }
 
-static void GpuComputeCommand_SetDimensions( GpuComputeCommand_t * command, const int x, const int y, const int z )
+static void ksGpuComputeCommand_SetDimensions( ksGpuComputeCommand * command, const int x, const int y, const int z )
 {
 	command->x = x;
 	command->y = y;
@@ -11106,34 +11110,34 @@ GPU pipeline resources.
 
 Resources, like texture and uniform buffer descriptions, that are used by a graphics or compute pipeline.
 
-GpuPipelineResources_t
+ksGpuPipelineResources
 
-static void GpuPipelineResources_Create( GpuContext_t * context, GpuPipelineResources_t * resources,
-										const GpuProgramParmLayout_t * parmLayout,
-										const GpuProgramParmState_t * parms );
-static void GpuPipelineResources_Destroy( GpuContext_t * context, GpuPipelineResources_t * resources );
+static void ksGpuPipelineResources_Create( ksGpuContext * context, ksGpuPipelineResources * resources,
+										const ksGpuProgramParmLayout * parmLayout,
+										const ksGpuProgramParmState * parms );
+static void ksGpuPipelineResources_Destroy( ksGpuContext * context, ksGpuPipelineResources * resources );
 
 ================================================================================================================================
 */
 
-typedef struct GpuPipelineResources_s
+typedef struct ksGpuPipelineResources_s
 {
-	struct GpuPipelineResources_s *	next;
-	int								unusedCount;			// Number of frames these resources have not been used.
-	const GpuProgramParmLayout_t *	parmLayout;
-	GpuProgramParmState_t			parms;
-	VkDescriptorPool				descriptorPool;
-	VkDescriptorSet					descriptorSet;
-} GpuPipelineResources_t;
+	struct ksGpuPipelineResources_s *	next;
+	int									unusedCount;			// Number of frames these resources have not been used.
+	const ksGpuProgramParmLayout *		parmLayout;
+	ksGpuProgramParmState				parms;
+	VkDescriptorPool					descriptorPool;
+	VkDescriptorSet						descriptorSet;
+} ksGpuPipelineResources;
 
-static void GpuPipelineResources_Create( GpuContext_t * context, GpuPipelineResources_t * resources,
-										const GpuProgramParmLayout_t * parmLayout,
-										const GpuProgramParmState_t * parms )
+static void ksGpuPipelineResources_Create( ksGpuContext * context, ksGpuPipelineResources * resources,
+										const ksGpuProgramParmLayout * parmLayout,
+										const ksGpuProgramParmState * parms )
 {
-	memset( resources, 0, sizeof( GpuPipelineResources_t ) );
+	memset( resources, 0, sizeof( ksGpuPipelineResources ) );
 
 	resources->parmLayout = parmLayout;
-	memcpy( (void *)&resources->parms, parms, sizeof( GpuProgramParmState_t ) );
+	memcpy( (void *)&resources->parms, parms, sizeof( ksGpuProgramParmState ) );
 
 	//
 	// Create descriptor pool.
@@ -11145,7 +11149,7 @@ static void GpuPipelineResources_Create( GpuContext_t * context, GpuPipelineReso
 		int count = 0;
 		for ( int i = 0; i < parmLayout->numBindings; i++ )
 		{
-			VkDescriptorType type = GpuProgramParm_GetDescriptorType( parmLayout->bindings[i]->type );
+			VkDescriptorType type = ksGpuProgramParm_GetDescriptorType( parmLayout->bindings[i]->type );
 			for ( int j = 0; j < count; j++ )
 			{
 				if ( typeCounts[j].type == type )
@@ -11201,7 +11205,7 @@ static void GpuPipelineResources_Create( GpuContext_t * context, GpuPipelineReso
 		int numWrites = 0;
 		for ( int i = 0; i < parmLayout->numBindings; i++ )
 		{
-			const GpuProgramParm_t * binding = parmLayout->bindings[i];
+			const ksGpuProgramParm * binding = parmLayout->bindings[i];
 
 			writes[numWrites].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			writes[numWrites].pNext = NULL;
@@ -11209,14 +11213,14 @@ static void GpuPipelineResources_Create( GpuContext_t * context, GpuPipelineReso
 			writes[numWrites].dstBinding = binding->binding;
 			writes[numWrites].dstArrayElement = 0;
 			writes[numWrites].descriptorCount = 1;
-			writes[numWrites].descriptorType = GpuProgramParm_GetDescriptorType( parmLayout->bindings[i]->type );
+			writes[numWrites].descriptorType = ksGpuProgramParm_GetDescriptorType( parmLayout->bindings[i]->type );
 			writes[numWrites].pImageInfo = &imageInfo[numWrites];
 			writes[numWrites].pBufferInfo = &bufferInfo[numWrites];
 			writes[numWrites].pTexelBufferView = NULL;
 
 			if ( binding->type == GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED )
 			{
-				const GpuTexture_t * texture = (const GpuTexture_t *)parms->parms[binding->index];
+				const ksGpuTexture * texture = (const ksGpuTexture *)parms->parms[binding->index];
 				assert( texture->usage == GPU_TEXTURE_USAGE_SAMPLED );
 				assert( texture->imageLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL );
 
@@ -11226,7 +11230,7 @@ static void GpuPipelineResources_Create( GpuContext_t * context, GpuPipelineReso
 			}
 			else if ( binding->type == GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE )
 			{
-				const GpuTexture_t * texture = (const GpuTexture_t *)parms->parms[binding->index];
+				const ksGpuTexture * texture = (const ksGpuTexture *)parms->parms[binding->index];
 				assert( texture->usage == GPU_TEXTURE_USAGE_STORAGE );
 				assert( texture->imageLayout == VK_IMAGE_LAYOUT_GENERAL );
 
@@ -11236,7 +11240,7 @@ static void GpuPipelineResources_Create( GpuContext_t * context, GpuPipelineReso
 			}
 			else if ( binding->type == GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM )
 			{
-				const GpuBuffer_t * buffer = (const GpuBuffer_t *)parms->parms[binding->index];
+				const ksGpuBuffer * buffer = (const ksGpuBuffer *)parms->parms[binding->index];
 				assert( buffer->type == GPU_BUFFER_TYPE_UNIFORM );
 
 				bufferInfo[numWrites].buffer = buffer->buffer;
@@ -11245,7 +11249,7 @@ static void GpuPipelineResources_Create( GpuContext_t * context, GpuPipelineReso
 			}
 			else if ( binding->type == GPU_PROGRAM_PARM_TYPE_BUFFER_STORAGE )
 			{
-				const GpuBuffer_t * buffer = (const GpuBuffer_t *)parms->parms[binding->index];
+				const ksGpuBuffer * buffer = (const ksGpuBuffer *)parms->parms[binding->index];
 				assert( buffer->type == GPU_BUFFER_TYPE_STORAGE );
 
 				bufferInfo[numWrites].buffer = buffer->buffer;
@@ -11263,12 +11267,12 @@ static void GpuPipelineResources_Create( GpuContext_t * context, GpuPipelineReso
 	}
 }
 
-static void GpuPipelineResources_Destroy( GpuContext_t * context, GpuPipelineResources_t * resources )
+static void ksGpuPipelineResources_Destroy( ksGpuContext * context, ksGpuPipelineResources * resources )
 {
 	VC( context->device->vkFreeDescriptorSets( context->device->device, resources->descriptorPool, 1, &resources->descriptorSet ) );
 	VC( context->device->vkDestroyDescriptorPool( context->device->device, resources->descriptorPool, VK_ALLOCATOR ) );
 
-	memset( resources, 0, sizeof( GpuPipelineResources_t ) );
+	memset( resources, 0, sizeof( ksGpuPipelineResources ) );
 }
 
 /*
@@ -11281,46 +11285,46 @@ For optimal performance a command buffer should only be created at load time, no
 When a command is submitted, the state of the command is compared with the currently saved state,
 and only the state that has changed translates into Vulkan function calls.
 
-GpuCommandBuffer_t
-GpuCommandBufferType_t
-GpuBufferUnmapType_t
+ksGpuCommandBuffer
+ksGpuCommandBufferType
+ksGpuBufferUnmapType
 
-static void GpuCommandBuffer_Create( GpuContext_t * context, GpuCommandBuffer_t * commandBuffer, const GpuCommandBufferType_t type, const int numBuffers );
-static void GpuCommandBuffer_Destroy( GpuContext_t * context, GpuCommandBuffer_t * commandBuffer );
+static void ksGpuCommandBuffer_Create( ksGpuContext * context, ksGpuCommandBuffer * commandBuffer, const ksGpuCommandBufferType type, const int numBuffers );
+static void ksGpuCommandBuffer_Destroy( ksGpuContext * context, ksGpuCommandBuffer * commandBuffer );
 
-static void GpuCommandBuffer_BeginPrimary( GpuCommandBuffer_t * commandBuffer );
-static void GpuCommandBuffer_EndPrimary( GpuCommandBuffer_t * commandBuffer );
-static GpuFence_t * GpuCommandBuffer_SubmitPrimary( GpuCommandBuffer_t * commandBuffer );
+static void ksGpuCommandBuffer_BeginPrimary( ksGpuCommandBuffer * commandBuffer );
+static void ksGpuCommandBuffer_EndPrimary( ksGpuCommandBuffer * commandBuffer );
+static ksGpuFence * ksGpuCommandBuffer_SubmitPrimary( ksGpuCommandBuffer * commandBuffer );
 
-static void GpuCommandBuffer_BeginSecondary( GpuCommandBuffer_t * commandBuffer, GpuRenderPass_t * renderPass, GpuFramebuffer_t * framebuffer );
-static void GpuCommandBuffer_EndSecondary( GpuCommandBuffer_t * commandBuffer );
-static void GpuCommandBuffer_SubmitSecondary( GpuCommandBuffer_t * commandBuffer, GpuCommandBuffer_t * primary );
+static void ksGpuCommandBuffer_BeginSecondary( ksGpuCommandBuffer * commandBuffer, ksGpuRenderPass * renderPass, ksGpuFramebuffer * framebuffer );
+static void ksGpuCommandBuffer_EndSecondary( ksGpuCommandBuffer * commandBuffer );
+static void ksGpuCommandBuffer_SubmitSecondary( ksGpuCommandBuffer * commandBuffer, ksGpuCommandBuffer * primary );
 
-static void GpuCommandBuffer_ChangeTextureUsage( GpuCommandBuffer_t * commandBuffer, GpuTexture_t * texture, const GpuTextureUsage_t usage );
+static void ksGpuCommandBuffer_ChangeTextureUsage( ksGpuCommandBuffer * commandBuffer, ksGpuTexture * texture, const ksGpuTextureUsage usage );
 
-static void GpuCommandBuffer_BeginFramebuffer( GpuCommandBuffer_t * commandBuffer, GpuFramebuffer_t * framebuffer, const int arrayLayer, const GpuTextureUsage_t usage );
-static void GpuCommandBuffer_EndFramebuffer( GpuCommandBuffer_t * commandBuffer, GpuFramebuffer_t * framebuffer, const int arrayLayer, const GpuTextureUsage_t usage );
+static void ksGpuCommandBuffer_BeginFramebuffer( ksGpuCommandBuffer * commandBuffer, ksGpuFramebuffer * framebuffer, const int arrayLayer, const ksGpuTextureUsage usage );
+static void ksGpuCommandBuffer_EndFramebuffer( ksGpuCommandBuffer * commandBuffer, ksGpuFramebuffer * framebuffer, const int arrayLayer, const ksGpuTextureUsage usage );
 
-static void GpuCommandBuffer_BeginTimer( GpuCommandBuffer_t * commandBuffer, GpuTimer_t * timer );
-static void GpuCommandBuffer_EndTimer( GpuCommandBuffer_t * commandBuffer, GpuTimer_t * timer );
+static void ksGpuCommandBuffer_BeginTimer( ksGpuCommandBuffer * commandBuffer, ksGpuTimer * timer );
+static void ksGpuCommandBuffer_EndTimer( ksGpuCommandBuffer * commandBuffer, ksGpuTimer * timer );
 
-static void GpuCommandBuffer_BeginRenderPass( GpuCommandBuffer_t * commandBuffer, GpuRenderPass_t * renderPass, GpuFramebuffer_t * framebuffer, const ScreenRect_t * rect );
-static void GpuCommandBuffer_EndRenderPass( GpuCommandBuffer_t * commandBuffer, GpuRenderPass_t * renderPass );
+static void ksGpuCommandBuffer_BeginRenderPass( ksGpuCommandBuffer * commandBuffer, ksGpuRenderPass * renderPass, ksGpuFramebuffer * framebuffer, const ksScreenRect * rect );
+static void ksGpuCommandBuffer_EndRenderPass( ksGpuCommandBuffer * commandBuffer, ksGpuRenderPass * renderPass );
 
-static void GpuCommandBuffer_SetViewport( GpuCommandBuffer_t * commandBuffer, const ScreenRect_t * rect );
-static void GpuCommandBuffer_SetScissor( GpuCommandBuffer_t * commandBuffer, const ScreenRect_t * rect );
+static void ksGpuCommandBuffer_SetViewport( ksGpuCommandBuffer * commandBuffer, const ksScreenRect * rect );
+static void ksGpuCommandBuffer_SetScissor( ksGpuCommandBuffer * commandBuffer, const ksScreenRect * rect );
 
-static void GpuCommandBuffer_SubmitGraphicsCommand( GpuCommandBuffer_t * commandBuffer, const GpuGraphicsCommand_t * command );
-static void GpuCommandBuffer_SubmitComputeCommand( GpuCommandBuffer_t * commandBuffer, const GpuComputeCommand_t * command );
+static void ksGpuCommandBuffer_SubmitGraphicsCommand( ksGpuCommandBuffer * commandBuffer, const ksGpuGraphicsCommand * command );
+static void ksGpuCommandBuffer_SubmitComputeCommand( ksGpuCommandBuffer * commandBuffer, const ksGpuComputeCommand * command );
 
-static GpuBuffer_t * GpuCommandBuffer_MapBuffer( GpuCommandBuffer_t * commandBuffer, GpuBuffer_t * buffer, void ** data );
-static void GpuCommandBuffer_UnmapBuffer( GpuCommandBuffer_t * commandBuffer, GpuBuffer_t * buffer, GpuBuffer_t * mappedBuffer, const GpuBufferUnmapType_t type );
+static ksGpuBuffer * ksGpuCommandBuffer_MapBuffer( ksGpuCommandBuffer * commandBuffer, ksGpuBuffer * buffer, void ** data );
+static void ksGpuCommandBuffer_UnmapBuffer( ksGpuCommandBuffer * commandBuffer, ksGpuBuffer * buffer, ksGpuBuffer * mappedBuffer, const ksGpuBufferUnmapType type );
 
-static GpuBuffer_t * GpuCommandBuffer_MapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs );
-static void GpuCommandBuffer_UnmapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuBuffer_t * mappedVertexBuffer, const GpuBufferUnmapType_t type );
+static ksGpuBuffer * ksGpuCommandBuffer_MapVertexAttributes( ksGpuCommandBuffer * commandBuffer, ksGpuGeometry * geometry, ksGpuVertexAttributeArraysBase * attribs );
+static void ksGpuCommandBuffer_UnmapVertexAttributes( ksGpuCommandBuffer * commandBuffer, ksGpuGeometry * geometry, ksGpuBuffer * mappedVertexBuffer, const ksGpuBufferUnmapType type );
 
-static GpuBuffer_t * GpuCommandBuffer_MapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs );
-static void GpuCommandBuffer_UnmapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuBuffer_t * mappedInstanceBuffer, const GpuBufferUnmapType_t type );
+static ksGpuBuffer * ksGpuCommandBuffer_MapInstanceAttributes( ksGpuCommandBuffer * commandBuffer, ksGpuGeometry * geometry, ksGpuVertexAttributeArraysBase * attribs );
+static void ksGpuCommandBuffer_UnmapInstanceAttributes( ksGpuCommandBuffer * commandBuffer, ksGpuGeometry * geometry, ksGpuBuffer * mappedInstanceBuffer, const ksGpuBufferUnmapType type );
 
 ================================================================================================================================
 */
@@ -11329,53 +11333,53 @@ typedef enum
 {
 	GPU_BUFFER_UNMAP_TYPE_USE_ALLOCATED,			// use the newly allocated (host visible) buffer
 	GPU_BUFFER_UNMAP_TYPE_COPY_BACK					// copy back to the original buffer
-} GpuBufferUnmapType_t;
+} ksGpuBufferUnmapType;
 
 typedef enum
 {
 	GPU_COMMAND_BUFFER_TYPE_PRIMARY,
 	GPU_COMMAND_BUFFER_TYPE_SECONDARY,
 	GPU_COMMAND_BUFFER_TYPE_SECONDARY_CONTINUE_RENDER_PASS
-} GpuCommandBufferType_t;
+} ksGpuCommandBufferType;
 
 #define MAX_COMMAND_BUFFER_TIMERS	16
 
 typedef struct
 {
-	GpuCommandBufferType_t		type;
+	ksGpuCommandBufferType		type;
 	int							numBuffers;
 	int							currentBuffer;
 	VkCommandBuffer *			cmdBuffers;
-	GpuContext_t *				context;
-	GpuFence_t *				fences;
-	GpuBuffer_t **				mappedBuffers;
-	GpuBuffer_t **				oldMappedBuffers;
-	GpuPipelineResources_t **	pipelineResources;
-	GpuSwapchainBuffer_t *		swapchainBuffer;
-	GpuGraphicsCommand_t		currentGraphicsState;
-	GpuComputeCommand_t			currentComputeState;
-	GpuFramebuffer_t *			currentFramebuffer;
-	GpuRenderPass_t *			currentRenderPass;
-	GpuTimer_t *				currentTimers[MAX_COMMAND_BUFFER_TIMERS];
+	ksGpuContext *				context;
+	ksGpuFence *				fences;
+	ksGpuBuffer **				mappedBuffers;
+	ksGpuBuffer **				oldMappedBuffers;
+	ksGpuPipelineResources **	pipelineResources;
+	ksGpuSwapchainBuffer *		swapchainBuffer;
+	ksGpuGraphicsCommand		currentGraphicsState;
+	ksGpuComputeCommand			currentComputeState;
+	ksGpuFramebuffer *			currentFramebuffer;
+	ksGpuRenderPass *			currentRenderPass;
+	ksGpuTimer *				currentTimers[MAX_COMMAND_BUFFER_TIMERS];
 	int							currentTimerCount;
-} GpuCommandBuffer_t;
+} ksGpuCommandBuffer;
 
 #define MAX_VERTEX_BUFFER_UNUSED_COUNT			16
 #define MAX_PIPELINE_RESOURCES_UNUSED_COUNT		16
 
-static void GpuCommandBuffer_Create( GpuContext_t * context, GpuCommandBuffer_t * commandBuffer, const GpuCommandBufferType_t type, const int numBuffers )
+static void ksGpuCommandBuffer_Create( ksGpuContext * context, ksGpuCommandBuffer * commandBuffer, const ksGpuCommandBufferType type, const int numBuffers )
 {
-	memset( commandBuffer, 0, sizeof( GpuCommandBuffer_t ) );
+	memset( commandBuffer, 0, sizeof( ksGpuCommandBuffer ) );
 
 	commandBuffer->type = type;
 	commandBuffer->numBuffers = numBuffers;
 	commandBuffer->currentBuffer = 0;
 	commandBuffer->context = context;
 	commandBuffer->cmdBuffers = (VkCommandBuffer *) malloc( numBuffers * sizeof( VkCommandBuffer ) );
-	commandBuffer->fences = (GpuFence_t *) malloc( numBuffers * sizeof( GpuFence_t ) );
-	commandBuffer->mappedBuffers = (GpuBuffer_t **) malloc( numBuffers * sizeof( GpuBuffer_t * ) );
-	commandBuffer->oldMappedBuffers = (GpuBuffer_t **) malloc( numBuffers * sizeof( GpuBuffer_t * ) );
-	commandBuffer->pipelineResources = (GpuPipelineResources_t **) malloc( numBuffers * sizeof( GpuPipelineResources_t * ) );
+	commandBuffer->fences = (ksGpuFence *) malloc( numBuffers * sizeof( ksGpuFence ) );
+	commandBuffer->mappedBuffers = (ksGpuBuffer **) malloc( numBuffers * sizeof( ksGpuBuffer * ) );
+	commandBuffer->oldMappedBuffers = (ksGpuBuffer **) malloc( numBuffers * sizeof( ksGpuBuffer * ) );
+	commandBuffer->pipelineResources = (ksGpuPipelineResources **) malloc( numBuffers * sizeof( ksGpuPipelineResources * ) );
 
 	for ( int i = 0; i < numBuffers; i++ )
 	{
@@ -11390,7 +11394,7 @@ static void GpuCommandBuffer_Create( GpuContext_t * context, GpuCommandBuffer_t 
 
 		VK( context->device->vkAllocateCommandBuffers( context->device->device, &commandBufferAllocateInfo, &commandBuffer->cmdBuffers[i] ) );
 
-		GpuFence_Create( context, &commandBuffer->fences[i] );
+		ksGpuFence_Create( context, &commandBuffer->fences[i] );
 
 		commandBuffer->mappedBuffers[i] = NULL;
 		commandBuffer->oldMappedBuffers[i] = NULL;
@@ -11398,7 +11402,7 @@ static void GpuCommandBuffer_Create( GpuContext_t * context, GpuCommandBuffer_t 
 	}
 }
 
-static void GpuCommandBuffer_Destroy( GpuContext_t * context, GpuCommandBuffer_t * commandBuffer )
+static void ksGpuCommandBuffer_Destroy( ksGpuContext * context, ksGpuCommandBuffer * commandBuffer )
 {
 	assert( context == commandBuffer->context );
 
@@ -11406,28 +11410,28 @@ static void GpuCommandBuffer_Destroy( GpuContext_t * context, GpuCommandBuffer_t
 	{
 		VC( context->device->vkFreeCommandBuffers( context->device->device, context->commandPool, 1, &commandBuffer->cmdBuffers[i] ) );
 
-		GpuFence_Destroy( context, &commandBuffer->fences[i] );
+		ksGpuFence_Destroy( context, &commandBuffer->fences[i] );
 
-		for ( GpuBuffer_t * b = commandBuffer->mappedBuffers[i], * next = NULL; b != NULL; b = next )
+		for ( ksGpuBuffer * b = commandBuffer->mappedBuffers[i], * next = NULL; b != NULL; b = next )
 		{
 			next = b->next;
-			GpuBuffer_Destroy( context, b );
+			ksGpuBuffer_Destroy( context, b );
 			free( b );
 		}
 		commandBuffer->mappedBuffers[i] = NULL;
 
-		for ( GpuBuffer_t * b = commandBuffer->oldMappedBuffers[i], * next = NULL; b != NULL; b = next )
+		for ( ksGpuBuffer * b = commandBuffer->oldMappedBuffers[i], * next = NULL; b != NULL; b = next )
 		{
 			next = b->next;
-			GpuBuffer_Destroy( context, b );
+			ksGpuBuffer_Destroy( context, b );
 			free( b );
 		}
 		commandBuffer->oldMappedBuffers[i] = NULL;
 
-		for ( GpuPipelineResources_t * r = commandBuffer->pipelineResources[i], * next = NULL; r != NULL; r = next )
+		for ( ksGpuPipelineResources * r = commandBuffer->pipelineResources[i], * next = NULL; r != NULL; r = next )
 		{
 			next = r->next;
-			GpuPipelineResources_Destroy( context, r );
+			ksGpuPipelineResources_Destroy( context, r );
 			free( r );
 		}
 		commandBuffer->pipelineResources[i] = NULL;
@@ -11439,10 +11443,10 @@ static void GpuCommandBuffer_Destroy( GpuContext_t * context, GpuCommandBuffer_t
 	free( commandBuffer->fences );
 	free( commandBuffer->cmdBuffers );
 
-	memset( commandBuffer, 0, sizeof( GpuCommandBuffer_t ) );
+	memset( commandBuffer, 0, sizeof( ksGpuCommandBuffer ) );
 }
 
-static void GpuCommandBuffer_ManageBuffers( GpuCommandBuffer_t * commandBuffer )
+static void ksGpuCommandBuffer_ManageBuffers( ksGpuCommandBuffer * commandBuffer )
 {
 	//
 	// Manage buffers.
@@ -11450,12 +11454,12 @@ static void GpuCommandBuffer_ManageBuffers( GpuCommandBuffer_t * commandBuffer )
 
 	{
 		// Free any old buffers that were not reused for a number of frames.
-		for ( GpuBuffer_t ** b = &commandBuffer->oldMappedBuffers[commandBuffer->currentBuffer]; *b != NULL; )
+		for ( ksGpuBuffer ** b = &commandBuffer->oldMappedBuffers[commandBuffer->currentBuffer]; *b != NULL; )
 		{
 			if ( (*b)->unusedCount++ >= MAX_VERTEX_BUFFER_UNUSED_COUNT )
 			{
-				GpuBuffer_t * next = (*b)->next;
-				GpuBuffer_Destroy( commandBuffer->context, *b );
+				ksGpuBuffer * next = (*b)->next;
+				ksGpuBuffer_Destroy( commandBuffer->context, *b );
 				free( *b );
 				*b = next;
 			}
@@ -11466,7 +11470,7 @@ static void GpuCommandBuffer_ManageBuffers( GpuCommandBuffer_t * commandBuffer )
 		}
 
 		// Move the last used buffers to the list with old buffers.
-		for ( GpuBuffer_t * b = commandBuffer->mappedBuffers[commandBuffer->currentBuffer], * next = NULL; b != NULL; b = next )
+		for ( ksGpuBuffer * b = commandBuffer->mappedBuffers[commandBuffer->currentBuffer], * next = NULL; b != NULL; b = next )
 		{
 			next = b->next;
 			b->next = commandBuffer->oldMappedBuffers[commandBuffer->currentBuffer];
@@ -11481,12 +11485,12 @@ static void GpuCommandBuffer_ManageBuffers( GpuCommandBuffer_t * commandBuffer )
 
 	{
 		// Free any pipeline resources that were not reused for a number of frames.
-		for ( GpuPipelineResources_t ** r = &commandBuffer->pipelineResources[commandBuffer->currentBuffer]; *r != NULL; )
+		for ( ksGpuPipelineResources ** r = &commandBuffer->pipelineResources[commandBuffer->currentBuffer]; *r != NULL; )
 		{
 			if ( (*r)->unusedCount++ >= MAX_PIPELINE_RESOURCES_UNUSED_COUNT )
 			{
-				GpuPipelineResources_t * next = (*r)->next;
-				GpuPipelineResources_Destroy( commandBuffer->context, *r );
+				ksGpuPipelineResources * next = (*r)->next;
+				ksGpuPipelineResources_Destroy( commandBuffer->context, *r );
 				free( *r );
 				*r = next;
 			}
@@ -11498,13 +11502,13 @@ static void GpuCommandBuffer_ManageBuffers( GpuCommandBuffer_t * commandBuffer )
 	}
 }
 
-static void GpuCommandBuffer_ManageTimers( GpuCommandBuffer_t * commandBuffer )
+static void ksGpuCommandBuffer_ManageTimers( ksGpuCommandBuffer * commandBuffer )
 {
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
 	for ( int i = 0; i < commandBuffer->currentTimerCount; i++ )
 	{
-		GpuTimer_t * timer = commandBuffer->currentTimers[i];
+		ksGpuTimer * timer = commandBuffer->currentTimers[i];
 		timer->index = ( timer->index + 1 ) % ( GPU_TIMER_FRAMES_DELAYED + 1 );
 		if ( timer->init >= GPU_TIMER_FRAMES_DELAYED )
 		{
@@ -11520,17 +11524,17 @@ static void GpuCommandBuffer_ManageTimers( GpuCommandBuffer_t * commandBuffer )
 	commandBuffer->currentTimerCount = 0;
 }
 
-static void GpuCommandBuffer_BeginPrimary( GpuCommandBuffer_t * commandBuffer )
+static void ksGpuCommandBuffer_BeginPrimary( ksGpuCommandBuffer * commandBuffer )
 {
 	assert( commandBuffer->type == GPU_COMMAND_BUFFER_TYPE_PRIMARY );
 	assert( commandBuffer->currentFramebuffer == NULL );
 	assert( commandBuffer->currentRenderPass == NULL );
 
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
 	commandBuffer->currentBuffer = ( commandBuffer->currentBuffer + 1 ) % commandBuffer->numBuffers;
 
-	GpuFence_t * fence = &commandBuffer->fences[commandBuffer->currentBuffer];
+	ksGpuFence * fence = &commandBuffer->fences[commandBuffer->currentBuffer];
 	if ( fence->submitted )
 	{
 		VK( device->vkWaitForFences( device->device, 1, &fence->fence, VK_TRUE, 1ULL * 1000 * 1000 * 1000 ) );
@@ -11538,10 +11542,10 @@ static void GpuCommandBuffer_BeginPrimary( GpuCommandBuffer_t * commandBuffer )
 		fence->submitted = false;
 	}
 
-	GpuCommandBuffer_ManageBuffers( commandBuffer );
+	ksGpuCommandBuffer_ManageBuffers( commandBuffer );
 
-	GpuGraphicsCommand_Init( &commandBuffer->currentGraphicsState );
-	GpuComputeCommand_Init( &commandBuffer->currentComputeState );
+	ksGpuGraphicsCommand_Init( &commandBuffer->currentGraphicsState );
+	ksGpuComputeCommand_Init( &commandBuffer->currentComputeState );
 
 	VK( device->vkResetCommandBuffer( commandBuffer->cmdBuffers[commandBuffer->currentBuffer], 0 ) );
 
@@ -11570,25 +11574,25 @@ static void GpuCommandBuffer_BeginPrimary( GpuCommandBuffer_t * commandBuffer )
 	}
 }
 
-static void GpuCommandBuffer_EndPrimary( GpuCommandBuffer_t * commandBuffer )
+static void ksGpuCommandBuffer_EndPrimary( ksGpuCommandBuffer * commandBuffer )
 {
 	assert( commandBuffer->type == GPU_COMMAND_BUFFER_TYPE_PRIMARY );
 	assert( commandBuffer->currentFramebuffer == NULL );
 	assert( commandBuffer->currentRenderPass == NULL );
 
-	GpuCommandBuffer_ManageTimers( commandBuffer );
+	ksGpuCommandBuffer_ManageTimers( commandBuffer );
 
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 	VK( device->vkEndCommandBuffer( commandBuffer->cmdBuffers[commandBuffer->currentBuffer] ) );
 }
 
-static GpuFence_t * GpuCommandBuffer_SubmitPrimary( GpuCommandBuffer_t * commandBuffer )
+static ksGpuFence * ksGpuCommandBuffer_SubmitPrimary( ksGpuCommandBuffer * commandBuffer )
 {
 	assert( commandBuffer->type == GPU_COMMAND_BUFFER_TYPE_PRIMARY );
 	assert( commandBuffer->currentFramebuffer == NULL );
 	assert( commandBuffer->currentRenderPass == NULL );
 
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
 	const VkPipelineStageFlags stageFlags[1] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
@@ -11603,27 +11607,27 @@ static GpuFence_t * GpuCommandBuffer_SubmitPrimary( GpuCommandBuffer_t * command
 	submitInfo.signalSemaphoreCount = ( commandBuffer->swapchainBuffer != NULL ) ? 1 : 0;
 	submitInfo.pSignalSemaphores = ( commandBuffer->swapchainBuffer != NULL ) ? &commandBuffer->swapchainBuffer->renderingCompleteSemaphore : NULL;
 
-	GpuFence_t * fence = &commandBuffer->fences[commandBuffer->currentBuffer];
+	ksGpuFence * fence = &commandBuffer->fences[commandBuffer->currentBuffer];
 	VK( device->vkQueueSubmit( commandBuffer->context->queue, 1, &submitInfo, fence->fence ) );
-	GpuFence_Submit( commandBuffer->context, fence );
+	ksGpuFence_Submit( commandBuffer->context, fence );
 
 	commandBuffer->swapchainBuffer = NULL;
 
 	return fence;
 }
 
-static void GpuCommandBuffer_BeginSecondary( GpuCommandBuffer_t * commandBuffer, GpuRenderPass_t * renderPass, GpuFramebuffer_t * framebuffer )
+static void ksGpuCommandBuffer_BeginSecondary( ksGpuCommandBuffer * commandBuffer, ksGpuRenderPass * renderPass, ksGpuFramebuffer * framebuffer )
 {
 	assert( commandBuffer->type != GPU_COMMAND_BUFFER_TYPE_PRIMARY );
 
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
 	commandBuffer->currentBuffer = ( commandBuffer->currentBuffer + 1 ) % commandBuffer->numBuffers;
 
-	GpuCommandBuffer_ManageBuffers( commandBuffer );
+	ksGpuCommandBuffer_ManageBuffers( commandBuffer );
 
-	GpuGraphicsCommand_Init( &commandBuffer->currentGraphicsState );
-	GpuComputeCommand_Init( &commandBuffer->currentComputeState );
+	ksGpuGraphicsCommand_Init( &commandBuffer->currentGraphicsState );
+	ksGpuComputeCommand_Init( &commandBuffer->currentComputeState );
 
 	VK( device->vkResetCommandBuffer( commandBuffer->cmdBuffers[commandBuffer->currentBuffer], 0 ) );
 
@@ -11650,34 +11654,34 @@ static void GpuCommandBuffer_BeginSecondary( GpuCommandBuffer_t * commandBuffer,
 	commandBuffer->currentRenderPass = renderPass;
 }
 
-static void GpuCommandBuffer_EndSecondary( GpuCommandBuffer_t * commandBuffer )
+static void ksGpuCommandBuffer_EndSecondary( ksGpuCommandBuffer * commandBuffer )
 {
 	assert( commandBuffer->type != GPU_COMMAND_BUFFER_TYPE_PRIMARY );
 
-	GpuCommandBuffer_ManageTimers( commandBuffer );
+	ksGpuCommandBuffer_ManageTimers( commandBuffer );
 	commandBuffer->currentRenderPass = NULL;
 
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 	VK( device->vkEndCommandBuffer( commandBuffer->cmdBuffers[commandBuffer->currentBuffer] ) );
 }
 
-static void GpuCommandBuffer_SubmitSecondary( GpuCommandBuffer_t * commandBuffer, GpuCommandBuffer_t * primary )
+static void ksGpuCommandBuffer_SubmitSecondary( ksGpuCommandBuffer * commandBuffer, ksGpuCommandBuffer * primary )
 {
 	assert( commandBuffer->type != GPU_COMMAND_BUFFER_TYPE_PRIMARY );
 	assert( primary->type == GPU_COMMAND_BUFFER_TYPE_PRIMARY );
 	assert( ( primary->currentRenderPass != NULL ) == ( commandBuffer->type == GPU_COMMAND_BUFFER_TYPE_SECONDARY_CONTINUE_RENDER_PASS ) );
 
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
 	VC( device->vkCmdExecuteCommands( primary->cmdBuffers[primary->currentBuffer], 1, &commandBuffer->cmdBuffers[commandBuffer->currentBuffer] ) );
 }
 
-static void GpuCommandBuffer_ChangeTextureUsage( GpuCommandBuffer_t * commandBuffer, GpuTexture_t * texture, const GpuTextureUsage_t usage )
+static void ksGpuCommandBuffer_ChangeTextureUsage( ksGpuCommandBuffer * commandBuffer, ksGpuTexture * texture, const ksGpuTextureUsage usage )
 {
-	GpuTexture_ChangeUsage( commandBuffer->context, commandBuffer->cmdBuffers[commandBuffer->currentBuffer], texture, usage );
+	ksGpuTexture_ChangeUsage( commandBuffer->context, commandBuffer->cmdBuffers[commandBuffer->currentBuffer], texture, usage );
 }
 
-static void GpuCommandBuffer_BeginFramebuffer( GpuCommandBuffer_t * commandBuffer, GpuFramebuffer_t * framebuffer, const int arrayLayer, const GpuTextureUsage_t usage )
+static void ksGpuCommandBuffer_BeginFramebuffer( ksGpuCommandBuffer * commandBuffer, ksGpuFramebuffer * framebuffer, const int arrayLayer, const ksGpuTextureUsage usage )
 {
 	assert( commandBuffer->type == GPU_COMMAND_BUFFER_TYPE_PRIMARY );
 	assert( commandBuffer->currentFramebuffer == NULL );
@@ -11689,10 +11693,10 @@ static void GpuCommandBuffer_BeginFramebuffer( GpuCommandBuffer_t * commandBuffe
 		assert( framebuffer->window->swapchain.swapchain != VK_NULL_HANDLE );
 		if ( framebuffer->swapchainCreateCount != framebuffer->window->swapchainCreateCount )
 		{
-			GpuWindow_t * window = framebuffer->window;
-			GpuRenderPass_t * renderPass = framebuffer->renderPass;
-			GpuFramebuffer_Destroy( commandBuffer->context, framebuffer );
-			GpuFramebuffer_CreateFromSwapchain( window, framebuffer, renderPass );
+			ksGpuWindow * window = framebuffer->window;
+			ksGpuRenderPass * renderPass = framebuffer->renderPass;
+			ksGpuFramebuffer_Destroy( commandBuffer->context, framebuffer );
+			ksGpuFramebuffer_CreateFromSwapchain( window, framebuffer, renderPass );
 		}
 
 		// Keep track of the current swapchain buffer to handle the swapchain semaphores.
@@ -11715,12 +11719,12 @@ static void GpuCommandBuffer_BeginFramebuffer( GpuCommandBuffer_t * commandBuffe
 	assert( framebuffer->depthBuffer.internalFormat == VK_FORMAT_UNDEFINED ||
 			framebuffer->depthBuffer.imageLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL );
 
-	GpuCommandBuffer_ChangeTextureUsage( commandBuffer, &framebuffer->colorTextures[framebuffer->currentBuffer], usage );
+	ksGpuCommandBuffer_ChangeTextureUsage( commandBuffer, &framebuffer->colorTextures[framebuffer->currentBuffer], usage );
 
 	commandBuffer->currentFramebuffer = framebuffer;
 }
 
-static void GpuCommandBuffer_EndFramebuffer( GpuCommandBuffer_t * commandBuffer, GpuFramebuffer_t * framebuffer, const int arrayLayer, const GpuTextureUsage_t usage )
+static void ksGpuCommandBuffer_EndFramebuffer( ksGpuCommandBuffer * commandBuffer, ksGpuFramebuffer * framebuffer, const int arrayLayer, const ksGpuTextureUsage usage )
 {
 	assert( commandBuffer->type == GPU_COMMAND_BUFFER_TYPE_PRIMARY );
 	assert( commandBuffer->currentFramebuffer == framebuffer );
@@ -11732,8 +11736,8 @@ static void GpuCommandBuffer_EndFramebuffer( GpuCommandBuffer_t * commandBuffer,
 #if EXPLICIT_RESOLVE != 0
 	if ( framebuffer->renderTexture.image != VK_NULL_HANDLE )
 	{
-		GpuCommandBuffer_ChangeTextureUsage( commandBuffer, &framebuffer->renderTexture, GPU_TEXTURE_USAGE_TRANSFER_SRC );
-		GpuCommandBuffer_ChangeTextureUsage( commandBuffer, &framebuffer->colorTextures[framebuffer->currentBuffer], GPU_TEXTURE_USAGE_TRANSFER_DST );
+		ksGpuCommandBuffer_ChangeTextureUsage( commandBuffer, &framebuffer->renderTexture, GPU_TEXTURE_USAGE_TRANSFER_SRC );
+		ksGpuCommandBuffer_ChangeTextureUsage( commandBuffer, &framebuffer->colorTextures[framebuffer->currentBuffer], GPU_TEXTURE_USAGE_TRANSFER_DST );
 
 		VkImageResolve region;
 		region.srcOffset.x = 0;
@@ -11759,18 +11763,18 @@ static void GpuCommandBuffer_EndFramebuffer( GpuCommandBuffer_t * commandBuffer,
 					framebuffer->colorTextures[framebuffer->currentBuffer].image, framebuffer->colorTextures[framebuffer->currentBuffer].imageLayout,
 					1, &region );
 
-		GpuCommandBuffer_ChangeTextureUsage( commandBuffer, &framebuffer->renderTexture, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
+		ksGpuCommandBuffer_ChangeTextureUsage( commandBuffer, &framebuffer->renderTexture, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
 	}
 #endif
 
-	GpuCommandBuffer_ChangeTextureUsage( commandBuffer, &framebuffer->colorTextures[framebuffer->currentBuffer], usage );
+	ksGpuCommandBuffer_ChangeTextureUsage( commandBuffer, &framebuffer->colorTextures[framebuffer->currentBuffer], usage );
 
 	commandBuffer->currentFramebuffer = NULL;
 }
 
-static void GpuCommandBuffer_BeginTimer( GpuCommandBuffer_t * commandBuffer, GpuTimer_t * timer )
+static void ksGpuCommandBuffer_BeginTimer( ksGpuCommandBuffer * commandBuffer, ksGpuTimer * timer )
 {
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
 	// Make sure this timer has not already been used.
 	for ( int i = 0; i < commandBuffer->currentTimerCount; i++ )
@@ -11781,9 +11785,9 @@ static void GpuCommandBuffer_BeginTimer( GpuCommandBuffer_t * commandBuffer, Gpu
 	VC( device->vkCmdWriteTimestamp( commandBuffer->cmdBuffers[commandBuffer->currentBuffer], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, timer->pool, timer->index * 2 + 0 ) );
 }
 
-static void GpuCommandBuffer_EndTimer( GpuCommandBuffer_t * commandBuffer, GpuTimer_t * timer )
+static void ksGpuCommandBuffer_EndTimer( ksGpuCommandBuffer * commandBuffer, ksGpuTimer * timer )
 {
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
 	VC( device->vkCmdWriteTimestamp( commandBuffer->cmdBuffers[commandBuffer->currentBuffer], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, timer->pool, timer->index * 2 + 1 ) );
 
@@ -11791,13 +11795,13 @@ static void GpuCommandBuffer_EndTimer( GpuCommandBuffer_t * commandBuffer, GpuTi
 	commandBuffer->currentTimers[commandBuffer->currentTimerCount++] = timer;
 }
 
-static void GpuCommandBuffer_BeginRenderPass( GpuCommandBuffer_t * commandBuffer, GpuRenderPass_t * renderPass, GpuFramebuffer_t * framebuffer, const ScreenRect_t * rect )
+static void ksGpuCommandBuffer_BeginRenderPass( ksGpuCommandBuffer * commandBuffer, ksGpuRenderPass * renderPass, ksGpuFramebuffer * framebuffer, const ksScreenRect * rect )
 {
 	assert( commandBuffer->type == GPU_COMMAND_BUFFER_TYPE_PRIMARY );
 	assert( commandBuffer->currentRenderPass == NULL );
 	assert( commandBuffer->currentFramebuffer == framebuffer );
 
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
 	VkCommandBuffer cmdBuffer = commandBuffer->cmdBuffers[commandBuffer->currentBuffer];
 
@@ -11849,14 +11853,14 @@ static void GpuCommandBuffer_BeginRenderPass( GpuCommandBuffer_t * commandBuffer
 	commandBuffer->currentRenderPass = renderPass;
 }
 
-static void GpuCommandBuffer_EndRenderPass( GpuCommandBuffer_t * commandBuffer, GpuRenderPass_t * renderPass )
+static void ksGpuCommandBuffer_EndRenderPass( ksGpuCommandBuffer * commandBuffer, ksGpuRenderPass * renderPass )
 {
 	assert( commandBuffer->type == GPU_COMMAND_BUFFER_TYPE_PRIMARY );
 	assert( commandBuffer->currentRenderPass == renderPass );
 
 	UNUSED_PARM( renderPass );
 
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
 	VkCommandBuffer cmdBuffer = commandBuffer->cmdBuffers[commandBuffer->currentBuffer];
 
@@ -11865,9 +11869,9 @@ static void GpuCommandBuffer_EndRenderPass( GpuCommandBuffer_t * commandBuffer, 
 	commandBuffer->currentRenderPass = NULL;
 }
 
-static void GpuCommandBuffer_SetViewport( GpuCommandBuffer_t * commandBuffer, const ScreenRect_t * rect )
+static void ksGpuCommandBuffer_SetViewport( ksGpuCommandBuffer * commandBuffer, const ksScreenRect * rect )
 {
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
 	VkViewport viewport;
 	viewport.x = (float) rect->x;
@@ -11881,9 +11885,9 @@ static void GpuCommandBuffer_SetViewport( GpuCommandBuffer_t * commandBuffer, co
 	VC( device->vkCmdSetViewport( cmdBuffer, 0, 1, &viewport ) );
 }
 
-static void GpuCommandBuffer_SetScissor( GpuCommandBuffer_t * commandBuffer, const ScreenRect_t * rect )
+static void ksGpuCommandBuffer_SetScissor( ksGpuCommandBuffer * commandBuffer, const ksScreenRect * rect )
 {
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
 	VkRect2D scissor;
 	scissor.offset.x = rect->x;
@@ -11895,24 +11899,24 @@ static void GpuCommandBuffer_SetScissor( GpuCommandBuffer_t * commandBuffer, con
 	VC( device->vkCmdSetScissor( cmdBuffer, 0, 1, &scissor ) );
 }
 
-static void GpuCommandBuffer_UpdateProgramParms( GpuCommandBuffer_t * commandBuffer,
-												const GpuProgramParmLayout_t * newLayout,
-												const GpuProgramParmLayout_t * oldLayout,
-												const GpuProgramParmState_t * newParmState,
-												const GpuProgramParmState_t * oldParmState,
+static void ksGpuCommandBuffer_UpdateProgramParms( ksGpuCommandBuffer * commandBuffer,
+												const ksGpuProgramParmLayout * newLayout,
+												const ksGpuProgramParmLayout * oldLayout,
+												const ksGpuProgramParmState * newParmState,
+												const ksGpuProgramParmState * oldParmState,
 												VkPipelineBindPoint bindPoint )
 {
 	VkCommandBuffer cmdBuffer = commandBuffer->cmdBuffers[commandBuffer->currentBuffer];
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
-	const bool descriptorsMatch = GpuProgramParmState_DescriptorsMatch( newLayout, newParmState, oldLayout, oldParmState );
+	const bool descriptorsMatch = ksGpuProgramParmState_DescriptorsMatch( newLayout, newParmState, oldLayout, oldParmState );
 	if ( !descriptorsMatch )
 	{
 		// Try to find existing resources that match.
-		GpuPipelineResources_t * resources = NULL;
-		for ( GpuPipelineResources_t * r = commandBuffer->pipelineResources[commandBuffer->currentBuffer]; r != NULL; r = r->next )
+		ksGpuPipelineResources * resources = NULL;
+		for ( ksGpuPipelineResources * r = commandBuffer->pipelineResources[commandBuffer->currentBuffer]; r != NULL; r = r->next )
 		{
-			if ( GpuProgramParmState_DescriptorsMatch( newLayout, newParmState, r->parmLayout, &r->parms ) )
+			if ( ksGpuProgramParmState_DescriptorsMatch( newLayout, newParmState, r->parmLayout, &r->parms ) )
 			{
 				r->unusedCount = 0;
 				resources = r;
@@ -11923,8 +11927,8 @@ static void GpuCommandBuffer_UpdateProgramParms( GpuCommandBuffer_t * commandBuf
 		// Create new resources if none were found.
 		if ( resources == NULL )
 		{
-			resources = (GpuPipelineResources_t *) malloc( sizeof( GpuPipelineResources_t ) );
-			GpuPipelineResources_Create( commandBuffer->context, resources, newLayout, newParmState );
+			resources = (ksGpuPipelineResources *) malloc( sizeof( ksGpuPipelineResources ) );
+			ksGpuPipelineResources_Create( commandBuffer->context, resources, newLayout, newParmState );
 			resources->next = commandBuffer->pipelineResources[commandBuffer->currentBuffer];
 			commandBuffer->pipelineResources[commandBuffer->currentBuffer] = resources;	
 		}
@@ -11935,26 +11939,26 @@ static void GpuCommandBuffer_UpdateProgramParms( GpuCommandBuffer_t * commandBuf
 
 	for ( int i = 0; i < newLayout->numPushConstants; i++ )
 	{
-		const void * data = GpuProgramParmState_NewPushConstantData( newLayout, i, newParmState, oldLayout, i, oldParmState, false );
+		const void * data = ksGpuProgramParmState_NewPushConstantData( newLayout, i, newParmState, oldLayout, i, oldParmState, false );
 		if ( data != NULL )
 		{
-			const GpuProgramParm_t * newParm = newLayout->pushConstants[i];
-			const VkShaderStageFlags stageFlags = GpuProgramParm_GetShaderStageFlags( newParm->stage );
+			const ksGpuProgramParm * newParm = newLayout->pushConstants[i];
+			const VkShaderStageFlags stageFlags = ksGpuProgramParm_GetShaderStageFlags( newParm->stage );
 			const uint32_t offset = (uint32_t) newParm->binding;
-			const uint32_t size = (uint32_t) GpuProgramParm_GetPushConstantSize( newParm->type );
+			const uint32_t size = (uint32_t) ksGpuProgramParm_GetPushConstantSize( newParm->type );
 			VC( device->vkCmdPushConstants( cmdBuffer, newLayout->pipelineLayout, stageFlags, offset, size, data ) );
 		}
 	}
 }
 
-static void GpuCommandBuffer_SubmitGraphicsCommand( GpuCommandBuffer_t * commandBuffer, const GpuGraphicsCommand_t * command )
+static void ksGpuCommandBuffer_SubmitGraphicsCommand( ksGpuCommandBuffer * commandBuffer, const ksGpuGraphicsCommand * command )
 {
 	assert( commandBuffer->currentRenderPass != NULL );
 
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
 	VkCommandBuffer cmdBuffer = commandBuffer->cmdBuffers[commandBuffer->currentBuffer];
-	const GpuGraphicsCommand_t * state = &commandBuffer->currentGraphicsState;
+	const ksGpuGraphicsCommand * state = &commandBuffer->currentGraphicsState;
 
 	// If the pipeline has changed.
 	if ( command->pipeline != state->pipeline )
@@ -11962,12 +11966,12 @@ static void GpuCommandBuffer_SubmitGraphicsCommand( GpuCommandBuffer_t * command
 		VC( device->vkCmdBindPipeline( cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, command->pipeline->pipeline ) );
 	}
 
-	const GpuProgramParmLayout_t * commandLayout = &command->pipeline->program->parmLayout;
-	const GpuProgramParmLayout_t * stateLayout = ( state->pipeline != NULL ) ? &state->pipeline->program->parmLayout : NULL;
+	const ksGpuProgramParmLayout * commandLayout = &command->pipeline->program->parmLayout;
+	const ksGpuProgramParmLayout * stateLayout = ( state->pipeline != NULL ) ? &state->pipeline->program->parmLayout : NULL;
 
-	GpuCommandBuffer_UpdateProgramParms( commandBuffer, commandLayout, stateLayout, &command->parmState, &state->parmState, VK_PIPELINE_BIND_POINT_GRAPHICS );
+	ksGpuCommandBuffer_UpdateProgramParms( commandBuffer, commandLayout, stateLayout, &command->parmState, &state->parmState, VK_PIPELINE_BIND_POINT_GRAPHICS );
 
-	const GpuGeometry_t * geometry = command->pipeline->geometry;
+	const ksGpuGeometry * geometry = command->pipeline->geometry;
 
 	// If the geometry has changed.
 	if ( state->pipeline == NULL || geometry != state->pipeline->geometry || command->vertexBuffer != state->vertexBuffer || command->instanceBuffer != state->instanceBuffer )
@@ -11984,7 +11988,7 @@ static void GpuCommandBuffer_SubmitGraphicsCommand( GpuCommandBuffer_t * command
 			VC( device->vkCmdBindVertexBuffers( cmdBuffer, i, 1, &instanceBuffer, &command->pipeline->vertexBindingOffsets[i] ) );
 		}
 
-		const VkIndexType indexType = ( sizeof( GpuTriangleIndex_t ) == sizeof( unsigned int ) ) ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16;
+		const VkIndexType indexType = ( sizeof( ksGpuTriangleIndex ) == sizeof( unsigned int ) ) ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16;
 		VC( device->vkCmdBindIndexBuffer( cmdBuffer, geometry->indexBuffer.buffer, 0, indexType ) );
 	}
 
@@ -11993,14 +11997,14 @@ static void GpuCommandBuffer_SubmitGraphicsCommand( GpuCommandBuffer_t * command
 	commandBuffer->currentGraphicsState = *command;
 }
 
-static void GpuCommandBuffer_SubmitComputeCommand( GpuCommandBuffer_t * commandBuffer, const GpuComputeCommand_t * command )
+static void ksGpuCommandBuffer_SubmitComputeCommand( ksGpuCommandBuffer * commandBuffer, const ksGpuComputeCommand * command )
 {
 	assert( commandBuffer->currentRenderPass == NULL );
 
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
 	VkCommandBuffer cmdBuffer = commandBuffer->cmdBuffers[commandBuffer->currentBuffer];
-	const GpuComputeCommand_t * state = &commandBuffer->currentComputeState;
+	const ksGpuComputeCommand * state = &commandBuffer->currentComputeState;
 
 	// If the pipeline has changed.
 	if ( command->pipeline != state->pipeline )
@@ -12008,24 +12012,24 @@ static void GpuCommandBuffer_SubmitComputeCommand( GpuCommandBuffer_t * commandB
 		VC( device->vkCmdBindPipeline( cmdBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, command->pipeline->pipeline ) );
 	}
 
-	const GpuProgramParmLayout_t * commandLayout = &command->pipeline->program->parmLayout;
-	const GpuProgramParmLayout_t * stateLayout = ( state->pipeline != NULL ) ? &state->pipeline->program->parmLayout : NULL;
+	const ksGpuProgramParmLayout * commandLayout = &command->pipeline->program->parmLayout;
+	const ksGpuProgramParmLayout * stateLayout = ( state->pipeline != NULL ) ? &state->pipeline->program->parmLayout : NULL;
 
-	GpuCommandBuffer_UpdateProgramParms( commandBuffer, commandLayout, stateLayout, &command->parmState, &state->parmState, VK_PIPELINE_BIND_POINT_COMPUTE );
+	ksGpuCommandBuffer_UpdateProgramParms( commandBuffer, commandLayout, stateLayout, &command->parmState, &state->parmState, VK_PIPELINE_BIND_POINT_COMPUTE );
 
 	VC( device->vkCmdDispatch( cmdBuffer, command->x, command->y, command->z ) );
 
 	commandBuffer->currentComputeState = *command;
 }
 
-static GpuBuffer_t * GpuCommandBuffer_MapBuffer( GpuCommandBuffer_t * commandBuffer, GpuBuffer_t * buffer, void ** data )
+static ksGpuBuffer * ksGpuCommandBuffer_MapBuffer( ksGpuCommandBuffer * commandBuffer, ksGpuBuffer * buffer, void ** data )
 {
 	assert( commandBuffer->currentRenderPass == NULL );
 
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
-	GpuBuffer_t * newBuffer = NULL;
-	for ( GpuBuffer_t ** b = &commandBuffer->oldMappedBuffers[commandBuffer->currentBuffer]; *b != NULL; b = &(*b)->next )
+	ksGpuBuffer * newBuffer = NULL;
+	for ( ksGpuBuffer ** b = &commandBuffer->oldMappedBuffers[commandBuffer->currentBuffer]; *b != NULL; b = &(*b)->next )
 	{
 		if ( (*b)->size == buffer->size && (*b)->type == buffer->type )
 		{
@@ -12036,8 +12040,8 @@ static GpuBuffer_t * GpuCommandBuffer_MapBuffer( GpuCommandBuffer_t * commandBuf
 	}
 	if ( newBuffer == NULL )
 	{
-		newBuffer = (GpuBuffer_t *) malloc( sizeof( GpuBuffer_t ) );
-		GpuBuffer_Create( commandBuffer->context, newBuffer, buffer->type, buffer->size, NULL, true );
+		newBuffer = (ksGpuBuffer *) malloc( sizeof( ksGpuBuffer ) );
+		ksGpuBuffer_Create( commandBuffer->context, newBuffer, buffer->type, buffer->size, NULL, true );
 	}
 
 	newBuffer->unusedCount = 0;
@@ -12052,12 +12056,12 @@ static GpuBuffer_t * GpuCommandBuffer_MapBuffer( GpuCommandBuffer_t * commandBuf
 	return newBuffer;
 }
 
-static void GpuCommandBuffer_UnmapBuffer( GpuCommandBuffer_t * commandBuffer, GpuBuffer_t * buffer, GpuBuffer_t * mappedBuffer, const GpuBufferUnmapType_t type )
+static void ksGpuCommandBuffer_UnmapBuffer( ksGpuCommandBuffer * commandBuffer, ksGpuBuffer * buffer, ksGpuBuffer * mappedBuffer, const ksGpuBufferUnmapType type )
 {
 	// Can only copy or issue memory barrier outside a render pass.
 	assert( commandBuffer->currentRenderPass == NULL );
 
-	GpuDevice_t * device = commandBuffer->context->device;
+	ksGpuDevice * device = commandBuffer->context->device;
 
 	VC( device->vkUnmapMemory( commandBuffer->context->device->device, mappedBuffer->memory ) );
 	mappedBuffer->mapped = NULL;
@@ -12105,7 +12109,7 @@ static void GpuCommandBuffer_UnmapBuffer( GpuCommandBuffer_t * commandBuffer, Gp
 			bufferMemoryBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
 			bufferMemoryBarrier.pNext = NULL;
 			bufferMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			bufferMemoryBarrier.dstAccessMask = GpuBuffer_GetBufferAccess( buffer->type );
+			bufferMemoryBarrier.dstAccessMask = ksGpuBuffer_GetBufferAccess( buffer->type );
 			bufferMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 			bufferMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 			bufferMemoryBarrier.buffer = buffer->buffer;
@@ -12128,7 +12132,7 @@ static void GpuCommandBuffer_UnmapBuffer( GpuCommandBuffer_t * commandBuffer, Gp
 			bufferMemoryBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
 			bufferMemoryBarrier.pNext = NULL;
 			bufferMemoryBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-			bufferMemoryBarrier.dstAccessMask = GpuBuffer_GetBufferAccess( mappedBuffer->type );
+			bufferMemoryBarrier.dstAccessMask = ksGpuBuffer_GetBufferAccess( mappedBuffer->type );
 			bufferMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 			bufferMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 			bufferMemoryBarrier.buffer = mappedBuffer->buffer;
@@ -12145,36 +12149,36 @@ static void GpuCommandBuffer_UnmapBuffer( GpuCommandBuffer_t * commandBuffer, Gp
 	}
 }
 
-static GpuBuffer_t * GpuCommandBuffer_MapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs )
+static ksGpuBuffer * ksGpuCommandBuffer_MapVertexAttributes( ksGpuCommandBuffer * commandBuffer, ksGpuGeometry * geometry, ksGpuVertexAttributeArraysBase * attribs )
 {
 	void * data = NULL;
-	GpuBuffer_t * buffer = GpuCommandBuffer_MapBuffer( commandBuffer, &geometry->vertexBuffer, &data );
+	ksGpuBuffer * buffer = ksGpuCommandBuffer_MapBuffer( commandBuffer, &geometry->vertexBuffer, &data );
 
 	attribs->layout = geometry->layout;
-	GpuVertexAttributeArrays_Map( attribs, data, buffer->size, geometry->vertexCount, geometry->vertexAttribsFlags );
+	ksGpuVertexAttributeArrays_Map( attribs, data, buffer->size, geometry->vertexCount, geometry->vertexAttribsFlags );
 
 	return buffer;
 }
 
-static void GpuCommandBuffer_UnmapVertexAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuBuffer_t * mappedVertexBuffer, const GpuBufferUnmapType_t type )
+static void ksGpuCommandBuffer_UnmapVertexAttributes( ksGpuCommandBuffer * commandBuffer, ksGpuGeometry * geometry, ksGpuBuffer * mappedVertexBuffer, const ksGpuBufferUnmapType type )
 {
-	GpuCommandBuffer_UnmapBuffer( commandBuffer, &geometry->vertexBuffer, mappedVertexBuffer, type );
+	ksGpuCommandBuffer_UnmapBuffer( commandBuffer, &geometry->vertexBuffer, mappedVertexBuffer, type );
 }
 
-static GpuBuffer_t * GpuCommandBuffer_MapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuVertexAttributeArraysBase_t * attribs )
+static ksGpuBuffer * ksGpuCommandBuffer_MapInstanceAttributes( ksGpuCommandBuffer * commandBuffer, ksGpuGeometry * geometry, ksGpuVertexAttributeArraysBase * attribs )
 {
 	void * data = NULL;
-	GpuBuffer_t * buffer = GpuCommandBuffer_MapBuffer( commandBuffer, &geometry->instanceBuffer, &data );
+	ksGpuBuffer * buffer = ksGpuCommandBuffer_MapBuffer( commandBuffer, &geometry->instanceBuffer, &data );
 
 	attribs->layout = geometry->layout;
-	GpuVertexAttributeArrays_Map( attribs, data, buffer->size, geometry->instanceCount, geometry->instanceAttribsFlags );
+	ksGpuVertexAttributeArrays_Map( attribs, data, buffer->size, geometry->instanceCount, geometry->instanceAttribsFlags );
 
 	return buffer;
 }
 
-static void GpuCommandBuffer_UnmapInstanceAttributes( GpuCommandBuffer_t * commandBuffer, GpuGeometry_t * geometry, GpuBuffer_t * mappedInstanceBuffer, const GpuBufferUnmapType_t type )
+static void ksGpuCommandBuffer_UnmapInstanceAttributes( ksGpuCommandBuffer * commandBuffer, ksGpuGeometry * geometry, ksGpuBuffer * mappedInstanceBuffer, const ksGpuBufferUnmapType type )
 {
-	GpuCommandBuffer_UnmapBuffer( commandBuffer, &geometry->instanceBuffer, mappedInstanceBuffer, type );
+	ksGpuCommandBuffer_UnmapBuffer( commandBuffer, &geometry->instanceBuffer, mappedInstanceBuffer, type );
 }
 
 /*
@@ -12186,50 +12190,50 @@ Real-time bar graph where new bars scroll in on the right and old bars scroll ou
 Optionally supports stacking of bars. A bar value is in the range [0, 1] where 1 is a full height bar.
 The bar graph position x,y,width,height is specified in clip coordinates in the range [-1, 1].
 
-BarGraph_t
+ksBarGraph
 
-static void BarGraph_Create( GpuContext_t * context, BarGraph_t * barGraph, GpuRenderPass_t * renderPass,
+static void ksBarGraph_Create( ksGpuContext * context, ksBarGraph * barGraph, ksGpuRenderPass * renderPass,
 								const float x, const float y, const float width, const float height,
-								const int numBars, const int numStacked, const Vector4f_t * backgroundColor );
-static void BarGraph_Destroy( GpuContext_t * context, BarGraph_t * barGraph );
-static void BarGraph_AddBar( BarGraph_t * barGraph, const int stackedBar, const float value, const Vector4f_t * color, const bool advance );
+								const int numBars, const int numStacked, const ksVector4f * backgroundColor );
+static void ksBarGraph_Destroy( ksGpuContext * context, ksBarGraph * barGraph );
+static void ksBarGraph_AddBar( ksBarGraph * barGraph, const int stackedBar, const float value, const ksVector4f * color, const bool advance );
 
-static void BarGraph_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph );
-static void BarGraph_RenderGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph );
+static void ksBarGraph_UpdateGraphics( ksGpuCommandBuffer * commandBuffer, ksBarGraph * barGraph );
+static void ksBarGraph_RenderGraphics( ksGpuCommandBuffer * commandBuffer, ksBarGraph * barGraph );
 
-static void BarGraph_UpdateCompute( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph );
-static void BarGraph_RenderCompute( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph, GpuFramebuffer_t * framebuffer );
+static void ksBarGraph_UpdateCompute( ksGpuCommandBuffer * commandBuffer, ksBarGraph * barGraph );
+static void ksBarGraph_RenderCompute( ksGpuCommandBuffer * commandBuffer, ksBarGraph * barGraph, ksGpuFramebuffer * framebuffer );
 
 ================================================================================================================================
 */
 
 typedef struct
 {
-	ClipRect_t			clipRect;
+	ksClipRect			clipRect;
 	int					numBars;
 	int					numStacked;
 	int					barIndex;
 	float *				barValues;
-	Vector4f_t *		barColors;
-	Vector4f_t			backgroundColor;
+	ksVector4f *		barColors;
+	ksVector4f			backgroundColor;
 	struct
 	{
-		GpuGeometry_t			quad;
-		GpuGraphicsProgram_t	program;
-		GpuGraphicsPipeline_t	pipeline;
+		ksGpuGeometry			quad;
+		ksGpuGraphicsProgram	program;
+		ksGpuGraphicsPipeline	pipeline;
 		int						numInstances;
 	} graphics;
 	struct
 	{
-		GpuBuffer_t				barValueBuffer;
-		GpuBuffer_t				barColorBuffer;
-		Vector2i_t				barGraphOffset;
-		GpuComputeProgram_t		program;
-		GpuComputePipeline_t	pipeline;
+		ksGpuBuffer				barValueBuffer;
+		ksGpuBuffer				barColorBuffer;
+		ksVector2i				barGraphOffset;
+		ksGpuComputeProgram		program;
+		ksGpuComputePipeline	pipeline;
 	} compute;
-} BarGraph_t;
+} ksBarGraph;
 
-static const GpuProgramParm_t barGraphGraphicsProgramParms[] =
+static const ksGpuProgramParm barGraphGraphicsProgramParms[] =
 {
 	{ 0 }
 };
@@ -12388,7 +12392,7 @@ enum
 	COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BACK_GROUND_COLOR
 };
 
-static const GpuProgramParm_t barGraphComputeProgramParms[] =
+static const ksGpuProgramParm barGraphComputeProgramParms[] =
 {
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,				GPU_PROGRAM_PARM_ACCESS_WRITE_ONLY,	COMPUTE_PROGRAM_TEXTURE_BAR_GRAPH_DEST,					"dest",				0 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_BUFFER_STORAGE,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_VALUES,			"barValueBuffer",	1 },
@@ -12568,9 +12572,9 @@ static const unsigned int barGraphComputeProgramSPIRV[] =
 	0x00000049,0x00040063,0x00000085,0x0000008f,0x00000090,0x000100fd,0x00010038
 };
 
-static void BarGraph_Create( GpuContext_t * context, BarGraph_t * barGraph, GpuRenderPass_t * renderPass,
+static void ksBarGraph_Create( ksGpuContext * context, ksBarGraph * barGraph, ksGpuRenderPass * renderPass,
 								const float x, const float y, const float width, const float height,
-								const int numBars, const int numStacked, const Vector4f_t * backgroundColor )
+								const int numBars, const int numStacked, const ksVector4f * backgroundColor )
 {
 	barGraph->clipRect.x = x;
 	barGraph->clipRect.y = y;
@@ -12580,7 +12584,7 @@ static void BarGraph_Create( GpuContext_t * context, BarGraph_t * barGraph, GpuR
 	barGraph->numStacked = numStacked;
 	barGraph->barIndex = 0;
 	barGraph->barValues = (float *) AllocAlignedMemory( numBars * numStacked * sizeof( barGraph->barValues[0] ), sizeof( void * ) );
-	barGraph->barColors = (Vector4f_t *) AllocAlignedMemory( numBars * numStacked * sizeof( barGraph->barColors[0] ), sizeof( Vector4f_t ) );
+	barGraph->barColors = (ksVector4f *) AllocAlignedMemory( numBars * numStacked * sizeof( barGraph->barColors[0] ), sizeof( ksVector4f ) );
 
 	for ( int i = 0; i < numBars * numStacked; i++ )
 	{
@@ -12592,17 +12596,17 @@ static void BarGraph_Create( GpuContext_t * context, BarGraph_t * barGraph, GpuR
 
 	// graphics
 	{
-		GpuGeometry_CreateQuad( context, &barGraph->graphics.quad, 1.0f, 0.5f );
-		GpuGeometry_AddInstanceAttributes( context, &barGraph->graphics.quad, numBars * numStacked + 1, VERTEX_ATTRIBUTE_FLAG_TRANSFORM );
+		ksGpuGeometry_CreateQuad( context, &barGraph->graphics.quad, 1.0f, 0.5f );
+		ksGpuGeometry_AddInstanceAttributes( context, &barGraph->graphics.quad, numBars * numStacked + 1, VERTEX_ATTRIBUTE_FLAG_TRANSFORM );
 
-		GpuGraphicsProgram_Create( context, &barGraph->graphics.program,
+		ksGpuGraphicsProgram_Create( context, &barGraph->graphics.program,
 									PROGRAM( barGraphVertexProgram ), sizeof( PROGRAM( barGraphVertexProgram ) ),
 									PROGRAM( barGraphFragmentProgram ), sizeof( PROGRAM( barGraphFragmentProgram ) ),
 									barGraphGraphicsProgramParms, 0,
 									barGraph->graphics.quad.layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_TRANSFORM );
 
-		GpuGraphicsPipelineParms_t pipelineParms;
-		GpuGraphicsPipelineParms_Init( &pipelineParms );
+		ksGpuGraphicsPipelineParms pipelineParms;
+		ksGpuGraphicsPipelineParms_Init( &pipelineParms );
 
 		pipelineParms.rop.depthTestEnable = false;
 		pipelineParms.rop.depthWriteEnable = false;
@@ -12610,48 +12614,48 @@ static void BarGraph_Create( GpuContext_t * context, BarGraph_t * barGraph, GpuR
 		pipelineParms.program = &barGraph->graphics.program;
 		pipelineParms.geometry = &barGraph->graphics.quad;
 
-		GpuGraphicsPipeline_Create( context, &barGraph->graphics.pipeline, &pipelineParms );
+		ksGpuGraphicsPipeline_Create( context, &barGraph->graphics.pipeline, &pipelineParms );
 
 		barGraph->graphics.numInstances = 0;
 	}
 
 	// compute
 	{
-		GpuBuffer_Create( context, &barGraph->compute.barValueBuffer, GPU_BUFFER_TYPE_STORAGE,
+		ksGpuBuffer_Create( context, &barGraph->compute.barValueBuffer, GPU_BUFFER_TYPE_STORAGE,
 							barGraph->numBars * barGraph->numStacked * sizeof( barGraph->barValues[0] ), NULL, false );
-		GpuBuffer_Create( context, &barGraph->compute.barColorBuffer, GPU_BUFFER_TYPE_STORAGE,
+		ksGpuBuffer_Create( context, &barGraph->compute.barColorBuffer, GPU_BUFFER_TYPE_STORAGE,
 							barGraph->numBars * barGraph->numStacked * sizeof( barGraph->barColors[0] ), NULL, false );
 
-		GpuComputeProgram_Create( context, &barGraph->compute.program,
+		ksGpuComputeProgram_Create( context, &barGraph->compute.program,
 									PROGRAM( barGraphComputeProgram ), sizeof( PROGRAM( barGraphComputeProgram ) ),
 									barGraphComputeProgramParms, ARRAY_SIZE( barGraphComputeProgramParms ) );
 
-		GpuComputePipeline_Create( context, &barGraph->compute.pipeline, &barGraph->compute.program );
+		ksGpuComputePipeline_Create( context, &barGraph->compute.pipeline, &barGraph->compute.program );
 	}
 }
 
-static void BarGraph_Destroy( GpuContext_t * context, BarGraph_t * barGraph )
+static void ksBarGraph_Destroy( ksGpuContext * context, ksBarGraph * barGraph )
 {
 	FreeAlignedMemory( barGraph->barValues );
 	FreeAlignedMemory( barGraph->barColors );
 
 	// graphics
 	{
-		GpuGraphicsPipeline_Destroy( context, &barGraph->graphics.pipeline );
-		GpuGraphicsProgram_Destroy( context, &barGraph->graphics.program );
-		GpuGeometry_Destroy( context, &barGraph->graphics.quad );
+		ksGpuGraphicsPipeline_Destroy( context, &barGraph->graphics.pipeline );
+		ksGpuGraphicsProgram_Destroy( context, &barGraph->graphics.program );
+		ksGpuGeometry_Destroy( context, &barGraph->graphics.quad );
 	}
 
 	// compute
 	{
-		GpuComputePipeline_Destroy( context, &barGraph->compute.pipeline );
-		GpuComputeProgram_Destroy( context, &barGraph->compute.program );
-		GpuBuffer_Destroy( context, &barGraph->compute.barValueBuffer );
-		GpuBuffer_Destroy( context, &barGraph->compute.barColorBuffer );
+		ksGpuComputePipeline_Destroy( context, &barGraph->compute.pipeline );
+		ksGpuComputeProgram_Destroy( context, &barGraph->compute.program );
+		ksGpuBuffer_Destroy( context, &barGraph->compute.barValueBuffer );
+		ksGpuBuffer_Destroy( context, &barGraph->compute.barColorBuffer );
 	}
 }
 
-static void BarGraph_AddBar( BarGraph_t * barGraph, const int stackedBar, const float value, const Vector4f_t * color, const bool advance )
+static void ksBarGraph_AddBar( ksBarGraph * barGraph, const int stackedBar, const float value, const ksVector4f * color, const bool advance )
 {
 	assert( stackedBar >= 0 && stackedBar < barGraph->numStacked );
 	barGraph->barValues[barGraph->barIndex * barGraph->numStacked + stackedBar] = value;
@@ -12662,10 +12666,10 @@ static void BarGraph_AddBar( BarGraph_t * barGraph, const int stackedBar, const 
 	}
 }
 
-static void BarGraph_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph )
+static void ksBarGraph_UpdateGraphics( ksGpuCommandBuffer * commandBuffer, ksBarGraph * barGraph )
 {
-	GpuVertexAttributeArrays_t attribs;
-	GpuBuffer_t * instanceBuffer = GpuCommandBuffer_MapInstanceAttributes( commandBuffer, &barGraph->graphics.quad, &attribs.base );
+	ksGpuVertexAttributeArrays attribs;
+	ksGpuBuffer * instanceBuffer = ksGpuCommandBuffer_MapInstanceAttributes( commandBuffer, &barGraph->graphics.quad, &attribs.base );
 
 #if defined( GRAPHICS_API_VULKAN )
 	const float flipY = -1.0f;
@@ -12674,7 +12678,7 @@ static void BarGraph_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, BarGrap
 #endif
 
 	int numInstances = 0;
-	Matrix4x4f_t * backgroundMatrix = &attribs.transform[numInstances++];
+	ksMatrix4x4f * backgroundMatrix = &attribs.transform[numInstances++];
 
 	// Write in order to write-combined memory.
 	backgroundMatrix->m[0][0] = barGraph->clipRect.width;
@@ -12717,7 +12721,7 @@ static void BarGraph_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, BarGrap
 				continue;
 			}
 
-			Matrix4x4f_t * barMatrix = &attribs.transform[numInstances++];
+			ksMatrix4x4f * barMatrix = &attribs.transform[numInstances++];
 
 			// Write in order to write-combined memory.
 			barMatrix->m[0][0] = barWidth;
@@ -12744,40 +12748,40 @@ static void BarGraph_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, BarGrap
 		}
 	}
 
-	GpuCommandBuffer_UnmapInstanceAttributes( commandBuffer, &barGraph->graphics.quad, instanceBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
+	ksGpuCommandBuffer_UnmapInstanceAttributes( commandBuffer, &barGraph->graphics.quad, instanceBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
 
 	assert( numInstances <= barGraph->numBars * barGraph->numStacked + 1 );
 	barGraph->graphics.numInstances = numInstances;
 }
 
-static void BarGraph_RenderGraphics( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph )
+static void ksBarGraph_RenderGraphics( ksGpuCommandBuffer * commandBuffer, ksBarGraph * barGraph )
 {
-	GpuGraphicsCommand_t command;
-	GpuGraphicsCommand_Init( &command );
-	GpuGraphicsCommand_SetPipeline( &command, &barGraph->graphics.pipeline );
-	GpuGraphicsCommand_SetNumInstances( &command, barGraph->graphics.numInstances );
+	ksGpuGraphicsCommand command;
+	ksGpuGraphicsCommand_Init( &command );
+	ksGpuGraphicsCommand_SetPipeline( &command, &barGraph->graphics.pipeline );
+	ksGpuGraphicsCommand_SetNumInstances( &command, barGraph->graphics.numInstances );
 
-	GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
+	ksGpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
 }
 
-static void BarGraph_UpdateCompute( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph )
+static void ksBarGraph_UpdateCompute( ksGpuCommandBuffer * commandBuffer, ksBarGraph * barGraph )
 {
 	void * barValues = NULL;
-	GpuBuffer_t * mappedBarValueBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &barGraph->compute.barValueBuffer, &barValues );
+	ksGpuBuffer * mappedBarValueBuffer = ksGpuCommandBuffer_MapBuffer( commandBuffer, &barGraph->compute.barValueBuffer, &barValues );
 	memcpy( barValues, barGraph->barValues, barGraph->numBars * barGraph->numStacked * sizeof( barGraph->barValues[0] ) );
-	GpuCommandBuffer_UnmapBuffer( commandBuffer, &barGraph->compute.barValueBuffer, mappedBarValueBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
+	ksGpuCommandBuffer_UnmapBuffer( commandBuffer, &barGraph->compute.barValueBuffer, mappedBarValueBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
 
 	void * barColors = NULL;
-	GpuBuffer_t * mappedBarColorBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &barGraph->compute.barColorBuffer, &barColors );
+	ksGpuBuffer * mappedBarColorBuffer = ksGpuCommandBuffer_MapBuffer( commandBuffer, &barGraph->compute.barColorBuffer, &barColors );
 	memcpy( barColors, barGraph->barColors, barGraph->numBars * barGraph->numStacked * sizeof( barGraph->barColors[0] ) );
-	GpuCommandBuffer_UnmapBuffer( commandBuffer, &barGraph->compute.barColorBuffer, mappedBarColorBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
+	ksGpuCommandBuffer_UnmapBuffer( commandBuffer, &barGraph->compute.barColorBuffer, mappedBarColorBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
 }
 
-static void BarGraph_RenderCompute( GpuCommandBuffer_t * commandBuffer, BarGraph_t * barGraph, GpuFramebuffer_t * framebuffer )
+static void ksBarGraph_RenderCompute( ksGpuCommandBuffer * commandBuffer, ksBarGraph * barGraph, ksGpuFramebuffer * framebuffer )
 {
-	const int screenWidth = GpuFramebuffer_GetWidth( framebuffer );
-	const int screenHeight = GpuFramebuffer_GetHeight( framebuffer );
-	ScreenRect_t screenRect = ClipRect_ToScreenRect( &barGraph->clipRect, screenWidth, screenHeight );
+	const int screenWidth = ksGpuFramebuffer_GetWidth( framebuffer );
+	const int screenHeight = ksGpuFramebuffer_GetHeight( framebuffer );
+	ksScreenRect screenRect = ksClipRect_ToScreenRect( &barGraph->clipRect, screenWidth, screenHeight );
 	barGraph->compute.barGraphOffset.x = screenRect.x;
 #if defined( GRAPHICS_API_VULKAN )
 	barGraph->compute.barGraphOffset.y = screenHeight - 1 - screenRect.y;
@@ -12791,20 +12795,20 @@ static void BarGraph_RenderCompute( GpuCommandBuffer_t * commandBuffer, BarGraph
 	assert( screenRect.width % BARGRAPH_LOCAL_SIZE_X == 0 );
 	assert( screenRect.height % BARGRAPH_LOCAL_SIZE_Y == 0 );
 
-	GpuComputeCommand_t command;
-	GpuComputeCommand_Init( &command );
-	GpuComputeCommand_SetPipeline( &command, &barGraph->compute.pipeline );
-	GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_BAR_GRAPH_DEST, GpuFramebuffer_GetColorTexture( framebuffer ) );
-	GpuComputeCommand_SetParmBufferStorage( &command, COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_VALUES, &barGraph->compute.barValueBuffer );
-	GpuComputeCommand_SetParmBufferStorage( &command, COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_COLORS, &barGraph->compute.barColorBuffer );
-	GpuComputeCommand_SetParmFloatVector4( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BACK_GROUND_COLOR, &barGraph->backgroundColor );
-	GpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_GRAPH_OFFSET, &barGraph->compute.barGraphOffset );
-	GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_BARS, &barGraph->numBars );
-	GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_STACKED, &barGraph->numStacked );
-	GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_INDEX, &barGraph->barIndex );
-	GpuComputeCommand_SetDimensions( &command, screenRect.width / BARGRAPH_LOCAL_SIZE_X, screenRect.height / BARGRAPH_LOCAL_SIZE_Y, 1 );
+	ksGpuComputeCommand command;
+	ksGpuComputeCommand_Init( &command );
+	ksGpuComputeCommand_SetPipeline( &command, &barGraph->compute.pipeline );
+	ksGpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_BAR_GRAPH_DEST, ksGpuFramebuffer_GetColorTexture( framebuffer ) );
+	ksGpuComputeCommand_SetParmBufferStorage( &command, COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_VALUES, &barGraph->compute.barValueBuffer );
+	ksGpuComputeCommand_SetParmBufferStorage( &command, COMPUTE_PROGRAM_BUFFER_BAR_GRAPH_BAR_COLORS, &barGraph->compute.barColorBuffer );
+	ksGpuComputeCommand_SetParmFloatVector4( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BACK_GROUND_COLOR, &barGraph->backgroundColor );
+	ksGpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_GRAPH_OFFSET, &barGraph->compute.barGraphOffset );
+	ksGpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_BARS, &barGraph->numBars );
+	ksGpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_NUM_STACKED, &barGraph->numStacked );
+	ksGpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_BAR_GRAPH_BAR_INDEX, &barGraph->barIndex );
+	ksGpuComputeCommand_SetDimensions( &command, screenRect.width / BARGRAPH_LOCAL_SIZE_X, screenRect.height / BARGRAPH_LOCAL_SIZE_Y, 1 );
 
-	GpuCommandBuffer_SubmitComputeCommand( commandBuffer, &command );
+	ksGpuCommandBuffer_SubmitComputeCommand( commandBuffer, &command );
 }
 
 /*
@@ -12812,19 +12816,19 @@ static void BarGraph_RenderCompute( GpuCommandBuffer_t * commandBuffer, BarGraph
 
 Time warp bar graphs.
 
-TimeWarpBarGraphs_t
+ksTimeWarpBarGraphs
 
-static void TimeWarpBarGraphs_Create( GpuContext_t * context, TimeWarpBarGraphs_t * bargraphs, GpuRenderPass_t * renderPass );
-static void TimeWarpBarGraphs_Destroy( GpuContext_t * context, TimeWarpBarGraphs_t * bargraphs );
+static void ksTimeWarpBarGraphs_Create( ksGpuContext * context, ksTimeWarpBarGraphs * bargraphs, ksGpuRenderPass * renderPass );
+static void ksTimeWarpBarGraphs_Destroy( ksGpuContext * context, ksTimeWarpBarGraphs * bargraphs );
 
-static void TimeWarpBarGraphs_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs );
-static void TimeWarpBarGraphs_RenderGraphics( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs );
+static void ksTimeWarpBarGraphs_UpdateGraphics( ksGpuCommandBuffer * commandBuffer, ksTimeWarpBarGraphs * bargraphs );
+static void ksTimeWarpBarGraphs_RenderGraphics( ksGpuCommandBuffer * commandBuffer, ksTimeWarpBarGraphs * bargraphs );
 
-static void TimeWarpBarGraphs_UpdateCompute( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs );
-static void TimeWarpBarGraphs_RenderCompute( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs, GpuFramebuffer_t * framebuffer );
+static void ksTimeWarpBarGraphs_UpdateCompute( ksGpuCommandBuffer * commandBuffer, ksTimeWarpBarGraphs * bargraphs );
+static void ksTimeWarpBarGraphs_RenderCompute( ksGpuCommandBuffer * commandBuffer, ksTimeWarpBarGraphs * bargraphs, ksGpuFramebuffer * framebuffer );
 
-static float TimeWarpBarGraphs_GetGpuMillisecondsGraphics( TimeWarpBarGraphs_t * bargraphs );
-static float TimeWarpBarGraphs_GetGpuMillisecondsCompute( TimeWarpBarGraphs_t * bargraphs );
+static float ksTimeWarpBarGraphs_GetGpuMillisecondsGraphics( ksTimeWarpBarGraphs * bargraphs );
+static float ksTimeWarpBarGraphs_GetGpuMillisecondsCompute( ksTimeWarpBarGraphs * bargraphs );
 
 ================================================================================================================================
 */
@@ -12838,53 +12842,53 @@ static float TimeWarpBarGraphs_GetGpuMillisecondsCompute( TimeWarpBarGraphs_t * 
 #define BARGRAPH_INSET						16
 #endif
 
-static const ScreenRect_t eyeTextureFrameRateBarGraphRect			= { BARGRAPH_INSET + 0 * 264, BARGRAPH_INSET, 256, 128 };
-static const ScreenRect_t timeWarpFrameRateBarGraphRect				= { BARGRAPH_INSET + 1 * 264, BARGRAPH_INSET, 256, 128 };
-static const ScreenRect_t frameCpuTimeBarGraphRect					= { BARGRAPH_INSET + 2 * 264, BARGRAPH_INSET, 256, 128 };
-static const ScreenRect_t frameGpuTimeBarGraphRect					= { BARGRAPH_INSET + 3 * 264, BARGRAPH_INSET, 256, 128 };
+static const ksScreenRect eyeTextureFrameRateBarGraphRect			= { BARGRAPH_INSET + 0 * 264, BARGRAPH_INSET, 256, 128 };
+static const ksScreenRect timeWarpFrameRateBarGraphRect				= { BARGRAPH_INSET + 1 * 264, BARGRAPH_INSET, 256, 128 };
+static const ksScreenRect frameCpuTimeBarGraphRect					= { BARGRAPH_INSET + 2 * 264, BARGRAPH_INSET, 256, 128 };
+static const ksScreenRect frameGpuTimeBarGraphRect					= { BARGRAPH_INSET + 3 * 264, BARGRAPH_INSET, 256, 128 };
 
-static const ScreenRect_t multiViewBarGraphRect						= { 2 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 3 + 0 * 40, BARGRAPH_INSET, 32, 32 };
-static const ScreenRect_t correctChromaticAberrationBarGraphRect	= { 2 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 3 + 1 * 40, BARGRAPH_INSET, 32, 32 };
-static const ScreenRect_t timeWarpImplementationBarGraphRect		= { 2 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 3 + 2 * 40, BARGRAPH_INSET, 32, 32 };
+static const ksScreenRect multiViewBarGraphRect						= { 2 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 3 + 0 * 40, BARGRAPH_INSET, 32, 32 };
+static const ksScreenRect correctChromaticAberrationBarGraphRect	= { 2 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 3 + 1 * 40, BARGRAPH_INSET, 32, 32 };
+static const ksScreenRect timeWarpImplementationBarGraphRect		= { 2 * BARGRAPH_VIRTUAL_PIXELS_WIDE / 3 + 2 * 40, BARGRAPH_INSET, 32, 32 };
 
-static const ScreenRect_t displayResolutionLevelBarGraphRect		= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 7 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
-static const ScreenRect_t eyeImageResolutionLevelBarGraphRect		= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 6 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
-static const ScreenRect_t eyeImageSamplesLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 5 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ksScreenRect displayResolutionLevelBarGraphRect		= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 7 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ksScreenRect eyeImageResolutionLevelBarGraphRect		= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 6 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ksScreenRect eyeImageSamplesLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 5 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
 
-static const ScreenRect_t sceneDrawCallLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 3 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
-static const ScreenRect_t sceneTriangleLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 2 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
-static const ScreenRect_t sceneFragmentLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 1 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ksScreenRect sceneDrawCallLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 3 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ksScreenRect sceneTriangleLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 2 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
+static const ksScreenRect sceneFragmentLevelBarGraphRect			= { BARGRAPH_VIRTUAL_PIXELS_WIDE - 1 * 40 - BARGRAPH_INSET, BARGRAPH_INSET, 32, 128 };
 
 typedef enum
 {
 	BAR_GRAPH_HIDDEN,
 	BAR_GRAPH_VISIBLE,
 	BAR_GRAPH_PAUSED
-} BarGraphState_t;
+} ksBarGraphState;
 
 typedef struct
 {
-	BarGraphState_t	barGraphState;
+	ksBarGraphState	barGraphState;
 
-	BarGraph_t		eyeTexturesFrameRateGraph;
-	BarGraph_t		timeWarpFrameRateGraph;
-	BarGraph_t		frameCpuTimeBarGraph;
-	BarGraph_t		frameGpuTimeBarGraph;
+	ksBarGraph		eyeTexturesFrameRateGraph;
+	ksBarGraph		timeWarpFrameRateGraph;
+	ksBarGraph		frameCpuTimeBarGraph;
+	ksBarGraph		frameGpuTimeBarGraph;
 
-	BarGraph_t		multiViewBarGraph;
-	BarGraph_t		correctChromaticAberrationBarGraph;
-	BarGraph_t		timeWarpImplementationBarGraph;
+	ksBarGraph		multiViewBarGraph;
+	ksBarGraph		correctChromaticAberrationBarGraph;
+	ksBarGraph		timeWarpImplementationBarGraph;
 
-	BarGraph_t		displayResolutionLevelBarGraph;
-	BarGraph_t		eyeImageResolutionLevelBarGraph;
-	BarGraph_t		eyeImageSamplesLevelBarGraph;
+	ksBarGraph		displayResolutionLevelBarGraph;
+	ksBarGraph		eyeImageResolutionLevelBarGraph;
+	ksBarGraph		eyeImageSamplesLevelBarGraph;
 
-	BarGraph_t		sceneDrawCallLevelBarGraph;
-	BarGraph_t		sceneTriangleLevelBarGraph;
-	BarGraph_t		sceneFragmentLevelBarGraph;
+	ksBarGraph		sceneDrawCallLevelBarGraph;
+	ksBarGraph		sceneTriangleLevelBarGraph;
+	ksBarGraph		sceneFragmentLevelBarGraph;
 
-	GpuTimer_t		barGraphTimer;
-} TimeWarpBarGraphs_t;
+	ksGpuTimer		barGraphTimer;
+} ksTimeWarpBarGraphs;
 
 enum
 {
@@ -12896,7 +12900,7 @@ enum
 	PROFILE_TIME_MAX
 };
 
-static const Vector4f_t * profileTimeBarColors[] =
+static const ksVector4f * profileTimeBarColors[] =
 {
 	&colorPurple,
 	&colorGreen,
@@ -12905,181 +12909,181 @@ static const Vector4f_t * profileTimeBarColors[] =
 	&colorRed
 };
 
-static void BarGraph_CreateVirtualRect( GpuContext_t * context, BarGraph_t * barGraph, GpuRenderPass_t * renderPass,
-						const ScreenRect_t * virtualRect, const int numBars, const int numStacked, const Vector4f_t * backgroundColor )
+static void ksBarGraph_CreateVirtualRect( ksGpuContext * context, ksBarGraph * barGraph, ksGpuRenderPass * renderPass,
+						const ksScreenRect * virtualRect, const int numBars, const int numStacked, const ksVector4f * backgroundColor )
 {
-	const ClipRect_t clipRect = ScreenRect_ToClipRect( virtualRect, BARGRAPH_VIRTUAL_PIXELS_WIDE, BARGRAPH_VIRTUAL_PIXELS_HIGH );
-	BarGraph_Create( context, barGraph, renderPass, clipRect.x, clipRect.y, clipRect.width, clipRect.height, numBars, numStacked, backgroundColor );
+	const ksClipRect clipRect = ksScreenRect_ToClipRect( virtualRect, BARGRAPH_VIRTUAL_PIXELS_WIDE, BARGRAPH_VIRTUAL_PIXELS_HIGH );
+	ksBarGraph_Create( context, barGraph, renderPass, clipRect.x, clipRect.y, clipRect.width, clipRect.height, numBars, numStacked, backgroundColor );
 }
 
-static void TimeWarpBarGraphs_Create( GpuContext_t * context, TimeWarpBarGraphs_t * bargraphs, GpuRenderPass_t * renderPass )
+static void ksTimeWarpBarGraphs_Create( ksGpuContext * context, ksTimeWarpBarGraphs * bargraphs, ksGpuRenderPass * renderPass )
 {
 	bargraphs->barGraphState = BAR_GRAPH_VISIBLE;
 
-	BarGraph_CreateVirtualRect( context, &bargraphs->eyeTexturesFrameRateGraph, renderPass, &eyeTextureFrameRateBarGraphRect, 64, 1, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->timeWarpFrameRateGraph, renderPass, &timeWarpFrameRateBarGraphRect, 64, 1, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->frameCpuTimeBarGraph, renderPass, &frameCpuTimeBarGraphRect, 64, PROFILE_TIME_MAX, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->frameGpuTimeBarGraph, renderPass, &frameGpuTimeBarGraphRect, 64, PROFILE_TIME_MAX, &colorDarkGrey );
+	ksBarGraph_CreateVirtualRect( context, &bargraphs->eyeTexturesFrameRateGraph, renderPass, &eyeTextureFrameRateBarGraphRect, 64, 1, &colorDarkGrey );
+	ksBarGraph_CreateVirtualRect( context, &bargraphs->timeWarpFrameRateGraph, renderPass, &timeWarpFrameRateBarGraphRect, 64, 1, &colorDarkGrey );
+	ksBarGraph_CreateVirtualRect( context, &bargraphs->frameCpuTimeBarGraph, renderPass, &frameCpuTimeBarGraphRect, 64, PROFILE_TIME_MAX, &colorDarkGrey );
+	ksBarGraph_CreateVirtualRect( context, &bargraphs->frameGpuTimeBarGraph, renderPass, &frameGpuTimeBarGraphRect, 64, PROFILE_TIME_MAX, &colorDarkGrey );
 
-	BarGraph_CreateVirtualRect( context, &bargraphs->multiViewBarGraph, renderPass, &multiViewBarGraphRect, 1, 1, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->correctChromaticAberrationBarGraph, renderPass, &correctChromaticAberrationBarGraphRect, 1, 1, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->timeWarpImplementationBarGraph, renderPass, &timeWarpImplementationBarGraphRect, 1, 1, &colorDarkGrey );
+	ksBarGraph_CreateVirtualRect( context, &bargraphs->multiViewBarGraph, renderPass, &multiViewBarGraphRect, 1, 1, &colorDarkGrey );
+	ksBarGraph_CreateVirtualRect( context, &bargraphs->correctChromaticAberrationBarGraph, renderPass, &correctChromaticAberrationBarGraphRect, 1, 1, &colorDarkGrey );
+	ksBarGraph_CreateVirtualRect( context, &bargraphs->timeWarpImplementationBarGraph, renderPass, &timeWarpImplementationBarGraphRect, 1, 1, &colorDarkGrey );
 
-	BarGraph_CreateVirtualRect( context, &bargraphs->displayResolutionLevelBarGraph, renderPass, &displayResolutionLevelBarGraphRect, 1, 4, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->eyeImageResolutionLevelBarGraph, renderPass, &eyeImageResolutionLevelBarGraphRect, 1, 4, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->eyeImageSamplesLevelBarGraph, renderPass, &eyeImageSamplesLevelBarGraphRect, 1, 4, &colorDarkGrey );
+	ksBarGraph_CreateVirtualRect( context, &bargraphs->displayResolutionLevelBarGraph, renderPass, &displayResolutionLevelBarGraphRect, 1, 4, &colorDarkGrey );
+	ksBarGraph_CreateVirtualRect( context, &bargraphs->eyeImageResolutionLevelBarGraph, renderPass, &eyeImageResolutionLevelBarGraphRect, 1, 4, &colorDarkGrey );
+	ksBarGraph_CreateVirtualRect( context, &bargraphs->eyeImageSamplesLevelBarGraph, renderPass, &eyeImageSamplesLevelBarGraphRect, 1, 4, &colorDarkGrey );
 
-	BarGraph_CreateVirtualRect( context, &bargraphs->sceneDrawCallLevelBarGraph, renderPass, &sceneDrawCallLevelBarGraphRect, 1, 4, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->sceneTriangleLevelBarGraph, renderPass, &sceneTriangleLevelBarGraphRect, 1, 4, &colorDarkGrey );
-	BarGraph_CreateVirtualRect( context, &bargraphs->sceneFragmentLevelBarGraph, renderPass, &sceneFragmentLevelBarGraphRect, 1, 4, &colorDarkGrey );
+	ksBarGraph_CreateVirtualRect( context, &bargraphs->sceneDrawCallLevelBarGraph, renderPass, &sceneDrawCallLevelBarGraphRect, 1, 4, &colorDarkGrey );
+	ksBarGraph_CreateVirtualRect( context, &bargraphs->sceneTriangleLevelBarGraph, renderPass, &sceneTriangleLevelBarGraphRect, 1, 4, &colorDarkGrey );
+	ksBarGraph_CreateVirtualRect( context, &bargraphs->sceneFragmentLevelBarGraph, renderPass, &sceneFragmentLevelBarGraphRect, 1, 4, &colorDarkGrey );
 
-	BarGraph_AddBar( &bargraphs->displayResolutionLevelBarGraph, 0, 0.25f, &colorBlue, false );
-	BarGraph_AddBar( &bargraphs->eyeImageResolutionLevelBarGraph, 0, 0.25f, &colorBlue, false );
-	BarGraph_AddBar( &bargraphs->eyeImageSamplesLevelBarGraph, 0, 0.25f, &colorBlue, false );
+	ksBarGraph_AddBar( &bargraphs->displayResolutionLevelBarGraph, 0, 0.25f, &colorBlue, false );
+	ksBarGraph_AddBar( &bargraphs->eyeImageResolutionLevelBarGraph, 0, 0.25f, &colorBlue, false );
+	ksBarGraph_AddBar( &bargraphs->eyeImageSamplesLevelBarGraph, 0, 0.25f, &colorBlue, false );
 
-	BarGraph_AddBar( &bargraphs->sceneDrawCallLevelBarGraph, 0, 0.25f, &colorBlue, false );
-	BarGraph_AddBar( &bargraphs->sceneTriangleLevelBarGraph, 0, 0.25f, &colorBlue, false );
-	BarGraph_AddBar( &bargraphs->sceneFragmentLevelBarGraph, 0, 0.25f, &colorBlue, false );
+	ksBarGraph_AddBar( &bargraphs->sceneDrawCallLevelBarGraph, 0, 0.25f, &colorBlue, false );
+	ksBarGraph_AddBar( &bargraphs->sceneTriangleLevelBarGraph, 0, 0.25f, &colorBlue, false );
+	ksBarGraph_AddBar( &bargraphs->sceneFragmentLevelBarGraph, 0, 0.25f, &colorBlue, false );
 
-	GpuTimer_Create( context, &bargraphs->barGraphTimer );
+	ksGpuTimer_Create( context, &bargraphs->barGraphTimer );
 }
 
-static void TimeWarpBarGraphs_Destroy( GpuContext_t * context, TimeWarpBarGraphs_t * bargraphs )
+static void ksTimeWarpBarGraphs_Destroy( ksGpuContext * context, ksTimeWarpBarGraphs * bargraphs )
 {
-	BarGraph_Destroy( context, &bargraphs->eyeTexturesFrameRateGraph );
-	BarGraph_Destroy( context, &bargraphs->timeWarpFrameRateGraph );
-	BarGraph_Destroy( context, &bargraphs->frameCpuTimeBarGraph );
-	BarGraph_Destroy( context, &bargraphs->frameGpuTimeBarGraph );
+	ksBarGraph_Destroy( context, &bargraphs->eyeTexturesFrameRateGraph );
+	ksBarGraph_Destroy( context, &bargraphs->timeWarpFrameRateGraph );
+	ksBarGraph_Destroy( context, &bargraphs->frameCpuTimeBarGraph );
+	ksBarGraph_Destroy( context, &bargraphs->frameGpuTimeBarGraph );
 
-	BarGraph_Destroy( context, &bargraphs->multiViewBarGraph );
-	BarGraph_Destroy( context, &bargraphs->correctChromaticAberrationBarGraph );
-	BarGraph_Destroy( context, &bargraphs->timeWarpImplementationBarGraph );
+	ksBarGraph_Destroy( context, &bargraphs->multiViewBarGraph );
+	ksBarGraph_Destroy( context, &bargraphs->correctChromaticAberrationBarGraph );
+	ksBarGraph_Destroy( context, &bargraphs->timeWarpImplementationBarGraph );
 
-	BarGraph_Destroy( context, &bargraphs->displayResolutionLevelBarGraph );
-	BarGraph_Destroy( context, &bargraphs->eyeImageResolutionLevelBarGraph );
-	BarGraph_Destroy( context, &bargraphs->eyeImageSamplesLevelBarGraph );
+	ksBarGraph_Destroy( context, &bargraphs->displayResolutionLevelBarGraph );
+	ksBarGraph_Destroy( context, &bargraphs->eyeImageResolutionLevelBarGraph );
+	ksBarGraph_Destroy( context, &bargraphs->eyeImageSamplesLevelBarGraph );
 
-	BarGraph_Destroy( context, &bargraphs->sceneDrawCallLevelBarGraph );
-	BarGraph_Destroy( context, &bargraphs->sceneTriangleLevelBarGraph );
-	BarGraph_Destroy( context, &bargraphs->sceneFragmentLevelBarGraph );
+	ksBarGraph_Destroy( context, &bargraphs->sceneDrawCallLevelBarGraph );
+	ksBarGraph_Destroy( context, &bargraphs->sceneTriangleLevelBarGraph );
+	ksBarGraph_Destroy( context, &bargraphs->sceneFragmentLevelBarGraph );
 
-	GpuTimer_Destroy( context, &bargraphs->barGraphTimer );
+	ksGpuTimer_Destroy( context, &bargraphs->barGraphTimer );
 }
 
-static void TimeWarpBarGraphs_UpdateGraphics( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs )
+static void ksTimeWarpBarGraphs_UpdateGraphics( ksGpuCommandBuffer * commandBuffer, ksTimeWarpBarGraphs * bargraphs )
 {
 	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
 	{
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
+		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
+		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
+		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
+		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
 
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->multiViewBarGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
+		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->multiViewBarGraph );
+		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
+		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
 
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->displayResolutionLevelBarGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->eyeImageResolutionLevelBarGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->eyeImageSamplesLevelBarGraph );
+		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->displayResolutionLevelBarGraph );
+		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->eyeImageResolutionLevelBarGraph );
+		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->eyeImageSamplesLevelBarGraph );
 
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
-		BarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
+		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
+		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
+		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
 	}
 }
 
-static void TimeWarpBarGraphs_RenderGraphics( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs )
+static void ksTimeWarpBarGraphs_RenderGraphics( ksGpuCommandBuffer * commandBuffer, ksTimeWarpBarGraphs * bargraphs )
 {
 	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
 	{
-		GpuCommandBuffer_BeginTimer( commandBuffer, &bargraphs->barGraphTimer );
+		ksGpuCommandBuffer_BeginTimer( commandBuffer, &bargraphs->barGraphTimer );
 
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
+		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
+		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
+		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
+		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
 
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->multiViewBarGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
+		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->multiViewBarGraph );
+		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
+		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
 
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->displayResolutionLevelBarGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->eyeImageResolutionLevelBarGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->eyeImageSamplesLevelBarGraph );
+		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->displayResolutionLevelBarGraph );
+		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->eyeImageResolutionLevelBarGraph );
+		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->eyeImageSamplesLevelBarGraph );
 
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
-		BarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
+		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
+		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
+		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
 
-		GpuCommandBuffer_EndTimer( commandBuffer, &bargraphs->barGraphTimer );
+		ksGpuCommandBuffer_EndTimer( commandBuffer, &bargraphs->barGraphTimer );
 	}
 }
 
-static void TimeWarpBarGraphs_UpdateCompute( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs )
+static void ksTimeWarpBarGraphs_UpdateCompute( ksGpuCommandBuffer * commandBuffer, ksTimeWarpBarGraphs * bargraphs )
 {
 	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
 	{
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
+		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
+		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
+		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
+		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
 
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->multiViewBarGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
+		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->multiViewBarGraph );
+		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph );
+		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->timeWarpImplementationBarGraph );
 
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->displayResolutionLevelBarGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->eyeImageResolutionLevelBarGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->eyeImageSamplesLevelBarGraph );
+		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->displayResolutionLevelBarGraph );
+		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->eyeImageResolutionLevelBarGraph );
+		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->eyeImageSamplesLevelBarGraph );
 
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
-		BarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
+		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph );
+		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph );
+		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph );
 	}
 }
 
-static void TimeWarpBarGraphs_RenderCompute( GpuCommandBuffer_t * commandBuffer, TimeWarpBarGraphs_t * bargraphs, GpuFramebuffer_t * framebuffer )
+static void ksTimeWarpBarGraphs_RenderCompute( ksGpuCommandBuffer * commandBuffer, ksTimeWarpBarGraphs * bargraphs, ksGpuFramebuffer * framebuffer )
 {
 	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
 	{
-		GpuCommandBuffer_BeginTimer( commandBuffer, &bargraphs->barGraphTimer );
+		ksGpuCommandBuffer_BeginTimer( commandBuffer, &bargraphs->barGraphTimer );
 
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->timeWarpFrameRateGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->frameCpuTimeBarGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->frameGpuTimeBarGraph, framebuffer );
+		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph, framebuffer );
+		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->timeWarpFrameRateGraph, framebuffer );
+		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->frameCpuTimeBarGraph, framebuffer );
+		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->frameGpuTimeBarGraph, framebuffer );
 
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->multiViewBarGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->timeWarpImplementationBarGraph, framebuffer );
+		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->multiViewBarGraph, framebuffer );
+		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->correctChromaticAberrationBarGraph, framebuffer );
+		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->timeWarpImplementationBarGraph, framebuffer );
 
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->displayResolutionLevelBarGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->eyeImageResolutionLevelBarGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->eyeImageSamplesLevelBarGraph, framebuffer );
+		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->displayResolutionLevelBarGraph, framebuffer );
+		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->eyeImageResolutionLevelBarGraph, framebuffer );
+		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->eyeImageSamplesLevelBarGraph, framebuffer );
 
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph, framebuffer );
-		BarGraph_RenderCompute( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph, framebuffer );
+		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->sceneDrawCallLevelBarGraph, framebuffer );
+		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->sceneTriangleLevelBarGraph, framebuffer );
+		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->sceneFragmentLevelBarGraph, framebuffer );
 
-		GpuCommandBuffer_EndTimer( commandBuffer, &bargraphs->barGraphTimer );
+		ksGpuCommandBuffer_EndTimer( commandBuffer, &bargraphs->barGraphTimer );
 	}
 }
 
-static float TimeWarpBarGraphs_GetGpuMillisecondsGraphics( TimeWarpBarGraphs_t * bargraphs )
+static float ksTimeWarpBarGraphs_GetGpuMillisecondsGraphics( ksTimeWarpBarGraphs * bargraphs )
 {
 	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
 	{
-		return GpuTimer_GetMilliseconds( &bargraphs->barGraphTimer );
+		return ksGpuTimer_GetMilliseconds( &bargraphs->barGraphTimer );
 	}
 	return 0.0f;
 }
 
-static float TimeWarpBarGraphs_GetGpuMillisecondsCompute( TimeWarpBarGraphs_t * bargraphs )
+static float ksTimeWarpBarGraphs_GetGpuMillisecondsCompute( ksTimeWarpBarGraphs * bargraphs )
 {
 	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
 	{
-		return GpuTimer_GetMilliseconds( &bargraphs->barGraphTimer );
+		return ksGpuTimer_GetMilliseconds( &bargraphs->barGraphTimer );
 	}
 	return 0.0f;
 }
@@ -13089,7 +13093,8 @@ static float TimeWarpBarGraphs_GetGpuMillisecondsCompute( TimeWarpBarGraphs_t * 
 
 HMD
 
-HmdInfo_t
+ksHmdInfo
+ksBodyInfo
 
 ================================================================================================================================
 */
@@ -13114,16 +13119,16 @@ typedef struct
 	int		numKnots;
 	float	K[11];
 	float	chromaticAberration[4];
-} HmdInfo_t;
+} ksHmdInfo;
 
 typedef struct
 {
 	float	interpupillaryDistance;
-} BodyInfo_t;
+} ksBodyInfo;
 
-static const HmdInfo_t * GetDefaultHmdInfo( const int displayPixelsWide, const int displayPixelsHigh )
+static const ksHmdInfo * GetDefaultHmdInfo( const int displayPixelsWide, const int displayPixelsHigh )
 {
-	static HmdInfo_t hmdInfo;
+	static ksHmdInfo hmdInfo;
 	hmdInfo.displayPixelsWide = displayPixelsWide;
 	hmdInfo.displayPixelsHigh = displayPixelsHigh;
 	hmdInfo.tilePixelsWide = 32;
@@ -13155,20 +13160,20 @@ static const HmdInfo_t * GetDefaultHmdInfo( const int displayPixelsWide, const i
 	return &hmdInfo;
 }
 
-static const BodyInfo_t * GetDefaultBodyInfo()
+static const ksBodyInfo * GetDefaultBodyInfo()
 {
-	static BodyInfo_t bodyInfo;
+	static ksBodyInfo bodyInfo;
 	bodyInfo.interpupillaryDistance	= 0.0640f;	// average interpupillary distance
 	return &bodyInfo;
 }
 
 static bool hmd_headRotationDisabled = false;
 
-static void GetHmdViewMatrixForTime( Matrix4x4f_t * viewMatrix, const Microseconds_t time )
+static void GetHmdViewMatrixForTime( ksMatrix4x4f * viewMatrix, const ksMicroseconds time )
 {
 	if ( hmd_headRotationDisabled )
 	{
-		Matrix4x4f_CreateIdentity( viewMatrix );
+		ksMatrix4x4f_CreateIdentity( viewMatrix );
 		return;
 	}
 
@@ -13177,14 +13182,14 @@ static void GetHmdViewMatrixForTime( Matrix4x4f_t * viewMatrix, const Microsecon
 	const float degreesX = sinf( offset ) * degrees;
 	const float degreesY = cosf( offset ) * degrees;
 
-	Matrix4x4f_CreateRotation( viewMatrix, degreesX, degreesY, 0.0f );
+	ksMatrix4x4f_CreateRotation( viewMatrix, degreesX, degreesY, 0.0f );
 }
 
-static void CalculateTimeWarpTransform( Matrix4x4f_t * transform, const Matrix4x4f_t * renderProjectionMatrix,
-										const Matrix4x4f_t * renderViewMatrix, const Matrix4x4f_t * newViewMatrix )
+static void CalculateTimeWarpTransform( ksMatrix4x4f * transform, const ksMatrix4x4f * renderProjectionMatrix,
+										const ksMatrix4x4f * renderViewMatrix, const ksMatrix4x4f * newViewMatrix )
 {
 	// Convert the projection matrix from [-1, 1] space to [0, 1] space.
-	const Matrix4x4f_t texCoordProjection =
+	const ksMatrix4x4f texCoordProjection =
 	{ {
 		{ 0.5f * renderProjectionMatrix->m[0][0],        0.0f,                                           0.0f,  0.0f },
 		{ 0.0f,                                          0.5f * renderProjectionMatrix->m[1][1],         0.0f,  0.0f },
@@ -13194,14 +13199,14 @@ static void CalculateTimeWarpTransform( Matrix4x4f_t * transform, const Matrix4x
 
 	// Calculate the delta between the view matrix used for rendering and
 	// a more recent or predicted view matrix based on new sensor input.
-	Matrix4x4f_t inverseRenderViewMatrix;
-	Matrix4x4f_InvertHomogeneous( &inverseRenderViewMatrix, renderViewMatrix );
+	ksMatrix4x4f inverseRenderViewMatrix;
+	ksMatrix4x4f_InvertHomogeneous( &inverseRenderViewMatrix, renderViewMatrix );
 
-	Matrix4x4f_t deltaViewMatrix;
-	Matrix4x4f_Multiply( &deltaViewMatrix, &inverseRenderViewMatrix, newViewMatrix );
+	ksMatrix4x4f deltaViewMatrix;
+	ksMatrix4x4f_Multiply( &deltaViewMatrix, &inverseRenderViewMatrix, newViewMatrix );
 
-	Matrix4x4f_t inverseDeltaViewMatrix;
-	Matrix4x4f_InvertHomogeneous( &inverseDeltaViewMatrix, &deltaViewMatrix );
+	ksMatrix4x4f inverseDeltaViewMatrix;
+	ksMatrix4x4f_InvertHomogeneous( &inverseDeltaViewMatrix, &deltaViewMatrix );
 
 	// Make the delta rotation only.
 	inverseDeltaViewMatrix.m[3][0] = 0.0f;
@@ -13209,7 +13214,7 @@ static void CalculateTimeWarpTransform( Matrix4x4f_t * transform, const Matrix4x
 	inverseDeltaViewMatrix.m[3][2] = 0.0f;
 
 	// Accumulate the transforms.
-	Matrix4x4f_Multiply( transform, &texCoordProjection, &inverseDeltaViewMatrix );
+	ksMatrix4x4f_Multiply( transform, &texCoordProjection, &inverseDeltaViewMatrix );
 }
 
 /*
@@ -13217,7 +13222,7 @@ static void CalculateTimeWarpTransform( Matrix4x4f_t * transform, const Matrix4x
 
 Distortion meshes.
 
-MeshCoord_t
+ksMeshCoord
 
 ================================================================================================================================
 */
@@ -13226,7 +13231,7 @@ typedef struct
 {
 	float x;
 	float y;
-} MeshCoord_t;
+} ksMeshCoord;
 
 static float MaxFloat( float x, float y ) { return ( x > y ) ? x : y; }
 static float MinFloat( float x, float y ) { return ( x < y ) ? x : y; }
@@ -13279,7 +13284,7 @@ static float EvaluateCatmullRomSpline( const float value, float const * K, const
 	return res;
 }
 
-static void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS], const HmdInfo_t * hmdInfo )
+static void BuildDistortionMeshes( ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS], const ksHmdInfo * hmdInfo )
 {
 	const float horizontalShiftMeters = ( hmdInfo->lensSeparationInMeters / 2 ) - ( hmdInfo->visibleMetersWide / 4 );
 	const float horizontalShiftView = horizontalShiftMeters / ( hmdInfo->visibleMetersWide / 2 );
@@ -13334,17 +13339,17 @@ static void BuildDistortionMeshes( MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_
 
 Time warp graphics rendering.
 
-TimeWarpGraphics_t
+ksTimeWarpGraphics
 
-static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics,
-									const HmdInfo_t * hmdInfo, GpuRenderPass_t * renderPass );
-static void TimeWarpGraphics_Destroy( GpuContext_t * context, TimeWarpGraphics_t * graphics );
-static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpGraphics_t * graphics,
-									GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
-									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
-									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
-									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
-									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
+static void ksTimeWarpGraphics_Create( ksGpuContext * context, ksTimeWarpGraphics * graphics,
+									const ksHmdInfo * hmdInfo, ksGpuRenderPass * renderPass );
+static void ksTimeWarpGraphics_Destroy( ksGpuContext * context, ksTimeWarpGraphics * graphics );
+static void ksTimeWarpGraphics_Render( ksGpuCommandBuffer * commandBuffer, ksTimeWarpGraphics * graphics,
+									ksGpuFramebuffer * framebuffer, ksGpuRenderPass * renderPass,
+									const ksMicroseconds refreshStartTime, const ksMicroseconds refreshEndTime,
+									const ksMatrix4x4f * projectionMatrix, const ksMatrix4x4f * viewMatrix,
+									ksGpuTexture * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
+									const bool correctChromaticAberration, ksTimeWarpBarGraphs * bargraphs,
 									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] );
 
 ================================================================================================================================
@@ -13352,14 +13357,14 @@ static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWar
 
 typedef struct
 {
-	HmdInfo_t				hmdInfo;
-	GpuGeometry_t			distortionMesh[NUM_EYES];
-	GpuGraphicsProgram_t	timeWarpSpatialProgram;
-	GpuGraphicsProgram_t	timeWarpChromaticProgram;
-	GpuGraphicsPipeline_t	timeWarpSpatialPipeline[NUM_EYES];
-	GpuGraphicsPipeline_t	timeWarpChromaticPipeline[NUM_EYES];
-	GpuTimer_t				timeWarpGpuTime;
-} TimeWarpGraphics_t;
+	ksHmdInfo				hmdInfo;
+	ksGpuGeometry			distortionMesh[NUM_EYES];
+	ksGpuGraphicsProgram	timeWarpSpatialProgram;
+	ksGpuGraphicsProgram	timeWarpChromaticProgram;
+	ksGpuGraphicsPipeline	timeWarpSpatialPipeline[NUM_EYES];
+	ksGpuGraphicsPipeline	timeWarpChromaticPipeline[NUM_EYES];
+	ksGpuTimer				timeWarpGpuTime;
+} ksTimeWarpGraphics;
 
 enum
 {
@@ -13369,7 +13374,7 @@ enum
 	GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE
 };
 
-static const GpuProgramParm_t timeWarpSpatialGraphicsProgramParms[] =
+static const ksGpuProgramParm timeWarpSpatialGraphicsProgramParms[] =
 {
 	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"TimeWarpStartTransform",	0 },
 	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,	"TimeWarpEndTransform",		48 },
@@ -13525,7 +13530,7 @@ static const unsigned int timeWarpSpatialFragmentProgramSPIRV[] =
 	0x00010038
 };
 
-static const GpuProgramParm_t timeWarpChromaticGraphicsProgramParms[] =
+static const ksGpuProgramParm timeWarpChromaticGraphicsProgramParms[] =
 {
 	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM,	"TimeWarpStartTransform",	0 },
 	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM,	"TimeWarpEndTransform",		48 },
@@ -13776,35 +13781,35 @@ static const unsigned int timeWarpChromaticFragmentProgramSPIRV[] =
 	0x00000040,0x000100fd,0x00010038
 };
 
-static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t * graphics,
-									const HmdInfo_t * hmdInfo, GpuRenderPass_t * renderPass )
+static void ksTimeWarpGraphics_Create( ksGpuContext * context, ksTimeWarpGraphics * graphics,
+									const ksHmdInfo * hmdInfo, ksGpuRenderPass * renderPass )
 {
-	memset( graphics, 0, sizeof( TimeWarpGraphics_t ) );
+	memset( graphics, 0, sizeof( ksTimeWarpGraphics ) );
 
 	graphics->hmdInfo = *hmdInfo;
 
 	const int vertexCount = ( hmdInfo->eyeTilesHigh + 1 ) * ( hmdInfo->eyeTilesWide + 1 );
 	const int indexCount = hmdInfo->eyeTilesHigh * hmdInfo->eyeTilesWide * 6;
 
-	GpuTriangleIndex_t * indices = (GpuTriangleIndex_t *) malloc( indexCount * sizeof( indices[0] ) );
+	ksGpuTriangleIndex * indices = (ksGpuTriangleIndex *) malloc( indexCount * sizeof( indices[0] ) );
 	for ( int y = 0; y < hmdInfo->eyeTilesHigh; y++ )
 	{
 		for ( int x = 0; x < hmdInfo->eyeTilesWide; x++ )
 		{
 			const int offset = ( y * hmdInfo->eyeTilesWide + x ) * 6;
 
-			indices[offset + 0] = (GpuTriangleIndex_t)( ( y + 0 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 0 ) );
-			indices[offset + 1] = (GpuTriangleIndex_t)( ( y + 1 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 0 ) );
-			indices[offset + 2] = (GpuTriangleIndex_t)( ( y + 0 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 1 ) );
+			indices[offset + 0] = (ksGpuTriangleIndex)( ( y + 0 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 0 ) );
+			indices[offset + 1] = (ksGpuTriangleIndex)( ( y + 1 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 0 ) );
+			indices[offset + 2] = (ksGpuTriangleIndex)( ( y + 0 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 1 ) );
 
-			indices[offset + 3] = (GpuTriangleIndex_t)( ( y + 0 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 1 ) );
-			indices[offset + 4] = (GpuTriangleIndex_t)( ( y + 1 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 0 ) );
-			indices[offset + 5] = (GpuTriangleIndex_t)( ( y + 1 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 1 ) );
+			indices[offset + 3] = (ksGpuTriangleIndex)( ( y + 0 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 1 ) );
+			indices[offset + 4] = (ksGpuTriangleIndex)( ( y + 1 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 0 ) );
+			indices[offset + 5] = (ksGpuTriangleIndex)( ( y + 1 ) * ( hmdInfo->eyeTilesWide + 1 ) + ( x + 1 ) );
 		}
 	}
 
-	GpuVertexAttributeArrays_t vertexAttribs;
-	GpuVertexAttributeArrays_Alloc( &vertexAttribs.base,
+	ksGpuVertexAttributeArrays vertexAttribs;
+	ksGpuVertexAttributeArrays_Alloc( &vertexAttribs.base,
 									DefaultVertexAttributeLayout, vertexCount,
 									VERTEX_ATTRIBUTE_FLAG_POSITION |
 									VERTEX_ATTRIBUTE_FLAG_UV0 |
@@ -13812,8 +13817,8 @@ static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t 
 									VERTEX_ATTRIBUTE_FLAG_UV2 );
 
 	const int numMeshCoords = ( hmdInfo->eyeTilesWide + 1 ) * ( hmdInfo->eyeTilesHigh + 1 );
-	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t ) );
-	MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
+	ksMeshCoord * meshCoordsBasePtr = (ksMeshCoord *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( ksMeshCoord ) );
+	ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
 	{
 		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
 		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
@@ -13846,19 +13851,19 @@ static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t 
 			}
 		}
 
-		GpuGeometry_Create( context, &graphics->distortionMesh[eye], &vertexAttribs.base, vertexCount, indices, indexCount );
+		ksGpuGeometry_Create( context, &graphics->distortionMesh[eye], &vertexAttribs.base, vertexCount, indices, indexCount );
 	}
 
 	free( meshCoordsBasePtr );
-	GpuVertexAttributeArrays_Free( &vertexAttribs.base );
+	ksGpuVertexAttributeArrays_Free( &vertexAttribs.base );
 	free( indices );
 
-	GpuGraphicsProgram_Create( context, &graphics->timeWarpSpatialProgram,
+	ksGpuGraphicsProgram_Create( context, &graphics->timeWarpSpatialProgram,
 								PROGRAM( timeWarpSpatialVertexProgram ), sizeof( PROGRAM( timeWarpSpatialVertexProgram ) ),
 								PROGRAM( timeWarpSpatialFragmentProgram ), sizeof( PROGRAM( timeWarpSpatialFragmentProgram ) ),
 								timeWarpSpatialGraphicsProgramParms, ARRAY_SIZE( timeWarpSpatialGraphicsProgramParms ),
 								graphics->distortionMesh[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_UV1 );
-	GpuGraphicsProgram_Create( context, &graphics->timeWarpChromaticProgram,
+	ksGpuGraphicsProgram_Create( context, &graphics->timeWarpChromaticProgram,
 								PROGRAM( timeWarpChromaticVertexProgram ), sizeof( PROGRAM( timeWarpChromaticVertexProgram ) ),
 								PROGRAM( timeWarpChromaticFragmentProgram ), sizeof( PROGRAM( timeWarpChromaticFragmentProgram ) ),
 								timeWarpChromaticGraphicsProgramParms, ARRAY_SIZE( timeWarpChromaticGraphicsProgramParms ),
@@ -13867,8 +13872,8 @@ static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t 
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		GpuGraphicsPipelineParms_t pipelineParms;
-		GpuGraphicsPipelineParms_Init( &pipelineParms );
+		ksGpuGraphicsPipelineParms pipelineParms;
+		ksGpuGraphicsPipelineParms_Init( &pipelineParms );
 
 		pipelineParms.rop.depthTestEnable = false;
 		pipelineParms.rop.depthWriteEnable = false;
@@ -13876,108 +13881,108 @@ static void TimeWarpGraphics_Create( GpuContext_t * context, TimeWarpGraphics_t 
 		pipelineParms.program = &graphics->timeWarpSpatialProgram;
 		pipelineParms.geometry = &graphics->distortionMesh[eye];
 
-		GpuGraphicsPipeline_Create( context, &graphics->timeWarpSpatialPipeline[eye], &pipelineParms );
+		ksGpuGraphicsPipeline_Create( context, &graphics->timeWarpSpatialPipeline[eye], &pipelineParms );
 
 		pipelineParms.program = &graphics->timeWarpChromaticProgram;
 		pipelineParms.geometry = &graphics->distortionMesh[eye];
 
-		GpuGraphicsPipeline_Create( context, &graphics->timeWarpChromaticPipeline[eye], &pipelineParms );
+		ksGpuGraphicsPipeline_Create( context, &graphics->timeWarpChromaticPipeline[eye], &pipelineParms );
 	}
 
-	GpuTimer_Create( context, &graphics->timeWarpGpuTime );
+	ksGpuTimer_Create( context, &graphics->timeWarpGpuTime );
 }
 
-static void TimeWarpGraphics_Destroy( GpuContext_t * context, TimeWarpGraphics_t * graphics )
+static void ksTimeWarpGraphics_Destroy( ksGpuContext * context, ksTimeWarpGraphics * graphics )
 {
-	GpuTimer_Destroy( context, &graphics->timeWarpGpuTime );
+	ksGpuTimer_Destroy( context, &graphics->timeWarpGpuTime );
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		GpuGraphicsPipeline_Destroy( context, &graphics->timeWarpSpatialPipeline[eye] );
-		GpuGraphicsPipeline_Destroy( context, &graphics->timeWarpChromaticPipeline[eye] );
+		ksGpuGraphicsPipeline_Destroy( context, &graphics->timeWarpSpatialPipeline[eye] );
+		ksGpuGraphicsPipeline_Destroy( context, &graphics->timeWarpChromaticPipeline[eye] );
 	}
 
-	GpuGraphicsProgram_Destroy( context, &graphics->timeWarpSpatialProgram );
-	GpuGraphicsProgram_Destroy( context, &graphics->timeWarpChromaticProgram );
+	ksGpuGraphicsProgram_Destroy( context, &graphics->timeWarpSpatialProgram );
+	ksGpuGraphicsProgram_Destroy( context, &graphics->timeWarpChromaticProgram );
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		GpuGeometry_Destroy( context, &graphics->distortionMesh[eye] );
+		ksGpuGeometry_Destroy( context, &graphics->distortionMesh[eye] );
 	}
 }
 
-static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpGraphics_t * graphics,
-									GpuFramebuffer_t * framebuffer, GpuRenderPass_t * renderPass,
-									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
-									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
-									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
-									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
+static void ksTimeWarpGraphics_Render( ksGpuCommandBuffer * commandBuffer, ksTimeWarpGraphics * graphics,
+									ksGpuFramebuffer * framebuffer, ksGpuRenderPass * renderPass,
+									const ksMicroseconds refreshStartTime, const ksMicroseconds refreshEndTime,
+									const ksMatrix4x4f * projectionMatrix, const ksMatrix4x4f * viewMatrix,
+									ksGpuTexture * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
+									const bool correctChromaticAberration, ksTimeWarpBarGraphs * bargraphs,
 									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] )
 {
-	const Microseconds_t t0 = GetTimeMicroseconds();
+	const ksMicroseconds t0 = GetTimeMicroseconds();
 
-	Matrix4x4f_t displayRefreshStartViewMatrix;
-	Matrix4x4f_t displayRefreshEndViewMatrix;
+	ksMatrix4x4f displayRefreshStartViewMatrix;
+	ksMatrix4x4f displayRefreshEndViewMatrix;
 	GetHmdViewMatrixForTime( &displayRefreshStartViewMatrix, refreshStartTime );
 	GetHmdViewMatrixForTime( &displayRefreshEndViewMatrix, refreshEndTime );
 
-	Matrix4x4f_t timeWarpStartTransform;
-	Matrix4x4f_t timeWarpEndTransform;
+	ksMatrix4x4f timeWarpStartTransform;
+	ksMatrix4x4f timeWarpEndTransform;
 	CalculateTimeWarpTransform( &timeWarpStartTransform, projectionMatrix, viewMatrix, &displayRefreshStartViewMatrix );
 	CalculateTimeWarpTransform( &timeWarpEndTransform, projectionMatrix, viewMatrix, &displayRefreshEndViewMatrix );
 
-	Matrix3x4f_t timeWarpStartTransform3x4;
-	Matrix3x4f_t timeWarpEndTransform3x4;
-	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpStartTransform3x4, &timeWarpStartTransform );
-	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpEndTransform3x4, &timeWarpEndTransform );
+	ksMatrix3x4f timeWarpStartTransform3x4;
+	ksMatrix3x4f timeWarpEndTransform3x4;
+	ksMatrix3x4f_CreateFromMatrix4x4f( &timeWarpStartTransform3x4, &timeWarpStartTransform );
+	ksMatrix3x4f_CreateFromMatrix4x4f( &timeWarpEndTransform3x4, &timeWarpEndTransform );
 
-	const ScreenRect_t screenRect = GpuFramebuffer_GetRect( framebuffer );
+	const ksScreenRect screenRect = ksGpuFramebuffer_GetRect( framebuffer );
 
-	GpuCommandBuffer_BeginPrimary( commandBuffer );
-	GpuCommandBuffer_BeginFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
+	ksGpuCommandBuffer_BeginPrimary( commandBuffer );
+	ksGpuCommandBuffer_BeginFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
 
-	TimeWarpBarGraphs_UpdateGraphics( commandBuffer, bargraphs );
+	ksTimeWarpBarGraphs_UpdateGraphics( commandBuffer, bargraphs );
 
-	GpuCommandBuffer_BeginTimer( commandBuffer, &graphics->timeWarpGpuTime );
-	GpuCommandBuffer_BeginRenderPass( commandBuffer, renderPass, framebuffer, &screenRect );
+	ksGpuCommandBuffer_BeginTimer( commandBuffer, &graphics->timeWarpGpuTime );
+	ksGpuCommandBuffer_BeginRenderPass( commandBuffer, renderPass, framebuffer, &screenRect );
 
-	GpuCommandBuffer_SetViewport( commandBuffer, &screenRect );
-	GpuCommandBuffer_SetScissor( commandBuffer, &screenRect );
+	ksGpuCommandBuffer_SetViewport( commandBuffer, &screenRect );
+	ksGpuCommandBuffer_SetScissor( commandBuffer, &screenRect );
 
 	for ( int eye = 0; eye < NUM_EYES; eye ++ )
 	{
-		GpuGraphicsCommand_t command;
-		GpuGraphicsCommand_Init( &command );
-		GpuGraphicsCommand_SetPipeline( &command, correctChromaticAberration ? &graphics->timeWarpChromaticPipeline[eye] : &graphics->timeWarpSpatialPipeline[eye] );
-		GpuGraphicsCommand_SetParmFloatMatrix3x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform3x4 );
-		GpuGraphicsCommand_SetParmFloatMatrix3x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform3x4 );
-		GpuGraphicsCommand_SetParmInt( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER, &eyeArrayLayer[eye] );
-		GpuGraphicsCommand_SetParmTextureSampled( &command, GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE, eyeTexture[eye] );
+		ksGpuGraphicsCommand command;
+		ksGpuGraphicsCommand_Init( &command );
+		ksGpuGraphicsCommand_SetPipeline( &command, correctChromaticAberration ? &graphics->timeWarpChromaticPipeline[eye] : &graphics->timeWarpSpatialPipeline[eye] );
+		ksGpuGraphicsCommand_SetParmFloatMatrix3x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform3x4 );
+		ksGpuGraphicsCommand_SetParmFloatMatrix3x4( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform3x4 );
+		ksGpuGraphicsCommand_SetParmInt( &command, GRAPHICS_PROGRAM_UNIFORM_TIMEWARP_ARRAY_LAYER, &eyeArrayLayer[eye] );
+		ksGpuGraphicsCommand_SetParmTextureSampled( &command, GRAPHICS_PROGRAM_TEXTURE_TIMEWARP_SOURCE, eyeTexture[eye] );
 
-		GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
+		ksGpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
 	}
 
-	const Microseconds_t t1 = GetTimeMicroseconds();
+	const ksMicroseconds t1 = GetTimeMicroseconds();
 
-	TimeWarpBarGraphs_RenderGraphics( commandBuffer, bargraphs );
+	ksTimeWarpBarGraphs_RenderGraphics( commandBuffer, bargraphs );
 
-	GpuCommandBuffer_EndRenderPass( commandBuffer, renderPass );
-	GpuCommandBuffer_EndTimer( commandBuffer, &graphics->timeWarpGpuTime );
+	ksGpuCommandBuffer_EndRenderPass( commandBuffer, renderPass );
+	ksGpuCommandBuffer_EndTimer( commandBuffer, &graphics->timeWarpGpuTime );
 
-	GpuCommandBuffer_EndFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_PRESENTATION );
-	GpuCommandBuffer_EndPrimary( commandBuffer );
+	ksGpuCommandBuffer_EndFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_PRESENTATION );
+	ksGpuCommandBuffer_EndPrimary( commandBuffer );
 
-	GpuCommandBuffer_SubmitPrimary( commandBuffer );
+	ksGpuCommandBuffer_SubmitPrimary( commandBuffer );
 
-	const Microseconds_t t2 = GetTimeMicroseconds();
+	const ksMicroseconds t2 = GetTimeMicroseconds();
 
 	cpuTimes[PROFILE_TIME_TIME_WARP] = ( t1 - t0 ) * ( 1.0f / 1000.0f );
 	cpuTimes[PROFILE_TIME_BAR_GRAPHS] = ( t2 - t1 ) * ( 1.0f / 1000.0f );
 	cpuTimes[PROFILE_TIME_BLIT] = 0.0f;
 
-	const float barGraphGpuTime = TimeWarpBarGraphs_GetGpuMillisecondsGraphics( bargraphs );
+	const float barGraphGpuTime = ksTimeWarpBarGraphs_GetGpuMillisecondsGraphics( bargraphs );
 
-	gpuTimes[PROFILE_TIME_TIME_WARP] = GpuTimer_GetMilliseconds( &graphics->timeWarpGpuTime ) - barGraphGpuTime;
+	gpuTimes[PROFILE_TIME_TIME_WARP] = ksGpuTimer_GetMilliseconds( &graphics->timeWarpGpuTime ) - barGraphGpuTime;
 	gpuTimes[PROFILE_TIME_BAR_GRAPHS] = barGraphGpuTime;
 	gpuTimes[PROFILE_TIME_BLIT] = 0.0f;
 }
@@ -13987,17 +13992,17 @@ static void TimeWarpGraphics_Render( GpuCommandBuffer_t * commandBuffer, TimeWar
 
 Time warp compute rendering.
 
-TimeWarpCompute_t
+ksTimeWarpCompute
 
-static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute, const HmdInfo_t * hmdInfo,
-									GpuRenderPass_t * renderPass );
-static void TimeWarpCompute_Destroy( GpuContext_t * context, TimeWarpCompute_t * compute );
-static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpCompute_t * compute,
-									GpuFramebuffer_t * framebuffer,
-									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
-									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
-									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
-									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
+static void ksTimeWarpCompute_Create( ksGpuContext * context, ksTimeWarpCompute * compute, const ksHmdInfo * hmdInfo,
+									ksGpuRenderPass * renderPass );
+static void ksTimeWarpCompute_Destroy( ksGpuContext * context, ksTimeWarpCompute * compute );
+static void ksTimeWarpCompute_Render( ksGpuCommandBuffer * commandBuffer, ksTimeWarpCompute * compute,
+									ksGpuFramebuffer * framebuffer,
+									const ksMicroseconds refreshStartTime, const ksMicroseconds refreshEndTime,
+									const ksMatrix4x4f * projectionMatrix, const ksMatrix4x4f * viewMatrix,
+									ksGpuTexture * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
+									const bool correctChromaticAberration, ksTimeWarpBarGraphs * bargraphs,
 									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] );
 
 ================================================================================================================================
@@ -14005,17 +14010,17 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 
 typedef struct
 {
-	HmdInfo_t				hmdInfo;
-	GpuTexture_t			distortionImage[NUM_EYES][NUM_COLOR_CHANNELS];
-	GpuTexture_t			timeWarpImage[NUM_EYES][NUM_COLOR_CHANNELS];
-	GpuComputeProgram_t		timeWarpTransformProgram;
-	GpuComputeProgram_t		timeWarpSpatialProgram;
-	GpuComputeProgram_t		timeWarpChromaticProgram;
-	GpuComputePipeline_t	timeWarpTransformPipeline;
-	GpuComputePipeline_t	timeWarpSpatialPipeline;
-	GpuComputePipeline_t	timeWarpChromaticPipeline;
-	GpuTimer_t				timeWarpGpuTime;
-} TimeWarpCompute_t;
+	ksHmdInfo				hmdInfo;
+	ksGpuTexture			distortionImage[NUM_EYES][NUM_COLOR_CHANNELS];
+	ksGpuTexture			timeWarpImage[NUM_EYES][NUM_COLOR_CHANNELS];
+	ksGpuComputeProgram		timeWarpTransformProgram;
+	ksGpuComputeProgram		timeWarpSpatialProgram;
+	ksGpuComputeProgram		timeWarpChromaticProgram;
+	ksGpuComputePipeline	timeWarpTransformPipeline;
+	ksGpuComputePipeline	timeWarpSpatialPipeline;
+	ksGpuComputePipeline	timeWarpChromaticPipeline;
+	ksGpuTimer				timeWarpGpuTime;
+} ksTimeWarpCompute;
 
 enum
 {
@@ -14027,7 +14032,7 @@ enum
 	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM
 };
 
-static const GpuProgramParm_t timeWarpTransformComputeProgramParms[] =
+static const ksGpuProgramParm timeWarpTransformComputeProgramParms[] =
 {
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,					GPU_PROGRAM_PARM_ACCESS_WRITE_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_DST,		"dst",						0 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_SRC,		"src",						1 },
@@ -14204,7 +14209,7 @@ enum
 	COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET
 };
 
-static const GpuProgramParm_t timeWarpSpatialComputeProgramParms[] =
+static const ksGpuProgramParm timeWarpSpatialComputeProgramParms[] =
 {
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,				GPU_PROGRAM_PARM_ACCESS_WRITE_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_DEST,				"dest",				0 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_EYE_IMAGE,			"eyeImage",			1 },
@@ -14323,7 +14328,7 @@ static const unsigned int timeWarpSpatialComputeProgramSPIRV[] =
 	0x0000002f,0x00040063,0x00000043,0x0000004b,0x0000004c,0x000100fd,0x00010038
 };
 
-static const GpuProgramParm_t timeWarpChromaticComputeProgramParms[] =
+static const ksGpuProgramParm timeWarpChromaticComputeProgramParms[] =
 {
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_STORAGE,				GPU_PROGRAM_PARM_ACCESS_WRITE_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_DEST,				"dest",				0 },
 	{ GPU_PROGRAM_STAGE_COMPUTE, GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	COMPUTE_PROGRAM_TEXTURE_TIMEWARP_EYE_IMAGE,			"eyeImage",			1 },
@@ -14484,18 +14489,18 @@ static const unsigned int timeWarpChromaticComputeProgramSPIRV[] =
 	0x0000006e,0x00000076,0x00000077,0x000100fd,0x00010038
 };
 
-static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * compute,
-									const HmdInfo_t * hmdInfo, GpuRenderPass_t * renderPass )
+static void ksTimeWarpCompute_Create( ksGpuContext * context, ksTimeWarpCompute * compute,
+									const ksHmdInfo * hmdInfo, ksGpuRenderPass * renderPass )
 {
 	UNUSED_PARM( renderPass );
 
-	memset( compute, 0, sizeof( TimeWarpCompute_t ) );
+	memset( compute, 0, sizeof( ksTimeWarpCompute ) );
 
 	compute->hmdInfo = *hmdInfo;
 
 	const int numMeshCoords = ( hmdInfo->eyeTilesHigh + 1 ) * ( hmdInfo->eyeTilesWide + 1 );
-	MeshCoord_t * meshCoordsBasePtr = (MeshCoord_t *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( MeshCoord_t ) );
-	MeshCoord_t * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
+	ksMeshCoord * meshCoordsBasePtr = (ksMeshCoord *) malloc( NUM_EYES * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( ksMeshCoord ) );
+	ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
 	{
 		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
 		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
@@ -14515,10 +14520,10 @@ static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * 
 				rgbaFloat[i * 4 + 3] = 0.0f;
 			}
 			const size_t rgbaSize = numMeshCoords * 4 * sizeof( float );
-			GpuTexture_Create2D( context, &compute->distortionImage[eye][channel],
+			ksGpuTexture_Create2D( context, &compute->distortionImage[eye][channel],
 								GPU_TEXTURE_FORMAT_R32G32B32A32_SFLOAT, GPU_SAMPLE_COUNT_1,
 								hmdInfo->eyeTilesWide + 1, hmdInfo->eyeTilesHigh + 1, 1, GPU_TEXTURE_USAGE_STORAGE, rgbaFloat, rgbaSize );
-			GpuTexture_Create2D( context, &compute->timeWarpImage[eye][channel],
+			ksGpuTexture_Create2D( context, &compute->timeWarpImage[eye][channel],
 								GPU_TEXTURE_FORMAT_R16G16B16A16_SFLOAT, GPU_SAMPLE_COUNT_1,
 								hmdInfo->eyeTilesWide + 1, hmdInfo->eyeTilesHigh + 1, 1, GPU_TEXTURE_USAGE_STORAGE | GPU_TEXTURE_USAGE_SAMPLED, NULL, 0 );
 		}
@@ -14527,106 +14532,106 @@ static void TimeWarpCompute_Create( GpuContext_t * context, TimeWarpCompute_t * 
 
 	free( meshCoordsBasePtr );
 
-	GpuComputeProgram_Create( context, &compute->timeWarpTransformProgram,
+	ksGpuComputeProgram_Create( context, &compute->timeWarpTransformProgram,
 								PROGRAM( timeWarpTransformComputeProgram ), sizeof( PROGRAM( timeWarpTransformComputeProgram ) ),
 								timeWarpTransformComputeProgramParms, ARRAY_SIZE( timeWarpTransformComputeProgramParms ) );
-	GpuComputeProgram_Create( context, &compute->timeWarpSpatialProgram,
+	ksGpuComputeProgram_Create( context, &compute->timeWarpSpatialProgram,
 								PROGRAM( timeWarpSpatialComputeProgram ), sizeof( PROGRAM( timeWarpSpatialComputeProgram ) ),
 								timeWarpSpatialComputeProgramParms, ARRAY_SIZE( timeWarpSpatialComputeProgramParms ) );
-	GpuComputeProgram_Create( context, &compute->timeWarpChromaticProgram,
+	ksGpuComputeProgram_Create( context, &compute->timeWarpChromaticProgram,
 								PROGRAM( timeWarpChromaticComputeProgram ), sizeof( PROGRAM( timeWarpChromaticComputeProgram ) ),
 								timeWarpChromaticComputeProgramParms, ARRAY_SIZE( timeWarpChromaticComputeProgramParms ) );
 
-	GpuComputePipeline_Create( context, &compute->timeWarpTransformPipeline, &compute->timeWarpTransformProgram );
-	GpuComputePipeline_Create( context, &compute->timeWarpSpatialPipeline, &compute->timeWarpSpatialProgram );
-	GpuComputePipeline_Create( context, &compute->timeWarpChromaticPipeline, &compute->timeWarpChromaticProgram );
+	ksGpuComputePipeline_Create( context, &compute->timeWarpTransformPipeline, &compute->timeWarpTransformProgram );
+	ksGpuComputePipeline_Create( context, &compute->timeWarpSpatialPipeline, &compute->timeWarpSpatialProgram );
+	ksGpuComputePipeline_Create( context, &compute->timeWarpChromaticPipeline, &compute->timeWarpChromaticProgram );
 
-	GpuTimer_Create( context, &compute->timeWarpGpuTime );
+	ksGpuTimer_Create( context, &compute->timeWarpGpuTime );
 }
 
-static void TimeWarpCompute_Destroy( GpuContext_t * context, TimeWarpCompute_t * compute )
+static void ksTimeWarpCompute_Destroy( ksGpuContext * context, ksTimeWarpCompute * compute )
 {
-	GpuTimer_Destroy( context, &compute->timeWarpGpuTime );
+	ksGpuTimer_Destroy( context, &compute->timeWarpGpuTime );
 
-	GpuComputePipeline_Destroy( context, &compute->timeWarpTransformPipeline );
-	GpuComputePipeline_Destroy( context, &compute->timeWarpSpatialPipeline );
-	GpuComputePipeline_Destroy( context, &compute->timeWarpChromaticPipeline );
+	ksGpuComputePipeline_Destroy( context, &compute->timeWarpTransformPipeline );
+	ksGpuComputePipeline_Destroy( context, &compute->timeWarpSpatialPipeline );
+	ksGpuComputePipeline_Destroy( context, &compute->timeWarpChromaticPipeline );
 
-	GpuComputeProgram_Destroy( context, &compute->timeWarpTransformProgram );
-	GpuComputeProgram_Destroy( context, &compute->timeWarpSpatialProgram );
-	GpuComputeProgram_Destroy( context, &compute->timeWarpChromaticProgram );
+	ksGpuComputeProgram_Destroy( context, &compute->timeWarpTransformProgram );
+	ksGpuComputeProgram_Destroy( context, &compute->timeWarpSpatialProgram );
+	ksGpuComputeProgram_Destroy( context, &compute->timeWarpChromaticProgram );
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
 		for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
 		{
-			GpuTexture_Destroy( context, &compute->distortionImage[eye][channel] );
-			GpuTexture_Destroy( context, &compute->timeWarpImage[eye][channel] );
+			ksGpuTexture_Destroy( context, &compute->distortionImage[eye][channel] );
+			ksGpuTexture_Destroy( context, &compute->timeWarpImage[eye][channel] );
 		}
 	}
 
-	memset( compute, 0, sizeof( TimeWarpCompute_t ) );
+	memset( compute, 0, sizeof( ksTimeWarpCompute ) );
 }
 
-static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarpCompute_t * compute,
-									GpuFramebuffer_t * framebuffer,
-									const Microseconds_t refreshStartTime, const Microseconds_t refreshEndTime,
-									const Matrix4x4f_t * projectionMatrix, const Matrix4x4f_t * viewMatrix,
-									GpuTexture_t * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
-									const bool correctChromaticAberration, TimeWarpBarGraphs_t * bargraphs,
+static void ksTimeWarpCompute_Render( ksGpuCommandBuffer * commandBuffer, ksTimeWarpCompute * compute,
+									ksGpuFramebuffer * framebuffer,
+									const ksMicroseconds refreshStartTime, const ksMicroseconds refreshEndTime,
+									const ksMatrix4x4f * projectionMatrix, const ksMatrix4x4f * viewMatrix,
+									ksGpuTexture * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
+									const bool correctChromaticAberration, ksTimeWarpBarGraphs * bargraphs,
 									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] )
 {
-	const Microseconds_t t0 = GetTimeMicroseconds();
+	const ksMicroseconds t0 = GetTimeMicroseconds();
 
-	Matrix4x4f_t displayRefreshStartViewMatrix;
-	Matrix4x4f_t displayRefreshEndViewMatrix;
+	ksMatrix4x4f displayRefreshStartViewMatrix;
+	ksMatrix4x4f displayRefreshEndViewMatrix;
 	GetHmdViewMatrixForTime( &displayRefreshStartViewMatrix, refreshStartTime );
 	GetHmdViewMatrixForTime( &displayRefreshEndViewMatrix, refreshEndTime );
 
-	Matrix4x4f_t timeWarpStartTransform;
-	Matrix4x4f_t timeWarpEndTransform;
+	ksMatrix4x4f timeWarpStartTransform;
+	ksMatrix4x4f timeWarpEndTransform;
 	CalculateTimeWarpTransform( &timeWarpStartTransform, projectionMatrix, viewMatrix, &displayRefreshStartViewMatrix );
 	CalculateTimeWarpTransform( &timeWarpEndTransform, projectionMatrix, viewMatrix, &displayRefreshEndViewMatrix );
 
-	Matrix3x4f_t timeWarpStartTransform3x4;
-	Matrix3x4f_t timeWarpEndTransform3x4;
-	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpStartTransform3x4, &timeWarpStartTransform );
-	Matrix3x4f_CreateFromMatrix4x4f( &timeWarpEndTransform3x4, &timeWarpEndTransform );
+	ksMatrix3x4f timeWarpStartTransform3x4;
+	ksMatrix3x4f timeWarpEndTransform3x4;
+	ksMatrix3x4f_CreateFromMatrix4x4f( &timeWarpStartTransform3x4, &timeWarpStartTransform );
+	ksMatrix3x4f_CreateFromMatrix4x4f( &timeWarpEndTransform3x4, &timeWarpEndTransform );
 
-	GpuCommandBuffer_BeginPrimary( commandBuffer );
-	GpuCommandBuffer_BeginFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_STORAGE );
+	ksGpuCommandBuffer_BeginPrimary( commandBuffer );
+	ksGpuCommandBuffer_BeginFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_STORAGE );
 
-	GpuCommandBuffer_BeginTimer( commandBuffer, &compute->timeWarpGpuTime );
+	ksGpuCommandBuffer_BeginTimer( commandBuffer, &compute->timeWarpGpuTime );
 
 	for ( int eye = 0; eye < NUM_EYES; eye ++ )
 	{
 		for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
 		{
-			GpuCommandBuffer_ChangeTextureUsage( commandBuffer, &compute->timeWarpImage[eye][channel], GPU_TEXTURE_USAGE_STORAGE );
-			GpuCommandBuffer_ChangeTextureUsage( commandBuffer, &compute->distortionImage[eye][channel], GPU_TEXTURE_USAGE_STORAGE );
+			ksGpuCommandBuffer_ChangeTextureUsage( commandBuffer, &compute->timeWarpImage[eye][channel], GPU_TEXTURE_USAGE_STORAGE );
+			ksGpuCommandBuffer_ChangeTextureUsage( commandBuffer, &compute->distortionImage[eye][channel], GPU_TEXTURE_USAGE_STORAGE );
 		}
 	}
 
-	const Vector2i_t dimensions = { compute->hmdInfo.eyeTilesWide + 1, compute->hmdInfo.eyeTilesHigh + 1 };
+	const ksVector2i dimensions = { compute->hmdInfo.eyeTilesWide + 1, compute->hmdInfo.eyeTilesHigh + 1 };
 	const int eyeIndex[NUM_EYES] = { 0, 1 };
 
 	for ( int eye = 0; eye < NUM_EYES; eye ++ )
 	{
 		for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
 		{
-			GpuComputeCommand_t command;
-			GpuComputeCommand_Init( &command );
-			GpuComputeCommand_SetPipeline( &command, &compute->timeWarpTransformPipeline );
-			GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_DST, &compute->timeWarpImage[eye][channel] );
-			GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_SRC, &compute->distortionImage[eye][channel] );
-			GpuComputeCommand_SetParmFloatMatrix3x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform3x4 );
-			GpuComputeCommand_SetParmFloatMatrix3x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform3x4 );
-			GpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_DIMENSIONS, &dimensions );
-			GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE, &eyeIndex[eye] );
-			GpuComputeCommand_SetDimensions( &command, ( dimensions.x + TRANSFORM_LOCAL_SIZE_X - 1 ) / TRANSFORM_LOCAL_SIZE_X, 
+			ksGpuComputeCommand command;
+			ksGpuComputeCommand_Init( &command );
+			ksGpuComputeCommand_SetPipeline( &command, &compute->timeWarpTransformPipeline );
+			ksGpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_DST, &compute->timeWarpImage[eye][channel] );
+			ksGpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_TRANSFORM_SRC, &compute->distortionImage[eye][channel] );
+			ksGpuComputeCommand_SetParmFloatMatrix3x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_START_TRANSFORM, &timeWarpStartTransform3x4 );
+			ksGpuComputeCommand_SetParmFloatMatrix3x4( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_END_TRANSFORM, &timeWarpEndTransform3x4 );
+			ksGpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_DIMENSIONS, &dimensions );
+			ksGpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE, &eyeIndex[eye] );
+			ksGpuComputeCommand_SetDimensions( &command, ( dimensions.x + TRANSFORM_LOCAL_SIZE_X - 1 ) / TRANSFORM_LOCAL_SIZE_X, 
 														( dimensions.y + TRANSFORM_LOCAL_SIZE_Y - 1 ) / TRANSFORM_LOCAL_SIZE_Y, 1 );
 
-			GpuCommandBuffer_SubmitComputeCommand( commandBuffer, &command );
+			ksGpuCommandBuffer_SubmitComputeCommand( commandBuffer, &command );
 		}
 	}
 
@@ -14634,25 +14639,25 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 	{
 		for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
 		{
-			GpuCommandBuffer_ChangeTextureUsage( commandBuffer, &compute->timeWarpImage[eye][channel], GPU_TEXTURE_USAGE_SAMPLED );
+			ksGpuCommandBuffer_ChangeTextureUsage( commandBuffer, &compute->timeWarpImage[eye][channel], GPU_TEXTURE_USAGE_SAMPLED );
 		}
 	}
 
-	const int screenWidth = GpuFramebuffer_GetWidth( framebuffer );
-	const int screenHeight = GpuFramebuffer_GetHeight( framebuffer );
+	const int screenWidth = ksGpuFramebuffer_GetWidth( framebuffer );
+	const int screenHeight = ksGpuFramebuffer_GetHeight( framebuffer );
 	const int eyePixelsWide = screenWidth / NUM_EYES;
 	const int eyePixelsHigh = screenHeight * compute->hmdInfo.eyeTilesHigh * compute->hmdInfo.tilePixelsHigh / compute->hmdInfo.displayPixelsHigh;
-	const Vector2f_t imageScale =
+	const ksVector2f imageScale =
 	{
 		(float)compute->hmdInfo.eyeTilesWide / ( compute->hmdInfo.eyeTilesWide + 1 ) / eyePixelsWide,
 		(float)compute->hmdInfo.eyeTilesHigh / ( compute->hmdInfo.eyeTilesHigh + 1 ) / eyePixelsHigh
 	};
-	const Vector2f_t imageBias =
+	const ksVector2f imageBias =
 	{
 		0.5f / ( compute->hmdInfo.eyeTilesWide + 1 ),
 		0.5f / ( compute->hmdInfo.eyeTilesHigh + 1 )
 	};
-	const Vector2i_t eyePixelOffset[NUM_EYES] =
+	const ksVector2i eyePixelOffset[NUM_EYES] =
 	{
 #if defined( GRAPHICS_API_VULKAN )
 		{ 0 * eyePixelsWide, screenHeight - eyePixelsHigh },
@@ -14668,45 +14673,45 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 		assert( screenWidth % ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_X : SPATIAL_LOCAL_SIZE_X ) == 0 );
 		assert( screenHeight % ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_Y : SPATIAL_LOCAL_SIZE_Y ) == 0 );
 
-		GpuComputeCommand_t command;
-		GpuComputeCommand_Init( &command );
-		GpuComputeCommand_SetPipeline( &command, correctChromaticAberration ? &compute->timeWarpChromaticPipeline : &compute->timeWarpSpatialPipeline );
-		GpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_DEST, GpuFramebuffer_GetColorTexture( framebuffer ) );
-		GpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_EYE_IMAGE, eyeTexture[eye] );
-		GpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_R, &compute->timeWarpImage[eye][0] );
-		GpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_G, &compute->timeWarpImage[eye][1] );
-		GpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_B, &compute->timeWarpImage[eye][2] );
-		GpuComputeCommand_SetParmFloatVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE, &imageScale );
-		GpuComputeCommand_SetParmFloatVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS, &imageBias );
-		GpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET, &eyePixelOffset[eye] );
-		GpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER, &eyeArrayLayer[eye] );
-		GpuComputeCommand_SetDimensions( &command, screenWidth / ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_X : SPATIAL_LOCAL_SIZE_X ) / 2,
+		ksGpuComputeCommand command;
+		ksGpuComputeCommand_Init( &command );
+		ksGpuComputeCommand_SetPipeline( &command, correctChromaticAberration ? &compute->timeWarpChromaticPipeline : &compute->timeWarpSpatialPipeline );
+		ksGpuComputeCommand_SetParmTextureStorage( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_DEST, ksGpuFramebuffer_GetColorTexture( framebuffer ) );
+		ksGpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_EYE_IMAGE, eyeTexture[eye] );
+		ksGpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_R, &compute->timeWarpImage[eye][0] );
+		ksGpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_G, &compute->timeWarpImage[eye][1] );
+		ksGpuComputeCommand_SetParmTextureSampled( &command, COMPUTE_PROGRAM_TEXTURE_TIMEWARP_WARP_IMAGE_B, &compute->timeWarpImage[eye][2] );
+		ksGpuComputeCommand_SetParmFloatVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_SCALE, &imageScale );
+		ksGpuComputeCommand_SetParmFloatVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_BIAS, &imageBias );
+		ksGpuComputeCommand_SetParmIntVector2( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_EYE_PIXEL_OFFSET, &eyePixelOffset[eye] );
+		ksGpuComputeCommand_SetParmInt( &command, COMPUTE_PROGRAM_UNIFORM_TIMEWARP_IMAGE_LAYER, &eyeArrayLayer[eye] );
+		ksGpuComputeCommand_SetDimensions( &command, screenWidth / ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_X : SPATIAL_LOCAL_SIZE_X ) / 2,
 													screenHeight / ( correctChromaticAberration ? CHROMATIC_LOCAL_SIZE_Y : SPATIAL_LOCAL_SIZE_Y ), 1 );
 
-		GpuCommandBuffer_SubmitComputeCommand( commandBuffer, &command );
+		ksGpuCommandBuffer_SubmitComputeCommand( commandBuffer, &command );
 	}
 
-	const Microseconds_t t1 = GetTimeMicroseconds();
+	const ksMicroseconds t1 = GetTimeMicroseconds();
 
-	TimeWarpBarGraphs_UpdateCompute( commandBuffer, bargraphs );
-	TimeWarpBarGraphs_RenderCompute( commandBuffer, bargraphs, framebuffer );
+	ksTimeWarpBarGraphs_UpdateCompute( commandBuffer, bargraphs );
+	ksTimeWarpBarGraphs_RenderCompute( commandBuffer, bargraphs, framebuffer );
 
-	GpuCommandBuffer_EndTimer( commandBuffer, &compute->timeWarpGpuTime );
+	ksGpuCommandBuffer_EndTimer( commandBuffer, &compute->timeWarpGpuTime );
 
-	GpuCommandBuffer_EndFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_PRESENTATION );
-	GpuCommandBuffer_EndPrimary( commandBuffer );
+	ksGpuCommandBuffer_EndFramebuffer( commandBuffer, framebuffer, 0, GPU_TEXTURE_USAGE_PRESENTATION );
+	ksGpuCommandBuffer_EndPrimary( commandBuffer );
 
-	GpuCommandBuffer_SubmitPrimary( commandBuffer );
+	ksGpuCommandBuffer_SubmitPrimary( commandBuffer );
 
-	const Microseconds_t t2 = GetTimeMicroseconds();
+	const ksMicroseconds t2 = GetTimeMicroseconds();
 
 	cpuTimes[PROFILE_TIME_TIME_WARP] = ( t1 - t0 ) * ( 1.0f / 1000.0f );
 	cpuTimes[PROFILE_TIME_BAR_GRAPHS] = ( t2 - t1 ) * ( 1.0f / 1000.0f );
 	cpuTimes[PROFILE_TIME_BLIT] = 0.0f;
 
-	const float barGraphGpuTime = TimeWarpBarGraphs_GetGpuMillisecondsCompute( bargraphs );
+	const float barGraphGpuTime = ksTimeWarpBarGraphs_GetGpuMillisecondsCompute( bargraphs );
 
-	gpuTimes[PROFILE_TIME_TIME_WARP] = GpuTimer_GetMilliseconds( &compute->timeWarpGpuTime ) - barGraphGpuTime;
+	gpuTimes[PROFILE_TIME_TIME_WARP] = ksGpuTimer_GetMilliseconds( &compute->timeWarpGpuTime ) - barGraphGpuTime;
 	gpuTimes[PROFILE_TIME_BAR_GRAPHS] = barGraphGpuTime;
 	gpuTimes[PROFILE_TIME_BLIT] = 0.0f;
 }
@@ -14716,33 +14721,34 @@ static void TimeWarpCompute_Render( GpuCommandBuffer_t * commandBuffer, TimeWarp
 
 Time warp rendering.
 
-TimeWarp_t
+ksTimeWarp
+ksTimeWarpImplementation
 
-static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window );
-static void TimeWarp_Destroy( TimeWarp_t * timeWarp, GpuWindow_t * window );
+static void ksTimeWarp_Create( ksTimeWarp * timeWarp, ksGpuWindow * window );
+static void ksTimeWarp_Destroy( ksTimeWarp * timeWarp, ksGpuWindow * window );
 
-static void TimeWarp_SetBarGraphState( TimeWarp_t * timeWarp, const BarGraphState_t state );
-static void TimeWarp_CycleBarGraphState( TimeWarp_t * timeWarp );
-static void TimeWarp_SetImplementation( TimeWarp_t * timeWarp, const TimeWarpImplementation_t implementation );
-static void TimeWarp_CycleImplementation( TimeWarp_t * timeWarp );
-static void TimeWarp_SetChromaticAberrationCorrection( TimeWarp_t * timeWarp, const bool set );
-static void TimeWarp_ToggleChromaticAberrationCorrection( TimeWarp_t * timeWarp );
-static void TimeWarp_SetMultiView( TimeWarp_t * timeWarp, const bool enabled );
+static void ksTimeWarp_SetBarGraphState( ksTimeWarp * timeWarp, const ksBarGraphState state );
+static void ksTimeWarp_CycleBarGraphState( ksTimeWarp * timeWarp );
+static void ksTimeWarp_SetImplementation( ksTimeWarp * timeWarp, const ksTimeWarpImplementation implementation );
+static void ksTimeWarp_CycleImplementation( ksTimeWarp * timeWarp );
+static void ksTimeWarp_SetChromaticAberrationCorrection( ksTimeWarp * timeWarp, const bool set );
+static void ksTimeWarp_ToggleChromaticAberrationCorrection( ksTimeWarp * timeWarp );
+static void ksTimeWarp_SetMultiView( ksTimeWarp * timeWarp, const bool enabled );
 
-static void TimeWarp_SetDisplayResolutionLevel( TimeWarp_t * timeWarp, const int level );
-static void TimeWarp_SetEyeImageResolutionLevel( TimeWarp_t * timeWarp, const int level );
-static void TimeWarp_SetEyeImageSamplesLevel( TimeWarp_t * timeWarp, const int level );
+static void ksTimeWarp_SetDisplayResolutionLevel( ksTimeWarp * timeWarp, const int level );
+static void ksTimeWarp_SetEyeImageResolutionLevel( ksTimeWarp * timeWarp, const int level );
+static void ksTimeWarp_SetEyeImageSamplesLevel( ksTimeWarp * timeWarp, const int level );
 
-static void TimeWarp_SetDrawCallLevel( TimeWarp_t * timeWarp, const int level );
-static void TimeWarp_SetTriangleLevel( TimeWarp_t * timeWarp, const int level );
-static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level );
+static void ksTimeWarp_SetDrawCallLevel( ksTimeWarp * timeWarp, const int level );
+static void ksTimeWarp_SetTriangleLevel( ksTimeWarp * timeWarp, const int level );
+static void ksTimeWarp_SetFragmentLevel( ksTimeWarp * timeWarp, const int level );
 
-static Microseconds_t TimeWarp_GetPredictedDisplayTime( TimeWarp_t * timeWarp, const int frameIndex );
-static void TimeWarp_SubmitFrame( TimeWarp_t * timeWarp, const int frameIndex, const Microseconds_t displayTime,
-									const Matrix4x4f_t * viewMatrix, const Matrix4x4_t * projectionMatrix,
-									GpuTexture_t * eyeTexture[NUM_EYES], GpuFence_t * eyeCompletionFence[NUM_EYES],
+static ksMicroseconds ksTimeWarp_GetPredictedDisplayTime( ksTimeWarp * timeWarp, const int frameIndex );
+static void ksTimeWarp_SubmitFrame( ksTimeWarp * timeWarp, const int frameIndex, const ksMicroseconds displayTime,
+									const ksMatrix4x4f * viewMatrix, const Matrix4x4_t * projectionMatrix,
+									ksGpuTexture * eyeTexture[NUM_EYES], ksGpuFence * eyeCompletionFence[NUM_EYES],
 									int eyeArrayLayer[NUM_EYES], float eyeTexturesCpuTime, float eyeTexturesGpuTime );
-static void TimeWarp_Render( TimeWarp_t * timeWarp );
+static void ksTimeWarp_Render( ksTimeWarp * timeWarp );
 
 ================================================================================================================================
 */
@@ -14754,81 +14760,81 @@ typedef enum
 	TIMEWARP_IMPLEMENTATION_GRAPHICS,
 	TIMEWARP_IMPLEMENTATION_COMPUTE,
 	TIMEWARP_IMPLEMENTATION_MAX
-} TimeWarpImplementation_t;
+} ksTimeWarpImplementation;
 
 typedef struct
 {
 	int							index;
 	int							frameIndex;
-	Microseconds_t				displayTime;
-	Matrix4x4f_t				viewMatrix;
-	Matrix4x4f_t				projectionMatrix;
-	GpuTexture_t *				texture[NUM_EYES];
-	GpuFence_t *				completionFence[NUM_EYES];
+	ksMicroseconds				displayTime;
+	ksMatrix4x4f				viewMatrix;
+	ksMatrix4x4f				projectionMatrix;
+	ksGpuTexture *				texture[NUM_EYES];
+	ksGpuFence *				completionFence[NUM_EYES];
 	int							arrayLayer[NUM_EYES];
 	float						cpuTime;
 	float						gpuTime;
-} EyeTextures_t;
+} ksEyeTextures;
 
 typedef struct
 {
 	long long					frameIndex;
-	Microseconds_t				vsyncTime;
-	Microseconds_t				frameTime;
-} FrameTiming_t;
+	ksMicroseconds				vsyncTime;
+	ksMicroseconds				frameTime;
+} ksFrameTiming;
 
 typedef struct
 {
-	GpuWindow_t *				window;
-	GpuTexture_t				defaultTexture;
-	Microseconds_t				displayTime;
-	Matrix4x4f_t				viewMatrix;
-	Matrix4x4f_t				projectionMatrix;
-	GpuTexture_t *				eyeTexture[NUM_EYES];
+	ksGpuWindow *				window;
+	ksGpuTexture				defaultTexture;
+	ksMicroseconds				displayTime;
+	ksMatrix4x4f				viewMatrix;
+	ksMatrix4x4f				projectionMatrix;
+	ksGpuTexture *				eyeTexture[NUM_EYES];
 	int							eyeArrayLayer[NUM_EYES];
 
-	Mutex_t						newEyeTexturesMutex;
-	Signal_t					newEyeTexturesConsumed;
-	EyeTextures_t				newEyeTextures;
+	ksMutex						newEyeTexturesMutex;
+	ksSignal					newEyeTexturesConsumed;
+	ksEyeTextures				newEyeTextures;
 	int							eyeTexturesPresentIndex;
 	int							eyeTexturesConsumedIndex;
 
-	FrameTiming_t				frameTiming;
-	Mutex_t						frameTimingMutex;
-	Signal_t					vsyncSignal;
+	ksFrameTiming				frameTiming;
+	ksMutex						frameTimingMutex;
+	ksSignal					vsyncSignal;
 
 	float						refreshRate;
-	Microseconds_t				frameCpuTime[AVERAGE_FRAME_RATE_FRAMES];
+	ksMicroseconds				frameCpuTime[AVERAGE_FRAME_RATE_FRAMES];
 	int							eyeTexturesFrames[AVERAGE_FRAME_RATE_FRAMES];
 	int							timeWarpFrames;
 	float						cpuTimes[PROFILE_TIME_MAX];
 	float						gpuTimes[PROFILE_TIME_MAX];
 
-	GpuRenderPass_t				renderPass;
-	GpuFramebuffer_t			framebuffer;
-	GpuCommandBuffer_t			commandBuffer;
+	ksGpuRenderPass				renderPass;
+	ksGpuFramebuffer			framebuffer;
+	ksGpuCommandBuffer			commandBuffer;
 	bool						correctChromaticAberration;
-	TimeWarpImplementation_t	implementation;
-	TimeWarpGraphics_t			graphics;
-	TimeWarpCompute_t			compute;
-	TimeWarpBarGraphs_t			bargraphs;
-} TimeWarp_t;
+	ksTimeWarpImplementation	implementation;
+	ksTimeWarpGraphics			graphics;
+	ksTimeWarpCompute			compute;
+	ksTimeWarpBarGraphs			bargraphs;
+} ksTimeWarp;
 
-static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
+static void ksTimeWarp_Create( ksTimeWarp * timeWarp, ksGpuWindow * window )
 {
 	timeWarp->window = window;
 
-	GpuTexture_CreateDefault( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_DEFAULT_CIRCLES, 1024, 1024, 0, 2, 1, false, true );
-	GpuTexture_SetWrapMode( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
+	ksGpuTexture_CreateDefault( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_DEFAULT_CIRCLES, 1024, 1024, 0, 2, 1, false, true );
+	ksGpuTexture_SetWrapMode( &window->context, &timeWarp->defaultTexture, GPU_TEXTURE_WRAP_MODE_CLAMP_TO_BORDER );
 
-	Mutex_Create( &timeWarp->newEyeTexturesMutex );
-	Signal_Create( &timeWarp->newEyeTexturesConsumed, true );
-	Signal_Raise( &timeWarp->newEyeTexturesConsumed );
+	ksMutex_Create( &timeWarp->newEyeTexturesMutex );
+	ksSignal_Create( &timeWarp->newEyeTexturesConsumed, true );
+	ksSignal_Raise( &timeWarp->newEyeTexturesConsumed );
 
 	timeWarp->newEyeTextures.index = 0;
 	timeWarp->newEyeTextures.displayTime = 0;
-	Matrix4x4f_CreateIdentity( &timeWarp->newEyeTextures.viewMatrix );
-	Matrix4x4f_CreateProjectionFov( &timeWarp->newEyeTextures.projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
+	ksMatrix4x4f_CreateIdentity( &timeWarp->newEyeTextures.viewMatrix );
+	ksMatrix4x4f_CreateProjectionFov( &timeWarp->newEyeTextures.projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
 		timeWarp->newEyeTextures.texture[eye] = &timeWarp->defaultTexture;
@@ -14853,8 +14859,8 @@ static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	timeWarp->frameTiming.frameIndex = 0;
 	timeWarp->frameTiming.vsyncTime = 0;
 	timeWarp->frameTiming.frameTime = 0;
-	Mutex_Create( &timeWarp->frameTimingMutex );
-	Signal_Create( &timeWarp->vsyncSignal, false );
+	ksMutex_Create( &timeWarp->frameTimingMutex );
+	ksSignal_Create( &timeWarp->vsyncSignal, false );
 
 	timeWarp->refreshRate = window->windowRefreshRate;
 	for ( int i = 0; i < AVERAGE_FRAME_RATE_FRAMES; i++ )
@@ -14864,163 +14870,162 @@ static void TimeWarp_Create( TimeWarp_t * timeWarp, GpuWindow_t * window )
 	}
 	timeWarp->timeWarpFrames = 0;
 
-	GpuRenderPass_Create( &window->context, &timeWarp->renderPass, window->colorFormat, window->depthFormat,
+	ksGpuRenderPass_Create( &window->context, &timeWarp->renderPass, window->colorFormat, window->depthFormat,
 							GPU_SAMPLE_COUNT_1, GPU_RENDERPASS_TYPE_INLINE,
 							GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER );
-	GpuFramebuffer_CreateFromSwapchain( window, &timeWarp->framebuffer, &timeWarp->renderPass );
-	GpuCommandBuffer_Create( &window->context, &timeWarp->commandBuffer, GPU_COMMAND_BUFFER_TYPE_PRIMARY, GpuFramebuffer_GetBufferCount( &timeWarp->framebuffer ) );
+	ksGpuFramebuffer_CreateFromSwapchain( window, &timeWarp->framebuffer, &timeWarp->renderPass );
+	ksGpuCommandBuffer_Create( &window->context, &timeWarp->commandBuffer, GPU_COMMAND_BUFFER_TYPE_PRIMARY, ksGpuFramebuffer_GetBufferCount( &timeWarp->framebuffer ) );
 
 	timeWarp->correctChromaticAberration = false;
 	timeWarp->implementation = TIMEWARP_IMPLEMENTATION_GRAPHICS;
 
-	const HmdInfo_t * hmdInfo = GetDefaultHmdInfo( window->windowWidth, window->windowHeight );
+	const ksHmdInfo * hmdInfo = GetDefaultHmdInfo( window->windowWidth, window->windowHeight );
 
-	TimeWarpGraphics_Create( &window->context, &timeWarp->graphics, hmdInfo, &timeWarp->renderPass );
-	TimeWarpCompute_Create( &window->context, &timeWarp->compute, hmdInfo, &timeWarp->renderPass );
-	TimeWarpBarGraphs_Create( &window->context, &timeWarp->bargraphs, &timeWarp->renderPass );
+	ksTimeWarpGraphics_Create( &window->context, &timeWarp->graphics, hmdInfo, &timeWarp->renderPass );
+	ksTimeWarpCompute_Create( &window->context, &timeWarp->compute, hmdInfo, &timeWarp->renderPass );
+	ksTimeWarpBarGraphs_Create( &window->context, &timeWarp->bargraphs, &timeWarp->renderPass );
 
 	memset( timeWarp->cpuTimes, 0, sizeof( timeWarp->cpuTimes ) );
 	memset( timeWarp->gpuTimes, 0, sizeof( timeWarp->gpuTimes ) );
 }
 
-static void TimeWarp_Destroy( TimeWarp_t * timeWarp, GpuWindow_t * window )
+static void ksTimeWarp_Destroy( ksTimeWarp * timeWarp, ksGpuWindow * window )
 {
-	GpuContext_WaitIdle( &window->context );
+	ksGpuContext_WaitIdle( &window->context );
 
-	TimeWarpGraphics_Destroy( &window->context, &timeWarp->graphics );
-	TimeWarpCompute_Destroy( &window->context, &timeWarp->compute );
-	TimeWarpBarGraphs_Destroy( &window->context, &timeWarp->bargraphs );
+	ksTimeWarpGraphics_Destroy( &window->context, &timeWarp->graphics );
+	ksTimeWarpCompute_Destroy( &window->context, &timeWarp->compute );
+	ksTimeWarpBarGraphs_Destroy( &window->context, &timeWarp->bargraphs );
 
-	GpuCommandBuffer_Destroy( &window->context, &timeWarp->commandBuffer );
-	GpuFramebuffer_Destroy( &window->context, &timeWarp->framebuffer );
-	GpuRenderPass_Destroy( &window->context, &timeWarp->renderPass );
+	ksGpuCommandBuffer_Destroy( &window->context, &timeWarp->commandBuffer );
+	ksGpuFramebuffer_Destroy( &window->context, &timeWarp->framebuffer );
+	ksGpuRenderPass_Destroy( &window->context, &timeWarp->renderPass );
 
-	Signal_Destroy( &timeWarp->newEyeTexturesConsumed );
-	Mutex_Destroy( &timeWarp->newEyeTexturesMutex );
-	Mutex_Destroy( &timeWarp->frameTimingMutex );
-	Signal_Destroy( &timeWarp->vsyncSignal );
+	ksSignal_Destroy( &timeWarp->newEyeTexturesConsumed );
+	ksMutex_Destroy( &timeWarp->newEyeTexturesMutex );
+	ksMutex_Destroy( &timeWarp->frameTimingMutex );
+	ksSignal_Destroy( &timeWarp->vsyncSignal );
 
-	GpuTexture_Destroy( &window->context, &timeWarp->defaultTexture );
+	ksGpuTexture_Destroy( &window->context, &timeWarp->defaultTexture );
 }
 
-static void TimeWarp_SetBarGraphState( TimeWarp_t * timeWarp, const BarGraphState_t state )
+static void ksTimeWarp_SetBarGraphState( ksTimeWarp * timeWarp, const ksBarGraphState state )
 {
 	timeWarp->bargraphs.barGraphState = state;
 }
 
-static void TimeWarp_CycleBarGraphState( TimeWarp_t * timeWarp )
+static void ksTimeWarp_CycleBarGraphState( ksTimeWarp * timeWarp )
 {
-	timeWarp->bargraphs.barGraphState = (BarGraphState_t)( ( timeWarp->bargraphs.barGraphState + 1 ) % 3 );
+	timeWarp->bargraphs.barGraphState = (ksBarGraphState)( ( timeWarp->bargraphs.barGraphState + 1 ) % 3 );
 }
 
-static void TimeWarp_SetImplementation( TimeWarp_t * timeWarp, const TimeWarpImplementation_t implementation )
+static void ksTimeWarp_SetImplementation( ksTimeWarp * timeWarp, const ksTimeWarpImplementation implementation )
 {
 	timeWarp->implementation = implementation;
 	const float delta = ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS ) ? 0.0f : 1.0f;
-	BarGraph_AddBar( &timeWarp->bargraphs.timeWarpImplementationBarGraph, 0, delta, &colorRed, false );
+	ksBarGraph_AddBar( &timeWarp->bargraphs.timeWarpImplementationBarGraph, 0, delta, &colorRed, false );
 }
 
-static void TimeWarp_CycleImplementation( TimeWarp_t * timeWarp )
+static void ksTimeWarp_CycleImplementation( ksTimeWarp * timeWarp )
 {
-	timeWarp->implementation = (TimeWarpImplementation_t)( ( timeWarp->implementation + 1 ) % TIMEWARP_IMPLEMENTATION_MAX );
+	timeWarp->implementation = (ksTimeWarpImplementation)( ( timeWarp->implementation + 1 ) % TIMEWARP_IMPLEMENTATION_MAX );
 	const float delta = ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS ) ? 0.0f : 1.0f;
-	BarGraph_AddBar( &timeWarp->bargraphs.timeWarpImplementationBarGraph, 0, delta, &colorRed, false );
+	ksBarGraph_AddBar( &timeWarp->bargraphs.timeWarpImplementationBarGraph, 0, delta, &colorRed, false );
 }
 
-static void TimeWarp_SetChromaticAberrationCorrection( TimeWarp_t * timeWarp, const bool set )
+static void ksTimeWarp_SetChromaticAberrationCorrection( ksTimeWarp * timeWarp, const bool set )
 {
 	timeWarp->correctChromaticAberration = set;
-	BarGraph_AddBar( &timeWarp->bargraphs.correctChromaticAberrationBarGraph, 0, timeWarp->correctChromaticAberration ? 1.0f : 0.0f, &colorRed, false );
+	ksBarGraph_AddBar( &timeWarp->bargraphs.correctChromaticAberrationBarGraph, 0, timeWarp->correctChromaticAberration ? 1.0f : 0.0f, &colorRed, false );
 }
 
-static void TimeWarp_ToggleChromaticAberrationCorrection( TimeWarp_t * timeWarp )
+static void ksTimeWarp_ToggleChromaticAberrationCorrection( ksTimeWarp * timeWarp )
 {
 	timeWarp->correctChromaticAberration = !timeWarp->correctChromaticAberration;
-	BarGraph_AddBar( &timeWarp->bargraphs.correctChromaticAberrationBarGraph, 0, timeWarp->correctChromaticAberration ? 1.0f : 0.0f, &colorRed, false );
+	ksBarGraph_AddBar( &timeWarp->bargraphs.correctChromaticAberrationBarGraph, 0, timeWarp->correctChromaticAberration ? 1.0f : 0.0f, &colorRed, false );
 }
 
-static void TimeWarp_SetMultiView( TimeWarp_t * timeWarp, const bool enabled )
+static void ksTimeWarp_SetMultiView( ksTimeWarp * timeWarp, const bool enabled )
 {
-	BarGraph_AddBar( &timeWarp->bargraphs.multiViewBarGraph, 0, enabled ? 1.0f : 0.0f, &colorRed, false );
+	ksBarGraph_AddBar( &timeWarp->bargraphs.multiViewBarGraph, 0, enabled ? 1.0f : 0.0f, &colorRed, false );
 }
 
-static void TimeWarp_SetDisplayResolutionLevel( TimeWarp_t * timeWarp, const int level )
+static void ksTimeWarp_SetDisplayResolutionLevel( ksTimeWarp * timeWarp, const int level )
 {
-	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
+	const ksVector4f * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
 	for ( int i = 0; i < 4; i++ )
 	{
-		BarGraph_AddBar( &timeWarp->bargraphs.displayResolutionLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
+		ksBarGraph_AddBar( &timeWarp->bargraphs.displayResolutionLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
 	}
 }
 
-static void TimeWarp_SetEyeImageResolutionLevel( TimeWarp_t * timeWarp, const int level )
+static void ksTimeWarp_SetEyeImageResolutionLevel( ksTimeWarp * timeWarp, const int level )
 {
-	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
+	const ksVector4f * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
 	for ( int i = 0; i < 4; i++ )
 	{
-		BarGraph_AddBar( &timeWarp->bargraphs.eyeImageResolutionLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
+		ksBarGraph_AddBar( &timeWarp->bargraphs.eyeImageResolutionLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
 	}
 }
 
-static void TimeWarp_SetEyeImageSamplesLevel( TimeWarp_t * timeWarp, const int level )
+static void ksTimeWarp_SetEyeImageSamplesLevel( ksTimeWarp * timeWarp, const int level )
 {
-	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
+	const ksVector4f * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
 	for ( int i = 0; i < 4; i++ )
 	{
-		BarGraph_AddBar( &timeWarp->bargraphs.eyeImageSamplesLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
+		ksBarGraph_AddBar( &timeWarp->bargraphs.eyeImageSamplesLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
 	}
 }
 
-static void TimeWarp_SetDrawCallLevel( TimeWarp_t * timeWarp, const int level )
+static void ksTimeWarp_SetDrawCallLevel( ksTimeWarp * timeWarp, const int level )
 {
-	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
+	const ksVector4f * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
 	for ( int i = 0; i < 4; i++ )
 	{
-		BarGraph_AddBar( &timeWarp->bargraphs.sceneDrawCallLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
+		ksBarGraph_AddBar( &timeWarp->bargraphs.sceneDrawCallLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
 	}
 }
 
-static void TimeWarp_SetTriangleLevel( TimeWarp_t * timeWarp, const int level )
+static void ksTimeWarp_SetTriangleLevel( ksTimeWarp * timeWarp, const int level )
 {
-	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
+	const ksVector4f * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
 	for ( int i = 0; i < 4; i++ )
 	{
-		BarGraph_AddBar( &timeWarp->bargraphs.sceneTriangleLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
+		ksBarGraph_AddBar( &timeWarp->bargraphs.sceneTriangleLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
 	}
 }
 
-static void TimeWarp_SetFragmentLevel( TimeWarp_t * timeWarp, const int level )
+static void ksTimeWarp_SetFragmentLevel( ksTimeWarp * timeWarp, const int level )
 {
-	const Vector4f_t * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
+	const ksVector4f * levelColor[4] = { &colorBlue, &colorGreen, &colorYellow, &colorRed };
 	for ( int i = 0; i < 4; i++ )
 	{
-		BarGraph_AddBar( &timeWarp->bargraphs.sceneFragmentLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
+		ksBarGraph_AddBar( &timeWarp->bargraphs.sceneFragmentLevelBarGraph, i, ( i <= level ) ? 0.25f : 0.0f, levelColor[i], false );
 	}
 }
 
-static Microseconds_t TimeWarp_GetPredictedDisplayTime( TimeWarp_t * timeWarp, const int frameIndex )
+static ksMicroseconds ksTimeWarp_GetPredictedDisplayTime( ksTimeWarp * timeWarp, const int frameIndex )
 {
-	Mutex_Lock( &timeWarp->frameTimingMutex, true );
-	const FrameTiming_t frameTiming = timeWarp->frameTiming;
-	Mutex_Unlock( &timeWarp->frameTimingMutex );
+	ksMutex_Lock( &timeWarp->frameTimingMutex, true );
+	const ksFrameTiming frameTiming = timeWarp->frameTiming;
+	ksMutex_Unlock( &timeWarp->frameTimingMutex );
 
 	// The time warp thread is currently released by SwapBuffers shortly after a V-Sync.
-	// Where possible, the time warp thread then waits until a short time before the next V-Sync
+	// Where possible, the time warp thread then waits until a short time before the next V-Sync,
 	// giving it just enough time to warp the latest eye textures onto the display. The time warp
-	// thread then tries to pick up the latest eye textures that will be displayed the next V-Sync.
-	// The time warp then warps the new eye textures onto the display for the next V-Sync. After
-	// this V-Sync the main thread is released and can start working on new eye textures that
-	// are will be displayed effectively 2 display refresh cycles in the future.
+	// thread then tries to pick up the latest completed eye textures and warps them onto the
+	// display. The main thread is released right after the V-Sync and can start working on new
+	// eye textures that will be displayed effectively 2 display refresh cycles in the future.
 
 	return frameTiming.vsyncTime + ( frameIndex - frameTiming.frameIndex ) * frameTiming.frameTime;
 }
 
-static void TimeWarp_SubmitFrame( TimeWarp_t * timeWarp, const int frameIndex, const Microseconds_t displayTime,
-									const Matrix4x4f_t * viewMatrix, const Matrix4x4f_t * projectionMatrix,
-									GpuTexture_t * eyeTexture[NUM_EYES], GpuFence_t * eyeCompletionFence[NUM_EYES],
+static void ksTimeWarp_SubmitFrame( ksTimeWarp * timeWarp, const int frameIndex, const ksMicroseconds displayTime,
+									const ksMatrix4x4f * viewMatrix, const ksMatrix4x4f * projectionMatrix,
+									ksGpuTexture * eyeTexture[NUM_EYES], ksGpuFence * eyeCompletionFence[NUM_EYES],
 									int eyeArrayLayer[NUM_EYES], float eyeTexturesCpuTime, float eyeTexturesGpuTime )
 {
-	EyeTextures_t newEyeTextures;
+	ksEyeTextures newEyeTextures;
 	newEyeTextures.index = timeWarp->eyeTexturesPresentIndex++;
 	newEyeTextures.frameIndex = frameIndex;
 	newEyeTextures.displayTime = displayTime;
@@ -15036,50 +15041,50 @@ static void TimeWarp_SubmitFrame( TimeWarp_t * timeWarp, const int frameIndex, c
 	newEyeTextures.gpuTime = eyeTexturesGpuTime;
 
 	// Wait for the previous eye textures to be consumed before overwriting them.
-	Signal_Wait( &timeWarp->newEyeTexturesConsumed, -1 );
+	ksSignal_Wait( &timeWarp->newEyeTexturesConsumed, -1 );
 
-	Mutex_Lock( &timeWarp->newEyeTexturesMutex, true );
+	ksMutex_Lock( &timeWarp->newEyeTexturesMutex, true );
 	timeWarp->newEyeTextures = newEyeTextures;
-	Mutex_Unlock( &timeWarp->newEyeTexturesMutex );
+	ksMutex_Unlock( &timeWarp->newEyeTexturesMutex );
 
 	// Wait for at least one V-Sync to pass to avoid piling up frames of latency.
-	Signal_Wait( &timeWarp->vsyncSignal, -1 );
+	ksSignal_Wait( &timeWarp->vsyncSignal, -1 );
 
-	FrameTiming_t newFrameTiming;
+	ksFrameTiming newFrameTiming;
 	newFrameTiming.frameIndex = frameIndex;
-	newFrameTiming.vsyncTime = GpuWindow_GetNextSwapTimeMicroseconds( timeWarp->window );
-	newFrameTiming.frameTime = GpuWindow_GetFrameTimeMicroseconds( timeWarp->window );
+	newFrameTiming.vsyncTime = ksGpuWindow_GetNextSwapTimeMicroseconds( timeWarp->window );
+	newFrameTiming.frameTime = ksGpuWindow_GetFrameTimeMicroseconds( timeWarp->window );
 
-	Mutex_Lock( &timeWarp->frameTimingMutex, true );
+	ksMutex_Lock( &timeWarp->frameTimingMutex, true );
 	timeWarp->frameTiming = newFrameTiming;
-	Mutex_Unlock( &timeWarp->frameTimingMutex );
+	ksMutex_Unlock( &timeWarp->frameTimingMutex );
 }
 
-static void TimeWarp_Render( TimeWarp_t * timeWarp )
+static void ksTimeWarp_Render( ksTimeWarp * timeWarp )
 {
-	const Microseconds_t nextSwapTime = GpuWindow_GetNextSwapTimeMicroseconds( timeWarp->window );
-	const Microseconds_t frameTime = GpuWindow_GetFrameTimeMicroseconds( timeWarp->window );
+	const ksMicroseconds nextSwapTime = ksGpuWindow_GetNextSwapTimeMicroseconds( timeWarp->window );
+	const ksMicroseconds frameTime = ksGpuWindow_GetFrameTimeMicroseconds( timeWarp->window );
 
 	// Wait until close to the next V-Sync but still far enough away to allow the time warp to complete rendering.
-	GpuWindow_DelayBeforeSwap( timeWarp->window, frameTime / 2 );
+	ksGpuWindow_DelayBeforeSwap( timeWarp->window, frameTime / 2 );
 
 	timeWarp->eyeTexturesFrames[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES] = 0;
 
 	// Try to pick up the latest eye textures but never block the time warp thread.
 	// It is better to display an old set of eye textures than to miss the next V-Sync
 	// in case another thread is suspended while holding on to the mutex.
-	if ( Mutex_Lock( &timeWarp->newEyeTexturesMutex, false ) )
+	if ( ksMutex_Lock( &timeWarp->newEyeTexturesMutex, false ) )
 	{
-		EyeTextures_t newEyeTextures = timeWarp->newEyeTextures;
-		Mutex_Unlock( &timeWarp->newEyeTexturesMutex );
+		ksEyeTextures newEyeTextures = timeWarp->newEyeTextures;
+		ksMutex_Unlock( &timeWarp->newEyeTexturesMutex );
 
 		// If this is a new set of eye textures.
 		if ( newEyeTextures.index > timeWarp->eyeTexturesConsumedIndex &&
 				// Never display the eye textures before they are meant to be displayed.
 				newEyeTextures.displayTime < nextSwapTime + frameTime / 2 &&
 					// Make sure both eye textures have completed rendering.
-					GpuFence_IsSignalled( &timeWarp->window->context, newEyeTextures.completionFence[0] ) &&
-						GpuFence_IsSignalled( &timeWarp->window->context, newEyeTextures.completionFence[1] ) )
+					ksGpuFence_IsSignalled( &timeWarp->window->context, newEyeTextures.completionFence[0] ) &&
+						ksGpuFence_IsSignalled( &timeWarp->window->context, newEyeTextures.completionFence[1] ) )
 		{
 			assert( newEyeTextures.index == timeWarp->eyeTexturesConsumedIndex + 1 );
 			timeWarp->eyeTexturesConsumedIndex = newEyeTextures.index;
@@ -15094,8 +15099,8 @@ static void TimeWarp_Render( TimeWarp_t * timeWarp )
 			timeWarp->cpuTimes[PROFILE_TIME_EYE_TEXTURES] = newEyeTextures.cpuTime;
 			timeWarp->gpuTimes[PROFILE_TIME_EYE_TEXTURES] = newEyeTextures.gpuTime;
 			timeWarp->eyeTexturesFrames[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES] = 1;
-			Signal_Clear( &timeWarp->vsyncSignal );
-			Signal_Raise( &timeWarp->newEyeTexturesConsumed );
+			ksSignal_Clear( &timeWarp->vsyncSignal );
+			ksSignal_Raise( &timeWarp->newEyeTexturesConsumed );
 		}
 	}
 
@@ -15103,8 +15108,8 @@ static void TimeWarp_Render( TimeWarp_t * timeWarp )
 	float timeWarpFrameRate = timeWarp->refreshRate;
 	float eyeTexturesFrameRate = timeWarp->refreshRate;
 	{
-		Microseconds_t lastTime = timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES];
-		Microseconds_t time = nextSwapTime;
+		ksMicroseconds lastTime = timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES];
+		ksMicroseconds time = nextSwapTime;
 		timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES] = time;
 		timeWarp->timeWarpFrames++;
 		if ( timeWarp->timeWarpFrames > AVERAGE_FRAME_RATE_FRAMES )
@@ -15124,11 +15129,11 @@ static void TimeWarp_Render( TimeWarp_t * timeWarp )
 	// Update the bar graphs if not paused.
 	if ( timeWarp->bargraphs.barGraphState == BAR_GRAPH_VISIBLE )
 	{
-		const Vector4f_t * eyeTexturesFrameRateColor = ( eyeTexturesFrameRate > timeWarp->refreshRate - 0.5f ) ? &colorPurple : &colorRed;
-		const Vector4f_t * timeWarpFrameRateColor = ( timeWarpFrameRate > timeWarp->refreshRate - 0.5f ) ? &colorGreen : &colorRed;
+		const ksVector4f * eyeTexturesFrameRateColor = ( eyeTexturesFrameRate > timeWarp->refreshRate - 0.5f ) ? &colorPurple : &colorRed;
+		const ksVector4f * timeWarpFrameRateColor = ( timeWarpFrameRate > timeWarp->refreshRate - 0.5f ) ? &colorGreen : &colorRed;
 
-		BarGraph_AddBar( &timeWarp->bargraphs.eyeTexturesFrameRateGraph, 0, eyeTexturesFrameRate / timeWarp->refreshRate, eyeTexturesFrameRateColor, true );
-		BarGraph_AddBar( &timeWarp->bargraphs.timeWarpFrameRateGraph, 0, timeWarpFrameRate / timeWarp->refreshRate, timeWarpFrameRateColor, true );
+		ksBarGraph_AddBar( &timeWarp->bargraphs.eyeTexturesFrameRateGraph, 0, eyeTexturesFrameRate / timeWarp->refreshRate, eyeTexturesFrameRateColor, true );
+		ksBarGraph_AddBar( &timeWarp->bargraphs.timeWarpFrameRateGraph, 0, timeWarpFrameRate / timeWarp->refreshRate, timeWarpFrameRateColor, true );
 
 		for ( int i = 0; i < 2; i++ )
 		{
@@ -15153,23 +15158,23 @@ static void TimeWarp_Render( TimeWarp_t * timeWarp )
 				barHeights[PROFILE_TIME_OVERFLOW] = 1.0f - limit;
 			}
 
-			BarGraph_t * barGraph = ( i == 0 ) ? &timeWarp->bargraphs.frameCpuTimeBarGraph : &timeWarp->bargraphs.frameGpuTimeBarGraph;
+			ksBarGraph * barGraph = ( i == 0 ) ? &timeWarp->bargraphs.frameCpuTimeBarGraph : &timeWarp->bargraphs.frameGpuTimeBarGraph;
 			for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
 			{
-				BarGraph_AddBar( barGraph, p, barHeights[p], profileTimeBarColors[p], ( p == PROFILE_TIME_MAX - 1 ) );
+				ksBarGraph_AddBar( barGraph, p, barHeights[p], profileTimeBarColors[p], ( p == PROFILE_TIME_MAX - 1 ) );
 			}
 		}
 	}
 
-	FrameLog_BeginFrame();
+	ksFrameLog_BeginFrame();
 
 	//assert( timeWarp->displayTime == nextSwapTime );
-	const Microseconds_t refreshStartTime = nextSwapTime;
-	const Microseconds_t refreshEndTime = refreshStartTime /* + display refresh time for an incremental display refresh */;
+	const ksMicroseconds refreshStartTime = nextSwapTime;
+	const ksMicroseconds refreshEndTime = refreshStartTime /* + display refresh time for an incremental display refresh */;
 
 	if ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS )
 	{
-		TimeWarpGraphics_Render( &timeWarp->commandBuffer, &timeWarp->graphics, &timeWarp->framebuffer, &timeWarp->renderPass,
+		ksTimeWarpGraphics_Render( &timeWarp->commandBuffer, &timeWarp->graphics, &timeWarp->framebuffer, &timeWarp->renderPass,
 								refreshStartTime, refreshEndTime,
 								&timeWarp->projectionMatrix, &timeWarp->viewMatrix,
 								timeWarp->eyeTexture, timeWarp->eyeArrayLayer, timeWarp->correctChromaticAberration,
@@ -15177,7 +15182,7 @@ static void TimeWarp_Render( TimeWarp_t * timeWarp )
 	}
 	else if ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_COMPUTE )
 	{
-		TimeWarpCompute_Render( &timeWarp->commandBuffer, &timeWarp->compute, &timeWarp->framebuffer,
+		ksTimeWarpCompute_Render( &timeWarp->commandBuffer, &timeWarp->compute, &timeWarp->framebuffer,
 								refreshStartTime, refreshEndTime,
 								&timeWarp->projectionMatrix, &timeWarp->viewMatrix,
 								timeWarp->eyeTexture, timeWarp->eyeArrayLayer, timeWarp->correctChromaticAberration,
@@ -15186,71 +15191,71 @@ static void TimeWarp_Render( TimeWarp_t * timeWarp )
 
 	const int gpuTimeFramesDelayed = ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS ) ? GPU_TIMER_FRAMES_DELAYED : 0;
 
-	FrameLog_EndFrame(	timeWarp->cpuTimes[PROFILE_TIME_TIME_WARP] +
+	ksFrameLog_EndFrame(	timeWarp->cpuTimes[PROFILE_TIME_TIME_WARP] +
 						timeWarp->cpuTimes[PROFILE_TIME_BAR_GRAPHS] +
 						timeWarp->cpuTimes[PROFILE_TIME_BLIT],
 						timeWarp->gpuTimes[PROFILE_TIME_TIME_WARP] +
 						timeWarp->gpuTimes[PROFILE_TIME_BAR_GRAPHS] +
 						timeWarp->gpuTimes[PROFILE_TIME_BLIT], gpuTimeFramesDelayed );
 
-	GpuWindow_SwapBuffers( timeWarp->window );
+	ksGpuWindow_SwapBuffers( timeWarp->window );
 
-	Signal_Raise( &timeWarp->vsyncSignal );
+	ksSignal_Raise( &timeWarp->vsyncSignal );
 }
 
 /*
 ================================================================================================================================
 
-ViewState_t
+ksViewState
 
-static void ViewState_Init( ViewState_t * viewState, const float interpupillaryDistance );
-static void ViewState_HandleInput( ViewState_t * viewState, GpuWindowInput_t * input, const Microseconds_t time );
-static void ViewState_HandleHmd( ViewState_t * viewState, const Microseconds_t time );
+static void ksViewState_Init( ksViewState * viewState, const float interpupillaryDistance );
+static void ksViewState_HandleInput( ksViewState * viewState, ksGpuWindowInput * input, const ksMicroseconds time );
+static void ksViewState_HandleHmd( ksViewState * viewState, const ksMicroseconds time );
 
 ================================================================================================================================
 */
 
-typedef struct ViewState_t
+typedef struct ksViewState
 {
 	float						interpupillaryDistance;
-	Vector4f_t					viewport;
-	Vector3f_t					viewTranslationalVelocity;
-	Vector3f_t					viewRotationalVelocity;
-	Vector3f_t					viewTranslation;
-	Vector3f_t					viewRotation;
-	Matrix4x4f_t				hmdViewMatrix;						// HMD view matrix.
-	Matrix4x4f_t				centerViewMatrix;					// Center view matrix.
-	Matrix4x4f_t				viewMatrix[NUM_EYES];				// Per eye view matrix.
-	Matrix4x4f_t				projectionMatrix[NUM_EYES];			// Per eye projection matrix.
-	Matrix4x4f_t				viewInverseMatrix[NUM_EYES];		// Per eye inverse view matrix.
-	Matrix4x4f_t				projectionInverseMatrix[NUM_EYES];	// Per eye inverse projection matrix.
-	Matrix4x4f_t				combinedViewProjectionMatrix;		// Combined matrix containing all views for culling.
-} ViewState_t;
+	ksVector4f					viewport;
+	ksVector3f					viewTranslationalVelocity;
+	ksVector3f					viewRotationalVelocity;
+	ksVector3f					viewTranslation;
+	ksVector3f					viewRotation;
+	ksMatrix4x4f				hmdViewMatrix;						// HMD view matrix.
+	ksMatrix4x4f				centerViewMatrix;					// Center view matrix.
+	ksMatrix4x4f				viewMatrix[NUM_EYES];				// Per eye view matrix.
+	ksMatrix4x4f				projectionMatrix[NUM_EYES];			// Per eye projection matrix.
+	ksMatrix4x4f				viewInverseMatrix[NUM_EYES];		// Per eye inverse view matrix.
+	ksMatrix4x4f				projectionInverseMatrix[NUM_EYES];	// Per eye inverse projection matrix.
+	ksMatrix4x4f				combinedViewProjectionMatrix;		// Combined matrix containing all views for culling.
+} ksViewState;
 
-static void ViewState_DerivedData( ViewState_t * viewState )
+static void ksViewState_DerivedData( ksViewState * viewState )
 {
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		Matrix4x4f_Invert( &viewState->viewInverseMatrix[eye], &viewState->viewMatrix[eye] );
-		Matrix4x4f_Invert( &viewState->projectionInverseMatrix[eye], &viewState->projectionMatrix[eye] );
+		ksMatrix4x4f_Invert( &viewState->viewInverseMatrix[eye], &viewState->viewMatrix[eye] );
+		ksMatrix4x4f_Invert( &viewState->projectionInverseMatrix[eye], &viewState->projectionMatrix[eye] );
 	}
 
 	// Derive a combined view and projection matrix that encapsulates both views.
-	Matrix4x4f_t combinedProjectionMatrix;
+	ksMatrix4x4f combinedProjectionMatrix;
 	combinedProjectionMatrix = viewState->projectionMatrix[0];
 	combinedProjectionMatrix.m[0][0] = viewState->projectionMatrix[0].m[0][0] / ( fabsf( viewState->projectionMatrix[0].m[2][0] ) + 1.0f );
 	combinedProjectionMatrix.m[2][0] = 0.0f;
  
-	Matrix4x4f_t moveBackMatrix;
-	Matrix4x4f_CreateTranslation( &moveBackMatrix, 0.0f, 0.0f, -0.5f * viewState->interpupillaryDistance * combinedProjectionMatrix.m[0][0] );
+	ksMatrix4x4f moveBackMatrix;
+	ksMatrix4x4f_CreateTranslation( &moveBackMatrix, 0.0f, 0.0f, -0.5f * viewState->interpupillaryDistance * combinedProjectionMatrix.m[0][0] );
 
-	Matrix4x4f_t combinedViewMatrix;
-	Matrix4x4f_Multiply( &combinedViewMatrix, &moveBackMatrix, &viewState->centerViewMatrix );
+	ksMatrix4x4f combinedViewMatrix;
+	ksMatrix4x4f_Multiply( &combinedViewMatrix, &moveBackMatrix, &viewState->centerViewMatrix );
 
-	Matrix4x4f_Multiply( &viewState->combinedViewProjectionMatrix, &combinedProjectionMatrix, &combinedViewMatrix );
+	ksMatrix4x4f_Multiply( &viewState->combinedViewProjectionMatrix, &combinedProjectionMatrix, &combinedViewMatrix );
 }
 
-static void ViewState_Init( ViewState_t * viewState, const float interpupillaryDistance )
+static void ksViewState_Init( ksViewState * viewState, const float interpupillaryDistance )
 {
 	viewState->interpupillaryDistance = interpupillaryDistance;
 	viewState->viewport.x = 0.0f;
@@ -15270,109 +15275,109 @@ static void ViewState_Init( ViewState_t * viewState, const float interpupillaryD
 	viewState->viewRotation.y = 0.0f;
 	viewState->viewRotation.z = 0.0f;
 
-	Matrix4x4f_CreateIdentity( &viewState->hmdViewMatrix );
-	Matrix4x4f_CreateIdentity( &viewState->centerViewMatrix );
+	ksMatrix4x4f_CreateIdentity( &viewState->hmdViewMatrix );
+	ksMatrix4x4f_CreateIdentity( &viewState->centerViewMatrix );
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		Matrix4x4f_CreateIdentity( &viewState->viewMatrix[eye] );
-		Matrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 60.0f, 0.0f, 0.0f, 0.01f, 0.0f );
+		ksMatrix4x4f_CreateIdentity( &viewState->viewMatrix[eye] );
+		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 60.0f, 0.0f, 0.0f, 0.01f, 0.0f );
 
-		Matrix4x4f_Invert( &viewState->viewInverseMatrix[eye], &viewState->viewMatrix[eye] );
-		Matrix4x4f_Invert( &viewState->projectionInverseMatrix[eye], &viewState->projectionMatrix[eye] );
+		ksMatrix4x4f_Invert( &viewState->viewInverseMatrix[eye], &viewState->viewMatrix[eye] );
+		ksMatrix4x4f_Invert( &viewState->projectionInverseMatrix[eye], &viewState->projectionMatrix[eye] );
 	}
 
-	ViewState_DerivedData( viewState );
+	ksViewState_DerivedData( viewState );
 }
 
-static void ViewState_HandleInput( ViewState_t * viewState, GpuWindowInput_t * input, const Microseconds_t time )
+static void ksViewState_HandleInput( ksViewState * viewState, ksGpuWindowInput * input, const ksMicroseconds time )
 {
 	static const float TRANSLATION_UNITS_PER_TAP		= 0.005f;
 	static const float TRANSLATION_UNITS_DECAY			= 0.0025f;
 	static const float ROTATION_DEGREES_PER_TAP			= 0.25f;
 	static const float ROTATION_DEGREES_DECAY			= 0.125f;
-	static const Vector3f_t minTranslationalVelocity	= { -0.05f, -0.05f, -0.05f};
-	static const Vector3f_t maxTranslationalVelocity	= { 0.05f, 0.05f, 0.05f };
-	static const Vector3f_t minRotationalVelocity		= { -2.0f, -2.0f, -2.0f };
-	static const Vector3f_t maxRotationalVelocity		= { 2.0f, 2.0f, 2.0f };
+	static const ksVector3f minTranslationalVelocity	= { -0.05f, -0.05f, -0.05f};
+	static const ksVector3f maxTranslationalVelocity	= { 0.05f, 0.05f, 0.05f };
+	static const ksVector3f minRotationalVelocity		= { -2.0f, -2.0f, -2.0f };
+	static const ksVector3f maxRotationalVelocity		= { 2.0f, 2.0f, 2.0f };
 
 	GetHmdViewMatrixForTime( &viewState->hmdViewMatrix, time );
 
-	Vector3f_t translationDelta = { 0.0f, 0.0f, 0.0f };
-	Vector3f_t rotationDelta = { 0.0f, 0.0f, 0.0f };
+	ksVector3f translationDelta = { 0.0f, 0.0f, 0.0f };
+	ksVector3f rotationDelta = { 0.0f, 0.0f, 0.0f };
 
 	// NOTE: don't consume but only 'check' the keyboard state in case the input is maintained on another thread.
-	if ( GpuWindowInput_CheckKeyboardKey( input, KEY_SHIFT_LEFT ) )
+	if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_SHIFT_LEFT ) )
 	{
-		if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ rotationDelta.x -= ROTATION_DEGREES_PER_TAP; }
-		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )	{ rotationDelta.x += ROTATION_DEGREES_PER_TAP; }
-		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )	{ rotationDelta.y += ROTATION_DEGREES_PER_TAP; }
-		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ rotationDelta.y -= ROTATION_DEGREES_PER_TAP; }
+		if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ rotationDelta.x -= ROTATION_DEGREES_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )		{ rotationDelta.x += ROTATION_DEGREES_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )		{ rotationDelta.y += ROTATION_DEGREES_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ rotationDelta.y -= ROTATION_DEGREES_PER_TAP; }
 	}
-	else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CTRL_LEFT ) )
+	else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CTRL_LEFT ) )
 	{
-		if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ translationDelta.y += TRANSLATION_UNITS_PER_TAP; }
-		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )	{ translationDelta.y -= TRANSLATION_UNITS_PER_TAP; }
-		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )	{ translationDelta.x -= TRANSLATION_UNITS_PER_TAP; }
-		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ translationDelta.x += TRANSLATION_UNITS_PER_TAP; }
+		if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ translationDelta.y += TRANSLATION_UNITS_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )		{ translationDelta.y -= TRANSLATION_UNITS_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )		{ translationDelta.x -= TRANSLATION_UNITS_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ translationDelta.x += TRANSLATION_UNITS_PER_TAP; }
 	}
 	else
 	{
-		if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ translationDelta.z -= TRANSLATION_UNITS_PER_TAP; }
-		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )	{ translationDelta.z += TRANSLATION_UNITS_PER_TAP; }
-		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )	{ rotationDelta.y += ROTATION_DEGREES_PER_TAP; }
-		else if ( GpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ rotationDelta.y -= ROTATION_DEGREES_PER_TAP; }
+		if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_UP ) )			{ translationDelta.z -= TRANSLATION_UNITS_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_DOWN ) )		{ translationDelta.z += TRANSLATION_UNITS_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_LEFT ) )		{ rotationDelta.y += ROTATION_DEGREES_PER_TAP; }
+		else if ( ksGpuWindowInput_CheckKeyboardKey( input, KEY_CURSOR_RIGHT ) )	{ rotationDelta.y -= ROTATION_DEGREES_PER_TAP; }
 	}
 
-	Vector3f_Decay( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, TRANSLATION_UNITS_DECAY );
-	Vector3f_Decay( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, ROTATION_DEGREES_DECAY );
+	ksVector3f_Decay( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, TRANSLATION_UNITS_DECAY );
+	ksVector3f_Decay( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, ROTATION_DEGREES_DECAY );
 
-	Vector3f_Add( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, &translationDelta );
-	Vector3f_Add( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, &rotationDelta );
+	ksVector3f_Add( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, &translationDelta );
+	ksVector3f_Add( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, &rotationDelta );
 
-	Vector3f_Max( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, &minTranslationalVelocity );
-	Vector3f_Min( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, &maxTranslationalVelocity );
+	ksVector3f_Max( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, &minTranslationalVelocity );
+	ksVector3f_Min( &viewState->viewTranslationalVelocity, &viewState->viewTranslationalVelocity, &maxTranslationalVelocity );
 
-	Vector3f_Max( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, &minRotationalVelocity );
-	Vector3f_Min( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, &maxRotationalVelocity );
+	ksVector3f_Max( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, &minRotationalVelocity );
+	ksVector3f_Min( &viewState->viewRotationalVelocity, &viewState->viewRotationalVelocity, &maxRotationalVelocity );
 
-	Vector3f_Add( &viewState->viewRotation, &viewState->viewRotation, &viewState->viewRotationalVelocity );
+	ksVector3f_Add( &viewState->viewRotation, &viewState->viewRotation, &viewState->viewRotationalVelocity );
 
-	Matrix4x4f_t yawRotation;
-	Matrix4x4f_CreateRotation( &yawRotation, 0.0f, viewState->viewRotation.y, 0.0f );
+	ksMatrix4x4f yawRotation;
+	ksMatrix4x4f_CreateRotation( &yawRotation, 0.0f, viewState->viewRotation.y, 0.0f );
 
-	Vector3f_t rotatedTranslationalVelocity;
-	Matrix4x4f_TransformVector3f( &rotatedTranslationalVelocity, &yawRotation, &viewState->viewTranslationalVelocity );
+	ksVector3f rotatedTranslationalVelocity;
+	ksMatrix4x4f_TransformVector3f( &rotatedTranslationalVelocity, &yawRotation, &viewState->viewTranslationalVelocity );
 
-	Vector3f_Add( &viewState->viewTranslation, &viewState->viewTranslation, &rotatedTranslationalVelocity );
+	ksVector3f_Add( &viewState->viewTranslation, &viewState->viewTranslation, &rotatedTranslationalVelocity );
 
-	Matrix4x4f_t viewRotation;
-	Matrix4x4f_CreateRotation( &viewRotation, viewState->viewRotation.x, viewState->viewRotation.y, viewState->viewRotation.z );
+	ksMatrix4x4f viewRotation;
+	ksMatrix4x4f_CreateRotation( &viewRotation, viewState->viewRotation.x, viewState->viewRotation.y, viewState->viewRotation.z );
 
-	Matrix4x4f_t viewRotationTranspose;
-	Matrix4x4f_Transpose( &viewRotationTranspose, &viewRotation );
+	ksMatrix4x4f viewRotationTranspose;
+	ksMatrix4x4f_Transpose( &viewRotationTranspose, &viewRotation );
 
-	Matrix4x4f_t viewTranslation;
-	Matrix4x4f_CreateTranslation( &viewTranslation, -viewState->viewTranslation.x, -viewState->viewTranslation.y, -viewState->viewTranslation.z );
+	ksMatrix4x4f viewTranslation;
+	ksMatrix4x4f_CreateTranslation( &viewTranslation, -viewState->viewTranslation.x, -viewState->viewTranslation.y, -viewState->viewTranslation.z );
 
-	Matrix4x4f_t inputViewMatrix;
-	Matrix4x4f_Multiply( &inputViewMatrix, &viewRotationTranspose, &viewTranslation );
+	ksMatrix4x4f inputViewMatrix;
+	ksMatrix4x4f_Multiply( &inputViewMatrix, &viewRotationTranspose, &viewTranslation );
 
-	Matrix4x4f_Multiply( &viewState->centerViewMatrix, &viewState->hmdViewMatrix, &inputViewMatrix );
+	ksMatrix4x4f_Multiply( &viewState->centerViewMatrix, &viewState->hmdViewMatrix, &inputViewMatrix );
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		Matrix4x4f_t eyeOffsetMatrix;
-		Matrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
+		ksMatrix4x4f eyeOffsetMatrix;
+		ksMatrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
 
-		Matrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
-		Matrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 60.0f, 0.0f, 0.0f, 0.01f, 0.0f );
+		ksMatrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
+		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 60.0f, 0.0f, 0.0f, 0.01f, 0.0f );
 	}
 
-	ViewState_DerivedData( viewState );
+	ksViewState_DerivedData( viewState );
 }
 
-static void ViewState_HandleHmd( ViewState_t * viewState, const Microseconds_t time )
+static void ksViewState_HandleHmd( ksViewState * viewState, const ksMicroseconds time )
 {
 	GetHmdViewMatrixForTime( &viewState->hmdViewMatrix, time );
 
@@ -15380,14 +15385,14 @@ static void ViewState_HandleHmd( ViewState_t * viewState, const Microseconds_t t
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		Matrix4x4f_t eyeOffsetMatrix;
-		Matrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
+		ksMatrix4x4f eyeOffsetMatrix;
+		ksMatrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
 
-		Matrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
-		Matrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 72.0f, 0.0f, 0.0f, 0.01f, 0.0f );
+		ksMatrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
+		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 72.0f, 0.0f, 0.0f, 0.01f, 0.0f );
 	}
 
-	ViewState_DerivedData( viewState );
+	ksViewState_DerivedData( viewState );
 }
 
 /*
@@ -15395,38 +15400,38 @@ static void ViewState_HandleHmd( ViewState_t * viewState, const Microseconds_t t
 
 Scene settings.
 
-SceneSettings_t
+ksSceneSettings
 
-static void SceneSettings_ToggleSimulationPaused( SceneSettings_t * settings );
-static void SceneSettings_ToggleMultiView( SceneSettings_t * settings );
-static void SceneSettings_SetSimulationPaused( SceneSettings_t * settings, const bool set );
-static void SceneSettings_SetMultiView( SceneSettings_t * settings, const bool set );
-static bool SceneSettings_GetSimulationPaused( SceneSettings_t * settings );
-static bool SceneSettings_GetMultiView( SceneSettings_t * settings );
+static void ksSceneSettings_ToggleSimulationPaused( ksSceneSettings * settings );
+static void ksSceneSettings_ToggleMultiView( ksSceneSettings * settings );
+static void ksSceneSettings_SetSimulationPaused( ksSceneSettings * settings, const bool set );
+static void ksSceneSettings_SetMultiView( ksSceneSettings * settings, const bool set );
+static bool ksSceneSettings_GetSimulationPaused( ksSceneSettings * settings );
+static bool ksSceneSettings_GetMultiView( ksSceneSettings * settings );
 
-static void SceneSettings_CycleDisplayResolutionLevel( SceneSettings_t * settings );
-static void SceneSettings_CycleEyeImageResolutionLevel( SceneSettings_t * settings );
-static void SceneSettings_CycleEyeImageSamplesLevel( SceneSettings_t * settings );
+static void ksSceneSettings_CycleDisplayResolutionLevel( ksSceneSettings * settings );
+static void ksSceneSettings_CycleEyeImageResolutionLevel( ksSceneSettings * settings );
+static void ksSceneSettings_CycleEyeImageSamplesLevel( ksSceneSettings * settings );
 
-static void SceneSettings_CycleDrawCallLevel( SceneSettings_t * settings );
-static void SceneSettings_CycleTriangleLevel( SceneSettings_t * settings );
-static void SceneSettings_CycleFragmentLevel( SceneSettings_t * settings );
+static void ksSceneSettings_CycleDrawCallLevel( ksSceneSettings * settings );
+static void ksSceneSettings_CycleTriangleLevel( ksSceneSettings * settings );
+static void ksSceneSettings_CycleFragmentLevel( ksSceneSettings * settings );
 
-static void SceneSettings_SetDisplayResolutionLevel( SceneSettings_t * settings, const int level );
-static void SceneSettings_SetEyeImageResolutionLevel( SceneSettings_t * settings, const int level );
-static void SceneSettings_SetEyeImageSamplesLevel( SceneSettings_t * settings, const int level );
+static void ksSceneSettings_SetDisplayResolutionLevel( ksSceneSettings * settings, const int level );
+static void ksSceneSettings_SetEyeImageResolutionLevel( ksSceneSettings * settings, const int level );
+static void ksSceneSettings_SetEyeImageSamplesLevel( ksSceneSettings * settings, const int level );
 
-static void SceneSettings_SetDrawCallLevel( SceneSettings_t * settings, const int level );
-static void SceneSettings_SetTriangleLevel( SceneSettings_t * settings, const int level );
-static void SceneSettings_SetFragmentLevel( SceneSettings_t * settings, const int level );
+static void ksSceneSettings_SetDrawCallLevel( ksSceneSettings * settings, const int level );
+static void ksSceneSettings_SetTriangleLevel( ksSceneSettings * settings, const int level );
+static void ksSceneSettings_SetFragmentLevel( ksSceneSettings * settings, const int level );
 
-static int SceneSettings_GetDisplayResolutionLevel( const SceneSettings_t * settings );
-static int SceneSettings_GetEyeImageResolutionLevel( const SceneSettings_t * settings );
-static int SceneSettings_GetEyeImageSamplesLevel( const SceneSettings_t * settings );
+static int ksSceneSettings_GetDisplayResolutionLevel( const ksSceneSettings * settings );
+static int ksSceneSettings_GetEyeImageResolutionLevel( const ksSceneSettings * settings );
+static int ksSceneSettings_GetEyeImageSamplesLevel( const ksSceneSettings * settings );
 
-static int SceneSettings_GetDrawCallLevel( const SceneSettings_t * settings );
-static int SceneSettings_GetTriangleLevel( const SceneSettings_t * settings );
-static int SceneSettings_GetFragmentLevel( const SceneSettings_t * settings );
+static int ksSceneSettings_GetDrawCallLevel( const ksSceneSettings * settings );
+static int ksSceneSettings_GetTriangleLevel( const ksSceneSettings * settings );
+static int ksSceneSettings_GetFragmentLevel( const ksSceneSettings * settings );
 
 ================================================================================================================================
 */
@@ -15447,6 +15452,22 @@ static const int displayResolutionTable[] =
 	7680, 4320
 };
 
+static const int eyeResolutionTable[] =
+{
+	1024,
+	1536,
+	2048,
+	4096
+};
+
+static const ksGpuSampleCount eyeSampleCountTable[] =
+{
+	GPU_SAMPLE_COUNT_1,
+	GPU_SAMPLE_COUNT_2,
+	GPU_SAMPLE_COUNT_4,
+	GPU_SAMPLE_COUNT_8
+};
+
 typedef struct
 {
 	bool	simulationPaused;
@@ -15460,9 +15481,9 @@ typedef struct
 	int		maxDisplayResolutionLevels;
 	int		maxEyeImageResolutionLevels;
 	int		maxEyeImageSamplesLevels;
-} SceneSettings_t;
+} ksSceneSettings;
 
-static void SceneSettings_Init( GpuContext_t * context, SceneSettings_t * settings )
+static void ksSceneSettings_Init( ksGpuContext * context, ksSceneSettings * settings )
 {
 	settings->simulationPaused = false;
 	settings->useMultiView = false;
@@ -15472,9 +15493,9 @@ static void SceneSettings_Init( GpuContext_t * context, SceneSettings_t * settin
 	settings->drawCallLevel = 0;
 	settings->triangleLevel = 0;
 	settings->fragmentLevel = 0;
-	settings->maxDisplayResolutionLevels =	( !GpuWindow_SupportedResolution( displayResolutionTable[1 * 2 + 0], displayResolutionTable[1 * 2 + 1] ) ? 1 :
-											( !GpuWindow_SupportedResolution( displayResolutionTable[2 * 2 + 0], displayResolutionTable[2 * 2 + 1] ) ? 2 :
-											( !GpuWindow_SupportedResolution( displayResolutionTable[3 * 2 + 0], displayResolutionTable[3 * 2 + 1] ) ? 3 : 4 ) ) );
+	settings->maxDisplayResolutionLevels =	( !ksGpuWindow_SupportedResolution( displayResolutionTable[1 * 2 + 0], displayResolutionTable[1 * 2 + 1] ) ? 1 :
+											( !ksGpuWindow_SupportedResolution( displayResolutionTable[2 * 2 + 0], displayResolutionTable[2 * 2 + 1] ) ? 2 :
+											( !ksGpuWindow_SupportedResolution( displayResolutionTable[3 * 2 + 0], displayResolutionTable[3 * 2 + 1] ) ? 3 : 4 ) ) );
 	settings->maxEyeImageResolutionLevels = MAX_EYE_IMAGE_RESOLUTION_LEVELS;
 
 	const VkSampleCountFlags availableSampleCounts = context->device->physicalDeviceProperties.limits.framebufferColorSampleCounts &
@@ -15492,51 +15513,51 @@ static void SceneSettings_Init( GpuContext_t * context, SceneSettings_t * settin
 
 static void CycleLevel( int * x, const int max ) { (*x) = ( (*x) + 1 ) % max; }
 
-static void SceneSettings_ToggleSimulationPaused( SceneSettings_t * settings ) { settings->simulationPaused = !settings->simulationPaused; }
-static void SceneSettings_ToggleMultiView( SceneSettings_t * settings ) { settings->useMultiView = !settings->useMultiView; }
+static void ksSceneSettings_ToggleSimulationPaused( ksSceneSettings * settings ) { settings->simulationPaused = !settings->simulationPaused; }
+static void ksSceneSettings_ToggleMultiView( ksSceneSettings * settings ) { settings->useMultiView = !settings->useMultiView; }
 
-static void SceneSettings_SetSimulationPaused( SceneSettings_t * settings, const bool set ) { settings->simulationPaused = set; }
-static void SceneSettings_SetMultiView( SceneSettings_t * settings, const bool set ) { settings->useMultiView = set; }
+static void ksSceneSettings_SetSimulationPaused( ksSceneSettings * settings, const bool set ) { settings->simulationPaused = set; }
+static void ksSceneSettings_SetMultiView( ksSceneSettings * settings, const bool set ) { settings->useMultiView = set; }
 
-static bool SceneSettings_GetSimulationPaused( SceneSettings_t * settings ) { return settings->simulationPaused; }
-static bool SceneSettings_GetMultiView( SceneSettings_t * settings ) { return settings->useMultiView; }
+static bool ksSceneSettings_GetSimulationPaused( ksSceneSettings * settings ) { return settings->simulationPaused; }
+static bool ksSceneSettings_GetMultiView( ksSceneSettings * settings ) { return settings->useMultiView; }
 
-static void SceneSettings_CycleDisplayResolutionLevel( SceneSettings_t * settings ) { CycleLevel( &settings->displayResolutionLevel, settings->maxDisplayResolutionLevels ); }
-static void SceneSettings_CycleEyeImageResolutionLevel( SceneSettings_t * settings ) { CycleLevel( &settings->eyeImageResolutionLevel, settings->maxEyeImageResolutionLevels ); }
-static void SceneSettings_CycleEyeImageSamplesLevel( SceneSettings_t * settings ) { CycleLevel( &settings->eyeImageSamplesLevel, settings->maxEyeImageSamplesLevels ); }
+static void ksSceneSettings_CycleDisplayResolutionLevel( ksSceneSettings * settings ) { CycleLevel( &settings->displayResolutionLevel, settings->maxDisplayResolutionLevels ); }
+static void ksSceneSettings_CycleEyeImageResolutionLevel( ksSceneSettings * settings ) { CycleLevel( &settings->eyeImageResolutionLevel, settings->maxEyeImageResolutionLevels ); }
+static void ksSceneSettings_CycleEyeImageSamplesLevel( ksSceneSettings * settings ) { CycleLevel( &settings->eyeImageSamplesLevel, settings->maxEyeImageSamplesLevels ); }
 
-static void SceneSettings_CycleDrawCallLevel( SceneSettings_t * settings ) { CycleLevel( &settings->drawCallLevel, MAX_SCENE_DRAWCALL_LEVELS ); }
-static void SceneSettings_CycleTriangleLevel( SceneSettings_t * settings ) { CycleLevel( &settings->triangleLevel, MAX_SCENE_TRIANGLE_LEVELS ); }
-static void SceneSettings_CycleFragmentLevel( SceneSettings_t * settings ) { CycleLevel( &settings->fragmentLevel, MAX_SCENE_FRAGMENT_LEVELS ); }
+static void ksSceneSettings_CycleDrawCallLevel( ksSceneSettings * settings ) { CycleLevel( &settings->drawCallLevel, MAX_SCENE_DRAWCALL_LEVELS ); }
+static void ksSceneSettings_CycleTriangleLevel( ksSceneSettings * settings ) { CycleLevel( &settings->triangleLevel, MAX_SCENE_TRIANGLE_LEVELS ); }
+static void ksSceneSettings_CycleFragmentLevel( ksSceneSettings * settings ) { CycleLevel( &settings->fragmentLevel, MAX_SCENE_FRAGMENT_LEVELS ); }
 
-static void SceneSettings_SetDisplayResolutionLevel( SceneSettings_t * settings, const int level ) { settings->displayResolutionLevel = ( level < settings->maxDisplayResolutionLevels ) ? level : settings->maxDisplayResolutionLevels; }
-static void SceneSettings_SetEyeImageResolutionLevel( SceneSettings_t * settings, const int level ) { settings->eyeImageResolutionLevel = ( level < settings->maxEyeImageResolutionLevels ) ? level : settings->maxEyeImageResolutionLevels; }
-static void SceneSettings_SetEyeImageSamplesLevel( SceneSettings_t * settings, const int level ) { settings->eyeImageSamplesLevel = ( level < settings->maxEyeImageSamplesLevels ) ? level : settings->maxEyeImageSamplesLevels; }
+static void ksSceneSettings_SetDisplayResolutionLevel( ksSceneSettings * settings, const int level ) { settings->displayResolutionLevel = ( level < settings->maxDisplayResolutionLevels ) ? level : settings->maxDisplayResolutionLevels; }
+static void ksSceneSettings_SetEyeImageResolutionLevel( ksSceneSettings * settings, const int level ) { settings->eyeImageResolutionLevel = ( level < settings->maxEyeImageResolutionLevels ) ? level : settings->maxEyeImageResolutionLevels; }
+static void ksSceneSettings_SetEyeImageSamplesLevel( ksSceneSettings * settings, const int level ) { settings->eyeImageSamplesLevel = ( level < settings->maxEyeImageSamplesLevels ) ? level : settings->maxEyeImageSamplesLevels; }
 
-static void SceneSettings_SetDrawCallLevel( SceneSettings_t * settings, const int level ) { settings->drawCallLevel = level; }
-static void SceneSettings_SetTriangleLevel( SceneSettings_t * settings, const int level ) { settings->triangleLevel = level; }
-static void SceneSettings_SetFragmentLevel( SceneSettings_t * settings, const int level ) { settings->fragmentLevel = level; }
+static void ksSceneSettings_SetDrawCallLevel( ksSceneSettings * settings, const int level ) { settings->drawCallLevel = level; }
+static void ksSceneSettings_SetTriangleLevel( ksSceneSettings * settings, const int level ) { settings->triangleLevel = level; }
+static void ksSceneSettings_SetFragmentLevel( ksSceneSettings * settings, const int level ) { settings->fragmentLevel = level; }
 
-static int SceneSettings_GetDisplayResolutionLevel( const SceneSettings_t * settings ) { return settings->eyeImageResolutionLevel; }
-static int SceneSettings_GetEyeImageResolutionLevel( const SceneSettings_t * settings ) { return settings->eyeImageResolutionLevel; }
-static int SceneSettings_GetEyeImageSamplesLevel( const SceneSettings_t * settings ) { return settings->eyeImageSamplesLevel; }
+static int ksSceneSettings_GetDisplayResolutionLevel( const ksSceneSettings * settings ) { return settings->eyeImageResolutionLevel; }
+static int ksSceneSettings_GetEyeImageResolutionLevel( const ksSceneSettings * settings ) { return settings->eyeImageResolutionLevel; }
+static int ksSceneSettings_GetEyeImageSamplesLevel( const ksSceneSettings * settings ) { return settings->eyeImageSamplesLevel; }
 
-static int SceneSettings_GetDrawCallLevel( const SceneSettings_t * settings ) { return settings->drawCallLevel; }
-static int SceneSettings_GetTriangleLevel( const SceneSettings_t * settings ) { return settings->triangleLevel; }
-static int SceneSettings_GetFragmentLevel( const SceneSettings_t * settings ) { return settings->fragmentLevel; }
+static int ksSceneSettings_GetDrawCallLevel( const ksSceneSettings * settings ) { return settings->drawCallLevel; }
+static int ksSceneSettings_GetTriangleLevel( const ksSceneSettings * settings ) { return settings->triangleLevel; }
+static int ksSceneSettings_GetFragmentLevel( const ksSceneSettings * settings ) { return settings->fragmentLevel; }
 
 /*
 ================================================================================================================================
 
 Performance scene rendering.
 
-PerfScene_t
+ksPerfScene
 
-static void PerfScene_Create( GpuContext_t * context, PerfScene_t * scene, SceneSettings_t * settings, GpuRenderPass_t * renderPass );
-static void PerfScene_Destroy( GpuContext_t * context, PerfScene_t * scene );
-static void PerfScene_Simulate( PerfScene_t * scene, ViewState_t * viewState, const Microseconds_t time );
-static void PerfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, PerfScene_t * scene, ViewState_t * viewState, const int eye );
-static void PerfScene_Render( GpuCommandBuffer_t * commandBuffer, PerfScene_t * scene );
+static void ksPerfScene_Create( ksGpuContext * context, ksPerfScene * scene, ksSceneSettings * settings, ksGpuRenderPass * renderPass );
+static void ksPerfScene_Destroy( ksGpuContext * context, ksPerfScene * scene );
+static void ksPerfScene_Simulate( ksPerfScene * scene, ksViewState * viewState, const ksMicroseconds time );
+static void ksPerfScene_UpdateBuffers( ksGpuCommandBuffer * commandBuffer, ksPerfScene * scene, ksViewState * viewState, const int eye );
+static void ksPerfScene_Render( ksGpuCommandBuffer * commandBuffer, ksPerfScene * scene );
 
 ================================================================================================================================
 */
@@ -15544,22 +15565,22 @@ static void PerfScene_Render( GpuCommandBuffer_t * commandBuffer, PerfScene_t * 
 typedef struct
 {
 	// assets
-	GpuGeometry_t			geometry[MAX_SCENE_TRIANGLE_LEVELS];
-	GpuGraphicsProgram_t	program[MAX_SCENE_FRAGMENT_LEVELS];
-	GpuGraphicsPipeline_t	pipelines[MAX_SCENE_TRIANGLE_LEVELS][MAX_SCENE_FRAGMENT_LEVELS];
-	GpuBuffer_t				sceneMatrices;
-	GpuTexture_t			diffuseTexture;
-	GpuTexture_t			specularTexture;
-	GpuTexture_t			normalTexture;
-	SceneSettings_t			settings;
-	SceneSettings_t *		newSettings;
+	ksGpuGeometry			geometry[MAX_SCENE_TRIANGLE_LEVELS];
+	ksGpuGraphicsProgram	program[MAX_SCENE_FRAGMENT_LEVELS];
+	ksGpuGraphicsPipeline	pipelines[MAX_SCENE_TRIANGLE_LEVELS][MAX_SCENE_FRAGMENT_LEVELS];
+	ksGpuBuffer				sceneMatrices;
+	ksGpuTexture			diffuseTexture;
+	ksGpuTexture			specularTexture;
+	ksGpuTexture			normalTexture;
+	ksSceneSettings			settings;
+	ksSceneSettings *		newSettings;
 	// simulation state
 	float					bigRotationX;
 	float					bigRotationY;
 	float					smallRotationX;
 	float					smallRotationY;
-	Matrix4x4f_t *			modelMatrix;
-} PerfScene_t;
+	ksMatrix4x4f *			modelMatrix;
+} ksPerfScene;
 
 enum
 {
@@ -15570,7 +15591,7 @@ enum
 	PROGRAM_TEXTURE_2
 };
 
-static GpuProgramParm_t flatShadedProgramParms[] =
+static ksGpuProgramParm flatShadedProgramParms[] =
 {
 	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_MODEL_MATRIX,		"ModelMatrix",		0 },
 	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_SCENE_MATRICES,		"SceneMatrices",	0 }
@@ -15873,7 +15894,7 @@ static const unsigned int flatShadedFragmentProgramSPIRV[] =
 	0x00000047,0x0003003e,0x00000049,0x0000000b,0x000100fd,0x00010038
 };
 
-static GpuProgramParm_t normalMappedProgramParms[] =
+static ksGpuProgramParm normalMappedProgramParms[] =
 {
 	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_MODEL_MATRIX,		"ModelMatrix",		0 },
 	{ GPU_PROGRAM_STAGE_VERTEX,		GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM,					GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_SCENE_MATRICES,		"SceneMatrices",	0 },
@@ -16650,23 +16671,23 @@ static const unsigned int normalMapped2000LightsFragmentProgramSPIRV[] =
 	0x0003003e,0x00000089,0x00000025,0x000100fd,0x00010038
 };
 
-static void PerfScene_Create( GpuContext_t * context, PerfScene_t * scene, SceneSettings_t * settings, GpuRenderPass_t * renderPass )
+static void ksPerfScene_Create( ksGpuContext * context, ksPerfScene * scene, ksSceneSettings * settings, ksGpuRenderPass * renderPass )
 {
-	memset( scene, 0, sizeof( PerfScene_t ) );
+	memset( scene, 0, sizeof( ksPerfScene ) );
 
-	GpuGeometry_CreateCube( context, &scene->geometry[0], 0.0f, 0.5f );			// 12 triangles
-	GpuGeometry_CreateTorus( context, &scene->geometry[1], 8, 0.0f, 1.0f );		// 128 triangles
-	GpuGeometry_CreateTorus( context, &scene->geometry[2], 16, 0.0f, 1.0f );	// 512 triangles
-	GpuGeometry_CreateTorus( context, &scene->geometry[3], 32, 0.0f, 1.0f );	// 2048 triangles
+	ksGpuGeometry_CreateCube( context, &scene->geometry[0], 0.0f, 0.5f );			// 12 triangles
+	ksGpuGeometry_CreateTorus( context, &scene->geometry[1], 8, 0.0f, 1.0f );		// 128 triangles
+	ksGpuGeometry_CreateTorus( context, &scene->geometry[2], 16, 0.0f, 1.0f );	// 512 triangles
+	ksGpuGeometry_CreateTorus( context, &scene->geometry[3], 32, 0.0f, 1.0f );	// 2048 triangles
 
-	GpuGraphicsProgram_Create( context, &scene->program[0],
+	ksGpuGraphicsProgram_Create( context, &scene->program[0],
 								PROGRAM( flatShadedVertexProgram ),
 								sizeof( PROGRAM( flatShadedVertexProgram ) ),
 								PROGRAM( flatShadedFragmentProgram ),
 								sizeof( PROGRAM( flatShadedFragmentProgram ) ),
 								flatShadedProgramParms, ARRAY_SIZE( flatShadedProgramParms ),
 								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL );
-	GpuGraphicsProgram_Create( context, &scene->program[1],
+	ksGpuGraphicsProgram_Create( context, &scene->program[1],
 								PROGRAM( normalMappedVertexProgram ),
 								sizeof( PROGRAM( normalMappedVertexProgram ) ),
 								PROGRAM( normalMapped100LightsFragmentProgram ),
@@ -16675,7 +16696,7 @@ static void PerfScene_Create( GpuContext_t * context, PerfScene_t * scene, Scene
 								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
 								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
 								VERTEX_ATTRIBUTE_FLAG_UV0 );
-	GpuGraphicsProgram_Create( context, &scene->program[2],
+	ksGpuGraphicsProgram_Create( context, &scene->program[2],
 								PROGRAM( normalMappedVertexProgram ),
 								sizeof( PROGRAM( normalMappedVertexProgram ) ),
 								PROGRAM( normalMapped1000LightsFragmentProgram ),
@@ -16684,7 +16705,7 @@ static void PerfScene_Create( GpuContext_t * context, PerfScene_t * scene, Scene
 								scene->geometry[0].layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL |
 								VERTEX_ATTRIBUTE_FLAG_TANGENT | VERTEX_ATTRIBUTE_FLAG_BINORMAL |
 								VERTEX_ATTRIBUTE_FLAG_UV0 );
-	GpuGraphicsProgram_Create( context, &scene->program[3],
+	ksGpuGraphicsProgram_Create( context, &scene->program[3],
 								PROGRAM( normalMappedVertexProgram ),
 								sizeof( PROGRAM( normalMappedVertexProgram ) ),
 								PROGRAM( normalMapped2000LightsFragmentProgram ),
@@ -16698,22 +16719,22 @@ static void PerfScene_Create( GpuContext_t * context, PerfScene_t * scene, Scene
 	{
 		for ( int j = 0; j < MAX_SCENE_FRAGMENT_LEVELS; j++ )
 		{
-			GpuGraphicsPipelineParms_t pipelineParms;
-			GpuGraphicsPipelineParms_Init( &pipelineParms );
+			ksGpuGraphicsPipelineParms pipelineParms;
+			ksGpuGraphicsPipelineParms_Init( &pipelineParms );
 
 			pipelineParms.renderPass = renderPass;
 			pipelineParms.program = &scene->program[j];
 			pipelineParms.geometry = &scene->geometry[i];
 
-			GpuGraphicsPipeline_Create( context, &scene->pipelines[i][j], &pipelineParms );
+			ksGpuGraphicsPipeline_Create( context, &scene->pipelines[i][j], &pipelineParms );
 		}
 	}
 
-	GpuBuffer_Create( context, &scene->sceneMatrices, GPU_BUFFER_TYPE_UNIFORM, 2 * sizeof( Matrix4x4f_t ), NULL, false );
+	ksGpuBuffer_Create( context, &scene->sceneMatrices, GPU_BUFFER_TYPE_UNIFORM, 2 * sizeof( ksMatrix4x4f ), NULL, false );
 
-	GpuTexture_CreateDefault( context, &scene->diffuseTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 0, 0, 1, true, false );
-	GpuTexture_CreateDefault( context, &scene->specularTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 0, 0, 1, true, false );
-	GpuTexture_CreateDefault( context, &scene->normalTexture, GPU_TEXTURE_DEFAULT_PYRAMIDS, 256, 256, 0, 0, 1, true, false );
+	ksGpuTexture_CreateDefault( context, &scene->diffuseTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 0, 0, 1, true, false );
+	ksGpuTexture_CreateDefault( context, &scene->specularTexture, GPU_TEXTURE_DEFAULT_CHECKERBOARD, 256, 256, 0, 0, 1, true, false );
+	ksGpuTexture_CreateDefault( context, &scene->normalTexture, GPU_TEXTURE_DEFAULT_PYRAMIDS, 256, 256, 0, 0, 1, true, false );
 
 	scene->settings = *settings;
 	scene->newSettings = settings;
@@ -16725,48 +16746,48 @@ static void PerfScene_Create( GpuContext_t * context, PerfScene_t * scene, Scene
 	scene->smallRotationX = 0.0f;
 	scene->smallRotationY = 0.0f;
 
-	scene->modelMatrix = (Matrix4x4f_t *) AllocAlignedMemory( maxDimension * maxDimension * maxDimension * sizeof( Matrix4x4f_t ), sizeof( Matrix4x4f_t ) );
+	scene->modelMatrix = (ksMatrix4x4f *) AllocAlignedMemory( maxDimension * maxDimension * maxDimension * sizeof( ksMatrix4x4f ), sizeof( ksMatrix4x4f ) );
 }
 
-static void PerfScene_Destroy( GpuContext_t * context, PerfScene_t * scene )
+static void ksPerfScene_Destroy( ksGpuContext * context, ksPerfScene * scene )
 {
-	GpuContext_WaitIdle( context );
+	ksGpuContext_WaitIdle( context );
 
 	for ( int i = 0; i < MAX_SCENE_TRIANGLE_LEVELS; i++ )
 	{
 		for ( int j = 0; j < MAX_SCENE_FRAGMENT_LEVELS; j++ )
 		{
-			GpuGraphicsPipeline_Destroy( context, &scene->pipelines[i][j] );
+			ksGpuGraphicsPipeline_Destroy( context, &scene->pipelines[i][j] );
 		}
 	}
 
 	for ( int i = 0; i < MAX_SCENE_TRIANGLE_LEVELS; i++ )
 	{
-		GpuGeometry_Destroy( context, &scene->geometry[i] );
+		ksGpuGeometry_Destroy( context, &scene->geometry[i] );
 	}
 
 	for ( int i = 0; i < MAX_SCENE_FRAGMENT_LEVELS; i++ )
 	{
-		GpuGraphicsProgram_Destroy( context, &scene->program[i] );
+		ksGpuGraphicsProgram_Destroy( context, &scene->program[i] );
 	}
 
-	GpuBuffer_Destroy( context, &scene->sceneMatrices );
+	ksGpuBuffer_Destroy( context, &scene->sceneMatrices );
 
-	GpuTexture_Destroy( context, &scene->diffuseTexture );
-	GpuTexture_Destroy( context, &scene->specularTexture );
-	GpuTexture_Destroy( context, &scene->normalTexture );
+	ksGpuTexture_Destroy( context, &scene->diffuseTexture );
+	ksGpuTexture_Destroy( context, &scene->specularTexture );
+	ksGpuTexture_Destroy( context, &scene->normalTexture );
 
 	FreeAlignedMemory( scene->modelMatrix );
 	scene->modelMatrix = NULL;
 }
 
-static void PerfScene_Simulate( PerfScene_t * scene, ViewState_t * viewState, const Microseconds_t time )
+static void ksPerfScene_Simulate( ksPerfScene * scene, ksViewState * viewState, const ksMicroseconds time )
 {
 	// Must recreate the scene if multi-view is enabled/disabled.
 	assert( scene->settings.useMultiView == scene->newSettings->useMultiView );
 	scene->settings = *scene->newSettings;
 
-	ViewState_HandleHmd( viewState, time );
+	ksViewState_HandleHmd( viewState, time );
 
 	if ( !scene->settings.simulationPaused )
 	{
@@ -16778,41 +16799,41 @@ static void PerfScene_Simulate( PerfScene_t * scene, ViewState_t * viewState, co
 	}
 }
 
-static void PerfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, PerfScene_t * scene, ViewState_t * viewState, const int eye )
+static void ksPerfScene_UpdateBuffers( ksGpuCommandBuffer * commandBuffer, ksPerfScene * scene, ksViewState * viewState, const int eye )
 {
 	void * sceneMatrices = NULL;
-	GpuBuffer_t * sceneMatricesBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &scene->sceneMatrices, &sceneMatrices );
+	ksGpuBuffer * sceneMatricesBuffer = ksGpuCommandBuffer_MapBuffer( commandBuffer, &scene->sceneMatrices, &sceneMatrices );
 	const int numMatrices = 1;
-	memcpy( (char *)sceneMatrices + 0 * numMatrices * sizeof( Matrix4x4f_t ), &viewState->viewMatrix[eye], numMatrices * sizeof( Matrix4x4f_t ) );
-	memcpy( (char *)sceneMatrices + 1 * numMatrices * sizeof( Matrix4x4f_t ), &viewState->projectionMatrix[eye], numMatrices * sizeof( Matrix4x4f_t ) );
-	GpuCommandBuffer_UnmapBuffer( commandBuffer, &scene->sceneMatrices, sceneMatricesBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
+	memcpy( (char *)sceneMatrices + 0 * numMatrices * sizeof( ksMatrix4x4f ), &viewState->viewMatrix[eye], numMatrices * sizeof( ksMatrix4x4f ) );
+	memcpy( (char *)sceneMatrices + 1 * numMatrices * sizeof( ksMatrix4x4f ), &viewState->projectionMatrix[eye], numMatrices * sizeof( ksMatrix4x4f ) );
+	ksGpuCommandBuffer_UnmapBuffer( commandBuffer, &scene->sceneMatrices, sceneMatricesBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
 }
 
-static void PerfScene_Render( GpuCommandBuffer_t * commandBuffer, PerfScene_t * scene )
+static void ksPerfScene_Render( ksGpuCommandBuffer * commandBuffer, ksPerfScene * scene )
 {
 	const int dimension = 2 * ( 1 << scene->settings.drawCallLevel );
 	const float cubeOffset = ( dimension - 1.0f ) * 0.5f;
 	const float cubeScale = 2.0f;
 
-	Matrix4x4f_t bigRotationMatrix;
-	Matrix4x4f_CreateRotation( &bigRotationMatrix, scene->bigRotationX, scene->bigRotationY, 0.0f );
+	ksMatrix4x4f bigRotationMatrix;
+	ksMatrix4x4f_CreateRotation( &bigRotationMatrix, scene->bigRotationX, scene->bigRotationY, 0.0f );
 
-	Matrix4x4f_t bigTranslationMatrix;
-	Matrix4x4f_CreateTranslation( &bigTranslationMatrix, 0.0f, 0.0f, - 2.5f * dimension );
+	ksMatrix4x4f bigTranslationMatrix;
+	ksMatrix4x4f_CreateTranslation( &bigTranslationMatrix, 0.0f, 0.0f, - 2.5f * dimension );
 
-	Matrix4x4f_t bigTransformMatrix;
-	Matrix4x4f_Multiply( &bigTransformMatrix, &bigTranslationMatrix, &bigRotationMatrix );
+	ksMatrix4x4f bigTransformMatrix;
+	ksMatrix4x4f_Multiply( &bigTransformMatrix, &bigTranslationMatrix, &bigRotationMatrix );
 
-	Matrix4x4f_t smallRotationMatrix;
-	Matrix4x4f_CreateRotation( &smallRotationMatrix, scene->smallRotationX, scene->smallRotationY, 0.0f );
+	ksMatrix4x4f smallRotationMatrix;
+	ksMatrix4x4f_CreateRotation( &smallRotationMatrix, scene->smallRotationX, scene->smallRotationY, 0.0f );
 
-	GpuGraphicsCommand_t command;
-	GpuGraphicsCommand_Init( &command );
-	GpuGraphicsCommand_SetPipeline( &command, &scene->pipelines[scene->settings.triangleLevel][scene->settings.fragmentLevel] );
-	GpuGraphicsCommand_SetParmBufferUniform( &command, PROGRAM_UNIFORM_SCENE_MATRICES, &scene->sceneMatrices );
-	GpuGraphicsCommand_SetParmTextureSampled( &command, PROGRAM_TEXTURE_0, ( scene->settings.fragmentLevel >= 1 ) ? &scene->diffuseTexture : NULL );
-	GpuGraphicsCommand_SetParmTextureSampled( &command, PROGRAM_TEXTURE_1, ( scene->settings.fragmentLevel >= 1 ) ? &scene->specularTexture : NULL );
-	GpuGraphicsCommand_SetParmTextureSampled( &command, PROGRAM_TEXTURE_2, ( scene->settings.fragmentLevel >= 1 ) ? &scene->normalTexture : NULL );
+	ksGpuGraphicsCommand command;
+	ksGpuGraphicsCommand_Init( &command );
+	ksGpuGraphicsCommand_SetPipeline( &command, &scene->pipelines[scene->settings.triangleLevel][scene->settings.fragmentLevel] );
+	ksGpuGraphicsCommand_SetParmBufferUniform( &command, PROGRAM_UNIFORM_SCENE_MATRICES, &scene->sceneMatrices );
+	ksGpuGraphicsCommand_SetParmTextureSampled( &command, PROGRAM_TEXTURE_0, ( scene->settings.fragmentLevel >= 1 ) ? &scene->diffuseTexture : NULL );
+	ksGpuGraphicsCommand_SetParmTextureSampled( &command, PROGRAM_TEXTURE_1, ( scene->settings.fragmentLevel >= 1 ) ? &scene->specularTexture : NULL );
+	ksGpuGraphicsCommand_SetParmTextureSampled( &command, PROGRAM_TEXTURE_2, ( scene->settings.fragmentLevel >= 1 ) ? &scene->normalTexture : NULL );
 
 	for ( int x = 0; x < dimension; x++ )
 	{
@@ -16820,18 +16841,18 @@ static void PerfScene_Render( GpuCommandBuffer_t * commandBuffer, PerfScene_t * 
 		{
 			for ( int z = 0; z < dimension; z++ )
 			{
-				Matrix4x4f_t smallTranslationMatrix;
-				Matrix4x4f_CreateTranslation( &smallTranslationMatrix, cubeScale * ( x - cubeOffset ), cubeScale * ( y - cubeOffset ), cubeScale * ( z - cubeOffset ) );
+				ksMatrix4x4f smallTranslationMatrix;
+				ksMatrix4x4f_CreateTranslation( &smallTranslationMatrix, cubeScale * ( x - cubeOffset ), cubeScale * ( y - cubeOffset ), cubeScale * ( z - cubeOffset ) );
 
-				Matrix4x4f_t smallTransformMatrix;
-				Matrix4x4f_Multiply( &smallTransformMatrix, &smallTranslationMatrix, &smallRotationMatrix );
+				ksMatrix4x4f smallTransformMatrix;
+				ksMatrix4x4f_Multiply( &smallTransformMatrix, &smallTranslationMatrix, &smallRotationMatrix );
 
-				Matrix4x4f_t * modelMatrix = &scene->modelMatrix[( x * dimension + y ) * dimension + z];
-				Matrix4x4f_Multiply( modelMatrix, &bigTransformMatrix, &smallTransformMatrix );
+				ksMatrix4x4f * modelMatrix = &scene->modelMatrix[( x * dimension + y ) * dimension + z];
+				ksMatrix4x4f_Multiply( modelMatrix, &bigTransformMatrix, &smallTransformMatrix );
 
-				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, PROGRAM_UNIFORM_MODEL_MATRIX, modelMatrix );
+				ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, PROGRAM_UNIFORM_MODEL_MATRIX, modelMatrix );
 
-				GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
+				ksGpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
 			}
 		}
 	}
@@ -16844,13 +16865,13 @@ static void PerfScene_Render( GpuCommandBuffer_t * commandBuffer, PerfScene_t * 
 
 glTF scene rendering.
 
-GltfScene_t
+ksGltfScene
 
-static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scene, const char * fileName, GpuRenderPass_t * renderPass );
-static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene );
-static void GltfScene_Simulate( GltfScene_t * scene, ViewState_t * viewState, GpuWindowInput_t * input, const Microseconds_t time );
-static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState, const int eye );
-static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState, const int eye );
+static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * scene, const char * fileName, ksGpuRenderPass * renderPass );
+static void ksGltfScene_Destroy( ksGpuContext * context, ksGltfScene * scene );
+static void ksGltfScene_Simulate( ksGltfScene * scene, ksViewState * viewState, ksGpuWindowInput * input, const ksMicroseconds time );
+static void ksGltfScene_UpdateBuffers( ksGpuCommandBuffer * commandBuffer, const ksGltfScene * scene, const ksViewState * viewState, const int eye );
+static void ksGltfScene_Render( ksGpuCommandBuffer * commandBuffer, const ksGltfScene * scene, const ksViewState * viewState, const int eye );
 
 ================================================================================================================================
 */
@@ -16957,7 +16978,7 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 #define GL_ONE_MINUS_CONSTANT_ALPHA		0x8004
 #define GL_SRC_ALPHA_SATURATE			0x0308
 
-static GpuProgramParm_t unitCubeFlatShadeProgramParms[] =
+static ksGpuProgramParm unitCubeFlatShadeProgramParms[] =
 {
 	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	0,		"ModelMatrix",		  0 },
 	{ GPU_PROGRAM_STAGE_VERTEX,	GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	1,		"ViewMatrix",		 64 },
@@ -17256,28 +17277,28 @@ static const unsigned int unitCubeFlatShadeFragmentProgramSPIRV[] =
 	0x00000049,0x0000000b,0x000100fd,0x00010038
 };
 
-typedef struct GltfBuffer_t
+typedef struct ksGltfBuffer
 {
 	char *						name;
 	char *						type;
 	size_t						byteLength;
 	unsigned char *				bufferData;
-} GltfBuffer_t;
+} ksGltfBuffer;
 
-typedef struct GltfBufferView_t
+typedef struct ksGltfBufferView
 {
 	char *						name;
-	const GltfBuffer_t *		buffer;
+	const ksGltfBuffer *		buffer;
 	size_t						byteOffset;
 	size_t						byteLength;
 	int							target;
-} GltfBufferView_t;
+} ksGltfBufferView;
 
-typedef struct GltfAccessor_t
+typedef struct ksGltfAccessor
 {
 	char *						name;
 	char *						type;
-	const GltfBufferView_t *	bufferView;
+	const ksGltfBufferView *	bufferView;
 	size_t						byteOffset;
 	size_t						byteStride;
 	int							componentType;
@@ -17286,32 +17307,32 @@ typedef struct GltfAccessor_t
 	int							intMax[16];
 	float						floatMin[16];
 	float						floatMax[16];
-} GltfAccessor_t;
+} ksGltfAccessor;
 
-typedef struct GltfImage_t
+typedef struct ksGltfImage
 {
 	char *						name;
 	char *						uri;
-} GltfImage_t;
+} ksGltfImage;
 
-typedef struct GltfSampler_t
+typedef struct ksGltfSampler
 {
 	char *						name;
 	int							magFilter;	// default GL_LINEAR
 	int							minFilter;	// default GL_NEAREST_MIPMAP_LINEAR
 	int							wrapS;		// default GL_REPEAT
 	int							wrapT;		// default GL_REPEAT
-} GltfSampler_t;
+} ksGltfSampler;
 
-typedef struct GltfTexture_t
+typedef struct ksGltfTexture
 {
 	char *						name;
-	const GltfImage_t *			image;
-	const GltfSampler_t *		sampler;
-	GpuTexture_t				texture;
-} GltfTexture_t;
+	const ksGltfImage *			image;
+	const ksGltfSampler *		sampler;
+	ksGpuTexture				texture;
+} ksGltfTexture;
 
-typedef struct GltfShader_t
+typedef struct ksGltfShader
 {
 	char *						name;
 	char *						uriGlslOpenGL;
@@ -17319,16 +17340,16 @@ typedef struct GltfShader_t
 	char *						uriSpirvOpenGL;
 	char *						uriSpirvVulkan;
 	int							type;
-} GltfShader_t;
+} ksGltfShader;
 
-typedef struct GltfProgram_t
+typedef struct ksGltfProgram
 {
 	char *						name;
 	unsigned char *				vertexSource;
 	unsigned char *				fragmentSource;
 	int							vertexSourceSize;
 	int							fragmentSourceSize;
-} GltfProgram_t;
+} ksGltfProgram;
 
 typedef enum
 {
@@ -17349,12 +17370,12 @@ typedef enum
 	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE,
 	GLTF_UNIFORM_SEMANTIC_VIEWPORT,
 	GLTF_UNIFORM_SEMANTIC_JOINTMATRIX
-} GltfUniformSemantic_t;
+} ksGltfUniformSemantic;
 
 static struct
 {
 	const char *			name;
-	GltfUniformSemantic_t	semantic;
+	ksGltfUniformSemantic	semantic;
 }
 gltfUniformSemanticNames[] =
 {
@@ -17378,112 +17399,112 @@ gltfUniformSemanticNames[] =
 	{ NULL,								0 }
 };
 
-typedef struct GltfUniformValue_t
+typedef struct ksGltfUniformValue
 {
-	GltfTexture_t *				texture;
+	ksGltfTexture *				texture;
 	int							intValue[16];
 	float						floatValue[16];
-} GltfUniformValue_t;
+} ksGltfUniformValue;
 
-typedef struct GltfUniform_t
+typedef struct ksGltfUniform
 {
 	char *						name;
-	GltfUniformSemantic_t		semantic;
-	GpuProgramParmType_t		type;
+	ksGltfUniformSemantic		semantic;
+	ksGpuProgramParmType		type;
 	int							index;
-	GltfUniformValue_t			defaultValue;
-} GltfUniform_t;
+	ksGltfUniformValue			defaultValue;
+} ksGltfUniform;
 
-typedef struct GltfTechnique_t
+typedef struct ksGltfTechnique
 {
 	char *						name;
-	GpuGraphicsProgram_t		program;
-	GpuProgramParm_t *			parms;
-	GltfUniform_t *				uniforms;
+	ksGpuGraphicsProgram		program;
+	ksGpuProgramParm *			parms;
+	ksGltfUniform *				uniforms;
 	int							uniformCount;
-	GpuRasterOperations_t		rop;
-} GltfTechnique_t;
+	ksGpuRasterOperations		rop;
+} ksGltfTechnique;
 
-typedef struct GltfMaterialValue_t
+typedef struct ksGltfMaterialValue
 {
-	GltfUniform_t *				uniform;
-	GltfUniformValue_t			value;
-} GltfMaterialValue_t;
+	ksGltfUniform *				uniform;
+	ksGltfUniformValue			value;
+} ksGltfMaterialValue;
 
-typedef struct GltfMaterial_t
+typedef struct ksGltfMaterial
 {
 	char *						name;
-	const GltfTechnique_t *		technique;
-	GltfMaterialValue_t *		values;
+	const ksGltfTechnique *		technique;
+	ksGltfMaterialValue *		values;
 	int							valueCount;
-} GltfMaterial_t;
+} ksGltfMaterial;
 
-typedef struct GltfSurface_t
+typedef struct ksGltfSurface
 {
-	const GltfMaterial_t *		material;		// material used to render this surface
-	GpuGeometry_t				geometry;		// surface geometry
-	GpuGraphicsPipeline_t		pipeline;		// rendering pipeline for this surface
-	Vector3f_t					mins;			// minimums of the surface geometry excluding animations
-	Vector3f_t					maxs;			// maximums of the surface geometry excluding animations
-} GltfSurface_t;
+	const ksGltfMaterial *		material;		// material used to render this surface
+	ksGpuGeometry				geometry;		// surface geometry
+	ksGpuGraphicsPipeline		pipeline;		// rendering pipeline for this surface
+	ksVector3f					mins;			// minimums of the surface geometry excluding animations
+	ksVector3f					maxs;			// maximums of the surface geometry excluding animations
+} ksGltfSurface;
 
-typedef struct GltfModel_t
+typedef struct ksGltfModel
 {
 	char *						name;
-	GltfSurface_t *				surfaces;
+	ksGltfSurface *				surfaces;
 	int							surfaceCount;
-} GltfModel_t;
+} ksGltfModel;
 
-typedef struct GltfAnimationChannel_t
+typedef struct ksGltfAnimationChannel
 {
 	char *						nodeName;
-	struct GltfNode_t *			node;
-	Quatf_t *					rotation;
-	Vector3f_t *				translation;
-	Vector3f_t *				scale;
-} GltfAnimationChannel_t;
+	struct ksGltfNode *			node;
+	ksQuatf *					rotation;
+	ksVector3f *				translation;
+	ksVector3f *				scale;
+} ksGltfAnimationChannel;
 
-typedef struct GltfAnimation_t
+typedef struct ksGltfAnimation
 {
 	char *						name;
 	float *						sampleTimes;
 	int							sampleCount;
-	GltfAnimationChannel_t *	channels;
+	ksGltfAnimationChannel *	channels;
 	int							channelCount;
-} GltfAnimation_t;
+} ksGltfAnimation;
 
-typedef struct GltfJoint_t
+typedef struct ksGltfJoint
 {
 	char *						name;
-	struct GltfNode_t *			node;
-} GltfJoint_t;
+	struct ksGltfNode *			node;
+} ksGltfJoint;
 
-typedef struct GltfSkin_t
+typedef struct ksGltfSkin
 {
 	char *						name;
-	struct GltfNode_t *			parent;
-	Matrix4x4f_t				bindShapeMatrix;
-	Matrix4x4f_t *				inverseBindMatrices;
-	Vector3f_t *				jointGeometryMins;		// joint local space minimums of the geometry influenced by each joint
-	Vector3f_t *				jointGeometryMaxs;		// joint local space maximums of the geometry influenced by each joint
-	GltfJoint_t *				joints;					// joints of this skin
+	struct ksGltfNode *			parent;
+	ksMatrix4x4f				bindShapeMatrix;
+	ksMatrix4x4f *				inverseBindMatrices;
+	ksVector3f *				jointGeometryMins;		// joint local space minimums of the geometry influenced by each joint
+	ksVector3f *				jointGeometryMaxs;		// joint local space maximums of the geometry influenced by each joint
+	ksGltfJoint *				joints;					// joints of this skin
 	int							jointCount;				// number of joints
-	GpuBuffer_t					jointBuffer;			// buffer with joint matrices
-	Vector3f_t					mins;					// minimums of the complete skin geometry (modified at run-time)
-	Vector3f_t					maxs;					// maximums of the complete skin geometry (modified at run-time)
+	ksGpuBuffer					jointBuffer;			// buffer with joint matrices
+	ksVector3f					mins;					// minimums of the complete skin geometry (modified at run-time)
+	ksVector3f					maxs;					// maximums of the complete skin geometry (modified at run-time)
 	bool						culled;					// true if the skin is culled (modified at run-time)
-} GltfSkin_t;
+} ksGltfSkin;
 
 typedef enum
 {
 	GLTF_CAMERA_TYPE_PERSPECTIVE,
 	GLTF_CAMERA_TYPE_ORTHOGRAPHIC
-} GltfCameraType_t;
+} ksGltfCameraType;
 
-typedef struct GltfCamera_t
+typedef struct ksGltfCamera
 {
 	char *						name;
-	GltfCameraType_t			type;
+	ksGltfCameraType			type;
 	struct
 	{
 		float					aspectRatio;
@@ -17499,101 +17520,101 @@ typedef struct GltfCamera_t
 		float					nearZ;
 		float					farZ;
 	}							orthographic;
-} GltfCamera_t;
+} ksGltfCamera;
 
-typedef struct GltfNode_t
+typedef struct ksGltfNode
 {
 	char *						name;
 	char *						jointName;
-	Quatf_t						rotation;			// (modified at run-time)
-	Vector3f_t					translation;		// (modified at run-time)
-	Vector3f_t					scale;				// (modified at run-time)
-	Matrix4x4f_t				localTransform;		// (modified at run-time)
-	Matrix4x4f_t				globalTransform;	// (modified at run-time)
+	ksQuatf						rotation;			// (modified at run-time)
+	ksVector3f					translation;		// (modified at run-time)
+	ksVector3f					scale;				// (modified at run-time)
+	ksMatrix4x4f				localTransform;		// (modified at run-time)
+	ksMatrix4x4f				globalTransform;	// (modified at run-time)
 	int							subTreeNodeCount;	// this node plus the number of direct or indirect decendants
-	struct GltfNode_t **		children;
+	struct ksGltfNode **		children;
 	char **						childNames;
 	int							childCount;
-	struct GltfNode_t *			parent;
-	struct GltfCamera_t *		camera;
-	struct GltfSkin_t *			skin;
-	struct GltfModel_t **		models;
+	struct ksGltfNode *			parent;
+	struct ksGltfCamera *		camera;
+	struct ksGltfSkin *			skin;
+	struct ksGltfModel **		models;
 	int							modelCount;
-} GltfNode_t;
+} ksGltfNode;
 
-typedef struct GltfSubTree_t
+typedef struct ksGltfSubTree
 {
-	GltfNode_t *				nodes;				// points into GltfScene_t::nodes
+	ksGltfNode *				nodes;				// points into ksGltfScene::nodes
 	int							nodeCount;
-} GltfSubTree_t;
+} ksGltfSubTree;
 
-typedef struct GltfSubScene_t
+typedef struct ksGltfSubScene
 {
 	char *						name;
-	GltfSubTree_t *				subTrees;
+	ksGltfSubTree *				subTrees;
 	int							subTreeCount;
-} GltfSubScene_t;
+} ksGltfSubScene;
 
-typedef struct GltfScene_t
+typedef struct ksGltfScene
 {
-	GltfBuffer_t *				buffers;
+	ksGltfBuffer *				buffers;
 	int *						bufferNameHash;
 	int							bufferCount;
-	GltfBufferView_t *			bufferViews;
+	ksGltfBufferView *			bufferViews;
 	int *						bufferViewNameHash;
 	int							bufferViewCount;
-	GltfAccessor_t *			accessors;
+	ksGltfAccessor *			accessors;
 	int *						accessorNameHash;
 	int							accessorCount;
-	GltfImage_t *				images;
+	ksGltfImage *				images;
 	int *						imageNameHash;
 	int							imageCount;
-	GltfSampler_t *				samplers;
+	ksGltfSampler *				samplers;
 	int *						samplerNameHash;
 	int							samplerCount;
-	GltfTexture_t *				textures;
+	ksGltfTexture *				textures;
 	int *						textureNameHash;
 	int							textureCount;
-	GltfShader_t *				shaders;
+	ksGltfShader *				shaders;
 	int *						shaderNameHash;
 	int							shaderCount;
-	GltfProgram_t *				programs;
+	ksGltfProgram *				programs;
 	int *						programNameHash;
 	int							programCount;
-	GltfTechnique_t *			techniques;
+	ksGltfTechnique *			techniques;
 	int *						techniqueNameHash;
 	int							techniqueCount;
-	GltfMaterial_t *			materials;
+	ksGltfMaterial *			materials;
 	int *						materialNameHash;
 	int							materialCount;
-	GltfSkin_t *				skins;
+	ksGltfSkin *				skins;
 	int *						skinNameHash;
 	int							skinCount;
-	GltfModel_t *				models;
+	ksGltfModel *				models;
 	int *						modelNameHash;
 	int							modelCount;
-	GltfAnimation_t *			animations;
+	ksGltfAnimation *			animations;
 	int *						animationNameHash;
 	int							animationCount;
-	GltfCamera_t *				cameras;
+	ksGltfCamera *				cameras;
 	int *						cameraNameHash;
 	int							cameraCount;
-	GltfNode_t *				nodes;
+	ksGltfNode *				nodes;
 	int *						nodeNameHash;
 	int *						nodeJointNameHash;
 	int							nodeCount;
-	GltfNode_t **				rootNodes;
+	ksGltfNode **				rootNodes;
 	int							rootNodeCount;
-	GltfSubScene_t *			subScenes;
+	ksGltfSubScene *			subScenes;
 	int *						subSceneNameHash;
 	int							subSceneCount;
-	GltfSubScene_t *			currentSubScene;
+	ksGltfSubScene *			currentSubScene;
 
-	GpuBuffer_t					defaultJointBuffer;
-	GpuGeometry_t				unitCubeGeometry;
-	GpuGraphicsProgram_t		unitCubeFlatShadeProgram;
-	GpuGraphicsPipeline_t		unitCubePipeline;
-} GltfScene_t;
+	ksGpuBuffer					defaultJointBuffer;
+	ksGpuGeometry				unitCubeGeometry;
+	ksGpuGraphicsProgram		unitCubeFlatShadeProgram;
+	ksGpuGraphicsPipeline		unitCubePipeline;
+} ksGltfScene;
 
 #define HASH_TABLE_SIZE		256
 
@@ -17608,7 +17629,7 @@ static unsigned int StringHash( const char * string )
 }
 
 #define GLTF_HASH( type, typeCapitalized, name, nameCapitalized ) \
-	static void Gltf_Create##typeCapitalized##nameCapitalized##Hash( GltfScene_t * scene ) \
+	static void ksGltf_Create##typeCapitalized##nameCapitalized##Hash( ksGltfScene * scene ) \
 	{ \
 		scene->type##nameCapitalized##Hash = (int *) malloc( ( HASH_TABLE_SIZE + scene->type##Count ) * sizeof( scene->type##nameCapitalized##Hash[0] ) ); \
 		memset( scene->type##nameCapitalized##Hash, -1, ( HASH_TABLE_SIZE + scene->type##Count ) * sizeof( scene->type##nameCapitalized##Hash[0] ) ); \
@@ -17620,7 +17641,7 @@ static unsigned int StringHash( const char * string )
 		} \
 	} \
 	\
-	static Gltf##typeCapitalized##_t * Gltf_Get##typeCapitalized##By##nameCapitalized( const GltfScene_t * scene, const char * name ) \
+	static Gltf##typeCapitalized##_t * ksGltf_Get##typeCapitalized##By##nameCapitalized( const ksGltfScene * scene, const char * name ) \
 	{ \
 		const unsigned int hash = StringHash( name ); \
 		for ( int i = scene->type##nameCapitalized##Hash[hash]; i >= 0; i = scene->type##nameCapitalized##Hash[HASH_TABLE_SIZE + i] ) \
@@ -17651,9 +17672,9 @@ GLTF_HASH( node,		Node,		name,		Name );
 GLTF_HASH( node,		Node,		jointName,	JointName );
 GLTF_HASH( subScene,	SubScene,	name,		Name );
 
-static GltfAccessor_t * Gltf_GetAccessorByNameAndType( const GltfScene_t * scene, const char * name, const char * type, const int componentType )
+static ksGltfAccessor * ksGltf_GetAccessorByNameAndType( const ksGltfScene * scene, const char * name, const char * type, const int componentType )
 {
-	GltfAccessor_t * accessor = Gltf_GetAccessorByName( scene, name );
+	ksGltfAccessor * accessor = ksGltf_GetAccessorByName( scene, name );
 	if ( accessor != NULL &&
 			accessor->componentType == componentType &&
 				strcmp( accessor->type, type ) == 0 )
@@ -17663,14 +17684,14 @@ static GltfAccessor_t * Gltf_GetAccessorByNameAndType( const GltfScene_t * scene
 	return NULL;
 }
 
-static char * Gltf_strdup( const char * str )
+static char * ksGltf_strdup( const char * str )
 {
 	char * out = (char *)malloc( strlen( str ) + 1 );
 	strcpy( out, str );
 	return out;
 }
 
-static unsigned char * Gltf_ReadFile( const char * fileName, int * outSizeInBytes )
+static unsigned char * ksGltf_ReadFile( const char * fileName, int * outSizeInBytes )
 {
 	if ( outSizeInBytes != NULL )
 	{
@@ -17700,7 +17721,7 @@ static unsigned char * Gltf_ReadFile( const char * fileName, int * outSizeInByte
 	return buffer;
 }
 
-static unsigned char * Gltf_ReadBase64( const char * base64, int * outSizeInBytes )
+static unsigned char * ksGltf_ReadBase64( const char * base64, int * outSizeInBytes )
 {
 	const int base64SizeInBytes = (int)strlen( base64 );
 	const int dataSizeInBytes = Base64_DecodeSizeInBytes( base64, base64SizeInBytes );
@@ -17713,35 +17734,35 @@ static unsigned char * Gltf_ReadBase64( const char * base64, int * outSizeInByte
 	return buffer;
 }
 
-static unsigned char * Gltf_ReadUri( const char * uri, int * outSizeInBytes )
+static unsigned char * ksGltf_ReadUri( const char * uri, int * outSizeInBytes )
 {
 	if ( strncmp( uri, "data:", 5 ) == 0 )
 	{
 		// plain text
 		if ( strncmp( uri, "data:text/plain,", 16 ) == 0 )
 		{
-			return (unsigned char *)Gltf_strdup( uri + 16 );
+			return (unsigned char *)ksGltf_strdup( uri + 16 );
 		}
 		// base64 text "shader"
 		else if ( strncmp( uri, "data:text/plain;base64,", 23 ) == 0 )
 		{
-			return Gltf_ReadBase64( uri + 23, outSizeInBytes );
+			return ksGltf_ReadBase64( uri + 23, outSizeInBytes );
 		}
 		// base64 binary "buffer"
 		else if ( strncmp( uri, "data:application/octet-stream;base64,", 37 ) == 0 )
 		{
-			return Gltf_ReadBase64( uri + 37, outSizeInBytes );
+			return ksGltf_ReadBase64( uri + 37, outSizeInBytes );
 		}
 		// base64 KTX "image"
 		else if ( strncmp( uri, "data:image/ktx;base64,", 22 ) == 0 )
 		{
-			return Gltf_ReadBase64( uri + 22, outSizeInBytes );
+			return ksGltf_ReadBase64( uri + 22, outSizeInBytes );
 		}
 	}
-	return Gltf_ReadFile( uri, outSizeInBytes );
+	return ksGltf_ReadFile( uri, outSizeInBytes );
 }
 
-static void Gltf_ParseIntArray( int * elements, const int count, const Json_t * arrayNode )
+static void ksGltf_ParseIntArray( int * elements, const int count, const Json_t * arrayNode )
 {
 	int i = 0;
 	for ( ; i < Json_GetMemberCount( arrayNode ) && i < count; i++ )
@@ -17754,7 +17775,7 @@ static void Gltf_ParseIntArray( int * elements, const int count, const Json_t * 
 	}
 }
 
-static void Gltf_ParseFloatArray( float * elements, const int count, const Json_t * arrayNode )
+static void ksGltf_ParseFloatArray( float * elements, const int count, const Json_t * arrayNode )
 {
 	int i = 0;
 	for ( ; i < Json_GetMemberCount( arrayNode ) && i < count; i++ )
@@ -17767,33 +17788,33 @@ static void Gltf_ParseFloatArray( float * elements, const int count, const Json_
 	}
 }
 
-static void Gltf_ParseUniformValue( GltfUniformValue_t * value, const Json_t * json, const GpuProgramParmType_t type, const GltfScene_t * scene )
+static void ksGltf_ParseUniformValue( ksGltfUniformValue * value, const Json_t * json, const ksGpuProgramParmType type, const ksGltfScene * scene )
 {
 	switch ( type )
 	{
-		case GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED:					value->texture = Gltf_GetTextureByName( scene, Json_GetString( json, "" ) ); break;
+		case GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED:					value->texture = ksGltf_GetTextureByName( scene, Json_GetString( json, "" ) ); break;
 		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT:				value->intValue[0] = Json_GetInt32( json, 0 ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2:		Gltf_ParseIntArray( value->intValue, 16, json ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3:		Gltf_ParseIntArray( value->intValue, 16, json ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4:		Gltf_ParseIntArray( value->intValue, 16, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2:		ksGltf_ParseIntArray( value->intValue, 16, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3:		ksGltf_ParseIntArray( value->intValue, 16, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4:		ksGltf_ParseIntArray( value->intValue, 16, json ); break;
 		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT:				value->floatValue[0] = Json_GetFloat( json, 0.0f ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		Gltf_ParseFloatArray( value->floatValue, 2, json ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		Gltf_ParseFloatArray( value->floatValue, 3, json ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		Gltf_ParseFloatArray( value->floatValue, 4, json ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2:	Gltf_ParseFloatArray( value->floatValue, 2*2, json ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3:	Gltf_ParseFloatArray( value->floatValue, 2*3, json ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4:	Gltf_ParseFloatArray( value->floatValue, 2*4, json ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2:	Gltf_ParseFloatArray( value->floatValue, 3*2, json ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3:	Gltf_ParseFloatArray( value->floatValue, 3*3, json ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4:	Gltf_ParseFloatArray( value->floatValue, 3*4, json ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	Gltf_ParseFloatArray( value->floatValue, 4*2, json ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	Gltf_ParseFloatArray( value->floatValue, 4*3, json ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	Gltf_ParseFloatArray( value->floatValue, 4*4, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		ksGltf_ParseFloatArray( value->floatValue, 2, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		ksGltf_ParseFloatArray( value->floatValue, 3, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		ksGltf_ParseFloatArray( value->floatValue, 4, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2:	ksGltf_ParseFloatArray( value->floatValue, 2*2, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3:	ksGltf_ParseFloatArray( value->floatValue, 2*3, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4:	ksGltf_ParseFloatArray( value->floatValue, 2*4, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2:	ksGltf_ParseFloatArray( value->floatValue, 3*2, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3:	ksGltf_ParseFloatArray( value->floatValue, 3*3, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4:	ksGltf_ParseFloatArray( value->floatValue, 3*4, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	ksGltf_ParseFloatArray( value->floatValue, 4*2, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	ksGltf_ParseFloatArray( value->floatValue, 4*3, json ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	ksGltf_ParseFloatArray( value->floatValue, 4*4, json ); break;
 		default: break;
 	}
 }
 
-static GpuTextureFilter_t Gltf_GetTextureFilter( const int filter )
+static ksGpuTextureFilter ksGltf_GetTextureFilter( const int filter )
 {
 	switch ( filter )
 	{
@@ -17807,7 +17828,7 @@ static GpuTextureFilter_t Gltf_GetTextureFilter( const int filter )
 	}
 }
 
-static GpuTextureWrapMode_t Gltf_GetTextureWrapMode( const int wrapMode )
+static ksGpuTextureWrapMode ksGltf_GetTextureWrapMode( const int wrapMode )
 {
 	switch ( wrapMode )
 	{
@@ -17818,7 +17839,7 @@ static GpuTextureWrapMode_t Gltf_GetTextureWrapMode( const int wrapMode )
 	}
 }
 
-static GpuFrontFace_t Gltf_GetFrontFace( const int face )
+static ksGpuFrontFace ksGltf_GetFrontFace( const int face )
 {
 	switch ( face )
 	{
@@ -17828,7 +17849,7 @@ static GpuFrontFace_t Gltf_GetFrontFace( const int face )
 	}
 }
 
-static GpuCullMode_t Gltf_GetCullMode( const int mode )
+static ksGpuCullMode ksGltf_GetCullMode( const int mode )
 {
 	switch ( mode )
 	{
@@ -17839,7 +17860,7 @@ static GpuCullMode_t Gltf_GetCullMode( const int mode )
 	}
 }
 
-static GpuCompareOp_t Gltf_GetCompareOp( const int op )
+static ksGpuCompareOp ksGltf_GetCompareOp( const int op )
 {
 	switch ( op )
 	{
@@ -17855,7 +17876,7 @@ static GpuCompareOp_t Gltf_GetCompareOp( const int op )
 	}
 }
 
-static GpuBlendOp_t Gltf_GetBlendOp( const int op )
+static ksGpuBlendOp ksGltf_GetBlendOp( const int op )
 {
 	switch( op )
 	{
@@ -17868,7 +17889,7 @@ static GpuBlendOp_t Gltf_GetBlendOp( const int op )
 	}
 }
 
-static GpuBlendFactor_t Gltf_GetBlendFactor( const int factor )
+static ksGpuBlendFactor ksGltf_GetBlendFactor( const int factor )
 {
 	switch ( factor )
 	{
@@ -17891,7 +17912,7 @@ static GpuBlendFactor_t Gltf_GetBlendFactor( const int factor )
 	}
 }
 
-static void * Gltf_GetBufferData( const GltfAccessor_t * access )
+static void * ksGltf_GetBufferData( const ksGltfAccessor * access )
 {
 	if ( access != NULL )
 	{
@@ -17902,9 +17923,9 @@ static void * Gltf_GetBufferData( const GltfAccessor_t * access )
 
 // Sort the nodes such that parents come before their children and every sub-tree is a contiguous sequence of nodes.
 // Note that the node graph must be acyclic and no node may be a direct or indirect descendant of more than one node.
-static void Gltf_SortNodes( GltfNode_t * nodes, const int nodeCount )
+static void ksGltf_SortNodes( ksGltfNode * nodes, const int nodeCount )
 {
-	GltfNode_t * nodeStack = (GltfNode_t *) malloc( nodeCount * sizeof( GltfNode_t ) );
+	ksGltfNode * nodeStack = (ksGltfNode *) malloc( nodeCount * sizeof( ksGltfNode ) );
 	int stackSize = 0;
 	int stackOffset = 0;
 	for ( int nodeIndex = 0; nodeIndex < nodeCount; nodeIndex++ )
@@ -17927,7 +17948,7 @@ static void Gltf_SortNodes( GltfNode_t * nodes, const int nodeCount )
 			nodeStack[stackSize++] = nodes[nodeIndex];
 			while( stackOffset < stackSize )
 			{
-				const GltfNode_t * node = &nodeStack[stackOffset++];
+				const ksGltfNode * node = &nodeStack[stackOffset++];
 				for ( int childIndex = 0; childIndex < node->childCount; childIndex++ )
 				{
 					for ( int nodeSearchIndex = 0; nodeSearchIndex < nodeCount; nodeSearchIndex++ )
@@ -17952,14 +17973,14 @@ static void Gltf_SortNodes( GltfNode_t * nodes, const int nodeCount )
 	free( nodeStack );
 }
 
-static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scene, const char * fileName, GpuRenderPass_t * renderPass )
+static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * scene, const char * fileName, ksGpuRenderPass * renderPass )
 {
-	const Microseconds_t t0 = GetTimeMicroseconds();
+	const ksMicroseconds t0 = GetTimeMicroseconds();
 
-	memset( scene, 0, sizeof( GltfScene_t ) );
+	memset( scene, 0, sizeof( ksGltfScene ) );
 
 	// Based on a GL_MAX_UNIFORM_BLOCK_SIZE of 16384 on the ARM Mali.
-	const int MAX_JOINTS = 16384 / sizeof( Matrix4x4f_t );
+	const int MAX_JOINTS = 16384 / sizeof( ksMatrix4x4f );
 
 	Json_t * rootNode = Json_Create();
 	if ( Json_ReadFromFile( rootNode, fileName, NULL ) )
@@ -17976,25 +17997,25 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF buffers
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * buffers = Json_GetMemberByName( rootNode, "buffers" );
 			scene->bufferCount = Json_GetMemberCount( buffers );
-			scene->buffers = (GltfBuffer_t *) calloc( scene->bufferCount, sizeof( GltfBuffer_t ) );
+			scene->buffers = (ksGltfBuffer *) calloc( scene->bufferCount, sizeof( ksGltfBuffer ) );
 			for ( int bufferIndex = 0; bufferIndex < scene->bufferCount; bufferIndex++ )
 			{
 				const Json_t * buffer = Json_GetMemberByIndex( buffers, bufferIndex );
-				scene->buffers[bufferIndex].name = Gltf_strdup( Json_GetMemberName( buffer ) );
+				scene->buffers[bufferIndex].name = ksGltf_strdup( Json_GetMemberName( buffer ) );
 				scene->buffers[bufferIndex].byteLength = Json_GetUint64( Json_GetMemberByName( buffer, "byteLength" ), 0 );
-				scene->buffers[bufferIndex].type = Gltf_strdup( Json_GetString( Json_GetMemberByName( buffer, "type" ), "" ) );
-				scene->buffers[bufferIndex].bufferData = Gltf_ReadUri( Json_GetString( Json_GetMemberByName( buffer, "uri" ), "" ), NULL );
+				scene->buffers[bufferIndex].type = ksGltf_strdup( Json_GetString( Json_GetMemberByName( buffer, "type" ), "" ) );
+				scene->buffers[bufferIndex].bufferData = ksGltf_ReadUri( Json_GetString( Json_GetMemberByName( buffer, "uri" ), "" ), NULL );
 				assert( scene->buffers[bufferIndex].name[0] != '\0' );
 				assert( scene->buffers[bufferIndex].byteLength != 0 );
 				assert( scene->buffers[bufferIndex].bufferData != NULL );
 			}
-			Gltf_CreateBufferNameHash( scene );
+			ksGltf_CreateBufferNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load buffers\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18002,16 +18023,16 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF bufferViews
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * bufferViews = Json_GetMemberByName( rootNode, "bufferViews" );
 			scene->bufferViewCount = Json_GetMemberCount( bufferViews );
-			scene->bufferViews = (GltfBufferView_t *) calloc( scene->bufferViewCount, sizeof( GltfBufferView_t ) );
+			scene->bufferViews = (ksGltfBufferView *) calloc( scene->bufferViewCount, sizeof( ksGltfBufferView ) );
 			for ( int bufferViewIndex = 0; bufferViewIndex < scene->bufferViewCount; bufferViewIndex++ )
 			{
 				const Json_t * view = Json_GetMemberByIndex( bufferViews, bufferViewIndex );
-				scene->bufferViews[bufferViewIndex].name = Gltf_strdup( Json_GetMemberName( view ) );
-				scene->bufferViews[bufferViewIndex].buffer = Gltf_GetBufferByName( scene, Json_GetString( Json_GetMemberByName( view, "buffer" ), "" ) );
+				scene->bufferViews[bufferViewIndex].name = ksGltf_strdup( Json_GetMemberName( view ) );
+				scene->bufferViews[bufferViewIndex].buffer = ksGltf_GetBufferByName( scene, Json_GetString( Json_GetMemberByName( view, "buffer" ), "" ) );
 				scene->bufferViews[bufferViewIndex].byteOffset = (size_t) Json_GetUint64( Json_GetMemberByName( view, "byteOffset" ), 0 );
 				scene->bufferViews[bufferViewIndex].byteLength = (size_t) Json_GetUint64( Json_GetMemberByName( view, "byteLength" ), 0 );
 				scene->bufferViews[bufferViewIndex].target = Json_GetUint16( Json_GetMemberByName( view, "target" ), 0 );
@@ -18020,9 +18041,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				assert( scene->bufferViews[bufferViewIndex].byteLength != 0 );
 				assert( scene->bufferViews[bufferViewIndex].byteOffset + scene->bufferViews[bufferViewIndex].byteLength <= scene->bufferViews[bufferViewIndex].buffer->byteLength );
 			}
-			Gltf_CreateBufferViewNameHash( scene );
+			ksGltf_CreateBufferViewNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load buffer views\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18030,21 +18051,21 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF accessors
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * accessors = Json_GetMemberByName( rootNode, "accessors" );
 			scene->accessorCount = Json_GetMemberCount( accessors );
-			scene->accessors = (GltfAccessor_t *) calloc( scene->accessorCount, sizeof( GltfAccessor_t ) );
+			scene->accessors = (ksGltfAccessor *) calloc( scene->accessorCount, sizeof( ksGltfAccessor ) );
 			for ( int accessorIndex = 0; accessorIndex < scene->accessorCount; accessorIndex++ )
 			{
 				const Json_t * access = Json_GetMemberByIndex( accessors, accessorIndex );
-				scene->accessors[accessorIndex].name = Gltf_strdup( Json_GetMemberName( access ) );
-				scene->accessors[accessorIndex].bufferView = Gltf_GetBufferViewByName( scene, Json_GetString( Json_GetMemberByName( access, "bufferView" ), "" ) );
+				scene->accessors[accessorIndex].name = ksGltf_strdup( Json_GetMemberName( access ) );
+				scene->accessors[accessorIndex].bufferView = ksGltf_GetBufferViewByName( scene, Json_GetString( Json_GetMemberByName( access, "bufferView" ), "" ) );
 				scene->accessors[accessorIndex].byteOffset = (size_t) Json_GetUint64( Json_GetMemberByName( access, "byteOffset" ), 0 );
 				scene->accessors[accessorIndex].byteStride = (size_t) Json_GetUint64( Json_GetMemberByName( access, "byteStride" ), 0 );
 				scene->accessors[accessorIndex].componentType = Json_GetUint16( Json_GetMemberByName( access, "componentType" ), 0 );
 				scene->accessors[accessorIndex].count = Json_GetInt32( Json_GetMemberByName( access, "count" ), 0 );
-				scene->accessors[accessorIndex].type =  Gltf_strdup( Json_GetString( Json_GetMemberByName( access, "type" ), "" ) );
+				scene->accessors[accessorIndex].type =  ksGltf_strdup( Json_GetString( Json_GetMemberByName( access, "type" ), "" ) );
 				const Json_t * min = Json_GetMemberByName( access, "min" );
 				const Json_t * max = Json_GetMemberByName( access, "max" );
 				if ( min != NULL && max != NULL )
@@ -18064,12 +18085,12 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 						case GL_UNSIGNED_BYTE:
 						case GL_SHORT:
 						case GL_UNSIGNED_SHORT:
-							Gltf_ParseIntArray( scene->accessors[accessorIndex].intMin, componentCount, min );
-							Gltf_ParseIntArray( scene->accessors[accessorIndex].intMax, componentCount, max );
+							ksGltf_ParseIntArray( scene->accessors[accessorIndex].intMin, componentCount, min );
+							ksGltf_ParseIntArray( scene->accessors[accessorIndex].intMax, componentCount, max );
 							break;
 						case GL_FLOAT:
-							Gltf_ParseFloatArray( scene->accessors[accessorIndex].floatMin, componentCount, min );
-							Gltf_ParseFloatArray( scene->accessors[accessorIndex].floatMax, componentCount, max );
+							ksGltf_ParseFloatArray( scene->accessors[accessorIndex].floatMin, componentCount, min );
+							ksGltf_ParseFloatArray( scene->accessors[accessorIndex].floatMax, componentCount, max );
 							break;
 					}
 				}
@@ -18081,9 +18102,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				assert( scene->accessors[accessorIndex].type[0] != '\0' );
 				assert( scene->accessors[accessorIndex].byteOffset + scene->accessors[accessorIndex].count * scene->accessors[accessorIndex].byteStride <= scene->accessors[accessorIndex].bufferView->byteLength );
 			}
-			Gltf_CreateAccessorNameHash( scene );
+			ksGltf_CreateAccessorNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load accessors\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18091,22 +18112,22 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF images
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * images = Json_GetMemberByName( rootNode, "images" );
 			scene->imageCount = Json_GetMemberCount( images );
-			scene->images = (GltfImage_t *) calloc( scene->imageCount, sizeof( GltfImage_t ) );
+			scene->images = (ksGltfImage *) calloc( scene->imageCount, sizeof( ksGltfImage ) );
 			for ( int imageIndex = 0; imageIndex < scene->imageCount; imageIndex++ )
 			{
 				const Json_t * image = Json_GetMemberByIndex( images, imageIndex );
-				scene->images[imageIndex].name = Gltf_strdup( Json_GetMemberName( image ) );
-				scene->images[imageIndex].uri = Gltf_strdup( Json_GetString( Json_GetMemberByName( image, "uri" ), "" ) );
+				scene->images[imageIndex].name = ksGltf_strdup( Json_GetMemberName( image ) );
+				scene->images[imageIndex].uri = ksGltf_strdup( Json_GetString( Json_GetMemberByName( image, "uri" ), "" ) );
 				assert( scene->images[imageIndex].name[0] != '\0' );
 				assert( scene->images[imageIndex].uri[0] != '\0' );
 			}
-			Gltf_CreateImageNameHash( scene );
+			ksGltf_CreateImageNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load images\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18114,24 +18135,24 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF samplers
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * samplers = Json_GetMemberByName( rootNode, "samplers" );
 			scene->samplerCount = Json_GetMemberCount( samplers );
-			scene->samplers = (GltfSampler_t *) calloc( scene->samplerCount, sizeof( GltfSampler_t ) );
+			scene->samplers = (ksGltfSampler *) calloc( scene->samplerCount, sizeof( ksGltfSampler ) );
 			for ( int samplerIndex = 0; samplerIndex < scene->samplerCount; samplerIndex++ )
 			{
 				const Json_t * sampler = Json_GetMemberByIndex( samplers, samplerIndex );
-				scene->samplers[samplerIndex].name = Gltf_strdup( Json_GetMemberName( sampler ) );
+				scene->samplers[samplerIndex].name = ksGltf_strdup( Json_GetMemberName( sampler ) );
 				scene->samplers[samplerIndex].magFilter = Json_GetUint16( Json_GetMemberByName( sampler, "magFilter" ), GL_LINEAR );
 				scene->samplers[samplerIndex].minFilter = Json_GetUint16( Json_GetMemberByName( sampler, "minFilter" ), GL_NEAREST_MIPMAP_LINEAR );
 				scene->samplers[samplerIndex].wrapS = Json_GetUint16( Json_GetMemberByName( sampler, "wrapS" ), GL_REPEAT );
 				scene->samplers[samplerIndex].wrapT = Json_GetUint16( Json_GetMemberByName( sampler, "wrapT" ), GL_REPEAT );
 				assert( scene->samplers[samplerIndex].name[0] != '\0' );
 			}
-			Gltf_CreateSamplerNameHash( scene );
+			ksGltf_CreateSamplerNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load samplers\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18139,17 +18160,17 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF textures
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * textures = Json_GetMemberByName( rootNode, "textures" );
 			scene->textureCount = Json_GetMemberCount( textures );
-			scene->textures = (GltfTexture_t *) calloc( scene->textureCount, sizeof( GltfTexture_t ) );
+			scene->textures = (ksGltfTexture *) calloc( scene->textureCount, sizeof( ksGltfTexture ) );
 			for ( int textureIndex = 0; textureIndex < scene->textureCount; textureIndex++ )
 			{
 				const Json_t * texture = Json_GetMemberByIndex( textures, textureIndex );
-				scene->textures[textureIndex].name = Gltf_strdup( Json_GetMemberName( texture ) );
-				scene->textures[textureIndex].image = Gltf_GetImageByName( scene, Json_GetString( Json_GetMemberByName( texture, "source" ), "" ) );
-				scene->textures[textureIndex].sampler = Gltf_GetSamplerByName( scene, Json_GetString( Json_GetMemberByName( texture, "sampler" ), "" ) );
+				scene->textures[textureIndex].name = ksGltf_strdup( Json_GetMemberName( texture ) );
+				scene->textures[textureIndex].image = ksGltf_GetImageByName( scene, Json_GetString( Json_GetMemberByName( texture, "source" ), "" ) );
+				scene->textures[textureIndex].sampler = ksGltf_GetSamplerByName( scene, Json_GetString( Json_GetMemberByName( texture, "sampler" ), "" ) );
 
 				assert( scene->textures[textureIndex].name[0] != '\0' );
 				assert( scene->textures[textureIndex].image != NULL );
@@ -18157,13 +18178,13 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 
 				// The "format", "internalFormat", "target" and "type" are automatically derived from the KTX file.
 				int dataSizeInBytes = 0;
-				unsigned char * data = Gltf_ReadUri( scene->textures[textureIndex].image->uri, &dataSizeInBytes );
-				GpuTexture_CreateFromKTX( context, &scene->textures[textureIndex].texture, scene->textures[textureIndex].name, data, dataSizeInBytes );
+				unsigned char * data = ksGltf_ReadUri( scene->textures[textureIndex].image->uri, &dataSizeInBytes );
+				ksGpuTexture_CreateFromKTX( context, &scene->textures[textureIndex].texture, scene->textures[textureIndex].name, data, dataSizeInBytes );
 				free( data );
 			}
-			Gltf_CreateTextureNameHash( scene );
+			ksGltf_CreateTextureNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load textures\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18171,19 +18192,19 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF shaders
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * shaders = Json_GetMemberByName( rootNode, "shaders" );
 			scene->shaderCount = Json_GetMemberCount( shaders );
-			scene->shaders = (GltfShader_t *) calloc( scene->shaderCount, sizeof( GltfShader_t ) );
+			scene->shaders = (ksGltfShader *) calloc( scene->shaderCount, sizeof( ksGltfShader ) );
 			for ( int shaderIndex = 0; shaderIndex < scene->shaderCount; shaderIndex++ )
 			{
 				const Json_t * shader = Json_GetMemberByIndex( shaders, shaderIndex );
-				scene->shaders[shaderIndex].name = Gltf_strdup( Json_GetMemberName( shader ) );
-				scene->shaders[shaderIndex].uriGlslOpenGL = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uri" ), "" ) );
-				scene->shaders[shaderIndex].uriGlslVulkan = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uriGlslVulkan" ), "" ) );
-				scene->shaders[shaderIndex].uriSpirvOpenGL = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uriSpirvOpenGL" ), "" ) );
-				scene->shaders[shaderIndex].uriSpirvVulkan = Gltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uriSpirvVulkan" ), "" ) );
+				scene->shaders[shaderIndex].name = ksGltf_strdup( Json_GetMemberName( shader ) );
+				scene->shaders[shaderIndex].uriGlslOpenGL = ksGltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uri" ), "" ) );
+				scene->shaders[shaderIndex].uriGlslVulkan = ksGltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uriGlslVulkan" ), "" ) );
+				scene->shaders[shaderIndex].uriSpirvOpenGL = ksGltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uriSpirvOpenGL" ), "" ) );
+				scene->shaders[shaderIndex].uriSpirvVulkan = ksGltf_strdup( Json_GetString( Json_GetMemberByName( shader, "uriSpirvVulkan" ), "" ) );
 				scene->shaders[shaderIndex].type = Json_GetUint16( Json_GetMemberByName( shader, "type" ), 0 );
 				assert( scene->shaders[shaderIndex].name[0] != '\0' );
 				assert( scene->shaders[shaderIndex].uriGlslOpenGL[0] != '\0' );
@@ -18192,9 +18213,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				assert( scene->shaders[shaderIndex].uriSpirvVulkan != '\0' );
 				assert( scene->shaders[shaderIndex].type != 0 );
 			}
-			Gltf_CreateShaderNameHash( scene );
+			ksGltf_CreateShaderNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load shaders\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18202,37 +18223,37 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF programs
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * programs = Json_GetMemberByName( rootNode, "programs" );
 			scene->programCount = Json_GetMemberCount( programs );
-			scene->programs = (GltfProgram_t *) calloc( scene->programCount, sizeof( GltfProgram_t ) );
+			scene->programs = (ksGltfProgram *) calloc( scene->programCount, sizeof( ksGltfProgram ) );
 			for ( int programIndex = 0; programIndex < scene->programCount; programIndex++ )
 			{
 				const Json_t * program = Json_GetMemberByIndex( programs, programIndex );
 				const char * vertexShaderName = Json_GetString( Json_GetMemberByName( program, "vertexShader" ), "" );
 				const char * fragmentShaderName = Json_GetString( Json_GetMemberByName( program, "fragmentShader" ), "" );
-				const GltfShader_t * vertexShader = Gltf_GetShaderByName( scene, vertexShaderName );
-				const GltfShader_t * fragmentShader = Gltf_GetShaderByName( scene, fragmentShaderName );
+				const ksGltfShader * vertexShader = ksGltf_GetShaderByName( scene, vertexShaderName );
+				const ksGltfShader * fragmentShader = ksGltf_GetShaderByName( scene, fragmentShaderName );
 
 				assert( vertexShader != NULL );
 				assert( fragmentShader != NULL );
 
-				scene->programs[programIndex].name = Gltf_strdup( Json_GetMemberName( program ) );
+				scene->programs[programIndex].name = ksGltf_strdup( Json_GetMemberName( program ) );
 #if USE_SPIRV == 1
-				scene->programs[programIndex].vertexSource = Gltf_ReadUri( vertexShader->uriSpirvVulkan, &scene->programs[programIndex].vertexSourceSize );
-				scene->programs[programIndex].fragmentSource = Gltf_ReadUri( fragmentShader->uriSpirvVulkan, &scene->programs[programIndex].fragmentSourceSize );
+				scene->programs[programIndex].vertexSource = ksGltf_ReadUri( vertexShader->uriSpirvVulkan, &scene->programs[programIndex].vertexSourceSize );
+				scene->programs[programIndex].fragmentSource = ksGltf_ReadUri( fragmentShader->uriSpirvVulkan, &scene->programs[programIndex].fragmentSourceSize );
 #else
-				scene->programs[programIndex].vertexSource = Gltf_ReadUri( vertexShader->uriGlslVulkan, &scene->programs[programIndex].vertexSourceSize );
-				scene->programs[programIndex].fragmentSource = Gltf_ReadUri( fragmentShader->uriGlslVulkan, &scene->programs[programIndex].fragmentSourceSize );
+				scene->programs[programIndex].vertexSource = ksGltf_ReadUri( vertexShader->uriGlslVulkan, &scene->programs[programIndex].vertexSourceSize );
+				scene->programs[programIndex].fragmentSource = ksGltf_ReadUri( fragmentShader->uriGlslVulkan, &scene->programs[programIndex].fragmentSourceSize );
 #endif
 				assert( scene->programs[programIndex].name[0] != '\0' );
 				assert( scene->programs[programIndex].vertexSource[0] != '\0' );
 				assert( scene->programs[programIndex].fragmentSource[0] != '\0' );
 			}
-			Gltf_CreateProgramNameHash( scene );
+			ksGltf_CreateProgramNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load programs\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18240,16 +18261,16 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF techniques
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * techniques = Json_GetMemberByName( rootNode, "techniques" );
 			scene->techniqueCount = Json_GetMemberCount( techniques );
-			scene->techniques = (GltfTechnique_t *) calloc( scene->techniqueCount, sizeof( GltfTechnique_t ) );
+			scene->techniques = (ksGltfTechnique *) calloc( scene->techniqueCount, sizeof( ksGltfTechnique ) );
 			for ( int techniqueIndex = 0; techniqueIndex < scene->techniqueCount; techniqueIndex++ )
 			{
 				const Json_t * technique = Json_GetMemberByIndex( techniques, techniqueIndex );
-				scene->techniques[techniqueIndex].name = Gltf_strdup( Json_GetMemberName( technique ) );
-				const GltfProgram_t * program = Gltf_GetProgramByName( scene, Json_GetString( Json_GetMemberByName( technique, "program" ), "" ) );
+				scene->techniques[techniqueIndex].name = ksGltf_strdup( Json_GetMemberName( technique ) );
+				const ksGltfProgram * program = ksGltf_GetProgramByName( scene, Json_GetString( Json_GetMemberByName( technique, "program" ), "" ) );
 
 				assert( scene->techniques[techniqueIndex].name[0] != '\0' );
 				assert( program != NULL );
@@ -18278,10 +18299,10 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				const Json_t * uniforms = Json_GetMemberByName( technique, "uniforms" );
 				const Json_t * parameters = Json_GetMemberByName( technique, "parameters" );
 				const int uniformCount = Json_GetMemberCount( uniforms );
-				scene->techniques[techniqueIndex].parms = (GpuProgramParm_t *) calloc( uniformCount, sizeof( GpuProgramParm_t ) );
+				scene->techniques[techniqueIndex].parms = (ksGpuProgramParm *) calloc( uniformCount, sizeof( ksGpuProgramParm ) );
 				scene->techniques[techniqueIndex].uniformCount = uniformCount;
-				scene->techniques[techniqueIndex].uniforms = (GltfUniform_t *) calloc( uniformCount, sizeof( GltfUniform_t ) );
-				memset( scene->techniques[techniqueIndex].uniforms, 0, uniformCount * sizeof( GltfUniform_t ) );
+				scene->techniques[techniqueIndex].uniforms = (ksGltfUniform *) calloc( uniformCount, sizeof( ksGltfUniform ) );
+				memset( scene->techniques[techniqueIndex].uniforms, 0, uniformCount * sizeof( ksGltfUniform ) );
 				for ( int j = 0; j < uniformCount; j++ )
 				{
 					const Json_t * uniform = Json_GetMemberByIndex( uniforms, j );
@@ -18293,7 +18314,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					const int type = Json_GetUint16( Json_GetMemberByName( parameter, "type" ), 0 );
 					const int binding = Json_GetUint32( Json_GetMemberByName( parameter, "bindingVulkan" ), 0 );
 
-					GpuProgramParmType_t parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED;
+					ksGpuProgramParmType parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED;
 					switch ( type )
 					{
 						case GL_SAMPLER_2D:		parmType = GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED; break;
@@ -18327,10 +18348,10 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					scene->techniques[techniqueIndex].parms[j].type = parmType;
 					scene->techniques[techniqueIndex].parms[j].access = GPU_PROGRAM_PARM_ACCESS_READ_ONLY;	// assume all parms are read-only
 					scene->techniques[techniqueIndex].parms[j].index = j;
-					scene->techniques[techniqueIndex].parms[j].name = Gltf_strdup( uniformName );
+					scene->techniques[techniqueIndex].parms[j].name = ksGltf_strdup( uniformName );
 					scene->techniques[techniqueIndex].parms[j].binding = binding;
 
-					scene->techniques[techniqueIndex].uniforms[j].name = Gltf_strdup( parmName );
+					scene->techniques[techniqueIndex].uniforms[j].name = ksGltf_strdup( parmName );
 					scene->techniques[techniqueIndex].uniforms[j].semantic = GLTF_UNIFORM_SEMANTIC_NONE;		// default to the material setting the uniform
 					scene->techniques[techniqueIndex].uniforms[j].type = parmType;
 					scene->techniques[techniqueIndex].uniforms[j].index = j;
@@ -18345,9 +18366,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					const Json_t * value = Json_GetMemberByName( parameter, "value" );
 					if ( value != NULL )
 					{
-						GltfUniform_t * techniqueUniform = &scene->techniques[techniqueIndex].uniforms[j];
+						ksGltfUniform * techniqueUniform = &scene->techniques[techniqueIndex].uniforms[j];
 						techniqueUniform->semantic = GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE;
-						Gltf_ParseUniformValue( &techniqueUniform->defaultValue, value, techniqueUniform->type, scene );
+						ksGltf_ParseUniformValue( &techniqueUniform->defaultValue, value, techniqueUniform->type, scene );
 					}
 				}
 
@@ -18424,16 +18445,16 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					else if ( strcmp( funcName, "blendEquationSeparate" ) == 0 )
 					{
 						// [GLenum:GL_FUNC_* (rgb), GLenum:GL_FUNC_* (alpha)]
-						scene->techniques[techniqueIndex].rop.blendOpColor = Gltf_GetBlendOp( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
-						scene->techniques[techniqueIndex].rop.blendOpAlpha = Gltf_GetBlendOp( Json_GetUint16( Json_GetMemberByIndex( func, 1 ), 0 ) );
+						scene->techniques[techniqueIndex].rop.blendOpColor = ksGltf_GetBlendOp( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+						scene->techniques[techniqueIndex].rop.blendOpAlpha = ksGltf_GetBlendOp( Json_GetUint16( Json_GetMemberByIndex( func, 1 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "blendFuncSeparate" ) == 0 )
 					{
 						// [GLenum:GL_ONE (srcRGB), GLenum:GL_ZERO (dstRGB), GLenum:GL_ONE (srcAlpha), GLenum:GL_ZERO (dstAlpha)]
-						scene->techniques[techniqueIndex].rop.blendSrcColor = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
-						scene->techniques[techniqueIndex].rop.blendDstColor = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 1 ), 0 ) );
-						scene->techniques[techniqueIndex].rop.blendSrcAlpha = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 2 ), 0 ) );
-						scene->techniques[techniqueIndex].rop.blendDstAlpha = Gltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 3 ), 0 ) );
+						scene->techniques[techniqueIndex].rop.blendSrcColor = ksGltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+						scene->techniques[techniqueIndex].rop.blendDstColor = ksGltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 1 ), 0 ) );
+						scene->techniques[techniqueIndex].rop.blendSrcAlpha = ksGltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 2 ), 0 ) );
+						scene->techniques[techniqueIndex].rop.blendDstAlpha = ksGltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 3 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "colorMask" ) == 0 )
 					{
@@ -18446,12 +18467,12 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					else if ( strcmp( funcName, "cullFace" ) == 0 )
 					{
 						// [GLenum:GL_BACK,GL_FRONT]
-						scene->techniques[techniqueIndex].rop.cullMode = Gltf_GetCullMode( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+						scene->techniques[techniqueIndex].rop.cullMode = ksGltf_GetCullMode( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "depthFunc" ) == 0 )
 					{
 						// [GLenum:GL_LESS,GL_LEQUAL,GL_GREATER]
-						scene->techniques[techniqueIndex].rop.depthCompare = Gltf_GetCompareOp( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+						scene->techniques[techniqueIndex].rop.depthCompare = ksGltf_GetCompareOp( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "depthMask" ) == 0 )
 					{
@@ -18461,7 +18482,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					else if ( strcmp( funcName, "frontFace" ) == 0 )
 					{
 						// [Glenum:GL_CCW,GL_CW]
-						scene->techniques[techniqueIndex].rop.frontFace = Gltf_GetFrontFace( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+						scene->techniques[techniqueIndex].rop.frontFace = ksGltf_GetFrontFace( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
 					}
 					else if ( strcmp( funcName, "lineWidth" ) == 0 )
 					{
@@ -18485,14 +18506,14 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					}
 				}
 
-				GpuGraphicsProgram_Create( context, &scene->techniques[techniqueIndex].program,
+				ksGpuGraphicsProgram_Create( context, &scene->techniques[techniqueIndex].program,
 											program->vertexSource, program->vertexSourceSize,
 											program->fragmentSource, program->fragmentSourceSize,
 											scene->techniques[techniqueIndex].parms, uniformCount, DefaultVertexAttributeLayout, vertexAttribsFlags );
 			}
-			Gltf_CreateTechniqueNameHash( scene );
+			ksGltf_CreateTechniqueNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load techniques\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18500,16 +18521,16 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF materials
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * materials = Json_GetMemberByName( rootNode, "materials" );
 			scene->materialCount = Json_GetMemberCount( materials );
-			scene->materials = (GltfMaterial_t *) calloc( scene->materialCount, sizeof( GltfMaterial_t ) );
+			scene->materials = (ksGltfMaterial *) calloc( scene->materialCount, sizeof( ksGltfMaterial ) );
 			for ( int materialIndex = 0; materialIndex < scene->materialCount; materialIndex++ )
 			{
 				const Json_t * material = Json_GetMemberByIndex( materials, materialIndex );
-				const GltfTechnique_t * technique = Gltf_GetTechniqueByName( scene, Json_GetString( Json_GetMemberByName( material, "technique" ), "" ) );
-				scene->materials[materialIndex].name = Gltf_strdup( Json_GetMemberName( material ) );
+				const ksGltfTechnique * technique = ksGltf_GetTechniqueByName( scene, Json_GetString( Json_GetMemberByName( material, "technique" ), "" ) );
+				scene->materials[materialIndex].name = ksGltf_strdup( Json_GetMemberName( material ) );
 				scene->materials[materialIndex].technique = technique;
 
 				assert( scene->materials[materialIndex].name[0] != '\0' );
@@ -18517,12 +18538,12 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 
 				const Json_t * values = Json_GetMemberByName( material, "values" );
 				scene->materials[materialIndex].valueCount = Json_GetMemberCount( values );
-				scene->materials[materialIndex].values = (GltfMaterialValue_t *) calloc( scene->materials[materialIndex].valueCount, sizeof( GltfMaterialValue_t ) );
+				scene->materials[materialIndex].values = (ksGltfMaterialValue *) calloc( scene->materials[materialIndex].valueCount, sizeof( ksGltfMaterialValue ) );
 				for ( int valueIndex = 0; valueIndex < scene->materials[materialIndex].valueCount; valueIndex++ )
 				{
 					const Json_t * value = Json_GetMemberByIndex( values, valueIndex );
 					const char * valueName = Json_GetMemberName( value );
-					GltfUniform_t * uniform = NULL;
+					ksGltfUniform * uniform = NULL;
 					for ( int uniformIndex = 0; uniformIndex < technique->uniformCount; uniformIndex++ )
 					{
 						if ( strcmp( technique->uniforms[uniformIndex].name, valueName ) == 0 )
@@ -18538,7 +18559,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					}
 					assert( uniform->semantic == GLTF_UNIFORM_SEMANTIC_NONE || uniform->semantic == GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE );
 					scene->materials[materialIndex].values[valueIndex].uniform = uniform;
-					Gltf_ParseUniformValue( &scene->materials[materialIndex].values[valueIndex].value, value, uniform->type, scene );
+					ksGltf_ParseUniformValue( &scene->materials[materialIndex].values[valueIndex].value, value, uniform->type, scene );
 				}
 				// Make sure that the material sets any uniforms that do not have a special semantic or a default value.
 				for ( int uniformIndex = 0; uniformIndex < technique->uniformCount; uniformIndex++ )
@@ -18558,9 +18579,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					}
 				}
 			}
-			Gltf_CreateMaterialNameHash( scene );
+			ksGltf_CreateMaterialNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load materials\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18568,24 +18589,24 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF meshes
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * models = Json_GetMemberByName( rootNode, "meshes" );
 			scene->modelCount = Json_GetMemberCount( models );
-			scene->models = (GltfModel_t *) calloc( scene->modelCount, sizeof( GltfModel_t ) );
+			scene->models = (ksGltfModel *) calloc( scene->modelCount, sizeof( ksGltfModel ) );
 			for ( int meshIndex = 0; meshIndex < scene->modelCount; meshIndex++ )
 			{
 				const Json_t * model = Json_GetMemberByIndex( models, meshIndex );
-				scene->models[meshIndex].name = Gltf_strdup( Json_GetMemberName( model ) );
+				scene->models[meshIndex].name = ksGltf_strdup( Json_GetMemberName( model ) );
 
 				assert( scene->models[meshIndex].name[0] != '\0' );
 
 				const Json_t * primitives = Json_GetMemberByName( model, "primitives" );
 				scene->models[meshIndex].surfaceCount = Json_GetMemberCount( primitives );
-				scene->models[meshIndex].surfaces = (GltfSurface_t *) calloc( scene->models[meshIndex].surfaceCount, sizeof( GltfSurface_t ) );
+				scene->models[meshIndex].surfaces = (ksGltfSurface *) calloc( scene->models[meshIndex].surfaceCount, sizeof( ksGltfSurface ) );
 				for ( int surfaceIndex = 0; surfaceIndex < scene->models[meshIndex].surfaceCount; surfaceIndex++ )
 				{
-					GltfSurface_t * surface = &scene->models[meshIndex].surfaces[surfaceIndex];
+					ksGltfSurface * surface = &scene->models[meshIndex].surfaces[surfaceIndex];
 
 					const Json_t * primitive = Json_GetMemberByIndex( primitives, surfaceIndex );
 					const Json_t * attributes = Json_GetMemberByName( primitive, "attributes" );
@@ -18602,20 +18623,20 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					const char * jointWeightsAccessorName	= Json_GetString( Json_GetMemberByName( attributes, "WEIGHT" ), "" );
 					const char * indicesAccessorName		= Json_GetString( Json_GetMemberByName( primitive, "indices" ), "" );
 
-					surface->material = Gltf_GetMaterialByName( scene, Json_GetString( Json_GetMemberByName( primitive, "material" ), "" ) );
+					surface->material = ksGltf_GetMaterialByName( scene, Json_GetString( Json_GetMemberByName( primitive, "material" ), "" ) );
 					assert( surface->material != NULL );
 
-					const GltfAccessor_t * positionAccessor		= Gltf_GetAccessorByNameAndType( scene, positionAccessorName,		"VEC3",		GL_FLOAT );
-					const GltfAccessor_t * normalAccessor		= Gltf_GetAccessorByNameAndType( scene, normalAccessorName,			"VEC3",		GL_FLOAT );
-					const GltfAccessor_t * tangentAccessor		= Gltf_GetAccessorByNameAndType( scene, tangentAccessorName,		"VEC3",		GL_FLOAT );
-					const GltfAccessor_t * binormalAccessor		= Gltf_GetAccessorByNameAndType( scene, binormalAccessorName,		"VEC3",		GL_FLOAT );
-					const GltfAccessor_t * colorAccessor		= Gltf_GetAccessorByNameAndType( scene, colorAccessorName,			"VEC4",		GL_FLOAT );
-					const GltfAccessor_t * uv0Accessor			= Gltf_GetAccessorByNameAndType( scene, uv0AccessorName,			"VEC2",		GL_FLOAT );
-					const GltfAccessor_t * uv1Accessor			= Gltf_GetAccessorByNameAndType( scene, uv1AccessorName,			"VEC2",		GL_FLOAT );
-					const GltfAccessor_t * uv2Accessor			= Gltf_GetAccessorByNameAndType( scene, uv2AccessorName,			"VEC2",		GL_FLOAT );
-					const GltfAccessor_t * jointIndicesAccessor	= Gltf_GetAccessorByNameAndType( scene, jointIndicesAccessorName,	"VEC4",		GL_FLOAT );
-					const GltfAccessor_t * jointWeightsAccessor	= Gltf_GetAccessorByNameAndType( scene, jointWeightsAccessorName,	"VEC4",		GL_FLOAT );
-					const GltfAccessor_t * indicesAccessor		= Gltf_GetAccessorByNameAndType( scene, indicesAccessorName,		"SCALAR",	GL_UNSIGNED_SHORT );
+					const ksGltfAccessor * positionAccessor		= ksGltf_GetAccessorByNameAndType( scene, positionAccessorName,		"VEC3",		GL_FLOAT );
+					const ksGltfAccessor * normalAccessor		= ksGltf_GetAccessorByNameAndType( scene, normalAccessorName,			"VEC3",		GL_FLOAT );
+					const ksGltfAccessor * tangentAccessor		= ksGltf_GetAccessorByNameAndType( scene, tangentAccessorName,		"VEC3",		GL_FLOAT );
+					const ksGltfAccessor * binormalAccessor		= ksGltf_GetAccessorByNameAndType( scene, binormalAccessorName,		"VEC3",		GL_FLOAT );
+					const ksGltfAccessor * colorAccessor		= ksGltf_GetAccessorByNameAndType( scene, colorAccessorName,			"VEC4",		GL_FLOAT );
+					const ksGltfAccessor * uv0Accessor			= ksGltf_GetAccessorByNameAndType( scene, uv0AccessorName,			"VEC2",		GL_FLOAT );
+					const ksGltfAccessor * uv1Accessor			= ksGltf_GetAccessorByNameAndType( scene, uv1AccessorName,			"VEC2",		GL_FLOAT );
+					const ksGltfAccessor * uv2Accessor			= ksGltf_GetAccessorByNameAndType( scene, uv2AccessorName,			"VEC2",		GL_FLOAT );
+					const ksGltfAccessor * jointIndicesAccessor	= ksGltf_GetAccessorByNameAndType( scene, jointIndicesAccessorName,	"VEC4",		GL_FLOAT );
+					const ksGltfAccessor * jointWeightsAccessor	= ksGltf_GetAccessorByNameAndType( scene, jointWeightsAccessorName,	"VEC4",		GL_FLOAT );
+					const ksGltfAccessor * indicesAccessor		= ksGltf_GetAccessorByNameAndType( scene, indicesAccessorName,		"SCALAR",	GL_UNSIGNED_SHORT );
 
 					if ( positionAccessor == NULL || indicesAccessor == NULL )
 					{
@@ -18651,40 +18672,40 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 											( jointIndicesAccessor != NULL	? VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES : 0 ) |
 											( jointWeightsAccessor != NULL	? VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS : 0 );
 
-					GpuVertexAttributeArrays_t attribs;
-					GpuVertexAttributeArrays_Alloc( &attribs.base, DefaultVertexAttributeLayout, positionAccessor->count, attribFlags );
+					ksGpuVertexAttributeArrays attribs;
+					ksGpuVertexAttributeArrays_Alloc( &attribs.base, DefaultVertexAttributeLayout, positionAccessor->count, attribFlags );
 
-					if ( positionAccessor != NULL )		memcpy( attribs.position,		Gltf_GetBufferData( positionAccessor ),		positionAccessor->count		* sizeof( attribs.position[0] ) );
-					if ( normalAccessor != NULL )		memcpy( attribs.normal,			Gltf_GetBufferData( normalAccessor ),		normalAccessor->count		* sizeof( attribs.normal[0] ) );
-					if ( tangentAccessor != NULL )		memcpy( attribs.tangent,		Gltf_GetBufferData( tangentAccessor ),		tangentAccessor->count		* sizeof( attribs.tangent[0] ) );
-					if ( binormalAccessor != NULL )		memcpy( attribs.binormal,		Gltf_GetBufferData( binormalAccessor ),		binormalAccessor->count		* sizeof( attribs.binormal[0] ) );
-					if ( colorAccessor != NULL )		memcpy( attribs.color,			Gltf_GetBufferData( colorAccessor ),		colorAccessor->count		* sizeof( attribs.color[0] ) );
-					if ( uv0Accessor != NULL )			memcpy( attribs.uv0,			Gltf_GetBufferData( uv0Accessor ),			uv0Accessor->count			* sizeof( attribs.uv0[0] ) );
-					if ( uv1Accessor != NULL )			memcpy( attribs.uv1,			Gltf_GetBufferData( uv1Accessor ),			uv1Accessor->count			* sizeof( attribs.uv1[0] ) );
-					if ( uv2Accessor != NULL )			memcpy( attribs.uv2,			Gltf_GetBufferData( uv2Accessor ),			uv2Accessor->count			* sizeof( attribs.uv2[0] ) );
-					if ( jointIndicesAccessor != NULL )	memcpy( attribs.jointIndices,	Gltf_GetBufferData( jointIndicesAccessor ),	jointIndicesAccessor->count	* sizeof( attribs.jointIndices[0] ) );
-					if ( jointWeightsAccessor != NULL )	memcpy( attribs.jointWeights,	Gltf_GetBufferData( jointWeightsAccessor ),	jointWeightsAccessor->count	* sizeof( attribs.jointWeights[0] ) );
+					if ( positionAccessor != NULL )		memcpy( attribs.position,		ksGltf_GetBufferData( positionAccessor ),		positionAccessor->count		* sizeof( attribs.position[0] ) );
+					if ( normalAccessor != NULL )		memcpy( attribs.normal,			ksGltf_GetBufferData( normalAccessor ),		normalAccessor->count		* sizeof( attribs.normal[0] ) );
+					if ( tangentAccessor != NULL )		memcpy( attribs.tangent,		ksGltf_GetBufferData( tangentAccessor ),		tangentAccessor->count		* sizeof( attribs.tangent[0] ) );
+					if ( binormalAccessor != NULL )		memcpy( attribs.binormal,		ksGltf_GetBufferData( binormalAccessor ),		binormalAccessor->count		* sizeof( attribs.binormal[0] ) );
+					if ( colorAccessor != NULL )		memcpy( attribs.color,			ksGltf_GetBufferData( colorAccessor ),		colorAccessor->count		* sizeof( attribs.color[0] ) );
+					if ( uv0Accessor != NULL )			memcpy( attribs.uv0,			ksGltf_GetBufferData( uv0Accessor ),			uv0Accessor->count			* sizeof( attribs.uv0[0] ) );
+					if ( uv1Accessor != NULL )			memcpy( attribs.uv1,			ksGltf_GetBufferData( uv1Accessor ),			uv1Accessor->count			* sizeof( attribs.uv1[0] ) );
+					if ( uv2Accessor != NULL )			memcpy( attribs.uv2,			ksGltf_GetBufferData( uv2Accessor ),			uv2Accessor->count			* sizeof( attribs.uv2[0] ) );
+					if ( jointIndicesAccessor != NULL )	memcpy( attribs.jointIndices,	ksGltf_GetBufferData( jointIndicesAccessor ),	jointIndicesAccessor->count	* sizeof( attribs.jointIndices[0] ) );
+					if ( jointWeightsAccessor != NULL )	memcpy( attribs.jointWeights,	ksGltf_GetBufferData( jointWeightsAccessor ),	jointWeightsAccessor->count	* sizeof( attribs.jointWeights[0] ) );
 
-					GpuTriangleIndex_t * indices = (GpuTriangleIndex_t *)Gltf_GetBufferData( indicesAccessor );
+					ksGpuTriangleIndex * indices = (ksGpuTriangleIndex *)ksGltf_GetBufferData( indicesAccessor );
 
-					GpuGeometry_Create( context, &surface->geometry, &attribs.base, positionAccessor->count, indices, indicesAccessor->count );
+					ksGpuGeometry_Create( context, &surface->geometry, &attribs.base, positionAccessor->count, indices, indicesAccessor->count );
 
-					GpuVertexAttributeArrays_Free( &attribs.base );
+					ksGpuVertexAttributeArrays_Free( &attribs.base );
 
-					GpuGraphicsPipelineParms_t pipelineParms;
-					GpuGraphicsPipelineParms_Init( &pipelineParms );
+					ksGpuGraphicsPipelineParms pipelineParms;
+					ksGpuGraphicsPipelineParms_Init( &pipelineParms );
 
 					pipelineParms.renderPass = renderPass;
 					pipelineParms.program = &surface->material->technique->program;
 					pipelineParms.geometry = &surface->geometry;
 					pipelineParms.rop = surface->material->technique->rop;
 
-					GpuGraphicsPipeline_Create( context, &surface->pipeline, &pipelineParms );
+					ksGpuGraphicsPipeline_Create( context, &surface->pipeline, &pipelineParms );
 				}
 			}
-			Gltf_CreateModelNameHash( scene );
+			ksGltf_CreateModelNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load models\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18692,21 +18713,21 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF animations
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * animations = Json_GetMemberByName( rootNode, "animations" );
 			scene->animationCount = Json_GetMemberCount( animations );
-			scene->animations = (GltfAnimation_t *) calloc( scene->animationCount, sizeof( GltfAnimation_t ) );
+			scene->animations = (ksGltfAnimation *) calloc( scene->animationCount, sizeof( ksGltfAnimation ) );
 			for ( int animationIndex = 0; animationIndex < scene->animationCount; animationIndex++ )
 			{
 				const Json_t * animation = Json_GetMemberByIndex( animations, animationIndex );
-				scene->animations[animationIndex].name = Gltf_strdup( Json_GetMemberName( animation ) );
+				scene->animations[animationIndex].name = ksGltf_strdup( Json_GetMemberName( animation ) );
 
 				const Json_t * parameters = Json_GetMemberByName( animation, "parameters" );
 				const Json_t * samplers = Json_GetMemberByName( animation, "samplers" );
 
 				const char * timeAccessor = Json_GetString( Json_GetMemberByName( parameters, "TIME" ), "" );
-				const GltfAccessor_t * access_time = Gltf_GetAccessorByNameAndType( scene, timeAccessor, "SCALAR", GL_FLOAT );
+				const ksGltfAccessor * access_time = ksGltf_GetAccessorByNameAndType( scene, timeAccessor, "SCALAR", GL_FLOAT );
 
 				if ( access_time == NULL || access_time->count <= 0 )
 				{
@@ -18715,11 +18736,11 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				}
 
 				scene->animations[animationIndex].sampleCount = access_time->count;
-				scene->animations[animationIndex].sampleTimes = (float *)Gltf_GetBufferData( access_time );
+				scene->animations[animationIndex].sampleTimes = (float *)ksGltf_GetBufferData( access_time );
 
 				const Json_t * channels = Json_GetMemberByName( animation, "channels" );
 				scene->animations[animationIndex].channelCount = Json_GetMemberCount( channels );
-				scene->animations[animationIndex].channels = (GltfAnimationChannel_t *) calloc( scene->animations[animationIndex].channelCount, sizeof( GltfAnimationChannel_t ) );
+				scene->animations[animationIndex].channels = (ksGltfAnimationChannel *) calloc( scene->animations[animationIndex].channelCount, sizeof( ksGltfAnimationChannel ) );
 				int newChannelCount = 0;
 				for ( int channelIndex = 0; channelIndex < scene->animations[animationIndex].channelCount; channelIndex++ )
 				{
@@ -18743,27 +18764,27 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					const char * nodeName = Json_GetString( Json_GetMemberByName( target, "id" ), "" );
 					const char * pathName = Json_GetString( Json_GetMemberByName( target, "path" ), "" );
 
-					Vector3f_t * translation = NULL;
-					Quatf_t * rotation = NULL;
-					Vector3f_t * scale = NULL;
+					ksVector3f * translation = NULL;
+					ksQuatf * rotation = NULL;
+					ksVector3f * scale = NULL;
 
 					if ( strcmp( pathName, "translation" ) == 0 )
 					{
-						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC3", GL_FLOAT );
+						const ksGltfAccessor * accessor	= ksGltf_GetAccessorByNameAndType( scene, accessorName, "VEC3", GL_FLOAT );
 						assert( accessor != NULL );
-						translation = (Vector3f_t *) Gltf_GetBufferData( accessor );
+						translation = (ksVector3f *) ksGltf_GetBufferData( accessor );
 					}
 					else if ( strcmp( pathName, "rotation" ) == 0 )
 					{
-						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC4", GL_FLOAT );
+						const ksGltfAccessor * accessor	= ksGltf_GetAccessorByNameAndType( scene, accessorName, "VEC4", GL_FLOAT );
 						assert( accessor != NULL );
-						rotation = (Quatf_t *) Gltf_GetBufferData( accessor );
+						rotation = (ksQuatf *) ksGltf_GetBufferData( accessor );
 					}
 					else if ( strcmp( pathName, "scale" ) == 0 )
 					{
-						const GltfAccessor_t * accessor	= Gltf_GetAccessorByNameAndType( scene, accessorName, "VEC3", GL_FLOAT );
+						const ksGltfAccessor * accessor	= ksGltf_GetAccessorByNameAndType( scene, accessorName, "VEC3", GL_FLOAT );
 						assert( accessor != NULL );
-						scale = (Vector3f_t *) Gltf_GetBufferData( accessor );
+						scale = (ksVector3f *) ksGltf_GetBufferData( accessor );
 					}
 
 					// Try to merge this channel with a previous channel for the same node.
@@ -18793,7 +18814,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					// Only store the channel if it was not merged.
 					if ( translation != NULL || rotation != NULL || scale != NULL )
 					{
-						scene->animations[animationIndex].channels[newChannelCount].nodeName = Gltf_strdup( nodeName );
+						scene->animations[animationIndex].channels[newChannelCount].nodeName = ksGltf_strdup( nodeName );
 						scene->animations[animationIndex].channels[newChannelCount].node = NULL; // linked up once the nodes are loaded
 						scene->animations[animationIndex].channels[newChannelCount].translation = translation;
 						scene->animations[animationIndex].channels[newChannelCount].rotation = rotation;
@@ -18803,9 +18824,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				}
 				scene->animations[animationIndex].channelCount = newChannelCount;
 			}
-			Gltf_CreateAnimationNameHash( scene );
+			ksGltf_CreateAnimationNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load animations\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18813,48 +18834,48 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF skins
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * skins = Json_GetMemberByName( rootNode, "skins" );
 			scene->skinCount = Json_GetMemberCount( skins );
-			scene->skins = (GltfSkin_t *) calloc( scene->skinCount, sizeof( GltfSkin_t ) );
+			scene->skins = (ksGltfSkin *) calloc( scene->skinCount, sizeof( ksGltfSkin ) );
 			for ( int skinIndex = 0; skinIndex < scene->skinCount; skinIndex++ )
 			{
 				const Json_t * skin = Json_GetMemberByIndex( skins, skinIndex );
-				scene->skins[skinIndex].name = Gltf_strdup( Json_GetMemberName( skin ) );
-				Gltf_ParseFloatArray( scene->skins[skinIndex].bindShapeMatrix.m[0], 16, Json_GetMemberByName( skin, "bindShapeMatrix" ) );
+				scene->skins[skinIndex].name = ksGltf_strdup( Json_GetMemberName( skin ) );
+				ksGltf_ParseFloatArray( scene->skins[skinIndex].bindShapeMatrix.m[0], 16, Json_GetMemberByName( skin, "bindShapeMatrix" ) );
 
 				const char * bindAccessorName = Json_GetString( Json_GetMemberByName( skin, "inverseBindMatrices" ), "" );
-				const GltfAccessor_t * bindAccess = Gltf_GetAccessorByNameAndType( scene, bindAccessorName, "MAT4", GL_FLOAT );
-				scene->skins[skinIndex].inverseBindMatrices = Gltf_GetBufferData( bindAccess );
+				const ksGltfAccessor * bindAccess = ksGltf_GetAccessorByNameAndType( scene, bindAccessorName, "MAT4", GL_FLOAT );
+				scene->skins[skinIndex].inverseBindMatrices = ksGltf_GetBufferData( bindAccess );
 
 				const char * minsAccessorName = Json_GetString( Json_GetMemberByName( skin, "jointGeometryMins" ), "" );
-				const GltfAccessor_t * minsAccess = Gltf_GetAccessorByNameAndType( scene, minsAccessorName, "VEC3", GL_FLOAT );
-				scene->skins[skinIndex].jointGeometryMins = Gltf_GetBufferData( minsAccess );
+				const ksGltfAccessor * minsAccess = ksGltf_GetAccessorByNameAndType( scene, minsAccessorName, "VEC3", GL_FLOAT );
+				scene->skins[skinIndex].jointGeometryMins = ksGltf_GetBufferData( minsAccess );
 
 				const char * maxsAccessorName = Json_GetString( Json_GetMemberByName( skin, "jointGeometryMaxs" ), "" );
-				const GltfAccessor_t * maxsAccess = Gltf_GetAccessorByNameAndType( scene, maxsAccessorName, "VEC3", GL_FLOAT );
-				scene->skins[skinIndex].jointGeometryMaxs = Gltf_GetBufferData( maxsAccess );
+				const ksGltfAccessor * maxsAccess = ksGltf_GetAccessorByNameAndType( scene, maxsAccessorName, "VEC3", GL_FLOAT );
+				scene->skins[skinIndex].jointGeometryMaxs = ksGltf_GetBufferData( maxsAccess );
 
 				assert( scene->skins[skinIndex].name[0] != '\0' );
 				assert( scene->skins[skinIndex].inverseBindMatrices != NULL );
 
 				const Json_t * jointNames = Json_GetMemberByName( skin, "jointNames" );
 				scene->skins[skinIndex].jointCount = Json_GetMemberCount( jointNames );
-				scene->skins[skinIndex].joints = (GltfJoint_t *) calloc( scene->skins[skinIndex].jointCount, sizeof( GltfJoint_t ) );
+				scene->skins[skinIndex].joints = (ksGltfJoint *) calloc( scene->skins[skinIndex].jointCount, sizeof( ksGltfJoint ) );
 				assert( scene->skins[skinIndex].jointCount <= MAX_JOINTS );
 				for ( int jointIndex = 0; jointIndex < scene->skins[skinIndex].jointCount; jointIndex++ )
 				{
-					scene->skins[skinIndex].joints[jointIndex].name = Gltf_strdup( Json_GetString( Json_GetMemberByIndex( jointNames, jointIndex ), "" ) );
+					scene->skins[skinIndex].joints[jointIndex].name = ksGltf_strdup( Json_GetString( Json_GetMemberByIndex( jointNames, jointIndex ), "" ) );
 					scene->skins[skinIndex].joints[jointIndex].node = NULL; // linked up once the nodes are loaded
 				}
 				assert( bindAccess->count == scene->skins[skinIndex].jointCount );
 
-				GpuBuffer_Create( context, &scene->skins[skinIndex].jointBuffer, GPU_BUFFER_TYPE_UNIFORM, scene->skins[skinIndex].jointCount * sizeof( Matrix4x4f_t ), NULL, false );
+				ksGpuBuffer_Create( context, &scene->skins[skinIndex].jointBuffer, GPU_BUFFER_TYPE_UNIFORM, scene->skins[skinIndex].jointCount * sizeof( ksMatrix4x4f ), NULL, false );
 			}
-			Gltf_CreateSkinNameHash( scene );
+			ksGltf_CreateSkinNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load skins\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18862,16 +18883,16 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF cameras
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * cameras = Json_GetMemberByName( rootNode, "cameras" );
 			scene->cameraCount = Json_GetMemberCount( cameras );
-			scene->cameras = (GltfCamera_t *) calloc( scene->cameraCount, sizeof( GltfCamera_t ) );
+			scene->cameras = (ksGltfCamera *) calloc( scene->cameraCount, sizeof( ksGltfCamera ) );
 			for ( int cameraIndex = 0; cameraIndex < scene->cameraCount; cameraIndex++ )
 			{
 				const Json_t * camera = Json_GetMemberByIndex( cameras, cameraIndex );
 				const char * type = Json_GetString( Json_GetMemberByName( camera, "type" ), "" );
-				scene->cameras[cameraIndex].name = Gltf_strdup( Json_GetMemberName( camera ) );
+				scene->cameras[cameraIndex].name = ksGltf_strdup( Json_GetMemberName( camera ) );
 				if ( strcmp( type, "perspective" ) == 0 )
 				{
 					const Json_t * perspective = Json_GetMemberByName( camera, "perspective" );
@@ -18899,9 +18920,9 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 					assert( scene->cameras[cameraIndex].orthographic.nearZ > 0.0f );
 				}
 			}
-			Gltf_CreateCameraNameHash( scene );
+			ksGltf_CreateCameraNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load cameras\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18909,30 +18930,30 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		// glTF nodes
 		//
 		{
-			const Microseconds_t startTime = GetTimeMicroseconds();
+			const ksMicroseconds startTime = GetTimeMicroseconds();
 
 			const Json_t * nodes = Json_GetMemberByName( rootNode, "nodes" );
 			scene->nodeCount = Json_GetMemberCount( nodes );
-			scene->nodes = (GltfNode_t *) calloc( scene->nodeCount, sizeof( GltfNode_t ) );
+			scene->nodes = (ksGltfNode *) calloc( scene->nodeCount, sizeof( ksGltfNode ) );
 			for ( int nodeIndex = 0; nodeIndex < scene->nodeCount; nodeIndex++ )
 			{
 				const Json_t * node = Json_GetMemberByIndex( nodes, nodeIndex );
-				scene->nodes[nodeIndex].name = Gltf_strdup( Json_GetMemberName( node ) );
-				scene->nodes[nodeIndex].jointName = Gltf_strdup( Json_GetString( Json_GetMemberByName( node, "jointName" ), "" ) );
+				scene->nodes[nodeIndex].name = ksGltf_strdup( Json_GetMemberName( node ) );
+				scene->nodes[nodeIndex].jointName = ksGltf_strdup( Json_GetString( Json_GetMemberByName( node, "jointName" ), "" ) );
 				const Json_t * matrix = Json_GetMemberByName( node, "matrix" );
 				if ( Json_IsArray( matrix ) )
 				{
-					Gltf_ParseFloatArray( scene->nodes[nodeIndex].localTransform.m[0], 16, matrix );
-					Matrix4x4f_GetTranslation( &scene->nodes[nodeIndex].translation, &scene->nodes[nodeIndex].localTransform );
-					Matrix4x4f_GetRotation( &scene->nodes[nodeIndex].rotation, &scene->nodes[nodeIndex].localTransform );
-					Matrix4x4f_GetScale( &scene->nodes[nodeIndex].scale, &scene->nodes[nodeIndex].localTransform );
+					ksGltf_ParseFloatArray( scene->nodes[nodeIndex].localTransform.m[0], 16, matrix );
+					ksMatrix4x4f_GetTranslation( &scene->nodes[nodeIndex].translation, &scene->nodes[nodeIndex].localTransform );
+					ksMatrix4x4f_GetRotation( &scene->nodes[nodeIndex].rotation, &scene->nodes[nodeIndex].localTransform );
+					ksMatrix4x4f_GetScale( &scene->nodes[nodeIndex].scale, &scene->nodes[nodeIndex].localTransform );
 				}
 				else
 				{
-					Gltf_ParseFloatArray( &scene->nodes[nodeIndex].rotation.x, 4, Json_GetMemberByName( node, "rotation" ) );
-					Gltf_ParseFloatArray( &scene->nodes[nodeIndex].scale.x, 3, Json_GetMemberByName( node, "scale" ) );
-					Gltf_ParseFloatArray( &scene->nodes[nodeIndex].translation.x, 3, Json_GetMemberByName( node, "translation" ) );
-					Matrix4x4f_CreateTranslationRotationScale( &scene->nodes[nodeIndex].localTransform,
+					ksGltf_ParseFloatArray( &scene->nodes[nodeIndex].rotation.x, 4, Json_GetMemberByName( node, "rotation" ) );
+					ksGltf_ParseFloatArray( &scene->nodes[nodeIndex].scale.x, 3, Json_GetMemberByName( node, "scale" ) );
+					ksGltf_ParseFloatArray( &scene->nodes[nodeIndex].translation.x, 3, Json_GetMemberByName( node, "translation" ) );
+					ksMatrix4x4f_CreateTranslationRotationScale( &scene->nodes[nodeIndex].localTransform,
 																&scene->nodes[nodeIndex].scale,
 																&scene->nodes[nodeIndex].rotation,
 																&scene->nodes[nodeIndex].translation );
@@ -18940,32 +18961,32 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 				scene->nodes[nodeIndex].globalTransform = scene->nodes[nodeIndex].localTransform;	// transformed to global space later
 
 				assert( scene->nodes[nodeIndex].name[0] != '\0' );
-				assert( Matrix4x4f_IsAffine( &scene->nodes[nodeIndex].localTransform, 1e-4f ) );
-				assert( Matrix4x4f_IsAffine( &scene->nodes[nodeIndex].globalTransform, 1e-4f ) );
+				assert( ksMatrix4x4f_IsAffine( &scene->nodes[nodeIndex].localTransform, 1e-4f ) );
+				assert( ksMatrix4x4f_IsAffine( &scene->nodes[nodeIndex].globalTransform, 1e-4f ) );
 
 				const Json_t * children = Json_GetMemberByName( node, "children" );
 				scene->nodes[nodeIndex].childCount = Json_GetMemberCount( children );
 				scene->nodes[nodeIndex].childNames = (char **) calloc( scene->nodes[nodeIndex].childCount, sizeof( char * ) );
 				for ( int c = 0; c < scene->nodes[nodeIndex].childCount; c++ )
 				{
-					scene->nodes[nodeIndex].childNames[c] = Gltf_strdup( Json_GetString( Json_GetMemberByIndex( children, c ), "" ) );
+					scene->nodes[nodeIndex].childNames[c] = ksGltf_strdup( Json_GetString( Json_GetMemberByIndex( children, c ), "" ) );
 				}
-				scene->nodes[nodeIndex].camera = Gltf_GetCameraByName( scene, Json_GetString( Json_GetMemberByName( node, "camera" ), "" ) );
-				scene->nodes[nodeIndex].skin = Gltf_GetSkinByName( scene, Json_GetString( Json_GetMemberByName( node, "skin" ), "" ) );
+				scene->nodes[nodeIndex].camera = ksGltf_GetCameraByName( scene, Json_GetString( Json_GetMemberByName( node, "camera" ), "" ) );
+				scene->nodes[nodeIndex].skin = ksGltf_GetSkinByName( scene, Json_GetString( Json_GetMemberByName( node, "skin" ), "" ) );
 				const Json_t * meshes = Json_GetMemberByName( node, "meshes" );
 				scene->nodes[nodeIndex].modelCount = Json_GetMemberCount( meshes );
-				scene->nodes[nodeIndex].models = (GltfModel_t **) calloc( scene->nodes[nodeIndex].modelCount, sizeof( GltfModel_t ** ) );
+				scene->nodes[nodeIndex].models = (ksGltfModel **) calloc( scene->nodes[nodeIndex].modelCount, sizeof( ksGltfModel ** ) );
 				for ( int m = 0; m < scene->nodes[nodeIndex].modelCount; m++ )
 				{
-					scene->nodes[nodeIndex].models[m] = Gltf_GetModelByName( scene, Json_GetString( Json_GetMemberByIndex( meshes, m ), "" ) );
+					scene->nodes[nodeIndex].models[m] = ksGltf_GetModelByName( scene, Json_GetString( Json_GetMemberByIndex( meshes, m ), "" ) );
 					assert( scene->nodes[nodeIndex].models[m] != NULL );
 				}
 			}
-			Gltf_SortNodes( scene->nodes, scene->nodeCount );
-			Gltf_CreateNodeNameHash( scene );
-			Gltf_CreateNodeJointNameHash( scene );
+			ksGltf_SortNodes( scene->nodes, scene->nodeCount );
+			ksGltf_CreateNodeNameHash( scene );
+			ksGltf_CreateNodeJointNameHash( scene );
 
-			const Microseconds_t endTime = GetTimeMicroseconds();
+			const ksMicroseconds endTime = GetTimeMicroseconds();
 			Print( "%1.3f seconds to load nodes\n", ( endTime - startTime ) * 1e-6f );
 		}
 
@@ -18976,11 +18997,11 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 			// Get the node children and parents.
 			for ( int nodeIndex = 0; nodeIndex < scene->nodeCount; nodeIndex++ )
 			{
-				GltfNode_t * node = &scene->nodes[nodeIndex];
-				node->children = (GltfNode_t **) calloc( node->childCount, sizeof( GltfNode_t * ) );
+				ksGltfNode * node = &scene->nodes[nodeIndex];
+				node->children = (ksGltfNode **) calloc( node->childCount, sizeof( ksGltfNode * ) );
 				for ( int childIndex = 0; childIndex < node->childCount; childIndex++ )
 				{
-					node->children[childIndex] = Gltf_GetNodeByName( scene, node->childNames[childIndex] );
+					node->children[childIndex] = ksGltf_GetNodeByName( scene, node->childNames[childIndex] );
 					node->children[childIndex]->parent = node;
 				}
 			}
@@ -18989,7 +19010,7 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 			{
 				for ( int channelIndex = 0; channelIndex < scene->animations[animationIndex].channelCount; channelIndex++ )
 				{
-					scene->animations[animationIndex].channels[channelIndex].node = Gltf_GetNodeByName( scene, scene->animations[animationIndex].channels[channelIndex].nodeName );
+					scene->animations[animationIndex].channels[channelIndex].node = ksGltf_GetNodeByName( scene, scene->animations[animationIndex].channels[channelIndex].nodeName );
 					assert( scene->animations[animationIndex].channels[channelIndex].node != NULL );
 				}
 			}
@@ -18998,11 +19019,11 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 			{
 				for ( int jointIndex = 0; jointIndex < scene->skins[skinIndex].jointCount; jointIndex++ )
 				{
-					scene->skins[skinIndex].joints[jointIndex].node = Gltf_GetNodeByJointName( scene, scene->skins[skinIndex].joints[jointIndex].name );
+					scene->skins[skinIndex].joints[jointIndex].node = ksGltf_GetNodeByJointName( scene, scene->skins[skinIndex].joints[jointIndex].name );
 					assert( scene->skins[skinIndex].joints[jointIndex].node != NULL );
 				}
 				// Find the parent of the root node of the skin.
-				GltfNode_t * root = NULL;
+				ksGltfNode * root = NULL;
 				for ( int jointIndex = 0; jointIndex < scene->skins[skinIndex].jointCount && root == NULL; jointIndex++ )
 				{
 					root = scene->skins[skinIndex].joints[jointIndex].node;
@@ -19025,25 +19046,25 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		{
 			const Json_t * subScenes = Json_GetMemberByName( rootNode, "scenes" );
 			scene->subSceneCount = Json_GetMemberCount( subScenes );
-			scene->subScenes = (GltfSubScene_t *) calloc( scene->subSceneCount, sizeof( GltfSubScene_t ) );
+			scene->subScenes = (ksGltfSubScene *) calloc( scene->subSceneCount, sizeof( ksGltfSubScene ) );
 			for ( int subSceneIndex = 0; subSceneIndex < scene->subSceneCount; subSceneIndex++ )
 			{
 				const Json_t * subScene = Json_GetMemberByIndex( subScenes, subSceneIndex );
-				scene->subScenes[subSceneIndex].name = Gltf_strdup( Json_GetMemberName( subScene ) );
+				scene->subScenes[subSceneIndex].name = ksGltf_strdup( Json_GetMemberName( subScene ) );
 
 				const Json_t * nodes = Json_GetMemberByName( subScene, "nodes" );
 				scene->subScenes[subSceneIndex].subTreeCount = Json_GetMemberCount( nodes );
-				scene->subScenes[subSceneIndex].subTrees = (GltfSubTree_t *) calloc( scene->subScenes[subSceneIndex].subTreeCount, sizeof( GltfSubTree_t ) );
+				scene->subScenes[subSceneIndex].subTrees = (ksGltfSubTree *) calloc( scene->subScenes[subSceneIndex].subTreeCount, sizeof( ksGltfSubTree ) );
 				for ( int subTreeIndex = 0; subTreeIndex < scene->subScenes[subSceneIndex].subTreeCount; subTreeIndex++ )
 				{
-					GltfSubTree_t * subTree = &scene->subScenes[subSceneIndex].subTrees[subTreeIndex];
+					ksGltfSubTree * subTree = &scene->subScenes[subSceneIndex].subTrees[subTreeIndex];
 					const char * nodeName = Json_GetString( Json_GetMemberByIndex( nodes, subTreeIndex ), "" );
-					subTree->nodes = Gltf_GetNodeByName( scene, nodeName );
+					subTree->nodes = ksGltf_GetNodeByName( scene, nodeName );
 					assert( subTree->nodes != NULL );
 					subTree->nodeCount = subTree->nodes->subTreeNodeCount;
 				}
 			}
-			Gltf_CreateSubSceneNameHash( scene );
+			ksGltf_CreateSubSceneNameHash( scene );
 		}
 
 		//
@@ -19051,51 +19072,51 @@ static bool GltfScene_CreateFromFile( GpuContext_t * context, GltfScene_t * scen
 		//
 
 		const char * defaultSceneName = Json_GetString( Json_GetMemberByName( rootNode, "scene" ), "" );
-		scene->currentSubScene = Gltf_GetSubSceneByName( scene, defaultSceneName );
+		scene->currentSubScene = ksGltf_GetSubSceneByName( scene, defaultSceneName );
 		assert( scene->currentSubScene != NULL );
 	}
 	Json_Destroy( rootNode );
 
 	// Create a default joint buffer.
 	{
-		Matrix4x4f_t * data = malloc( MAX_JOINTS * sizeof( Matrix4x4f_t ) );
+		ksMatrix4x4f * data = malloc( MAX_JOINTS * sizeof( ksMatrix4x4f ) );
 		for ( int jointIndex = 0; jointIndex < MAX_JOINTS; jointIndex++ )
 		{
-			Matrix4x4f_CreateIdentity( &data[jointIndex] );
+			ksMatrix4x4f_CreateIdentity( &data[jointIndex] );
 		}
-		GpuBuffer_Create( context, &scene->defaultJointBuffer, GPU_BUFFER_TYPE_UNIFORM, MAX_JOINTS * sizeof( Matrix4x4f_t ), data, false );
+		ksGpuBuffer_Create( context, &scene->defaultJointBuffer, GPU_BUFFER_TYPE_UNIFORM, MAX_JOINTS * sizeof( ksMatrix4x4f ), data, false );
 		free( data );
 	}
 
 	// Create unit cube.
 	{
-		GpuGeometry_CreateCube( context, &scene->unitCubeGeometry, 0.0f, 1.0f );
-		GpuGraphicsProgram_Create( context, &scene->unitCubeFlatShadeProgram,
+		ksGpuGeometry_CreateCube( context, &scene->unitCubeGeometry, 0.0f, 1.0f );
+		ksGpuGraphicsProgram_Create( context, &scene->unitCubeFlatShadeProgram,
 									PROGRAM( unitCubeFlatShadeVertexProgram ), sizeof( PROGRAM( unitCubeFlatShadeVertexProgram ) ),
 									PROGRAM( unitCubeFlatShadeFragmentProgram ), sizeof( PROGRAM( unitCubeFlatShadeFragmentProgram ) ),
 									unitCubeFlatShadeProgramParms, ARRAY_SIZE( unitCubeFlatShadeProgramParms ),
 									scene->unitCubeGeometry.layout, VERTEX_ATTRIBUTE_FLAG_POSITION | VERTEX_ATTRIBUTE_FLAG_NORMAL );
 
-		GpuGraphicsPipelineParms_t pipelineParms;
-		GpuGraphicsPipelineParms_Init( &pipelineParms );
+		ksGpuGraphicsPipelineParms pipelineParms;
+		ksGpuGraphicsPipelineParms_Init( &pipelineParms );
 
 		pipelineParms.renderPass = renderPass;
 		pipelineParms.program = &scene->unitCubeFlatShadeProgram;
 		pipelineParms.geometry = &scene->unitCubeGeometry;
 
-		GpuGraphicsPipeline_Create( context, &scene->unitCubePipeline, &pipelineParms );
+		ksGpuGraphicsPipeline_Create( context, &scene->unitCubePipeline, &pipelineParms );
 	}
 
-	const Microseconds_t t1 = GetTimeMicroseconds();
+	const ksMicroseconds t1 = GetTimeMicroseconds();
 
 	Print( "%1.3f seconds to load %s\n", ( t1 - t0 ) * 1e-6f, fileName );
 
 	return true;
 }
 
-static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
+static void ksGltfScene_Destroy( ksGpuContext * context, ksGltfScene * scene )
 {
-	GpuContext_WaitIdle( context );
+	ksGpuContext_WaitIdle( context );
 
 	{
 		for ( int bufferIndex = 0; bufferIndex < scene->bufferCount; bufferIndex++ )
@@ -19137,7 +19158,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 		for ( int textureIndex = 0; textureIndex < scene->textureCount; textureIndex++ )
 		{
 			free( scene->textures[textureIndex].name );
-			GpuTexture_Destroy( context, &scene->textures[textureIndex].texture );
+			ksGpuTexture_Destroy( context, &scene->textures[textureIndex].texture );
 		}
 		free( scene->textures );
 		free( scene->textureNameHash );
@@ -19175,7 +19196,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			free( scene->techniques[techniqueIndex].name );
 			free( scene->techniques[techniqueIndex].parms );
 			free( scene->techniques[techniqueIndex].uniforms );
-			GpuGraphicsProgram_Destroy( context, &scene->techniques[techniqueIndex].program );
+			ksGpuGraphicsProgram_Destroy( context, &scene->techniques[techniqueIndex].program );
 		}
 		free( scene->techniques );
 		free( scene->techniqueNameHash );
@@ -19194,8 +19215,8 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 		{
 			for ( int surfaceIndex = 0; surfaceIndex < scene->models[modelIndex].surfaceCount; surfaceIndex++ )
 			{
-				GpuGeometry_Destroy( context, &scene->models[modelIndex].surfaces[surfaceIndex].geometry );
-				GpuGraphicsPipeline_Destroy( context, &scene->models[modelIndex].surfaces[surfaceIndex].pipeline );
+				ksGpuGeometry_Destroy( context, &scene->models[modelIndex].surfaces[surfaceIndex].geometry );
+				ksGpuGraphicsPipeline_Destroy( context, &scene->models[modelIndex].surfaces[surfaceIndex].pipeline );
 			}
 			free( scene->models[modelIndex].name );
 			free( scene->models[modelIndex].surfaces );
@@ -19225,7 +19246,7 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 			}
 			free( scene->skins[skinIndex].name );
 			free( scene->skins[skinIndex].joints );
-			GpuBuffer_Destroy( context, &scene->skins[skinIndex].jointBuffer );
+			ksGpuBuffer_Destroy( context, &scene->skins[skinIndex].jointBuffer );
 		}
 		free( scene->skins );
 		free( scene->skinNameHash );
@@ -19264,20 +19285,20 @@ static void GltfScene_Destroy( GpuContext_t * context, GltfScene_t * scene )
 		free( scene->subSceneNameHash );
 	}
 
-	GpuBuffer_Destroy( context, &scene->defaultJointBuffer );
-	GpuGraphicsPipeline_Destroy( context, &scene->unitCubePipeline );
-	GpuGraphicsProgram_Destroy( context, &scene->unitCubeFlatShadeProgram );
-	GpuGeometry_Destroy( context, &scene->unitCubeGeometry );
+	ksGpuBuffer_Destroy( context, &scene->defaultJointBuffer );
+	ksGpuGraphicsPipeline_Destroy( context, &scene->unitCubePipeline );
+	ksGpuGraphicsProgram_Destroy( context, &scene->unitCubeFlatShadeProgram );
+	ksGpuGeometry_Destroy( context, &scene->unitCubeGeometry );
 
-	memset( scene, 0, sizeof( GltfScene_t ) );
+	memset( scene, 0, sizeof( ksGltfScene ) );
 }
 
-static void GltfScene_Simulate( GltfScene_t * scene, ViewState_t * viewState, GpuWindowInput_t * input, const Microseconds_t time )
+static void ksGltfScene_Simulate( ksGltfScene * scene, ksViewState * viewState, ksGpuWindowInput * input, const ksMicroseconds time )
 {
 	// Apply animations to the nodes in the hierarchy.
 	for ( int animIndex = 0; animIndex < scene->animationCount; animIndex++ )
 	{
-		const GltfAnimation_t * animation = &scene->animations[animIndex];
+		const ksGltfAnimation * animation = &scene->animations[animIndex];
 		if ( animation->sampleTimes == NULL || animation->sampleCount < 2 )
 		{
 			continue;
@@ -19299,18 +19320,18 @@ static void GltfScene_Simulate( GltfScene_t * scene, ViewState_t * viewState, Gp
 
 		for ( int channelIndex = 0; channelIndex < animation->channelCount; channelIndex++ )
 		{
-			const GltfAnimationChannel_t * channel = &animation->channels[channelIndex];
+			const ksGltfAnimationChannel * channel = &animation->channels[channelIndex];
 			if ( channel->translation != NULL )
 			{
-				Vector3f_Lerp( &channel->node->translation, &channel->translation[frame], &channel->translation[frame + 1], fraction );
+				ksVector3f_Lerp( &channel->node->translation, &channel->translation[frame], &channel->translation[frame + 1], fraction );
 			}
 			if ( channel->rotation != NULL )
 			{
-				Quatf_Lerp( &channel->node->rotation, &channel->rotation[frame], &channel->rotation[frame + 1], fraction );
+				ksQuatf_Lerp( &channel->node->rotation, &channel->rotation[frame], &channel->rotation[frame + 1], fraction );
 			}
 			if ( channel->scale != NULL )
 			{
-				Vector3f_Lerp( &channel->node->scale, &channel->scale[frame], &channel->scale[frame + 1], fraction );
+				ksVector3f_Lerp( &channel->node->scale, &channel->scale[frame], &channel->scale[frame + 1], fraction );
 			}
 		}
 	}
@@ -19318,16 +19339,16 @@ static void GltfScene_Simulate( GltfScene_t * scene, ViewState_t * viewState, Gp
 	// Transform the node hierarchy into global space.
 	for ( int subTreeIndex = 0; subTreeIndex < scene->currentSubScene->subTreeCount; subTreeIndex++ )
 	{
-		GltfSubTree_t * subTree = &scene->currentSubScene->subTrees[subTreeIndex];
+		ksGltfSubTree * subTree = &scene->currentSubScene->subTrees[subTreeIndex];
 		for ( int nodeIndex = 0; nodeIndex < subTree->nodeCount; nodeIndex++ )
 		{
-			GltfNode_t * node = &subTree->nodes[nodeIndex];
+			ksGltfNode * node = &subTree->nodes[nodeIndex];
 
-			Matrix4x4f_CreateTranslationRotationScale( &node->localTransform, &node->scale, &node->rotation, &node->translation );
+			ksMatrix4x4f_CreateTranslationRotationScale( &node->localTransform, &node->scale, &node->rotation, &node->translation );
 			if ( node->parent != NULL )
 			{
 				assert( node->parent < node );
-				Matrix4x4f_Multiply( &node->globalTransform, &node->parent->globalTransform, &node->localTransform );
+				ksMatrix4x4f_Multiply( &node->globalTransform, &node->parent->globalTransform, &node->localTransform );
 			}
 			else
 			{
@@ -19337,13 +19358,13 @@ static void GltfScene_Simulate( GltfScene_t * scene, ViewState_t * viewState, Gp
 	}
 
 	// Find the first camera.
-	const GltfNode_t * cameraNode = NULL;
+	const ksGltfNode * cameraNode = NULL;
 	for ( int subTreeIndex = 0; subTreeIndex < scene->currentSubScene->subTreeCount; subTreeIndex++ )
 	{
-		GltfSubTree_t * subTree = &scene->currentSubScene->subTrees[subTreeIndex];
+		ksGltfSubTree * subTree = &scene->currentSubScene->subTrees[subTreeIndex];
 		for ( int nodeIndex = 0; nodeIndex < subTree->nodeCount; nodeIndex++ )
 		{
-			GltfNode_t * node = &subTree->nodes[nodeIndex];
+			ksGltfNode * node = &subTree->nodes[nodeIndex];
 			if ( node->camera != NULL )
 			{
 				cameraNode = node;
@@ -19357,47 +19378,47 @@ static void GltfScene_Simulate( GltfScene_t * scene, ViewState_t * viewState, Gp
 	{
 		GetHmdViewMatrixForTime( &viewState->hmdViewMatrix, time );
 
-		Matrix4x4f_t cameraViewMatrix;
-		Matrix4x4f_Invert( &cameraViewMatrix, &cameraNode->globalTransform );
+		ksMatrix4x4f cameraViewMatrix;
+		ksMatrix4x4f_Invert( &cameraViewMatrix, &cameraNode->globalTransform );
 
-		Matrix4x4f_Multiply( &viewState->centerViewMatrix, &viewState->hmdViewMatrix, &cameraViewMatrix );
+		ksMatrix4x4f_Multiply( &viewState->centerViewMatrix, &viewState->hmdViewMatrix, &cameraViewMatrix );
 
 		for ( int eye = 0; eye < NUM_EYES; eye++ )
 		{
-			Matrix4x4f_t eyeOffsetMatrix;
-			Matrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
+			ksMatrix4x4f eyeOffsetMatrix;
+			ksMatrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
 
-			Matrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
-			Matrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye],
+			ksMatrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
+			ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye],
 											cameraNode->camera->perspective.fovDegreesX,
 											cameraNode->camera->perspective.fovDegreesY,
 											0.0f, 0.0f,
 											cameraNode->camera->perspective.nearZ, cameraNode->camera->perspective.farZ );
 
-			ViewState_DerivedData( viewState );
+			ksViewState_DerivedData( viewState );
 		}
 	}
 	else if ( input != NULL )
 	{
-		ViewState_HandleInput( viewState, input, time );
+		ksViewState_HandleInput( viewState, input, time );
 	}
 	else
 	{
-		ViewState_HandleHmd( viewState, time );
+		ksViewState_HandleHmd( viewState, time );
 	}
 }
 
-static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState, const int eye )
+static void ksGltfScene_UpdateBuffers( ksGpuCommandBuffer * commandBuffer, const ksGltfScene * scene, const ksViewState * viewState, const int eye )
 {
 	UNUSED_PARM( eye );
 
 	for ( int subTreeIndex = 0; subTreeIndex < scene->currentSubScene->subTreeCount; subTreeIndex++ )
 	{
-		GltfSubTree_t * subTree = &scene->currentSubScene->subTrees[subTreeIndex];
+		ksGltfSubTree * subTree = &scene->currentSubScene->subTrees[subTreeIndex];
 		for ( int nodeIndex = 0; nodeIndex < subTree->nodeCount; nodeIndex++ )
 		{
-			GltfNode_t * node = &subTree->nodes[nodeIndex];
-			GltfSkin_t * skin = node->skin;
+			ksGltfNode * node = &subTree->nodes[nodeIndex];
+			ksGltfSkin * skin = node->skin;
 			if ( skin == NULL )
 			{
 				continue;
@@ -19405,33 +19426,33 @@ static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const G
 
 			// Exclude the transform of the whole skeleton because that transform will be
 			// passed down the vertex shader as the model matrix.
-			Matrix4x4f_t inverseGlobalSkeletonTransfom;
-			Matrix4x4f_Invert( &inverseGlobalSkeletonTransfom, &skin->parent->globalTransform );
+			ksMatrix4x4f inverseGlobalSkeletonTransfom;
+			ksMatrix4x4f_Invert( &inverseGlobalSkeletonTransfom, &skin->parent->globalTransform );
 
 			// Calculate the skin bounds.
-			Vector3f_Set( &skin->mins, FLT_MAX );
-			Vector3f_Set( &skin->maxs, -FLT_MAX );
+			ksVector3f_Set( &skin->mins, FLT_MAX );
+			ksVector3f_Set( &skin->maxs, -FLT_MAX );
 			if ( skin->jointGeometryMins != NULL && skin->jointGeometryMaxs != NULL )
 			{
 				for ( int jointIndex = 0; jointIndex < skin->jointCount; jointIndex++ )
 				{
-					Matrix4x4f_t localJointTransform;
-					Matrix4x4f_Multiply( &localJointTransform, &inverseGlobalSkeletonTransfom, &skin->joints[jointIndex].node->globalTransform );
+					ksMatrix4x4f localJointTransform;
+					ksMatrix4x4f_Multiply( &localJointTransform, &inverseGlobalSkeletonTransfom, &skin->joints[jointIndex].node->globalTransform );
 
-					Vector3f_t jointMins;
-					Vector3f_t jointMaxs;
-					Matrix4x4f_TransformBounds( &jointMins, &jointMaxs, &localJointTransform, &skin->jointGeometryMins[jointIndex], &skin->jointGeometryMaxs[jointIndex] );
-					Vector3f_Min( &skin->mins, &skin->mins, &jointMins );
-					Vector3f_Max( &skin->maxs, &skin->maxs, &jointMaxs );
+					ksVector3f jointMins;
+					ksVector3f jointMaxs;
+					ksMatrix4x4f_TransformBounds( &jointMins, &jointMaxs, &localJointTransform, &skin->jointGeometryMins[jointIndex], &skin->jointGeometryMaxs[jointIndex] );
+					ksVector3f_Min( &skin->mins, &skin->mins, &jointMins );
+					ksVector3f_Max( &skin->maxs, &skin->maxs, &jointMaxs );
 				}
 			}
 
 			// Do not update the joint buffer if the skin bounds are culled.
 			{
-				Matrix4x4f_t modelViewProjectionCullMatrix;
-				Matrix4x4f_Multiply( &modelViewProjectionCullMatrix, &viewState->combinedViewProjectionMatrix, &skin->parent->globalTransform );
+				ksMatrix4x4f modelViewProjectionCullMatrix;
+				ksMatrix4x4f_Multiply( &modelViewProjectionCullMatrix, &viewState->combinedViewProjectionMatrix, &skin->parent->globalTransform );
 
-				skin->culled = Matrix4x4f_CullBounds( &modelViewProjectionCullMatrix, &skin->mins, &skin->maxs );
+				skin->culled = ksMatrix4x4f_CullBounds( &modelViewProjectionCullMatrix, &skin->mins, &skin->maxs );
 				if ( skin->culled )
 				{
 					continue;
@@ -19439,72 +19460,72 @@ static void GltfScene_UpdateBuffers( GpuCommandBuffer_t * commandBuffer, const G
 			}
 
 			// Update the skin joint buffer.
-			Matrix4x4f_t * joints = NULL;
-			GpuBuffer_t * mappedJointBuffer = GpuCommandBuffer_MapBuffer( commandBuffer, &skin->jointBuffer, (void **)&joints );
+			ksMatrix4x4f * joints = NULL;
+			ksGpuBuffer * mappedJointBuffer = ksGpuCommandBuffer_MapBuffer( commandBuffer, &skin->jointBuffer, (void **)&joints );
 
 			for ( int jointIndex = 0; jointIndex < skin->jointCount; jointIndex++ )
 			{
-				Matrix4x4f_t inverseBindMatrix;
-				Matrix4x4f_Multiply( &inverseBindMatrix, &skin->inverseBindMatrices[jointIndex], &skin->bindShapeMatrix );
+				ksMatrix4x4f inverseBindMatrix;
+				ksMatrix4x4f_Multiply( &inverseBindMatrix, &skin->inverseBindMatrices[jointIndex], &skin->bindShapeMatrix );
 
-				Matrix4x4f_t localJointTransform;
-				Matrix4x4f_Multiply( &localJointTransform, &inverseGlobalSkeletonTransfom, &skin->joints[jointIndex].node->globalTransform );
+				ksMatrix4x4f localJointTransform;
+				ksMatrix4x4f_Multiply( &localJointTransform, &inverseGlobalSkeletonTransfom, &skin->joints[jointIndex].node->globalTransform );
 
-				Matrix4x4f_Multiply( &joints[jointIndex], &localJointTransform, &inverseBindMatrix );
+				ksMatrix4x4f_Multiply( &joints[jointIndex], &localJointTransform, &inverseBindMatrix );
 			}
 
-			GpuCommandBuffer_UnmapBuffer( commandBuffer, &skin->jointBuffer, mappedJointBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
+			ksGpuCommandBuffer_UnmapBuffer( commandBuffer, &skin->jointBuffer, mappedJointBuffer, GPU_BUFFER_UNMAP_TYPE_COPY_BACK );
 		}
 	}
 }
 
-static void GltfScene_SetUniformValue( GpuGraphicsCommand_t * command, const GltfUniform_t * uniform, const GltfUniformValue_t * value )
+static void ksGltfScene_SetUniformValue( ksGpuGraphicsCommand * command, const ksGltfUniform * uniform, const ksGltfUniformValue * value )
 {
 	switch ( uniform->type )
 	{
-		case GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED:					GpuGraphicsCommand_SetParmTextureSampled( command, uniform->index, &value->texture->texture ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT:				GpuGraphicsCommand_SetParmInt( command, uniform->index, value->intValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2:		GpuGraphicsCommand_SetParmIntVector2( command, uniform->index, (const Vector2i_t *)value->intValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3:		GpuGraphicsCommand_SetParmIntVector3( command, uniform->index, (const Vector3i_t *)value->intValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4:		GpuGraphicsCommand_SetParmIntVector4( command, uniform->index, (const Vector4i_t *)value->intValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT:				GpuGraphicsCommand_SetParmFloat( command, uniform->index, value->floatValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		GpuGraphicsCommand_SetParmFloatVector2( command, uniform->index, (const Vector2f_t *)value->floatValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		GpuGraphicsCommand_SetParmFloatVector3( command, uniform->index, (const Vector3f_t *)value->floatValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		GpuGraphicsCommand_SetParmFloatVector4( command, uniform->index, (const Vector4f_t *)value->floatValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2:	GpuGraphicsCommand_SetParmFloatMatrix2x2( command, uniform->index, (const Matrix2x2f_t *)value->floatValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3:	GpuGraphicsCommand_SetParmFloatMatrix2x3( command, uniform->index, (const Matrix2x3f_t *)value->floatValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4:	GpuGraphicsCommand_SetParmFloatMatrix2x4( command, uniform->index, (const Matrix2x4f_t *)value->floatValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2:	GpuGraphicsCommand_SetParmFloatMatrix3x2( command, uniform->index, (const Matrix3x2f_t *)value->floatValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3:	GpuGraphicsCommand_SetParmFloatMatrix3x3( command, uniform->index, (const Matrix3x3f_t *)value->floatValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4:	GpuGraphicsCommand_SetParmFloatMatrix3x4( command, uniform->index, (const Matrix3x4f_t *)value->floatValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	GpuGraphicsCommand_SetParmFloatMatrix4x2( command, uniform->index, (const Matrix4x2f_t *)value->floatValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	GpuGraphicsCommand_SetParmFloatMatrix4x3( command, uniform->index, (const Matrix4x3f_t *)value->floatValue ); break;
-		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	GpuGraphicsCommand_SetParmFloatMatrix4x4( command, uniform->index, (const Matrix4x4f_t *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED:					ksGpuGraphicsCommand_SetParmTextureSampled( command, uniform->index, &value->texture->texture ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT:				ksGpuGraphicsCommand_SetParmInt( command, uniform->index, value->intValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2:		ksGpuGraphicsCommand_SetParmIntVector2( command, uniform->index, (const ksVector2i *)value->intValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3:		ksGpuGraphicsCommand_SetParmIntVector3( command, uniform->index, (const ksVector3i *)value->intValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4:		ksGpuGraphicsCommand_SetParmIntVector4( command, uniform->index, (const ksVector4i *)value->intValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT:				ksGpuGraphicsCommand_SetParmFloat( command, uniform->index, value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		ksGpuGraphicsCommand_SetParmFloatVector2( command, uniform->index, (const ksVector2f *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		ksGpuGraphicsCommand_SetParmFloatVector3( command, uniform->index, (const ksVector3f *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		ksGpuGraphicsCommand_SetParmFloatVector4( command, uniform->index, (const ksVector4f *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X2:	ksGpuGraphicsCommand_SetParmFloatMatrix2x2( command, uniform->index, (const ksMatrix2x2f *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X3:	ksGpuGraphicsCommand_SetParmFloatMatrix2x3( command, uniform->index, (const ksMatrix2x3f *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX2X4:	ksGpuGraphicsCommand_SetParmFloatMatrix2x4( command, uniform->index, (const ksMatrix2x4f *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X2:	ksGpuGraphicsCommand_SetParmFloatMatrix3x2( command, uniform->index, (const ksMatrix3x2f *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X3:	ksGpuGraphicsCommand_SetParmFloatMatrix3x3( command, uniform->index, (const ksMatrix3x3f *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX3X4:	ksGpuGraphicsCommand_SetParmFloatMatrix3x4( command, uniform->index, (const ksMatrix3x4f *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X2:	ksGpuGraphicsCommand_SetParmFloatMatrix4x2( command, uniform->index, (const ksMatrix4x2f *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X3:	ksGpuGraphicsCommand_SetParmFloatMatrix4x3( command, uniform->index, (const ksMatrix4x3f *)value->floatValue ); break;
+		case GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4:	ksGpuGraphicsCommand_SetParmFloatMatrix4x4( command, uniform->index, (const ksMatrix4x4f *)value->floatValue ); break;
 		default: break;
 	}
 }
 
 typedef struct
 {
-	Vector4f_t		viewport;
-	Matrix4x4f_t	viewMatrix;
-	Matrix4x4f_t	projectionMatrix;
-	Matrix4x4f_t	viewInverseMatrix;
-	Matrix4x4f_t	projectionInverseMatrix;
-	Matrix4x4f_t	localMatrix;
-	Matrix4x4f_t	modelMatrix;
-	Matrix4x4f_t	modelViewMatrix;
-	Matrix4x4f_t	modelViewProjectionMatrix;
-	Matrix4x4f_t	modelInverseMatrix;
-	Matrix4x4f_t	modelViewInverseMatrix;
-	Matrix4x4f_t	modelViewProjectionInverseMatrix;
-	Matrix3x3f_t	modelInverseTransposeMatrix;
-	Matrix3x3f_t	modelViewInverseTransposeMatrix;
-} GltfBuiltinUniforms_t;
+	ksVector4f		viewport;
+	ksMatrix4x4f	viewMatrix;
+	ksMatrix4x4f	projectionMatrix;
+	ksMatrix4x4f	viewInverseMatrix;
+	ksMatrix4x4f	projectionInverseMatrix;
+	ksMatrix4x4f	localMatrix;
+	ksMatrix4x4f	modelMatrix;
+	ksMatrix4x4f	modelViewMatrix;
+	ksMatrix4x4f	modelViewProjectionMatrix;
+	ksMatrix4x4f	modelInverseMatrix;
+	ksMatrix4x4f	modelViewInverseMatrix;
+	ksMatrix4x4f	modelViewProjectionInverseMatrix;
+	ksMatrix3x3f	modelInverseTransposeMatrix;
+	ksMatrix3x3f	modelViewInverseTransposeMatrix;
+} ksGltfBuiltinUniforms;
 
-static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScene_t * scene, const ViewState_t * viewState, const int eye )
+static void ksGltfScene_Render( ksGpuCommandBuffer * commandBuffer, const ksGltfScene * scene, const ksViewState * viewState, const int eye )
 {
-	GltfBuiltinUniforms_t builtin;
+	ksGltfBuiltinUniforms builtin;
 
 	builtin.viewMatrix = viewState->viewMatrix[eye];
 	builtin.projectionMatrix = viewState->projectionMatrix[eye];
@@ -19517,47 +19538,47 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 
 	for ( int subTreeIndex = 0; subTreeIndex < scene->currentSubScene->subTreeCount; subTreeIndex++ )
 	{
-		GltfSubTree_t * subTree = &scene->currentSubScene->subTrees[subTreeIndex];
+		ksGltfSubTree * subTree = &scene->currentSubScene->subTrees[subTreeIndex];
 		for ( int nodeIndex = 0; nodeIndex < subTree->nodeCount; nodeIndex++ )
 		{
-			GltfNode_t * node = &subTree->nodes[nodeIndex];
+			ksGltfNode * node = &subTree->nodes[nodeIndex];
 			if ( node->modelCount == 0 )
 			{
 				continue;
 			}
 
-			const GltfSkin_t * skin = node->skin;
-			const GpuBuffer_t * jointBuffer = ( skin != NULL ) ? &skin->jointBuffer : &scene->defaultJointBuffer;
-			const GltfNode_t * parent = ( skin != NULL ) ? skin->parent : node;
+			const ksGltfSkin * skin = node->skin;
+			const ksGpuBuffer * jointBuffer = ( skin != NULL ) ? &skin->jointBuffer : &scene->defaultJointBuffer;
+			const ksGltfNode * parent = ( skin != NULL ) ? skin->parent : node;
 
 			builtin.localMatrix = parent->localTransform;
 			builtin.modelMatrix = parent->globalTransform;
-			Matrix4x4f_Multiply( &builtin.modelViewMatrix, &builtin.viewMatrix, &builtin.modelMatrix );
-			Matrix4x4f_Multiply( &builtin.modelViewProjectionMatrix, &builtin.projectionMatrix, &builtin.modelViewMatrix );
-			Matrix4x4f_Invert( &builtin.modelInverseMatrix, &builtin.modelMatrix );
-			Matrix4x4f_Invert( &builtin.modelViewInverseMatrix, &builtin.modelViewMatrix );
-			Matrix4x4f_Invert( &builtin.modelViewProjectionInverseMatrix, &builtin.modelViewProjectionMatrix );
-			Matrix3x3f_CreateTransposeFromMatrix4x4f( &builtin.modelInverseTransposeMatrix, &builtin.modelInverseMatrix );
-			Matrix3x3f_CreateTransposeFromMatrix4x4f( &builtin.modelViewInverseTransposeMatrix, &builtin.modelViewInverseMatrix );
+			ksMatrix4x4f_Multiply( &builtin.modelViewMatrix, &builtin.viewMatrix, &builtin.modelMatrix );
+			ksMatrix4x4f_Multiply( &builtin.modelViewProjectionMatrix, &builtin.projectionMatrix, &builtin.modelViewMatrix );
+			ksMatrix4x4f_Invert( &builtin.modelInverseMatrix, &builtin.modelMatrix );
+			ksMatrix4x4f_Invert( &builtin.modelViewInverseMatrix, &builtin.modelViewMatrix );
+			ksMatrix4x4f_Invert( &builtin.modelViewProjectionInverseMatrix, &builtin.modelViewProjectionMatrix );
+			ksMatrix3x3f_CreateTransposeFromMatrix4x4f( &builtin.modelInverseTransposeMatrix, &builtin.modelInverseMatrix );
+			ksMatrix3x3f_CreateTransposeFromMatrix4x4f( &builtin.modelViewInverseTransposeMatrix, &builtin.modelViewInverseMatrix );
 
-			Matrix4x4f_t modelViewProjectionCullMatrix;
-			Matrix4x4f_Multiply( &modelViewProjectionCullMatrix, &viewState->combinedViewProjectionMatrix, &builtin.modelMatrix );
+			ksMatrix4x4f modelViewProjectionCullMatrix;
+			ksMatrix4x4f_Multiply( &modelViewProjectionCullMatrix, &viewState->combinedViewProjectionMatrix, &builtin.modelMatrix );
 
 			bool showSkinBounds = false;
 			if ( skin != NULL && showSkinBounds )
 			{
-				Matrix4x4f_t unitCubeMatrix;
-				Matrix4x4f_CreateOffsetScaleForBounds( &unitCubeMatrix, &builtin.modelMatrix, &skin->mins, &skin->maxs );
+				ksMatrix4x4f unitCubeMatrix;
+				ksMatrix4x4f_CreateOffsetScaleForBounds( &unitCubeMatrix, &builtin.modelMatrix, &skin->mins, &skin->maxs );
 
-				GpuGraphicsCommand_t command;
-				GpuGraphicsCommand_Init( &command );
+				ksGpuGraphicsCommand command;
+				ksGpuGraphicsCommand_Init( &command );
 
-				GpuGraphicsCommand_SetPipeline( &command, &scene->unitCubePipeline );
-				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, 0, &unitCubeMatrix );
-				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, 1, &builtin.viewMatrix );
-				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, 2, &builtin.projectionMatrix );
+				ksGpuGraphicsCommand_SetPipeline( &command, &scene->unitCubePipeline );
+				ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, 0, &unitCubeMatrix );
+				ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, 1, &builtin.viewMatrix );
+				ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, 2, &builtin.projectionMatrix );
 
-				GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
+				ksGpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
 			}
 
 			if ( skin != NULL && skin->culled )
@@ -19567,61 +19588,61 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 
 			for ( int modelIndex = 0; modelIndex < node->modelCount; modelIndex++ )
 			{
-				const GltfModel_t * model = node->models[modelIndex];
+				const ksGltfModel * model = node->models[modelIndex];
 
 				for ( int surfaceIndex = 0; surfaceIndex < model->surfaceCount; surfaceIndex++ )
 				{
-					const GltfSurface_t * surface = &model->surfaces[surfaceIndex];
+					const ksGltfSurface * surface = &model->surfaces[surfaceIndex];
 
 					if ( skin == NULL )
 					{
-						if ( Matrix4x4f_CullBounds( &modelViewProjectionCullMatrix, &surface->mins, &surface->maxs ) )
+						if ( ksMatrix4x4f_CullBounds( &modelViewProjectionCullMatrix, &surface->mins, &surface->maxs ) )
 						{
 							continue;
 						}
 					}
 
-					GpuGraphicsCommand_t command;
-					GpuGraphicsCommand_Init( &command );
+					ksGpuGraphicsCommand command;
+					ksGpuGraphicsCommand_Init( &command );
 
-					GpuGraphicsCommand_SetPipeline( &command, &surface->pipeline );
+					ksGpuGraphicsCommand_SetPipeline( &command, &surface->pipeline );
 
-					const GltfTechnique_t * technique = surface->material->technique;
+					const ksGltfTechnique * technique = surface->material->technique;
 					for ( int uniformIndex = 0; uniformIndex < technique->uniformCount; uniformIndex++ )
 					{
-						const GltfUniform_t * uniform = &technique->uniforms[uniformIndex];
+						const ksGltfUniform * uniform = &technique->uniforms[uniformIndex];
 						switch ( uniform->semantic )
 						{
-							case GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE:					GltfScene_SetUniformValue( &command, uniform, &uniform->defaultValue ); break;
-							case GLTF_UNIFORM_SEMANTIC_VIEW:							GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.viewMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.viewInverseMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_PROJECTION:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.projectionMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE:				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.projectionInverseMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_LOCAL:							GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.localMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_MODEL:							GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE:					GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelInverseMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE:			GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, uniform->index, &builtin.modelInverseTransposeMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW:						GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE:				GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewInverseMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE:	GpuGraphicsCommand_SetParmFloatMatrix3x3( &command, uniform->index, &builtin.modelViewInverseTransposeMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION:			GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE:	GpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionInverseMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_VIEWPORT:						GpuGraphicsCommand_SetParmFloatVector4( &command, uniform->index, &builtin.viewport ); break;
-							case GLTF_UNIFORM_SEMANTIC_JOINTMATRIX:						GpuGraphicsCommand_SetParmBufferUniform( &command, uniform->index, jointBuffer ); break;
+							case GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE:					ksGltfScene_SetUniformValue( &command, uniform, &uniform->defaultValue ); break;
+							case GLTF_UNIFORM_SEMANTIC_VIEW:							ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.viewMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE:					ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.viewInverseMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_PROJECTION:						ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.projectionMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE:				ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.projectionInverseMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_LOCAL:							ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.localMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL:							ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE:					ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelInverseMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE:			ksGpuGraphicsCommand_SetParmFloatMatrix3x3( &command, uniform->index, &builtin.modelInverseTransposeMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW:						ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE:				ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewInverseMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE:	ksGpuGraphicsCommand_SetParmFloatMatrix3x3( &command, uniform->index, &builtin.modelViewInverseTransposeMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION:			ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE:	ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &builtin.modelViewProjectionInverseMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_VIEWPORT:						ksGpuGraphicsCommand_SetParmFloatVector4( &command, uniform->index, &builtin.viewport ); break;
+							case GLTF_UNIFORM_SEMANTIC_JOINTMATRIX:						ksGpuGraphicsCommand_SetParmBufferUniform( &command, uniform->index, jointBuffer ); break;
 							default: break;
 						}
 					}
 
 					for ( int valueIndex = 0; valueIndex < surface->material->valueCount; valueIndex++ )
 					{
-						const GltfMaterialValue_t * value = &surface->material->values[valueIndex];
+						const ksGltfMaterialValue * value = &surface->material->values[valueIndex];
 						if ( value->uniform != NULL )
 						{
-							GltfScene_SetUniformValue( &command, value->uniform, &value->value );
+							ksGltfScene_SetUniformValue( &command, value->uniform, &value->value );
 						}
 					}
 
-					GpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
+					ksGpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
 				}
 			}
 		}
@@ -19633,25 +19654,31 @@ static void GltfScene_Render( GpuCommandBuffer_t * commandBuffer, const GltfScen
 /*
 ================================================================================================================================
 
-Stats
+Info
 
 ================================================================================================================================
 */
 
-static void PrintStats( const GpuWindow_t * window )
+static void PrintInfo( const ksGpuWindow * window, const int eyeImageResolutionLevel, const int eyeImageSamplesLevel )
 {
+	const int resolution = ( eyeImageResolutionLevel >= 0 ) ? eyeResolutionTable[eyeImageResolutionLevel] : 0;
+	const int samples = ( eyeImageSamplesLevel >= 0 ) ? eyeSampleCountTable[eyeImageSamplesLevel] : 0;
+	char resolutionString[32];
+	sprintf( resolutionString, "%4d x %4d - %dx MSAA", resolution, resolution, samples );
+
 	const uint32_t version = window->context.device->physicalDeviceProperties.apiVersion;
 	const uint32_t major = VK_VERSION_MAJOR( version );
 	const uint32_t minor = VK_VERSION_MINOR( version );
 	const uint32_t patch = VK_VERSION_PATCH( version );
 
 	Print( "--------------------------------\n" );
-	Print( "OS     : %s\n", GetOSVersion() );
-	Print( "CPU    : %s\n", GetCPUVersion() );
-	Print( "GPU    : %s\n", window->context.device->physicalDeviceProperties.deviceName );
-	Print( "Vulkan : %d.%d.%d\n", major, minor, patch );
-	Print( "Mode   : %s %dx%d %1.0f Hz\n", window->windowFullscreen ? "fullscreen" : "windowed",
-					window->windowWidth, window->windowHeight, window->windowRefreshRate );
+	Print( "OS      : %s\n", GetOSVersion() );
+	Print( "CPU     : %s\n", GetCPUVersion() );
+	Print( "GPU     : %s\n", window->context.device->physicalDeviceProperties.deviceName );
+	Print( "Vulkan  : %d.%d.%d\n", major, minor, patch );
+	Print( "Display : %4d x %4d - %1.0f Hz (%s)\n", window->windowWidth, window->windowHeight, window->windowRefreshRate,
+												window->windowFullscreen ? "fullscreen" : "windowed" );
+	Print( "Eye Img : %s\n", ( resolution >= 0 ) ? resolutionString : "-" );
 	Print( "--------------------------------\n" );
 }
 
@@ -19733,11 +19760,11 @@ static void DumpGLSL()
 
 Startup settings.
 
-StartupSettings_t
+ksStartupSettings
 
-static int StartupSettings_StringToLevel( const char * string, const int maxLevels );
-static int StartupSettings_StringToRenderMode( const char * string );
-static int StartupSettings_StringToTimeWarpImplementation( const char * string );
+static int ksStartupSettings_StringToLevel( const char * string, const int maxLevels );
+static int ksStartupSettings_StringToRenderMode( const char * string );
+static int ksStartupSettings_StringToTimeWarpImplementation( const char * string );
 
 ================================================================================================================================
 */
@@ -19748,7 +19775,7 @@ typedef enum
 	RENDER_MODE_TIME_WARP,
 	RENDER_MODE_SCENE,
 	RENDER_MODE_MAX
-} RenderMode_t;
+} ksRenderMode;
 
 typedef struct
 {
@@ -19764,27 +19791,27 @@ typedef struct
 	bool						useMultiView;
 	bool						correctChromaticAberration;
 	bool						hideGraphs;
-	TimeWarpImplementation_t	timeWarpImplementation;
-	RenderMode_t				renderMode;
-	Microseconds_t				startupTimeMicroseconds;
-	Microseconds_t				noVSyncMicroseconds;
-	Microseconds_t				noLogMicroseconds;
-} StartupSettings_t;
+	ksTimeWarpImplementation	timeWarpImplementation;
+	ksRenderMode				renderMode;
+	ksMicroseconds				startupTimeMicroseconds;
+	ksMicroseconds				noVSyncMicroseconds;
+	ksMicroseconds				noLogMicroseconds;
+} ksStartupSettings;
 
-static int StartupSettings_StringToLevel( const char * string, const int maxLevels )
+static int ksStartupSettings_StringToLevel( const char * string, const int maxLevels )
 {
 	const int level = atoi( string );
 	return ( level >= 0 ) ? ( ( level < maxLevels ) ? level : maxLevels - 1 ) : 0;
 }
 
-static int StartupSettings_StringToRenderMode( const char * string )
+static int ksStartupSettings_StringToRenderMode( const char * string )
 {
 	return	( ( strcmp( string, "atw" ) == 0 ) ? RENDER_MODE_ASYNC_TIME_WARP:
 			( ( strcmp( string, "tw"  ) == 0 ) ? RENDER_MODE_TIME_WARP :
 			RENDER_MODE_SCENE ) );
 }
 
-static int StartupSettings_StringToTimeWarpImplementation( const char * string )
+static int ksStartupSettings_StringToTimeWarpImplementation( const char * string )
 {
 	return	( ( strcmp( string, "graphics" ) == 0 ) ? TIMEWARP_IMPLEMENTATION_GRAPHICS :
 			( ( strcmp( string, "compute"  ) == 0 ) ? TIMEWARP_IMPLEMENTATION_COMPUTE :
@@ -19816,207 +19843,193 @@ enum
 
 typedef struct
 {
-	Signal_t				initialized;
-	GpuContext_t *			shareContext;
-	TimeWarp_t *			timeWarp;
-	SceneSettings_t *		sceneSettings;
-	GpuWindowInput_t *		input;
+	ksSignal				initialized;
+	ksGpuContext *			shareContext;
+	ksTimeWarp *			timeWarp;
+	ksSceneSettings *		sceneSettings;
+	ksGpuWindowInput *		input;
 
 	volatile bool			terminate;
 	volatile bool			openFrameLog;
-} SceneThreadData_t;
+} ksSceneThreadData;
 
-void SceneThread_Render( SceneThreadData_t * threadData )
+void SceneThread_Render( ksSceneThreadData * threadData )
 {
-	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
+	ksThread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
 
-	GpuContext_t context;
-	GpuContext_CreateShared( &context, threadData->shareContext, QUEUE_INDEX_SCENE );
+	ksGpuContext context;
+	ksGpuContext_CreateShared( &context, threadData->shareContext, QUEUE_INDEX_SCENE );
 
-	const int resolutionTable[] =
-	{
-		1024,
-		1536,
-		2048,
-		4096
-	};
-	const int resolution = resolutionTable[threadData->sceneSettings->eyeImageResolutionLevel];
+	const int resolution = eyeResolutionTable[threadData->sceneSettings->eyeImageResolutionLevel];
 
-	const GpuSampleCount_t sampleCountTable[] =
-	{
-		GPU_SAMPLE_COUNT_1,
-		GPU_SAMPLE_COUNT_2,
-		GPU_SAMPLE_COUNT_4,
-		GPU_SAMPLE_COUNT_8
-	};
-	const GpuSampleCount_t sampleCount = sampleCountTable[threadData->sceneSettings->eyeImageSamplesLevel];
+	const ksGpuSampleCount sampleCount = eyeSampleCountTable[threadData->sceneSettings->eyeImageSamplesLevel];
 
-	GpuRenderPass_t renderPassSingleView;
-	GpuRenderPass_Create( &context, &renderPassSingleView, GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24,
+	ksGpuRenderPass renderPassSingleView;
+	ksGpuRenderPass_Create( &context, &renderPassSingleView, GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24,
 							sampleCount, GPU_RENDERPASS_TYPE_INLINE,
 							GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
 							GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
 
-	GpuRenderPass_t renderPassMultiView;
-	GpuRenderPass_Create( &context, &renderPassMultiView, GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24,
+	ksGpuRenderPass renderPassMultiView;
+	ksGpuRenderPass_Create( &context, &renderPassMultiView, GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24,
 							sampleCount, GPU_RENDERPASS_TYPE_SECONDARY_COMMAND_BUFFERS,
 							GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
 							GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
 
-	GpuFramebuffer_t framebuffer;
-	GpuFramebuffer_CreateFromTextureArrays( &context, &framebuffer, &renderPassSingleView,
+	ksGpuFramebuffer framebuffer;
+	ksGpuFramebuffer_CreateFromTextureArrays( &context, &framebuffer, &renderPassSingleView,
 				resolution, resolution, NUM_EYES, NUM_EYE_BUFFERS, false );
 
-	GpuCommandBuffer_t eyeCommandBuffer[NUM_EYES];
-	GpuTimer_t eyeTimer[NUM_EYES];
+	ksGpuCommandBuffer eyeCommandBuffer[NUM_EYES];
+	ksGpuTimer eyeTimer[NUM_EYES];
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		GpuCommandBuffer_Create( &context, &eyeCommandBuffer[eye], GPU_COMMAND_BUFFER_TYPE_PRIMARY, NUM_EYE_BUFFERS );
-		GpuTimer_Create( &context, &eyeTimer[eye] );
+		ksGpuCommandBuffer_Create( &context, &eyeCommandBuffer[eye], GPU_COMMAND_BUFFER_TYPE_PRIMARY, NUM_EYE_BUFFERS );
+		ksGpuTimer_Create( &context, &eyeTimer[eye] );
 	}
 
-	GpuCommandBuffer_t sceneCommandBuffer;
-	GpuCommandBuffer_Create( &context, &sceneCommandBuffer, GPU_COMMAND_BUFFER_TYPE_SECONDARY_CONTINUE_RENDER_PASS, NUM_EYE_BUFFERS );
+	ksGpuCommandBuffer sceneCommandBuffer;
+	ksGpuCommandBuffer_Create( &context, &sceneCommandBuffer, GPU_COMMAND_BUFFER_TYPE_SECONDARY_CONTINUE_RENDER_PASS, NUM_EYE_BUFFERS );
 
-	const BodyInfo_t * bodyInfo = GetDefaultBodyInfo();
+	const ksBodyInfo * bodyInfo = GetDefaultBodyInfo();
 
-	ViewState_t viewState;
-	ViewState_Init( &viewState, bodyInfo->interpupillaryDistance );
+	ksViewState viewState;
+	ksViewState_Init( &viewState, bodyInfo->interpupillaryDistance );
 
 #if USE_GLTF == 1
-	GltfScene_t scene;
-	GltfScene_CreateFromFile( &context, &scene, "models.gltf", &renderPassSingleView );
+	ksGltfScene scene;
+	ksGltfScene_CreateFromFile( &context, &scene, "models.gltf", &renderPassSingleView );
 #else
-	PerfScene_t scene;
-	PerfScene_Create( &context, &scene, threadData->sceneSettings, &renderPassSingleView );
+	ksPerfScene scene;
+	ksPerfScene_Create( &context, &scene, threadData->sceneSettings, &renderPassSingleView );
 #endif
 
-	Signal_Raise( &threadData->initialized );
+	ksSignal_Raise( &threadData->initialized );
 
 	for ( int frameIndex = 0; !threadData->terminate; frameIndex++ )
 	{
 		if ( threadData->openFrameLog )
 		{
 			threadData->openFrameLog = false;
-			FrameLog_Open( OUTPUT_PATH "framelog_scene.txt", 10 );
+			ksFrameLog_Open( OUTPUT_PATH "framelog_scene.txt", 10 );
 		}
 
-		const Microseconds_t nextDisplayTime = TimeWarp_GetPredictedDisplayTime( threadData->timeWarp, frameIndex );
+		const ksMicroseconds nextDisplayTime = ksTimeWarp_GetPredictedDisplayTime( threadData->timeWarp, frameIndex );
 
 #if USE_GLTF == 1
-		GltfScene_Simulate( &scene, &viewState, threadData->input, nextDisplayTime );
+		ksGltfScene_Simulate( &scene, &viewState, threadData->input, nextDisplayTime );
 #else
-		PerfScene_Simulate( &scene, &viewState, nextDisplayTime );
+		ksPerfScene_Simulate( &scene, &viewState, nextDisplayTime );
 #endif
 
-		FrameLog_BeginFrame();
+		ksFrameLog_BeginFrame();
 
-		const Microseconds_t t0 = GetTimeMicroseconds();
+		const ksMicroseconds t0 = GetTimeMicroseconds();
 
 		if ( threadData->sceneSettings->useMultiView )
 		{
-			const ScreenRect_t sceneRect = { 0, 0, resolution, resolution };
-			GpuCommandBuffer_BeginSecondary( &sceneCommandBuffer, &renderPassMultiView, NULL );
+			const ksScreenRect sceneRect = { 0, 0, resolution, resolution };
+			ksGpuCommandBuffer_BeginSecondary( &sceneCommandBuffer, &renderPassMultiView, NULL );
 
-			GpuCommandBuffer_SetViewport( &sceneCommandBuffer, &sceneRect );
-			GpuCommandBuffer_SetScissor( &sceneCommandBuffer, &sceneRect );
+			ksGpuCommandBuffer_SetViewport( &sceneCommandBuffer, &sceneRect );
+			ksGpuCommandBuffer_SetScissor( &sceneCommandBuffer, &sceneRect );
 
 #if USE_GLTF == 1
-			GltfScene_Render( &sceneCommandBuffer, &scene, &viewState, 0 );
+			ksGltfScene_Render( &sceneCommandBuffer, &scene, &viewState, 0 );
 #else
-			PerfScene_Render( &sceneCommandBuffer, &scene );
+			ksPerfScene_Render( &sceneCommandBuffer, &scene );
 #endif
 
-			GpuCommandBuffer_EndSecondary( &sceneCommandBuffer );
+			ksGpuCommandBuffer_EndSecondary( &sceneCommandBuffer );
 		}
 
-		GpuTexture_t * eyeTexture[NUM_EYES] = { 0 };
-		GpuFence_t * eyeCompletionFence[NUM_EYES] = { 0 };
+		ksGpuTexture * eyeTexture[NUM_EYES] = { 0 };
+		ksGpuFence * eyeCompletionFence[NUM_EYES] = { 0 };
 		int eyeArrayLayer[NUM_EYES] = { 0, 1 };
 
 		for ( int eye = 0; eye < NUM_EYES; eye++ )
 		{
-			const ScreenRect_t screenRect = GpuFramebuffer_GetRect( &framebuffer );
+			const ksScreenRect screenRect = ksGpuFramebuffer_GetRect( &framebuffer );
 
-			GpuCommandBuffer_BeginPrimary( &eyeCommandBuffer[eye] );
-			GpuCommandBuffer_BeginFramebuffer( &eyeCommandBuffer[eye], &framebuffer, eye, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
+			ksGpuCommandBuffer_BeginPrimary( &eyeCommandBuffer[eye] );
+			ksGpuCommandBuffer_BeginFramebuffer( &eyeCommandBuffer[eye], &framebuffer, eye, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
 
 #if USE_GLTF == 1
-			GltfScene_UpdateBuffers( &eyeCommandBuffer[eye], &scene, &viewState, eye );
+			ksGltfScene_UpdateBuffers( &eyeCommandBuffer[eye], &scene, &viewState, eye );
 #else
-			PerfScene_UpdateBuffers( &eyeCommandBuffer[eye], &scene, &viewState, eye );
+			ksPerfScene_UpdateBuffers( &eyeCommandBuffer[eye], &scene, &viewState, eye );
 #endif
 
-			GpuRenderPass_t * renderPass = threadData->sceneSettings->useMultiView ? &renderPassMultiView : &renderPassSingleView;
+			ksGpuRenderPass * renderPass = threadData->sceneSettings->useMultiView ? &renderPassMultiView : &renderPassSingleView;
 
-			GpuCommandBuffer_BeginTimer( &eyeCommandBuffer[eye], &eyeTimer[eye] );
-			GpuCommandBuffer_BeginRenderPass( &eyeCommandBuffer[eye], renderPass, &framebuffer, &screenRect );
+			ksGpuCommandBuffer_BeginTimer( &eyeCommandBuffer[eye], &eyeTimer[eye] );
+			ksGpuCommandBuffer_BeginRenderPass( &eyeCommandBuffer[eye], renderPass, &framebuffer, &screenRect );
 
 			if ( threadData->sceneSettings->useMultiView )
 			{
-				GpuCommandBuffer_SubmitSecondary( &sceneCommandBuffer, &eyeCommandBuffer[eye] );
+				ksGpuCommandBuffer_SubmitSecondary( &sceneCommandBuffer, &eyeCommandBuffer[eye] );
 			}
 			else
 			{
-				GpuCommandBuffer_SetViewport( &eyeCommandBuffer[eye], &screenRect );
-				GpuCommandBuffer_SetScissor( &eyeCommandBuffer[eye], &screenRect );
+				ksGpuCommandBuffer_SetViewport( &eyeCommandBuffer[eye], &screenRect );
+				ksGpuCommandBuffer_SetScissor( &eyeCommandBuffer[eye], &screenRect );
 #if USE_GLTF == 1
-				GltfScene_Render( &eyeCommandBuffer[eye], &scene, &viewState, eye );
+				ksGltfScene_Render( &eyeCommandBuffer[eye], &scene, &viewState, eye );
 #else
-				PerfScene_Render( &eyeCommandBuffer[eye], &scene );
+				ksPerfScene_Render( &eyeCommandBuffer[eye], &scene );
 #endif
 			}
 
-			GpuCommandBuffer_EndRenderPass( &eyeCommandBuffer[eye], renderPass );
-			GpuCommandBuffer_EndTimer( &eyeCommandBuffer[eye], &eyeTimer[eye] );
+			ksGpuCommandBuffer_EndRenderPass( &eyeCommandBuffer[eye], renderPass );
+			ksGpuCommandBuffer_EndTimer( &eyeCommandBuffer[eye], &eyeTimer[eye] );
 
-			GpuCommandBuffer_EndFramebuffer( &eyeCommandBuffer[eye], &framebuffer, eye, GPU_TEXTURE_USAGE_SAMPLED );
-			GpuCommandBuffer_EndPrimary( &eyeCommandBuffer[eye] );
+			ksGpuCommandBuffer_EndFramebuffer( &eyeCommandBuffer[eye], &framebuffer, eye, GPU_TEXTURE_USAGE_SAMPLED );
+			ksGpuCommandBuffer_EndPrimary( &eyeCommandBuffer[eye] );
 
-			eyeTexture[eye] = GpuFramebuffer_GetColorTexture( &framebuffer );
-			eyeCompletionFence[eye] = GpuCommandBuffer_SubmitPrimary( &eyeCommandBuffer[eye] );
+			eyeTexture[eye] = ksGpuFramebuffer_GetColorTexture( &framebuffer );
+			eyeCompletionFence[eye] = ksGpuCommandBuffer_SubmitPrimary( &eyeCommandBuffer[eye] );
 		}
 
-		const Microseconds_t t1 = GetTimeMicroseconds();
+		const ksMicroseconds t1 = GetTimeMicroseconds();
 
 		const float eyeTexturesCpuTime = ( t1 - t0 ) * ( 1.0f / 1000.0f );
-		const float eyeTexturesGpuTime = GpuTimer_GetMilliseconds( &eyeTimer[0] ) + GpuTimer_GetMilliseconds( &eyeTimer[1] );
+		const float eyeTexturesGpuTime = ksGpuTimer_GetMilliseconds( &eyeTimer[0] ) + ksGpuTimer_GetMilliseconds( &eyeTimer[1] );
 
-		FrameLog_EndFrame( eyeTexturesCpuTime, eyeTexturesGpuTime, GPU_TIMER_FRAMES_DELAYED );
+		ksFrameLog_EndFrame( eyeTexturesCpuTime, eyeTexturesGpuTime, GPU_TIMER_FRAMES_DELAYED );
 
-		Matrix4x4f_t projectionMatrix;
-		Matrix4x4f_CreateProjectionFov( &projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
+		ksMatrix4x4f projectionMatrix;
+		ksMatrix4x4f_CreateProjectionFov( &projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
 
-		TimeWarp_SubmitFrame( threadData->timeWarp, frameIndex, nextDisplayTime,
+		ksTimeWarp_SubmitFrame( threadData->timeWarp, frameIndex, nextDisplayTime,
 								&viewState.hmdViewMatrix, &projectionMatrix,
 								eyeTexture, eyeCompletionFence, eyeArrayLayer,
 								eyeTexturesCpuTime, eyeTexturesGpuTime );
 	}
 
 #if USE_GLTF == 1
-	GltfScene_Destroy( &context, &scene );
+	ksGltfScene_Destroy( &context, &scene );
 #else
-	PerfScene_Destroy( &context, &scene );
+	ksPerfScene_Destroy( &context, &scene );
 #endif
 
-	GpuCommandBuffer_Destroy( &context, &sceneCommandBuffer );
+	ksGpuCommandBuffer_Destroy( &context, &sceneCommandBuffer );
 
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
-		GpuTimer_Destroy( &context, &eyeTimer[eye] );
-		GpuCommandBuffer_Destroy( &context, &eyeCommandBuffer[eye] );
+		ksGpuTimer_Destroy( &context, &eyeTimer[eye] );
+		ksGpuCommandBuffer_Destroy( &context, &eyeCommandBuffer[eye] );
 	}
 
-	GpuFramebuffer_Destroy( &context, &framebuffer );
-	GpuRenderPass_Destroy( &context, &renderPassMultiView );
-	GpuRenderPass_Destroy( &context, &renderPassSingleView );
-	GpuContext_Destroy( &context );
+	ksGpuFramebuffer_Destroy( &context, &framebuffer );
+	ksGpuRenderPass_Destroy( &context, &renderPassMultiView );
+	ksGpuRenderPass_Destroy( &context, &renderPassSingleView );
+	ksGpuContext_Destroy( &context );
 }
 
-void SceneThread_Create( Thread_t * sceneThread, SceneThreadData_t * sceneThreadData,
-							GpuWindow_t * window, TimeWarp_t * timeWarp, SceneSettings_t * sceneSettings )
+void SceneThread_Create( ksThread * sceneThread, ksSceneThreadData * sceneThreadData,
+							ksGpuWindow * window, ksTimeWarp * timeWarp, ksSceneSettings * sceneSettings )
 {
-	Signal_Create( &sceneThreadData->initialized, true );
+	ksSignal_Create( &sceneThreadData->initialized, true );
 	sceneThreadData->shareContext = &window->context;
 	sceneThreadData->timeWarp = timeWarp;
 	sceneThreadData->sceneSettings = sceneSettings;
@@ -20024,91 +20037,91 @@ void SceneThread_Create( Thread_t * sceneThread, SceneThreadData_t * sceneThread
 	sceneThreadData->terminate = false;
 	sceneThreadData->openFrameLog = false;
 
-	Thread_Create( sceneThread, "atw:scene", (threadFunction_t) SceneThread_Render, sceneThreadData );
-	Thread_Signal( sceneThread );
-	Signal_Wait( &sceneThreadData->initialized, -1 );
+	ksThread_Create( sceneThread, "atw:scene", (ksThreadFunction) SceneThread_Render, sceneThreadData );
+	ksThread_Signal( sceneThread );
+	ksSignal_Wait( &sceneThreadData->initialized, -1 );
 }
 
-void SceneThread_Destroy( Thread_t * sceneThread, SceneThreadData_t * sceneThreadData )
+void SceneThread_Destroy( ksThread * sceneThread, ksSceneThreadData * sceneThreadData )
 {
 	sceneThreadData->terminate = true;
 	// The following assumes the time warp thread is blocked when this function is called.
-	Signal_Raise( &sceneThreadData->timeWarp->newEyeTexturesConsumed );
-	Signal_Raise( &sceneThreadData->timeWarp->vsyncSignal );
-	Signal_Destroy( &sceneThreadData->initialized );
-	Thread_Destroy( sceneThread );
+	ksSignal_Raise( &sceneThreadData->timeWarp->newEyeTexturesConsumed );
+	ksSignal_Raise( &sceneThreadData->timeWarp->vsyncSignal );
+	ksSignal_Destroy( &sceneThreadData->initialized );
+	ksThread_Destroy( sceneThread );
 }
 
-bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
+bool RenderAsyncTimeWarp( ksStartupSettings * startupSettings )
 {
-	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
-	Thread_SetRealTimePriority( 1 );
+	ksThread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
+	ksThread_SetRealTimePriority( 1 );
 
-	DriverInstance_t instance;
-	DriverInstance_Create( &instance );
+	ksDriverInstance instance;
+	ksDriverInstance_Create( &instance );
 
-	const GpuQueueInfo_t queueInfo =
+	const ksGpuQueueInfo queueInfo =
 	{
 		2,
 		GPU_QUEUE_PROPERTY_GRAPHICS | GPU_QUEUE_PROPERTY_COMPUTE,
 		{ GPU_QUEUE_PRIORITY_HIGH, GPU_QUEUE_PRIORITY_MEDIUM }
 	};
 
-	GpuWindow_t window;
-	GpuWindow_Create( &window, &instance, &queueInfo, QUEUE_INDEX_TIMEWARP,
+	ksGpuWindow window;
+	ksGpuWindow_Create( &window, &instance, &queueInfo, QUEUE_INDEX_TIMEWARP,
 						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
 						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 0], startupSettings->fullscreen ),
 						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 1], startupSettings->fullscreen ),
 						startupSettings->fullscreen );
 
 	int swapInterval = ( startupSettings->noVSyncMicroseconds <= 0 );
-	GpuWindow_SwapInterval( &window, swapInterval );
+	ksGpuWindow_SwapInterval( &window, swapInterval );
 
-	TimeWarp_t timeWarp;
-	TimeWarp_Create( &timeWarp, &window );
-	TimeWarp_SetBarGraphState( &timeWarp, startupSettings->hideGraphs ? BAR_GRAPH_HIDDEN : BAR_GRAPH_VISIBLE );
-	TimeWarp_SetImplementation( &timeWarp, startupSettings->timeWarpImplementation );
-	TimeWarp_SetChromaticAberrationCorrection( &timeWarp, startupSettings->correctChromaticAberration );
-	TimeWarp_SetMultiView( &timeWarp, startupSettings->useMultiView );
-	TimeWarp_SetDisplayResolutionLevel( &timeWarp, startupSettings->displayResolutionLevel );
-	TimeWarp_SetEyeImageResolutionLevel( &timeWarp, startupSettings->eyeImageResolutionLevel );
-	TimeWarp_SetEyeImageSamplesLevel( &timeWarp, startupSettings->eyeImageSamplesLevel );
-	TimeWarp_SetDrawCallLevel( &timeWarp, startupSettings->drawCallLevel );
-	TimeWarp_SetTriangleLevel( &timeWarp, startupSettings->triangleLevel );
-	TimeWarp_SetFragmentLevel( &timeWarp, startupSettings->fragmentLevel );
+	ksTimeWarp timeWarp;
+	ksTimeWarp_Create( &timeWarp, &window );
+	ksTimeWarp_SetBarGraphState( &timeWarp, startupSettings->hideGraphs ? BAR_GRAPH_HIDDEN : BAR_GRAPH_VISIBLE );
+	ksTimeWarp_SetImplementation( &timeWarp, startupSettings->timeWarpImplementation );
+	ksTimeWarp_SetChromaticAberrationCorrection( &timeWarp, startupSettings->correctChromaticAberration );
+	ksTimeWarp_SetMultiView( &timeWarp, startupSettings->useMultiView );
+	ksTimeWarp_SetDisplayResolutionLevel( &timeWarp, startupSettings->displayResolutionLevel );
+	ksTimeWarp_SetEyeImageResolutionLevel( &timeWarp, startupSettings->eyeImageResolutionLevel );
+	ksTimeWarp_SetEyeImageSamplesLevel( &timeWarp, startupSettings->eyeImageSamplesLevel );
+	ksTimeWarp_SetDrawCallLevel( &timeWarp, startupSettings->drawCallLevel );
+	ksTimeWarp_SetTriangleLevel( &timeWarp, startupSettings->triangleLevel );
+	ksTimeWarp_SetFragmentLevel( &timeWarp, startupSettings->fragmentLevel );
 
-	SceneSettings_t sceneSettings;
-	SceneSettings_Init( &window.context, &sceneSettings );
-	SceneSettings_SetSimulationPaused( &sceneSettings, startupSettings->simulationPaused );
-	SceneSettings_SetMultiView( &sceneSettings, startupSettings->useMultiView );
-	SceneSettings_SetDisplayResolutionLevel( &sceneSettings, startupSettings->displayResolutionLevel );
-	SceneSettings_SetEyeImageResolutionLevel( &sceneSettings, startupSettings->eyeImageResolutionLevel );
-	SceneSettings_SetEyeImageSamplesLevel( &sceneSettings, startupSettings->eyeImageSamplesLevel );
-	SceneSettings_SetDrawCallLevel( &sceneSettings, startupSettings->drawCallLevel );
-	SceneSettings_SetTriangleLevel( &sceneSettings, startupSettings->triangleLevel );
-	SceneSettings_SetFragmentLevel( &sceneSettings, startupSettings->fragmentLevel );
+	ksSceneSettings sceneSettings;
+	ksSceneSettings_Init( &window.context, &sceneSettings );
+	ksSceneSettings_SetSimulationPaused( &sceneSettings, startupSettings->simulationPaused );
+	ksSceneSettings_SetMultiView( &sceneSettings, startupSettings->useMultiView );
+	ksSceneSettings_SetDisplayResolutionLevel( &sceneSettings, startupSettings->displayResolutionLevel );
+	ksSceneSettings_SetEyeImageResolutionLevel( &sceneSettings, startupSettings->eyeImageResolutionLevel );
+	ksSceneSettings_SetEyeImageSamplesLevel( &sceneSettings, startupSettings->eyeImageSamplesLevel );
+	ksSceneSettings_SetDrawCallLevel( &sceneSettings, startupSettings->drawCallLevel );
+	ksSceneSettings_SetTriangleLevel( &sceneSettings, startupSettings->triangleLevel );
+	ksSceneSettings_SetFragmentLevel( &sceneSettings, startupSettings->fragmentLevel );
 
-	Thread_t sceneThread;
-	SceneThreadData_t sceneThreadData;
+	ksThread sceneThread;
+	ksSceneThreadData sceneThreadData;
 	SceneThread_Create( &sceneThread, &sceneThreadData, &window, &timeWarp, &sceneSettings );
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
 
-	Microseconds_t startupTimeMicroseconds = startupSettings->startupTimeMicroseconds;
-	Microseconds_t noVSyncMicroseconds = startupSettings->noVSyncMicroseconds;
-	Microseconds_t noLogMicroseconds = startupSettings->noLogMicroseconds;
+	ksMicroseconds startupTimeMicroseconds = startupSettings->startupTimeMicroseconds;
+	ksMicroseconds noVSyncMicroseconds = startupSettings->noVSyncMicroseconds;
+	ksMicroseconds noLogMicroseconds = startupSettings->noLogMicroseconds;
 
-	Thread_SetName( "atw:timewarp" );
+	ksThread_SetName( "atw:timewarp" );
 
 	bool exit = false;
 	while ( !exit )
 	{
-		const Microseconds_t time = GetTimeMicroseconds();
+		const ksMicroseconds time = GetTimeMicroseconds();
 
-		const GpuWindowEvent_t handleEvent = GpuWindow_ProcessEvents( &window );
+		const ksGpuWindowEvent handleEvent = ksGpuWindow_ProcessEvents( &window );
 		if ( handleEvent == GPU_WINDOW_EVENT_ACTIVATED )
 		{
-			PrintStats( &window );
+			PrintInfo( &window, sceneSettings.eyeImageResolutionLevel, startupSettings->eyeImageSamplesLevel );
 		}
 		else if ( handleEvent == GPU_WINDOW_EVENT_EXIT )
 		{
@@ -20116,108 +20129,108 @@ bool RenderAsyncTimeWarp( StartupSettings_t * startupSettings )
 			break;
 		}
 
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_ESCAPE ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_ESCAPE ) )
 		{
-			GpuWindow_Exit( &window );
+			ksGpuWindow_Exit( &window );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Z ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Z ) )
 		{
-			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
+			startupSettings->renderMode = (ksRenderMode) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
 			break;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
 		{
 			startupSettings->fullscreen = !startupSettings->fullscreen;
 			break;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
-			GpuWindow_SwapInterval( &window, swapInterval );
+			ksGpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
-			FrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
+			ksFrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
 			sceneThreadData.openFrameLog = true;
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_P ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_P ) )
 		{
-			SceneSettings_ToggleSimulationPaused( &sceneSettings );
+			ksSceneSettings_ToggleSimulationPaused( &sceneSettings );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_G ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_G ) )
 		{
-			TimeWarp_CycleBarGraphState( &timeWarp );
+			ksTimeWarp_CycleBarGraphState( &timeWarp );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
 		{
-			SceneSettings_CycleDisplayResolutionLevel( &sceneSettings );
+			ksSceneSettings_CycleDisplayResolutionLevel( &sceneSettings );
 			startupSettings->displayResolutionLevel = sceneSettings.displayResolutionLevel;
 			break;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_B ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_B ) )
 		{
-			SceneSettings_CycleEyeImageResolutionLevel( &sceneSettings );
+			ksSceneSettings_CycleEyeImageResolutionLevel( &sceneSettings );
 			startupSettings->eyeImageResolutionLevel = sceneSettings.eyeImageResolutionLevel;
 			break;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_S ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_S ) )
 		{
-			SceneSettings_CycleEyeImageSamplesLevel( &sceneSettings );
+			ksSceneSettings_CycleEyeImageSamplesLevel( &sceneSettings );
 			startupSettings->eyeImageSamplesLevel = sceneSettings.eyeImageSamplesLevel;
 			break;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Q ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Q ) )
 		{
-			SceneSettings_CycleDrawCallLevel( &sceneSettings );
-			TimeWarp_SetDrawCallLevel( &timeWarp, SceneSettings_GetDrawCallLevel( &sceneSettings ) );
+			ksSceneSettings_CycleDrawCallLevel( &sceneSettings );
+			ksTimeWarp_SetDrawCallLevel( &timeWarp, ksSceneSettings_GetDrawCallLevel( &sceneSettings ) );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_W ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_W ) )
 		{
-			SceneSettings_CycleTriangleLevel( &sceneSettings );
-			TimeWarp_SetTriangleLevel( &timeWarp, SceneSettings_GetTriangleLevel( &sceneSettings ) );
+			ksSceneSettings_CycleTriangleLevel( &sceneSettings );
+			ksTimeWarp_SetTriangleLevel( &timeWarp, ksSceneSettings_GetTriangleLevel( &sceneSettings ) );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_E ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_E ) )
 		{
-			SceneSettings_CycleFragmentLevel( &sceneSettings );
-			TimeWarp_SetFragmentLevel( &timeWarp, SceneSettings_GetFragmentLevel( &sceneSettings ) );
+			ksSceneSettings_CycleFragmentLevel( &sceneSettings );
+			ksTimeWarp_SetFragmentLevel( &timeWarp, ksSceneSettings_GetFragmentLevel( &sceneSettings ) );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_I ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_I ) )
 		{
-			TimeWarp_CycleImplementation( &timeWarp );
+			ksTimeWarp_CycleImplementation( &timeWarp );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_C ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_C ) )
 		{
-			TimeWarp_ToggleChromaticAberrationCorrection( &timeWarp );
+			ksTimeWarp_ToggleChromaticAberrationCorrection( &timeWarp );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_M ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_M ) )
 		{
-			SceneSettings_ToggleMultiView( &sceneSettings );
-			TimeWarp_SetMultiView( &timeWarp, SceneSettings_GetMultiView( &sceneSettings ) );
+			ksSceneSettings_ToggleMultiView( &sceneSettings );
+			ksTimeWarp_SetMultiView( &timeWarp, ksSceneSettings_GetMultiView( &sceneSettings ) );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_D ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_D ) )
 		{
 			DumpGLSL();
 		}
 
 		if ( window.windowActive )
 		{
-			TimeWarp_Render( &timeWarp );
+			ksTimeWarp_Render( &timeWarp );
 		}
 	}
 
-	GpuContext_WaitIdle( &window.context );
+	ksGpuContext_WaitIdle( &window.context );
 	SceneThread_Destroy( &sceneThread, &sceneThreadData );
-	TimeWarp_Destroy( &timeWarp, &window );
-	GpuWindow_Destroy( &window );
-	DriverInstance_Destroy( &instance );
+	ksTimeWarp_Destroy( &timeWarp, &window );
+	ksGpuWindow_Destroy( &window );
+	ksDriverInstance_Destroy( &instance );
 
 	return exit;
 }
@@ -20230,118 +20243,118 @@ Time warp rendering test.
 ================================================================================================================================
 */
 
-bool RenderTimeWarp( StartupSettings_t * startupSettings )
+bool RenderTimeWarp( ksStartupSettings * startupSettings )
 {
-	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
+	ksThread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
 
-	DriverInstance_t instance;
-	DriverInstance_Create( &instance );
+	ksDriverInstance instance;
+	ksDriverInstance_Create( &instance );
 
-	const GpuQueueInfo_t queueInfo =
+	const ksGpuQueueInfo queueInfo =
 	{
 		1,
 		GPU_QUEUE_PROPERTY_GRAPHICS | GPU_QUEUE_PROPERTY_COMPUTE,
 		{ GPU_QUEUE_PRIORITY_MEDIUM }
 	};
 
-	GpuWindow_t window;
-	GpuWindow_Create( &window, &instance, &queueInfo, 0,
+	ksGpuWindow window;
+	ksGpuWindow_Create( &window, &instance, &queueInfo, 0,
 						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_NONE, GPU_SAMPLE_COUNT_1,
 						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 0], startupSettings->fullscreen ),
 						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 1], startupSettings->fullscreen ),
 						startupSettings->fullscreen );
 
 	int swapInterval = ( startupSettings->noVSyncMicroseconds <= 0 );
-	GpuWindow_SwapInterval( &window, swapInterval );
+	ksGpuWindow_SwapInterval( &window, swapInterval );
 
-	TimeWarp_t timeWarp;
-	TimeWarp_Create( &timeWarp, &window );
-	TimeWarp_SetBarGraphState( &timeWarp, startupSettings->hideGraphs ? BAR_GRAPH_HIDDEN : BAR_GRAPH_VISIBLE );
-	TimeWarp_SetImplementation( &timeWarp, startupSettings->timeWarpImplementation );
-	TimeWarp_SetChromaticAberrationCorrection( &timeWarp, startupSettings->correctChromaticAberration );
-	TimeWarp_SetDisplayResolutionLevel( &timeWarp, startupSettings->displayResolutionLevel );
+	ksTimeWarp timeWarp;
+	ksTimeWarp_Create( &timeWarp, &window );
+	ksTimeWarp_SetBarGraphState( &timeWarp, startupSettings->hideGraphs ? BAR_GRAPH_HIDDEN : BAR_GRAPH_VISIBLE );
+	ksTimeWarp_SetImplementation( &timeWarp, startupSettings->timeWarpImplementation );
+	ksTimeWarp_SetChromaticAberrationCorrection( &timeWarp, startupSettings->correctChromaticAberration );
+	ksTimeWarp_SetDisplayResolutionLevel( &timeWarp, startupSettings->displayResolutionLevel );
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
 
-	Microseconds_t startupTimeMicroseconds = startupSettings->startupTimeMicroseconds;
-	Microseconds_t noVSyncMicroseconds = startupSettings->noVSyncMicroseconds;
-	Microseconds_t noLogMicroseconds = startupSettings->noLogMicroseconds;
+	ksMicroseconds startupTimeMicroseconds = startupSettings->startupTimeMicroseconds;
+	ksMicroseconds noVSyncMicroseconds = startupSettings->noVSyncMicroseconds;
+	ksMicroseconds noLogMicroseconds = startupSettings->noLogMicroseconds;
 
-	Thread_SetName( "atw:timewarp" );
+	ksThread_SetName( "atw:timewarp" );
 
 	bool exit = false;
 	while ( !exit )
 	{
-		const Microseconds_t time = GetTimeMicroseconds();
+		const ksMicroseconds time = GetTimeMicroseconds();
 
-		const GpuWindowEvent_t handleEvent = GpuWindow_ProcessEvents( &window );
+		const ksGpuWindowEvent handleEvent = ksGpuWindow_ProcessEvents( &window );
 		if ( handleEvent == GPU_WINDOW_EVENT_ACTIVATED )
 		{
-			PrintStats( &window );
+			PrintInfo( &window, 0, 0 );
 		}
 		else if ( handleEvent == GPU_WINDOW_EVENT_EXIT )
 		{
 			exit = true;
 		}
 
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_ESCAPE ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_ESCAPE ) )
 		{
-			GpuWindow_Exit( &window );
+			ksGpuWindow_Exit( &window );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Z ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Z ) )
 		{
-			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
+			startupSettings->renderMode = (ksRenderMode) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
 			break;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
 		{
 			startupSettings->fullscreen = !startupSettings->fullscreen;
 			break;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
-			GpuWindow_SwapInterval( &window, swapInterval );
+			ksGpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
-			FrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
+			ksFrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_G ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_G ) )
 		{
-			TimeWarp_CycleBarGraphState( &timeWarp );
+			ksTimeWarp_CycleBarGraphState( &timeWarp );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_I ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_I ) )
 		{
-			TimeWarp_CycleImplementation( &timeWarp );
+			ksTimeWarp_CycleImplementation( &timeWarp );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_C ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_C ) )
 		{
-			TimeWarp_ToggleChromaticAberrationCorrection( &timeWarp );
+			ksTimeWarp_ToggleChromaticAberrationCorrection( &timeWarp );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_D ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_D ) )
 		{
 			DumpGLSL();
 		}
 
 		if ( window.windowActive )
 		{
-			TimeWarp_Render( &timeWarp );
+			ksTimeWarp_Render( &timeWarp );
 		}
 	}
 
-	GpuContext_WaitIdle( &window.context );
-	TimeWarp_Destroy( &timeWarp, &window );
-	GpuWindow_Destroy( &window );
-	DriverInstance_Destroy( &instance );
+	ksGpuContext_WaitIdle( &window.context );
+	ksTimeWarp_Destroy( &timeWarp, &window );
+	ksGpuWindow_Destroy( &window );
+	ksDriverInstance_Destroy( &instance );
 
 	return exit;
 }
@@ -20354,98 +20367,98 @@ Scene rendering test.
 ================================================================================================================================
 */
 
-bool RenderScene( StartupSettings_t * startupSettings )
+bool RenderScene( ksStartupSettings * startupSettings )
 {
-	Thread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
+	ksThread_SetAffinity( THREAD_AFFINITY_BIG_CORES );
 
-	DriverInstance_t instance;
-	DriverInstance_Create( &instance );
+	ksDriverInstance instance;
+	ksDriverInstance_Create( &instance );
 
-	const GpuSampleCount_t sampleCountTable[] =
+	const ksGpuSampleCount sampleCountTable[] =
 	{
 		GPU_SAMPLE_COUNT_1,
 		GPU_SAMPLE_COUNT_2,
 		GPU_SAMPLE_COUNT_4,
 		GPU_SAMPLE_COUNT_8
 	};
-	const GpuSampleCount_t sampleCount = sampleCountTable[startupSettings->eyeImageSamplesLevel];
+	const ksGpuSampleCount sampleCount = sampleCountTable[startupSettings->eyeImageSamplesLevel];
 
-	const GpuQueueInfo_t queueInfo =
+	const ksGpuQueueInfo queueInfo =
 	{
 		1,
 		GPU_QUEUE_PROPERTY_GRAPHICS,
 		{ GPU_QUEUE_PRIORITY_MEDIUM }
 	};
 
-	GpuWindow_t window;
-	GpuWindow_Create( &window, &instance, &queueInfo, 0,
+	ksGpuWindow window;
+	ksGpuWindow_Create( &window, &instance, &queueInfo, 0,
 						GPU_SURFACE_COLOR_FORMAT_R8G8B8A8, GPU_SURFACE_DEPTH_FORMAT_D24, sampleCount,
 						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 0], startupSettings->fullscreen ),
 						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 1], startupSettings->fullscreen ),
 						startupSettings->fullscreen );
 
 	int swapInterval = ( startupSettings->noVSyncMicroseconds <= 0 );
-	GpuWindow_SwapInterval( &window, swapInterval );
+	ksGpuWindow_SwapInterval( &window, swapInterval );
 
-	GpuRenderPass_t renderPass;
-	GpuRenderPass_Create( &window.context, &renderPass, window.colorFormat, window.depthFormat,
+	ksGpuRenderPass renderPass;
+	ksGpuRenderPass_Create( &window.context, &renderPass, window.colorFormat, window.depthFormat,
 							sampleCount, GPU_RENDERPASS_TYPE_INLINE,
 							GPU_RENDERPASS_FLAG_CLEAR_COLOR_BUFFER |
 							GPU_RENDERPASS_FLAG_CLEAR_DEPTH_BUFFER );
 
-	GpuFramebuffer_t framebuffer;
-	GpuFramebuffer_CreateFromSwapchain( &window, &framebuffer, &renderPass );
+	ksGpuFramebuffer framebuffer;
+	ksGpuFramebuffer_CreateFromSwapchain( &window, &framebuffer, &renderPass );
 
-	GpuCommandBuffer_t commandBuffer;
-	GpuCommandBuffer_Create( &window.context, &commandBuffer, GPU_COMMAND_BUFFER_TYPE_PRIMARY, GpuFramebuffer_GetBufferCount( &framebuffer ) );
+	ksGpuCommandBuffer commandBuffer;
+	ksGpuCommandBuffer_Create( &window.context, &commandBuffer, GPU_COMMAND_BUFFER_TYPE_PRIMARY, ksGpuFramebuffer_GetBufferCount( &framebuffer ) );
 
-	GpuTimer_t timer;
-	GpuTimer_Create( &window.context, &timer );
+	ksGpuTimer timer;
+	ksGpuTimer_Create( &window.context, &timer );
 
-	BarGraph_t frameCpuTimeBarGraph;
-	BarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
+	ksBarGraph frameCpuTimeBarGraph;
+	ksBarGraph_CreateVirtualRect( &window.context, &frameCpuTimeBarGraph, &renderPass, &frameCpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
 
-	BarGraph_t frameGpuTimeBarGraph;
-	BarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
+	ksBarGraph frameGpuTimeBarGraph;
+	ksBarGraph_CreateVirtualRect( &window.context, &frameGpuTimeBarGraph, &renderPass, &frameGpuTimeBarGraphRect, 64, 1, &colorDarkGrey );
 
-	SceneSettings_t sceneSettings;
-	SceneSettings_Init( &window.context, &sceneSettings );
-	SceneSettings_SetSimulationPaused( &sceneSettings, startupSettings->simulationPaused );
-	SceneSettings_SetDisplayResolutionLevel( &sceneSettings, startupSettings->displayResolutionLevel );
-	SceneSettings_SetEyeImageResolutionLevel( &sceneSettings, startupSettings->eyeImageResolutionLevel );
-	SceneSettings_SetEyeImageSamplesLevel( &sceneSettings, startupSettings->eyeImageSamplesLevel );
-	SceneSettings_SetDrawCallLevel( &sceneSettings, startupSettings->drawCallLevel );
-	SceneSettings_SetTriangleLevel( &sceneSettings, startupSettings->triangleLevel );
-	SceneSettings_SetFragmentLevel( &sceneSettings, startupSettings->fragmentLevel );
+	ksSceneSettings sceneSettings;
+	ksSceneSettings_Init( &window.context, &sceneSettings );
+	ksSceneSettings_SetSimulationPaused( &sceneSettings, startupSettings->simulationPaused );
+	ksSceneSettings_SetDisplayResolutionLevel( &sceneSettings, startupSettings->displayResolutionLevel );
+	ksSceneSettings_SetEyeImageResolutionLevel( &sceneSettings, startupSettings->eyeImageResolutionLevel );
+	ksSceneSettings_SetEyeImageSamplesLevel( &sceneSettings, startupSettings->eyeImageSamplesLevel );
+	ksSceneSettings_SetDrawCallLevel( &sceneSettings, startupSettings->drawCallLevel );
+	ksSceneSettings_SetTriangleLevel( &sceneSettings, startupSettings->triangleLevel );
+	ksSceneSettings_SetFragmentLevel( &sceneSettings, startupSettings->fragmentLevel );
 
-	ViewState_t viewState;
-	ViewState_Init( &viewState, 0.0f );
+	ksViewState viewState;
+	ksViewState_Init( &viewState, 0.0f );
 
 #if USE_GLTF == 1
-	GltfScene_t scene;
-	GltfScene_CreateFromFile( &window.context, &scene, "models.gltf", &renderPass );
+	ksGltfScene scene;
+	ksGltfScene_CreateFromFile( &window.context, &scene, "models.gltf", &renderPass );
 #else
-	PerfScene_t scene;
-	PerfScene_Create( &window.context, &scene, &sceneSettings, &renderPass );
+	ksPerfScene scene;
+	ksPerfScene_Create( &window.context, &scene, &sceneSettings, &renderPass );
 #endif
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
 
-	Microseconds_t startupTimeMicroseconds = startupSettings->startupTimeMicroseconds;
-	Microseconds_t noVSyncMicroseconds = startupSettings->noVSyncMicroseconds;
-	Microseconds_t noLogMicroseconds = startupSettings->noLogMicroseconds;
+	ksMicroseconds startupTimeMicroseconds = startupSettings->startupTimeMicroseconds;
+	ksMicroseconds noVSyncMicroseconds = startupSettings->noVSyncMicroseconds;
+	ksMicroseconds noLogMicroseconds = startupSettings->noLogMicroseconds;
 
-	Thread_SetName( "atw:scene" );
+	ksThread_SetName( "atw:scene" );
 
 	bool exit = false;
 	while ( !exit )
 	{
-		const Microseconds_t time = GetTimeMicroseconds();
+		const ksMicroseconds time = GetTimeMicroseconds();
 
-		const GpuWindowEvent_t handleEvent = GpuWindow_ProcessEvents( &window );
+		const ksGpuWindowEvent handleEvent = ksGpuWindow_ProcessEvents( &window );
 		if ( handleEvent == GPU_WINDOW_EVENT_ACTIVATED )
 		{
-			PrintStats( &window );
+			PrintInfo( &window, -1, -1 );
 		}
 		else if ( handleEvent == GPU_WINDOW_EVENT_EXIT )
 		{
@@ -20453,154 +20466,154 @@ bool RenderScene( StartupSettings_t * startupSettings )
 			break;
 		}
 
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_ESCAPE ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_ESCAPE ) )
 		{
-			GpuWindow_Exit( &window );
+			ksGpuWindow_Exit( &window );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Z ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Z ) )
 		{
-			startupSettings->renderMode = (RenderMode_t) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
+			startupSettings->renderMode = (ksRenderMode) ( ( startupSettings->renderMode + 1 ) % RENDER_MODE_MAX );
 			break;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_F ) )
 		{
 			startupSettings->fullscreen = !startupSettings->fullscreen;
 			break;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
 			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
 		{
 			swapInterval = !swapInterval;
-			GpuWindow_SwapInterval( &window, swapInterval );
+			ksGpuWindow_SwapInterval( &window, swapInterval );
 			noVSyncMicroseconds = 0;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
 			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
 		{
-			FrameLog_Open( OUTPUT_PATH "framelog_scene.txt", 10 );
+			ksFrameLog_Open( OUTPUT_PATH "framelog_scene.txt", 10 );
 			noLogMicroseconds = 0;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
 		{
 			hmd_headRotationDisabled = !hmd_headRotationDisabled;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_P ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_P ) )
 		{
-			SceneSettings_ToggleSimulationPaused( &sceneSettings );
+			ksSceneSettings_ToggleSimulationPaused( &sceneSettings );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_R ) )
 		{
-			SceneSettings_CycleDisplayResolutionLevel( &sceneSettings );
+			ksSceneSettings_CycleDisplayResolutionLevel( &sceneSettings );
 			startupSettings->displayResolutionLevel = sceneSettings.displayResolutionLevel;
 			break;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_B ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_B ) )
 		{
-			SceneSettings_CycleEyeImageResolutionLevel( &sceneSettings );
+			ksSceneSettings_CycleEyeImageResolutionLevel( &sceneSettings );
 			startupSettings->eyeImageResolutionLevel = sceneSettings.eyeImageResolutionLevel;
 			break;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_S ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_S ) )
 		{
-			SceneSettings_CycleEyeImageSamplesLevel( &sceneSettings );
+			ksSceneSettings_CycleEyeImageSamplesLevel( &sceneSettings );
 			startupSettings->eyeImageSamplesLevel = sceneSettings.eyeImageSamplesLevel;
 			break;
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Q ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_Q ) )
 		{
-			SceneSettings_CycleDrawCallLevel( &sceneSettings );
+			ksSceneSettings_CycleDrawCallLevel( &sceneSettings );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_W ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_W ) )
 		{
-			SceneSettings_CycleTriangleLevel( &sceneSettings );
+			ksSceneSettings_CycleTriangleLevel( &sceneSettings );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_E ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_E ) )
 		{
-			SceneSettings_CycleFragmentLevel( &sceneSettings );
+			ksSceneSettings_CycleFragmentLevel( &sceneSettings );
 		}
-		if ( GpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_D ) )
+		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_D ) )
 		{
 			DumpGLSL();
 		}
 
 		if ( window.windowActive )
 		{
-			const Microseconds_t nextSwapTime = GpuWindow_GetNextSwapTimeMicroseconds( &window );
+			const ksMicroseconds nextSwapTime = ksGpuWindow_GetNextSwapTimeMicroseconds( &window );
 
 #if USE_GLTF == 1
-			GltfScene_Simulate( &scene, &viewState, &window.input, nextSwapTime );
+			ksGltfScene_Simulate( &scene, &viewState, &window.input, nextSwapTime );
 #else
-			PerfScene_Simulate( &scene, &viewState, nextSwapTime );
+			ksPerfScene_Simulate( &scene, &viewState, nextSwapTime );
 #endif
 
-			FrameLog_BeginFrame();
+			ksFrameLog_BeginFrame();
 
-			const Microseconds_t t0 = GetTimeMicroseconds();
+			const ksMicroseconds t0 = GetTimeMicroseconds();
 
-			const ScreenRect_t screenRect = GpuFramebuffer_GetRect( &framebuffer );
+			const ksScreenRect screenRect = ksGpuFramebuffer_GetRect( &framebuffer );
 
-			GpuCommandBuffer_BeginPrimary( &commandBuffer );
-			GpuCommandBuffer_BeginFramebuffer( &commandBuffer, &framebuffer, 0, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
+			ksGpuCommandBuffer_BeginPrimary( &commandBuffer );
+			ksGpuCommandBuffer_BeginFramebuffer( &commandBuffer, &framebuffer, 0, GPU_TEXTURE_USAGE_COLOR_ATTACHMENT );
 
 #if USE_GLTF == 1
-			GltfScene_UpdateBuffers( &commandBuffer, &scene, &viewState, 0 );
+			ksGltfScene_UpdateBuffers( &commandBuffer, &scene, &viewState, 0 );
 #else
-			PerfScene_UpdateBuffers( &commandBuffer, &scene, &viewState, 0 );
+			ksPerfScene_UpdateBuffers( &commandBuffer, &scene, &viewState, 0 );
 #endif
 
-			BarGraph_UpdateGraphics( &commandBuffer, &frameCpuTimeBarGraph );
-			BarGraph_UpdateGraphics( &commandBuffer, &frameGpuTimeBarGraph );
+			ksBarGraph_UpdateGraphics( &commandBuffer, &frameCpuTimeBarGraph );
+			ksBarGraph_UpdateGraphics( &commandBuffer, &frameGpuTimeBarGraph );
 
-			GpuCommandBuffer_BeginTimer( &commandBuffer, &timer );
-			GpuCommandBuffer_BeginRenderPass( &commandBuffer, &renderPass, &framebuffer, &screenRect );
+			ksGpuCommandBuffer_BeginTimer( &commandBuffer, &timer );
+			ksGpuCommandBuffer_BeginRenderPass( &commandBuffer, &renderPass, &framebuffer, &screenRect );
 
-			GpuCommandBuffer_SetViewport( &commandBuffer, &screenRect );
-			GpuCommandBuffer_SetScissor( &commandBuffer, &screenRect );
+			ksGpuCommandBuffer_SetViewport( &commandBuffer, &screenRect );
+			ksGpuCommandBuffer_SetScissor( &commandBuffer, &screenRect );
 
 #if USE_GLTF == 1
-			GltfScene_Render( &commandBuffer, &scene, &viewState, 0 );
+			ksGltfScene_Render( &commandBuffer, &scene, &viewState, 0 );
 #else
-			PerfScene_Render( &commandBuffer, &scene );
+			ksPerfScene_Render( &commandBuffer, &scene );
 #endif
 
-			BarGraph_RenderGraphics( &commandBuffer, &frameCpuTimeBarGraph );
-			BarGraph_RenderGraphics( &commandBuffer, &frameGpuTimeBarGraph );
+			ksBarGraph_RenderGraphics( &commandBuffer, &frameCpuTimeBarGraph );
+			ksBarGraph_RenderGraphics( &commandBuffer, &frameGpuTimeBarGraph );
 
-			GpuCommandBuffer_EndRenderPass( &commandBuffer, &renderPass );
-			GpuCommandBuffer_EndTimer( &commandBuffer, &timer );
+			ksGpuCommandBuffer_EndRenderPass( &commandBuffer, &renderPass );
+			ksGpuCommandBuffer_EndTimer( &commandBuffer, &timer );
 
-			GpuCommandBuffer_EndFramebuffer( &commandBuffer, &framebuffer, 0, GPU_TEXTURE_USAGE_PRESENTATION );
-			GpuCommandBuffer_EndPrimary( &commandBuffer );
+			ksGpuCommandBuffer_EndFramebuffer( &commandBuffer, &framebuffer, 0, GPU_TEXTURE_USAGE_PRESENTATION );
+			ksGpuCommandBuffer_EndPrimary( &commandBuffer );
 
-			GpuCommandBuffer_SubmitPrimary( &commandBuffer );
+			ksGpuCommandBuffer_SubmitPrimary( &commandBuffer );
 
-			const Microseconds_t t1 = GetTimeMicroseconds();
+			const ksMicroseconds t1 = GetTimeMicroseconds();
 
 			const float sceneCpuTimeMilliseconds = ( t1 - t0 ) * ( 1.0f / 1000.0f );
-			const float sceneGpuTimeMilliseconds = GpuTimer_GetMilliseconds( &timer );
+			const float sceneGpuTimeMilliseconds = ksGpuTimer_GetMilliseconds( &timer );
 
-			FrameLog_EndFrame( sceneCpuTimeMilliseconds, sceneGpuTimeMilliseconds, GPU_TIMER_FRAMES_DELAYED );
+			ksFrameLog_EndFrame( sceneCpuTimeMilliseconds, sceneGpuTimeMilliseconds, GPU_TIMER_FRAMES_DELAYED );
 
-			BarGraph_AddBar( &frameCpuTimeBarGraph, 0, sceneCpuTimeMilliseconds * window.windowRefreshRate * ( 1.0f / 1000.0f ), &colorGreen, true );
-			BarGraph_AddBar( &frameGpuTimeBarGraph, 0, sceneGpuTimeMilliseconds * window.windowRefreshRate * ( 1.0f / 1000.0f ), &colorGreen, true );
+			ksBarGraph_AddBar( &frameCpuTimeBarGraph, 0, sceneCpuTimeMilliseconds * window.windowRefreshRate * ( 1.0f / 1000.0f ), &colorGreen, true );
+			ksBarGraph_AddBar( &frameGpuTimeBarGraph, 0, sceneGpuTimeMilliseconds * window.windowRefreshRate * ( 1.0f / 1000.0f ), &colorGreen, true );
 
-			GpuWindow_SwapBuffers( &window );
+			ksGpuWindow_SwapBuffers( &window );
 		}
 	}
 
 #if USE_GLTF == 1
-	GltfScene_Destroy( &window.context, &scene );
+	ksGltfScene_Destroy( &window.context, &scene );
 #else
-	PerfScene_Destroy( &window.context, &scene );
+	ksPerfScene_Destroy( &window.context, &scene );
 #endif
-	BarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
-	BarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
-	GpuTimer_Destroy( &window.context, &timer );
-	GpuCommandBuffer_Destroy( &window.context, &commandBuffer );
-	GpuFramebuffer_Destroy( &window.context, &framebuffer );
-	GpuRenderPass_Destroy( &window.context, &renderPass );
-	GpuWindow_Destroy( &window );
-	DriverInstance_Destroy( &instance );
+	ksBarGraph_Destroy( &window.context, &frameGpuTimeBarGraph );
+	ksBarGraph_Destroy( &window.context, &frameCpuTimeBarGraph );
+	ksGpuTimer_Destroy( &window.context, &timer );
+	ksGpuCommandBuffer_Destroy( &window.context, &commandBuffer );
+	ksGpuFramebuffer_Destroy( &window.context, &framebuffer );
+	ksGpuRenderPass_Destroy( &window.context, &renderPass );
+	ksGpuWindow_Destroy( &window );
+	ksDriverInstance_Destroy( &instance );
 
 	return exit;
 }
@@ -20615,7 +20628,7 @@ Startup
 
 static int StartApplication( int argc, char * argv[] )
 {
-	StartupSettings_t startupSettings;
+	ksStartupSettings startupSettings;
 	memset( &startupSettings, 0, sizeof( startupSettings ) );
 	startupSettings.startupTimeMicroseconds = GetTimeMicroseconds();
 	
@@ -20625,21 +20638,21 @@ static int StartApplication( int argc, char * argv[] )
 		if ( arg[0] == '-' ) { arg++; }
 
 		if ( strcmp( arg, "f" ) == 0 && i + 0 < argc )		{ startupSettings.fullscreen = true; }
-		else if ( strcmp( arg, "v" ) == 0 && i + 1 < argc )	{ startupSettings.noVSyncMicroseconds = (Microseconds_t)( atof( argv[++i] ) * 1000 * 1000 ); }
+		else if ( strcmp( arg, "v" ) == 0 && i + 1 < argc )	{ startupSettings.noVSyncMicroseconds = (ksMicroseconds)( atof( argv[++i] ) * 1000 * 1000 ); }
 		else if ( strcmp( arg, "h" ) == 0 && i + 0 < argc )	{ startupSettings.headRotationDisabled = true; }
 		else if ( strcmp( arg, "p" ) == 0 && i + 0 < argc )	{ startupSettings.simulationPaused = true; }
-		else if ( strcmp( arg, "r" ) == 0 && i + 1 < argc )	{ startupSettings.displayResolutionLevel = StartupSettings_StringToLevel( argv[++i], MAX_DISPLAY_RESOLUTION_LEVELS ); }
-		else if ( strcmp( arg, "b" ) == 0 && i + 1 < argc )	{ startupSettings.eyeImageResolutionLevel = StartupSettings_StringToLevel( argv[++i], MAX_EYE_IMAGE_RESOLUTION_LEVELS ); }
-		else if ( strcmp( arg, "s" ) == 0 && i + 1 < argc )	{ startupSettings.eyeImageSamplesLevel = StartupSettings_StringToLevel( argv[++i], MAX_EYE_IMAGE_SAMPLES_LEVELS ); }
-		else if ( strcmp( arg, "q" ) == 0 && i + 1 < argc )	{ startupSettings.drawCallLevel = StartupSettings_StringToLevel( argv[++i], MAX_SCENE_DRAWCALL_LEVELS ); }
-		else if ( strcmp( arg, "w" ) == 0 && i + 1 < argc )	{ startupSettings.triangleLevel = StartupSettings_StringToLevel( argv[++i], MAX_SCENE_TRIANGLE_LEVELS ); }
-		else if ( strcmp( arg, "e" ) == 0 && i + 1 < argc )	{ startupSettings.fragmentLevel = StartupSettings_StringToLevel( argv[++i], MAX_SCENE_FRAGMENT_LEVELS ); }
+		else if ( strcmp( arg, "r" ) == 0 && i + 1 < argc )	{ startupSettings.displayResolutionLevel = ksStartupSettings_StringToLevel( argv[++i], MAX_DISPLAY_RESOLUTION_LEVELS ); }
+		else if ( strcmp( arg, "b" ) == 0 && i + 1 < argc )	{ startupSettings.eyeImageResolutionLevel = ksStartupSettings_StringToLevel( argv[++i], MAX_EYE_IMAGE_RESOLUTION_LEVELS ); }
+		else if ( strcmp( arg, "s" ) == 0 && i + 1 < argc )	{ startupSettings.eyeImageSamplesLevel = ksStartupSettings_StringToLevel( argv[++i], MAX_EYE_IMAGE_SAMPLES_LEVELS ); }
+		else if ( strcmp( arg, "q" ) == 0 && i + 1 < argc )	{ startupSettings.drawCallLevel = ksStartupSettings_StringToLevel( argv[++i], MAX_SCENE_DRAWCALL_LEVELS ); }
+		else if ( strcmp( arg, "w" ) == 0 && i + 1 < argc )	{ startupSettings.triangleLevel = ksStartupSettings_StringToLevel( argv[++i], MAX_SCENE_TRIANGLE_LEVELS ); }
+		else if ( strcmp( arg, "e" ) == 0 && i + 1 < argc )	{ startupSettings.fragmentLevel = ksStartupSettings_StringToLevel( argv[++i], MAX_SCENE_FRAGMENT_LEVELS ); }
 		else if ( strcmp( arg, "m" ) == 0 && i + 0 < argc )	{ startupSettings.useMultiView = ( atoi( argv[++i] ) != 0 ); }
 		else if ( strcmp( arg, "c" ) == 0 && i + 1 < argc )	{ startupSettings.correctChromaticAberration = ( atoi( argv[++i] ) != 0 ); }
-		else if ( strcmp( arg, "i" ) == 0 && i + 1 < argc )	{ startupSettings.timeWarpImplementation = (TimeWarpImplementation_t)StartupSettings_StringToTimeWarpImplementation( argv[++i] ); }
-		else if ( strcmp( arg, "z" ) == 0 && i + 1 < argc )	{ startupSettings.renderMode = StartupSettings_StringToRenderMode( argv[++i] ); }
+		else if ( strcmp( arg, "i" ) == 0 && i + 1 < argc )	{ startupSettings.timeWarpImplementation = (ksTimeWarpImplementation)ksStartupSettings_StringToTimeWarpImplementation( argv[++i] ); }
+		else if ( strcmp( arg, "z" ) == 0 && i + 1 < argc )	{ startupSettings.renderMode = ksStartupSettings_StringToRenderMode( argv[++i] ); }
 		else if ( strcmp( arg, "g" ) == 0 && i + 0 < argc )	{ startupSettings.hideGraphs = true; }
-		else if ( strcmp( arg, "l" ) == 0 && i + 1 < argc )	{ startupSettings.noLogMicroseconds = (Microseconds_t)( atof( argv[++i] ) * 1000 * 1000 ); }
+		else if ( strcmp( arg, "l" ) == 0 && i + 1 < argc )	{ startupSettings.noLogMicroseconds = (ksMicroseconds)( atof( argv[++i] ) * 1000 * 1000 ); }
 		else if ( strcmp( arg, "d" ) == 0 && i + 0 < argc )	{ DumpGLSL(); exit( 0 ); }
 		else
 		{
@@ -20976,10 +20989,10 @@ typedef struct
 	char	buffer[MAX_ARGS_BUFFER];
 	char *	argv[MAX_ARGS];
 	int		argc;
-} AndroidParm_t;
+} ksAndroidParm;
 
 // adb shell am start -n com.vulkansamples.atw_vulkan/android.app.NativeActivity -a "android.intent.action.MAIN" --es "args" "\"-r tw\""
-void GetIntentParms( AndroidParm_t * parms )
+void GetIntentParms( ksAndroidParm * parms )
 {
 	parms->buffer[0] = '\0';
 	parms->argv[0] = "atw_vulkan";
@@ -21045,7 +21058,7 @@ void android_main( struct android_app * app )
 
 	global_app = app;
 
-	AndroidParm_t parms;
+	ksAndroidParm parms;
 	GetIntentParms( &parms );
 
 	StartApplication( parms.argc, parms.argv );

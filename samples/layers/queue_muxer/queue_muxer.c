@@ -139,12 +139,12 @@ VERSION HISTORY
 /*
 ================================================================================================================================
 
-Mutex_t
+ksMutex
 
-static void Mutex_Create( Mutex_t * pMutex );
-static void Mutex_Destroy( Mutex_t * pMutex );
-static void Mutex_Lock( Mutex_t * pMutex );
-static void Mutex_Unlock( Mutex_t * pMutex );
+static void ksMutex_Create( ksMutex * pMutex );
+static void ksMutex_Destroy( ksMutex * pMutex );
+static void ksMutex_Lock( ksMutex * pMutex );
+static void ksMutex_Unlock( ksMutex * pMutex );
 
 ================================================================================================================================
 */
@@ -153,36 +153,36 @@ static void Mutex_Unlock( Mutex_t * pMutex );
 
 #include <Windows.h>
 
-typedef CRITICAL_SECTION Mutex_t;
+typedef CRITICAL_SECTION ksMutex;
 
-static void Mutex_Create( Mutex_t * mutex ) { InitializeCriticalSection( mutex ); }
-static void Mutex_Destroy( Mutex_t * mutex ) { DeleteCriticalSection( mutex ); }
-static void Mutex_Lock( Mutex_t * mutex ) { EnterCriticalSection( mutex ); }
-static void Mutex_Unlock( Mutex_t * mutex ) { LeaveCriticalSection( mutex ); }
+static void ksMutex_Create( ksMutex * mutex ) { InitializeCriticalSection( mutex ); }
+static void ksMutex_Destroy( ksMutex * mutex ) { DeleteCriticalSection( mutex ); }
+static void ksMutex_Lock( ksMutex * mutex ) { EnterCriticalSection( mutex ); }
+static void ksMutex_Unlock( ksMutex * mutex ) { LeaveCriticalSection( mutex ); }
 
 #else
 
 #include <pthread.h>
 
-typedef pthread_mutex_t Mutex_t;
+typedef pthread_mutex_t ksMutex;
 
-static void Mutex_Create( Mutex_t * mutex ) { pthread_mutex_init( mutex, NULL ); }
-static void Mutex_Destroy( Mutex_t * mutex ) { pthread_mutex_destroy( mutex ); }
-static void Mutex_Lock( Mutex_t * mutex ) { pthread_mutex_lock( mutex ); }
-static void Mutex_Unlock( Mutex_t * mutex ) { pthread_mutex_unlock( mutex ); }
+static void ksMutex_Create( ksMutex * mutex ) { pthread_mutex_init( mutex, NULL ); }
+static void ksMutex_Destroy( ksMutex * mutex ) { pthread_mutex_destroy( mutex ); }
+static void ksMutex_Lock( ksMutex * mutex ) { pthread_mutex_lock( mutex ); }
+static void ksMutex_Unlock( ksMutex * mutex ) { pthread_mutex_unlock( mutex ); }
 
 #endif
 
 /*
 ================================================================================================================================
 
-HashMap_t
+ksHashMap
 
-static void HashMap_Create( HashMap_t * map );
-static void HashMap_Destroy( HashMap_t * map );
-static void HashMap_Add( HashMap_t * map, void * key, void * data );
-static void HashMap_Remove( HashMap_t * map, void * key );
-static void * HashMap_Find( HashMap_t * map, void * key );
+static void ksHashMap_Create( ksHashMap * map );
+static void ksHashMap_Destroy( ksHashMap * map );
+static void ksHashMap_Add( ksHashMap * map, void * key, void * data );
+static void ksHashMap_Remove( ksHashMap * map, void * key );
+static void * ksHashMap_Find( ksHashMap * map, void * key );
 
 ================================================================================================================================
 */
@@ -199,9 +199,9 @@ typedef struct
 	int *			empty;
 	int				count;
 	int				nextEmpty;
-} HashMap_t;
+} ksHashMap;
 
-static void HashMap_Grow( HashMap_t * map, const int newCount )
+static void ksHashMap_Grow( ksHashMap * map, const int newCount )
 {
 	assert( newCount > map->count );
 
@@ -232,23 +232,23 @@ static void HashMap_Grow( HashMap_t * map, const int newCount )
 	map->count = newCount;
 }
 
-static void HashMap_Create( HashMap_t * map )
+static void ksHashMap_Create( ksHashMap * map )
 {
-	memset( map, 0, sizeof( HashMap_t ) );
+	memset( map, 0, sizeof( ksHashMap ) );
 	memset( map->table, -1, sizeof( map->table ) );
-	HashMap_Grow( map, 16 );
+	ksHashMap_Grow( map, 16 );
 }
 
-static void HashMap_Destroy( HashMap_t * map )
+static void ksHashMap_Destroy( ksHashMap * map )
 {
 	free( map->key );
 	free( map->data );
 	free( map->next );
 	free( map->empty );
-	memset( map, 0, sizeof( HashMap_t ) );
+	memset( map, 0, sizeof( ksHashMap ) );
 }
 
-static unsigned int HashMap_HashPointer( HashMap_t * map, const void * key )
+static unsigned int ksHashMap_HashPointer( ksHashMap * map, const void * key )
 {
 	// HASH_TABLE_SIZE must be a power of two.
 	assert( ( HASH_TABLE_SIZE > 0 ) && ( HASH_TABLE_SIZE & ( HASH_TABLE_SIZE - 1 ) ) == 0 );
@@ -256,9 +256,9 @@ static unsigned int HashMap_HashPointer( HashMap_t * map, const void * key )
 	return (unsigned int)( ( ( value >> 3 ) ^ ( value >> 11 ) ^ ( value >> 19 ) ) & ( HASH_TABLE_SIZE - 1 ) );
 }
 
-static void HashMap_Add( HashMap_t * map, void * key, void * data )
+static void ksHashMap_Add( ksHashMap * map, void * key, void * data )
 {
-	const unsigned int hash = HashMap_HashPointer( map, key );
+	const unsigned int hash = ksHashMap_HashPointer( map, key );
 	int * index = NULL;
 	for ( index = &map->table[hash]; *index >= 0; index = &map->next[*index] )
 	{
@@ -270,7 +270,7 @@ static void HashMap_Add( HashMap_t * map, void * key, void * data )
 	}
 	if ( map->nextEmpty >= map->count )
 	{
-		HashMap_Grow( map, map->count * 2 );
+		ksHashMap_Grow( map, map->count * 2 );
 	}
 	*index = map->empty[map->nextEmpty++];
 	map->key[*index] = key;
@@ -278,9 +278,9 @@ static void HashMap_Add( HashMap_t * map, void * key, void * data )
 	map->next[*index] = -1;
 }
 
-static void HashMap_Remove( HashMap_t * map, void * key )
+static void ksHashMap_Remove( ksHashMap * map, void * key )
 {
-	const unsigned int hash = HashMap_HashPointer( map, key );
+	const unsigned int hash = ksHashMap_HashPointer( map, key );
 	for ( int * index = &map->table[hash]; *index >= 0; index = &map->next[*index] )
 	{
 		if ( map->key[*index] == key )
@@ -296,9 +296,9 @@ static void HashMap_Remove( HashMap_t * map, void * key )
 	assert( 0 );
 }
 
-static void * HashMap_Find( HashMap_t * map, void * key )
+static void * ksHashMap_Find( ksHashMap * map, void * key )
 {
-	const unsigned int hash = HashMap_HashPointer( map, key );
+	const unsigned int hash = ksHashMap_HashPointer( map, key );
 	for ( int index = map->table[hash]; index >= 0; index = map->next[index] )
 	{
 		if ( map->key[index] == key )
@@ -320,26 +320,26 @@ Instance/Device/Queue data maps
 typedef struct
 {
 	VkLayerInstanceDispatchTable *	instanceDispatchTable;
-} InstanceData_t;
+} ksInstanceData;
 
 typedef struct
 {
-	InstanceData_t *				instanceData;
+	ksInstanceData *				instanceData;
 	VkLayerDispatchTable *			deviceDispatchTable;
-	Mutex_t							deviceMutex;
+	ksMutex							deviceMutex;
 	uint32_t						queueFamilyCount;
 	VkQueueFamilyProperties *		queueFamilyProperties;
-} DeviceData_t;
+} ksDeviceData;
 
 typedef struct
 {
-	DeviceData_t *					deviceData;
-	Mutex_t							queueMutex;
-} QueueData_t;
+	ksDeviceData *					deviceData;
+	ksMutex							queueMutex;
+} ksQueueData;
 
-static HashMap_t instance_data_map;
-static HashMap_t device_data_map;
-static HashMap_t queue_data_map;
+static ksHashMap instance_data_map;
+static ksHashMap device_data_map;
+static ksHashMap queue_data_map;
 
 static VkLayerDispatchTable * GetDispatchTable( const void * object ) { return *(VkLayerDispatchTable **)object; }
 
@@ -384,16 +384,16 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
 
 	if ( instance_data_map.nextEmpty == 0 )
 	{
-		HashMap_Create( &instance_data_map );
-		HashMap_Create( &device_data_map );
-		HashMap_Create( &queue_data_map );
+		ksHashMap_Create( &instance_data_map );
+		ksHashMap_Create( &device_data_map );
+		ksHashMap_Create( &queue_data_map );
 	}
 
-	InstanceData_t * my_instance_data = (InstanceData_t *)malloc( sizeof( InstanceData_t ) );
+	ksInstanceData * my_instance_data = (ksInstanceData *)malloc( sizeof( ksInstanceData ) );
 	my_instance_data->instanceDispatchTable = (VkLayerInstanceDispatchTable *)malloc( sizeof( VkLayerInstanceDispatchTable ) );
 	layer_init_instance_dispatch_table( *pInstance, my_instance_data->instanceDispatchTable, pfnGetInstanceProcAddr );
 
-	HashMap_Add( &instance_data_map, GetDispatchTable( *pInstance ), my_instance_data );
+	ksHashMap_Add( &instance_data_map, GetDispatchTable( *pInstance ), my_instance_data );
 		
 	return result;
 }
@@ -403,20 +403,20 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(
 		const VkAllocationCallbacks *	pAllocator)
 {
 	void * key = GetDispatchTable( instance );
-	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, key );
+	ksInstanceData * my_instance_data = (ksInstanceData *)ksHashMap_Find( &instance_data_map, key );
 
 	my_instance_data->instanceDispatchTable->DestroyInstance( instance, pAllocator );
 
-	HashMap_Remove( &instance_data_map, key );
+	ksHashMap_Remove( &instance_data_map, key );
 
 	free( my_instance_data->instanceDispatchTable );
 	free( my_instance_data );
 
 	if ( instance_data_map.nextEmpty == 0 )
 	{
-		HashMap_Destroy( &instance_data_map );
-		HashMap_Destroy( &device_data_map );
-		HashMap_Destroy( &queue_data_map );
+		ksHashMap_Destroy( &instance_data_map );
+		ksHashMap_Destroy( &device_data_map );
+		ksHashMap_Destroy( &queue_data_map );
 	}
 }
 
@@ -425,7 +425,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyPropert
 		uint32_t *					pQueueFamilyPropertyCount,
 		VkQueueFamilyProperties *	pQueueFamilyProperties )
 {
-	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchTable( physicalDevice ) );
+	ksInstanceData * my_instance_data = (ksInstanceData *)ksHashMap_Find( &instance_data_map, GetDispatchTable( physicalDevice ) );
 
 	my_instance_data->instanceDispatchTable->GetPhysicalDeviceQueueFamilyProperties( physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties );
 
@@ -479,7 +479,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 	// Advance the link info for the next element on the chain
 	chain_info->u.pLayerInfo = chain_info->u.pLayerInfo->pNext;
 
-	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchTable( physicalDevice ) );
+	ksInstanceData * my_instance_data = (ksInstanceData *)ksHashMap_Find( &instance_data_map, GetDispatchTable( physicalDevice ) );
 
 	// Get the queue family properties.
 	uint32_t queueFamilyCount = 0;
@@ -515,14 +515,14 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
 	layer_init_device_dispatch_table( *pDevice, pDeviceTable, pfnGetDeviceProcAddr );
 
 	// Setup device data.
-	DeviceData_t * my_device_data = (DeviceData_t *)malloc( sizeof( DeviceData_t ) );
+	ksDeviceData * my_device_data = (ksDeviceData *)malloc( sizeof( ksDeviceData ) );
 	my_device_data->instanceData = my_instance_data;
 	my_device_data->deviceDispatchTable = pDeviceTable;
 	my_device_data->queueFamilyCount = queueFamilyCount;
 	my_device_data->queueFamilyProperties = queueFamilyProperties;
-	Mutex_Create( &my_device_data->deviceMutex );
+	ksMutex_Create( &my_device_data->deviceMutex );
 
-	HashMap_Add( &device_data_map, GetDispatchTable( *pDevice ), my_device_data );
+	ksHashMap_Add( &device_data_map, GetDispatchTable( *pDevice ), my_device_data );
 
 	return result;
 }
@@ -532,25 +532,25 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(
 		const VkAllocationCallbacks *	pAllocator )
 {
 	void * key = GetDispatchTable( device );
-	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, key );
+	ksDeviceData * my_device_data = (ksDeviceData *)ksHashMap_Find( &device_data_map, key );
 
 	my_device_data->deviceDispatchTable->DestroyDevice( device, pAllocator );
 
 	// Free all queue objects associated with this device.
-	Mutex_Lock( &my_device_data->deviceMutex );
+	ksMutex_Lock( &my_device_data->deviceMutex );
 	for ( int i = 0; i < queue_data_map.count; i++ )
 	{
-		if ( queue_data_map.data[i] != NULL && ((QueueData_t *)queue_data_map.data[i])->deviceData == my_device_data )
+		if ( queue_data_map.data[i] != NULL && ((ksQueueData *)queue_data_map.data[i])->deviceData == my_device_data )
 		{
 			free( queue_data_map.data[i] );
-			HashMap_Remove( &queue_data_map, queue_data_map.key[i] );
+			ksHashMap_Remove( &queue_data_map, queue_data_map.key[i] );
 		}
 	}
-	Mutex_Unlock( &my_device_data->deviceMutex );
+	ksMutex_Unlock( &my_device_data->deviceMutex );
 
-	HashMap_Remove( &device_data_map, key );
+	ksHashMap_Remove( &device_data_map, key );
 
-	Mutex_Destroy( &my_device_data->deviceMutex );
+	ksMutex_Destroy( &my_device_data->deviceMutex );
 	free( my_device_data->deviceDispatchTable );
 	free( my_device_data->queueFamilyProperties );
 	free( my_device_data );
@@ -570,7 +570,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
 		uint32_t	queueIndex,
 		VkQueue *	pQueue )
 {
-	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchTable( device ) );
+	ksDeviceData * my_device_data = (ksDeviceData *)ksHashMap_Find( &device_data_map, GetDispatchTable( device ) );
 
 	// Direct all virtual queues to the last physical queue.
 	if ( queueIndex >= my_device_data->queueFamilyProperties[queueFamilyIndex].queueCount )
@@ -581,15 +581,15 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
 	my_device_data->deviceDispatchTable->GetDeviceQueue( device, queueFamilyIndex, queueIndex, pQueue );
 
 	// Create the queue mutex here without thread contention.
-	Mutex_Lock( &my_device_data->deviceMutex );
-	if ( HashMap_Find( &queue_data_map, *pQueue ) == NULL )
+	ksMutex_Lock( &my_device_data->deviceMutex );
+	if ( ksHashMap_Find( &queue_data_map, *pQueue ) == NULL )
 	{
-		QueueData_t * my_queue_data = (QueueData_t *)malloc( sizeof( QueueData_t ) );
+		ksQueueData * my_queue_data = (ksQueueData *)malloc( sizeof( ksQueueData ) );
 		my_queue_data->deviceData = my_device_data;
-		Mutex_Create( &my_queue_data->queueMutex );
-		HashMap_Add( &queue_data_map, *pQueue, my_queue_data );
+		ksMutex_Create( &my_queue_data->queueMutex );
+		ksHashMap_Add( &queue_data_map, *pQueue, my_queue_data );
 	}
-	Mutex_Unlock( &my_device_data->deviceMutex );
+	ksMutex_Unlock( &my_device_data->deviceMutex );
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
@@ -598,12 +598,12 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 		const VkSubmitInfo *	pSubmits,
 		VkFence					fence )
 {
-	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchTable( queue ) );
-	QueueData_t * my_queue_data = (QueueData_t *)HashMap_Find( &queue_data_map, queue );
+	ksDeviceData * my_device_data = (ksDeviceData *)ksHashMap_Find( &device_data_map, GetDispatchTable( queue ) );
+	ksQueueData * my_queue_data = (ksQueueData *)ksHashMap_Find( &queue_data_map, queue );
 
-	Mutex_Lock( &my_queue_data->queueMutex );
+	ksMutex_Lock( &my_queue_data->queueMutex );
 	VkResult result = my_device_data->deviceDispatchTable->QueueSubmit( queue, submitCount, pSubmits, fence );
-	Mutex_Unlock( &my_queue_data->queueMutex );
+	ksMutex_Unlock( &my_queue_data->queueMutex );
 
 	return result;
 }
@@ -611,12 +611,12 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueueSubmit(
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueueWaitIdle(
 		VkQueue	queue )
 {
-	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchTable( queue ) );
-	QueueData_t * my_queue_data = (QueueData_t *)HashMap_Find( &queue_data_map, queue );
+	ksDeviceData * my_device_data = (ksDeviceData *)ksHashMap_Find( &device_data_map, GetDispatchTable( queue ) );
+	ksQueueData * my_queue_data = (ksQueueData *)ksHashMap_Find( &queue_data_map, queue );
 
-	Mutex_Lock( &my_queue_data->queueMutex );
+	ksMutex_Lock( &my_queue_data->queueMutex );
 	VkResult result = my_device_data->deviceDispatchTable->QueueWaitIdle( queue );
-	Mutex_Unlock( &my_queue_data->queueMutex );
+	ksMutex_Unlock( &my_queue_data->queueMutex );
 
 	return result;
 }
@@ -625,12 +625,12 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(
 		VkQueue						queue,
 		const VkPresentInfoKHR *	pPresentInfo )
 {
-	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchTable( queue ) );
-	QueueData_t * my_queue_data = (QueueData_t *)HashMap_Find( &queue_data_map, queue );
+	ksDeviceData * my_device_data = (ksDeviceData *)ksHashMap_Find( &device_data_map, GetDispatchTable( queue ) );
+	ksQueueData * my_queue_data = (ksQueueData *)ksHashMap_Find( &queue_data_map, queue );
 
-	Mutex_Lock( &my_queue_data->queueMutex );
+	ksMutex_Lock( &my_queue_data->queueMutex );
 	VkResult result = my_device_data->deviceDispatchTable->QueuePresentKHR( queue, pPresentInfo );
-	Mutex_Unlock( &my_queue_data->queueMutex );
+	ksMutex_Unlock( &my_queue_data->queueMutex );
 
 	return result;
 }
@@ -758,7 +758,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionPropert
 
 	assert( physicalDevice );
 
-	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchTable( physicalDevice ) );
+	ksInstanceData * my_instance_data = (ksInstanceData *)ksHashMap_Find( &instance_data_map, GetDispatchTable( physicalDevice ) );
 
 	return my_instance_data->instanceDispatchTable->EnumerateDeviceExtensionProperties( physicalDevice, NULL, pCount, pProperties );
 }
@@ -779,7 +779,7 @@ VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr( 
 		return NULL;
 	}
 
-	InstanceData_t * my_instance_data = (InstanceData_t *)HashMap_Find( &instance_data_map, GetDispatchTable( instance ) );
+	ksInstanceData * my_instance_data = (ksInstanceData *)ksHashMap_Find( &instance_data_map, GetDispatchTable( instance ) );
 
 	VkLayerInstanceDispatchTable * pInstanceTable = my_instance_data->instanceDispatchTable;
 	if ( pInstanceTable->GetInstanceProcAddr == NULL )
@@ -804,7 +804,7 @@ VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr( Vk
 		return NULL;
 	}
 
-	DeviceData_t * my_device_data = (DeviceData_t *)HashMap_Find( &device_data_map, GetDispatchTable( device ) );
+	ksDeviceData * my_device_data = (ksDeviceData *)ksHashMap_Find( &device_data_map, GetDispatchTable( device ) );
 
 	VkLayerDispatchTable * pDeviceTable = my_device_data->deviceDispatchTable;
 	if ( pDeviceTable->GetDeviceProcAddr == NULL )

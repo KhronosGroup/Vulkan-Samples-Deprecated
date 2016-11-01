@@ -731,9 +731,9 @@ typedef struct
 	EGLSurface				mainSurface;
 	EGLContext				context;
 #endif
-} GpuContext_t;
+} ksGpuContext;
 
-static void GpuContext_Destroy( GpuContext_t * context )
+static void ksGpuContext_Destroy( ksGpuContext * context )
 {
 #if defined( OS_WINDOWS )
 	if ( context->hGLRC )
@@ -840,7 +840,7 @@ static void GpuContext_Destroy( GpuContext_t * context )
 
 LRESULT APIENTRY WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
 {
-	GpuContext_t * context = (GpuContext_t *) GetWindowLongPtr( hWnd, GWLP_USERDATA );
+	ksGpuContext * context = (ksGpuContext *) GetWindowLongPtr( hWnd, GWLP_USERDATA );
 	UNUSED_PARM( context );
 
 	switch ( message )
@@ -862,9 +862,9 @@ LRESULT APIENTRY WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 	return DefWindowProc( hWnd, message, wParam, lParam );
 }
 
-static bool GpuContext_Create( GpuContext_t * context )
+static bool ksGpuContext_Create( ksGpuContext * context )
 {
-	memset( context, 0, sizeof( GpuContext_t ) );
+	memset( context, 0, sizeof( ksGpuContext ) );
 
 	context->hInstance = GetModuleHandle( NULL );
 
@@ -906,7 +906,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 								NULL );
 	if ( !context->hWnd )
 	{
-		GpuContext_Destroy( context );
+		ksGpuContext_Destroy( context );
 		Error( "Failed to create context." );
 		return false;
 	}
@@ -916,7 +916,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 	context->hDC = GetDC( context->hWnd );
 	if ( !context->hDC )
 	{
-		GpuContext_Destroy( context );
+		ksGpuContext_Destroy( context );
 		Error( "Failed to acquire device context." );
 		return false;
 	}
@@ -995,9 +995,9 @@ static bool GpuContext_Create( GpuContext_t * context )
 
 #elif defined( OS_APPLE )
 
-static bool GpuContext_Create( GpuContext_t * context )
+static bool ksGpuContext_Create( ksGpuContext * context )
 {
-	memset( context, 0, sizeof( GpuContext_t ) );
+	memset( context, 0, sizeof( ksGpuContext ) );
 
 	CGDirectDisplayID displays[32];
 	CGDisplayCount displayCount = 0;
@@ -1047,9 +1047,9 @@ static int glxGetFBConfigAttrib2( Display * dpy, GLXFBConfig config, int attribu
 	return value;
 }
 
-static bool GpuContext_Create( GpuContext_t * context )
+static bool ksGpuContext_Create( ksGpuContext * context )
 {
-	memset( context, 0, sizeof( GpuContext_t ) );
+	memset( context, 0, sizeof( ksGpuContext ) );
 
 	const char * displayName = NULL;
 	context->display = XOpenDisplay( displayName );
@@ -1158,9 +1158,9 @@ static uint32_t xcb_glx_get_property( const uint32_t * properties, const uint32_
 	return 0;
 }
 
-static bool GpuContext_Create( GpuContext_t * context )
+static bool ksGpuContext_Create( ksGpuContext * context )
 {
-	memset( context, 0, sizeof( GpuContext_t ) );
+	memset( context, 0, sizeof( ksGpuContext ) );
 
 	const char * displayName = NULL;
 	context->display = XOpenDisplay( displayName );
@@ -1195,7 +1195,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 		return false;
 	}
 
-	const GpuSurfaceBits_t bits = GpuContext_BitsForSurfaceFormat( colorFormat, depthFormat );
+	const GpuSurfaceBits_t bits = ksGpuContext_BitsForSurfaceFormat( colorFormat, depthFormat );
 
 	const uint32_t * fb_configs_properties = xcb_glx_get_fb_configs_property_list( get_fb_configs_reply );
 	const uint32_t fb_configs_num_properties = get_fb_configs_reply->num_properties;
@@ -1270,9 +1270,9 @@ static bool GpuContext_Create( GpuContext_t * context )
 
 #elif defined( OS_ANDROID )
 
-static bool GpuContext_Create( GpuContext_t * context )
+static bool ksGpuContext_Create( ksGpuContext * context )
 {
-	memset( context, 0, sizeof( GpuContext_t ) );
+	memset( context, 0, sizeof( ksGpuContext ) );
 
 	EGLint majorVersion = OPENGL_VERSION_MAJOR;
 	EGLint minorVersion = OPENGL_VERSION_MINOR;
@@ -1369,7 +1369,7 @@ static bool GpuContext_Create( GpuContext_t * context )
 
 #endif
 
-static void GpuContext_SetCurrent( GpuContext_t * context )
+static void ksGpuContext_SetCurrent( ksGpuContext * context )
 {
 #if defined( OS_WINDOWS )
 	wglMakeCurrent( context->hDC, context->hGLRC );
@@ -1387,7 +1387,7 @@ static void GpuContext_SetCurrent( GpuContext_t * context )
 #endif
 }
 
-static void GpuContext_UnsetCurrent( GpuContext_t * context )
+static void ksGpuContext_UnsetCurrent( ksGpuContext * context )
 {
 #if defined( OS_WINDOWS )
 	wglMakeCurrent( context->hDC, NULL );
@@ -1402,7 +1402,7 @@ static void GpuContext_UnsetCurrent( GpuContext_t * context )
 #endif
 }
 
-static bool GpuContext_CheckCurrent( GpuContext_t * context )
+static bool ksGpuContext_CheckCurrent( ksGpuContext * context )
 {
 #if defined( OS_WINDOWS )
 	return ( wglGetCurrentContext() == context->hGLRC );
@@ -2135,9 +2135,9 @@ int main( int argc, char * argv[] )
 
 	Console_Resize( 4096, 120 );
 
-	GpuContext_t context;
-	GpuContext_Create( &context );
-	GpuContext_SetCurrent( &context );
+	ksGpuContext context;
+	ksGpuContext_Create( &context );
+	ksGpuContext_SetCurrent( &context );
 
 	Print( "--------------------------------\n" );
 	Print( "%-"COLUMN_WIDTH"s: %s\n", "OS", GetOSVersion() );
@@ -2238,7 +2238,7 @@ int main( int argc, char * argv[] )
 
 	Print( "--------------------------------\n" );
 
-	GpuContext_Destroy( &context );
+	ksGpuContext_Destroy( &context );
 
 #if defined( OS_WINDOWS )
 	Print( "Press any key to continue.\n" );
