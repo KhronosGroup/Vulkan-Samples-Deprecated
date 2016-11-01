@@ -48,6 +48,7 @@ set_property( TARGET OGLCompiler PROPERTY FOLDER external/libs/glslang )
 
 # HLSL
 set( SOURCES
+    ${GLSLANG_DIR}/hlsl/hlslAttributes.cpp
     ${GLSLANG_DIR}/hlsl/hlslParseHelper.cpp
     ${GLSLANG_DIR}/hlsl/hlslScanContext.cpp
     ${GLSLANG_DIR}/hlsl/hlslOpMap.cpp
@@ -55,6 +56,7 @@ set( SOURCES
     ${GLSLANG_DIR}/hlsl/hlslGrammar.cpp
     ${GLSLANG_DIR}/hlsl/hlslParseables.cpp )
 set( HEADERS
+    ${GLSLANG_DIR}/hlsl/hlslAttributes.h
     ${GLSLANG_DIR}/hlsl/hlslParseHelper.h
     ${GLSLANG_DIR}/hlsl/hlslTokens.h
     ${GLSLANG_DIR}/hlsl/hlslScanContext.h

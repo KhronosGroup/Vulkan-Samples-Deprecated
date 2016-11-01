@@ -54,6 +54,7 @@ include $(CLEAR_VARS)
 LOCAL_MODULE			:= HLSL
 LOCAL_CXXFLAGS			:= -std=c++11 -fno-exceptions -fno-rtti
 LOCAL_SRC_FILES			:= \
+							${GLSLANG_DIR}/hlsl/hlslAttributes.cpp \
 							$(GLSLANG_DIR)/hlsl/hlslGrammar.cpp \
 							$(GLSLANG_DIR)/hlsl/hlslOpMap.cpp \
 							$(GLSLANG_DIR)/hlsl/hlslParseables.cpp \
