@@ -1,5 +1,5 @@
 mkdir ..\Vulkan-LoaderAndValidationLayers\build\layers
-python ..\Vulkan-LoaderAndValidationLayers\vk-generate.py AllPlatforms dispatch-table-ops layer > "..\Vulkan-LoaderAndValidationLayers\build\layers\vk_dispatch_table_helper.h"
+python ..\Vulkan-LoaderAndValidationLayers\scripts\vk-generate.py AllPlatforms dispatch-table-ops layer > "..\Vulkan-LoaderAndValidationLayers\build\layers\vk_dispatch_table_helper.h"
 
 call %ANDROID_NDK_HOME%\ndk-build -C samples\apps\atw\projects\android\ndk\atw_cpu_dsp\ NDK_LIBS_OUT=..\..\..\..\..\..\..\build\android\ndk\apps\atw_cpu_dsp\libs NDK_OUT=..\..\..\..\..\..\..\build\android\ndk\apps\atw_cpu_dsp\obj
 call %ANDROID_NDK_HOME%\ndk-build -C samples\apps\atw\projects\android\ndk\atw_opengl\ NDK_LIBS_OUT=..\..\..\..\..\..\..\build\android\ndk\apps\atw_opengl\libs NDK_OUT=..\..\..\..\..\..\..\build\android\ndk\apps\atw_opengl\obj
