@@ -1038,7 +1038,7 @@ Internal format to glTexImage2D, glTexImage3D, glCompressedTexImage2D, glCompres
 #define GL_DEPTH_COMPONENT32F							0x8CAC	// same as GL_DEPTH_COMPONENT32F_ARB
 #endif
 #if !defined( GL_DEPTH_COMPONENT32F_NV )
-#define GL_DEPTH_COMPONENT32F_NV						0x8DAB	// Note that this different from GL_DEPTH_COMPONENT32F.
+#define GL_DEPTH_COMPONENT32F_NV						0x8DAB	// note that this is different from GL_DEPTH_COMPONENT32F
 #endif
 #if !defined( GL_STENCIL_INDEX1 )
 #define GL_STENCIL_INDEX1								0x8D46	// same as GL_STENCIL_INDEX1_EXT
@@ -1059,7 +1059,7 @@ Internal format to glTexImage2D, glTexImage3D, glCompressedTexImage2D, glCompres
 #define GL_DEPTH32F_STENCIL8							0x8CAD	// same as GL_DEPTH32F_STENCIL8_ARB
 #endif
 #if !defined( GL_DEPTH32F_STENCIL8_NV )
-#define GL_DEPTH32F_STENCIL8_NV							0x8DAC	// Note that this different from GL_DEPTH32F_STENCIL8.
+#define GL_DEPTH32F_STENCIL8_NV							0x8DAC	// note that this is different from GL_DEPTH32F_STENCIL8
 #endif
 
 static inline GLenum glGetFormatFromInternalFormat( const GLenum internalFormat )

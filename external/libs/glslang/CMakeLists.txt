@@ -41,8 +41,8 @@ set_property( TARGET SPIRV PROPERTY FOLDER external/libs/glslang )
 
 # OGLCompiler
 set( SOURCES
-	${GLSLANG_DIR}/OGLCompilersDLL/InitializeDll.cpp
-	${GLSLANG_DIR}/OGLCompilersDLL/InitializeDll.h )
+    ${GLSLANG_DIR}/OGLCompilersDLL/InitializeDll.cpp
+    ${GLSLANG_DIR}/OGLCompilersDLL/InitializeDll.h )
 add_library( OGLCompiler STATIC ${SOURCES} )
 set_property( TARGET OGLCompiler PROPERTY FOLDER external/libs/glslang )
 
@@ -76,7 +76,7 @@ set( SOURCES
     ${GLSLANG_DIR}/glslang/MachineIndependent/Initialize.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/IntermTraverse.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/Intermediate.cpp
-	${GLSLANG_DIR}/glslang/MachineIndependent/ParseContextBase.cpp
+    ${GLSLANG_DIR}/glslang/MachineIndependent/ParseContextBase.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/ParseHelper.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/PoolAlloc.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/RemoveTree.cpp
@@ -85,7 +85,7 @@ set( SOURCES
     ${GLSLANG_DIR}/glslang/MachineIndependent/SymbolTable.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/Versions.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/intermOut.cpp
-	${GLSLANG_DIR}/glslang/MachineIndependent/iomapper.cpp
+    ${GLSLANG_DIR}/glslang/MachineIndependent/iomapper.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/limits.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/linkValidate.cpp
     ${GLSLANG_DIR}/glslang/MachineIndependent/parseConst.cpp
@@ -117,7 +117,7 @@ set( HEADERS
     ${GLSLANG_DIR}/glslang/MachineIndependent/glslang_tab.cpp.h
     ${GLSLANG_DIR}/glslang/MachineIndependent/gl_types.h
     ${GLSLANG_DIR}/glslang/MachineIndependent/Initialize.h
-	${GLSLANG_DIR}/glslang/MachineIndependent/iomapper.h
+    ${GLSLANG_DIR}/glslang/MachineIndependent/iomapper.h
     ${GLSLANG_DIR}/glslang/MachineIndependent/localintermediate.h
     ${GLSLANG_DIR}/glslang/MachineIndependent/ParseHelper.h
     ${GLSLANG_DIR}/glslang/MachineIndependent/reflection.h
@@ -135,23 +135,23 @@ set_property( TARGET glslang PROPERTY FOLDER external/libs/glslang )
 
 # OSDependent
 if ( WIN32 )
-	set( SOURCES
-		${GLSLANG_DIR}/glslang/OSDependent/Windows/ossource.cpp
-		${GLSLANG_DIR}/glslang/OSDependent/osinclude.h )
-	add_library( OSDependent STATIC ${SOURCES} )
-	set_property( TARGET OSDependent PROPERTY FOLDER external/libs/glslang )
+    set( SOURCES
+        ${GLSLANG_DIR}/glslang/OSDependent/Windows/ossource.cpp
+        ${GLSLANG_DIR}/glslang/OSDependent/osinclude.h )
+    add_library( OSDependent STATIC ${SOURCES} )
+    set_property( TARGET OSDependent PROPERTY FOLDER external/libs/glslang )
 elseif( APPLE )
-	set( SOURCES
-		${GLSLANG_DIR}/glslang/OSDependent/Unix/ossource.cpp
-		${GLSLANG_DIR}/glslang/OSDependent/osinclude.h )
-	add_library( OSDependent STATIC ${SOURCES} )
-	set_property( TARGET OSDependent PROPERTY FOLDER external/libs/glslang )
+    set( SOURCES
+        ${GLSLANG_DIR}/glslang/OSDependent/Unix/ossource.cpp
+        ${GLSLANG_DIR}/glslang/OSDependent/osinclude.h )
+    add_library( OSDependent STATIC ${SOURCES} )
+    set_property( TARGET OSDependent PROPERTY FOLDER external/libs/glslang )
 elseif( UNIX )
-	set( SOURCES
-		${GLSLANG_DIR}/glslang/OSDependent/Unix/ossource.cpp
-		${GLSLANG_DIR}/glslang/OSDependent/osinclude.h )
-	add_library( OSDependent STATIC ${SOURCES} )
-	set_property( TARGET OSDependent PROPERTY FOLDER external/libs/glslang )
+    set( SOURCES
+        ${GLSLANG_DIR}/glslang/OSDependent/Unix/ossource.cpp
+        ${GLSLANG_DIR}/glslang/OSDependent/osinclude.h )
+    add_library( OSDependent STATIC ${SOURCES} )
+    set_property( TARGET OSDependent PROPERTY FOLDER external/libs/glslang )
 else()
     message("unknown platform")
 endif()
