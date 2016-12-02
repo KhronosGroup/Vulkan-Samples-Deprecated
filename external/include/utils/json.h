@@ -749,7 +749,7 @@ static const char * Json_ParseNumber( JsonType_t * type, int64_t * valueInt64, u
 		uint64Overflowed |= ( uint64Value > ( UINT64_MAX / 10 ) ) | ( ( uint64Value * 10 ) > UINT64_MAX - d );
 		uint64Value = ( uint64Value * 10 ) + d;
 		doubleValue = ( doubleValue * 10.0 ) + d;
-		nonZeroDigits += ( uint64Value != 0.0 );
+		nonZeroDigits += ( uint64Value != 0 );
 		buffer++;
 	}
 	// Parse fractional digits.
