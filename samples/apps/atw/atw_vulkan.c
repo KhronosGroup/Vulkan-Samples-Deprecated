@@ -7127,7 +7127,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 		ANativeActivity_setWindowFlags( window->app->activity, AWINDOW_FLAG_FULLSCREEN | AWINDOW_FLAG_KEEP_SCREEN_ON, 0 );
 	}
 
-	ksGpuDevice_Create( &window->device, instance, GPU_DEVICE_CREATE_ALL, VK_NULL_HANDLE );
+	ksGpuDevice_Create( &window->device, instance, GPU_DEVICE_CREATE_ALL, queueInfo, VK_NULL_HANDLE );
 	ksGpuContext_Create( &window->context, &window->device, queueIndex );
 
 	return true;
