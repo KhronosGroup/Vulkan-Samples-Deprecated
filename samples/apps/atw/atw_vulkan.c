@@ -10604,6 +10604,11 @@ static void ksGpuTimer_Create( ksGpuContext * context, ksGpuTimer * timer )
 	memset( timer, 0, sizeof( ksGpuTimer ) );
 
 	timer->supported = context->device->queueFamilyProperties[context->queueFamilyIndex].timestampValidBits != 0;
+	if (!timer->supported)
+	{
+		return;
+	}
+
 	timer->period = context->device->physicalDeviceProperties.limits.timestampPeriod;
 
 	const uint32_t queryCount = ( GPU_TIMER_FRAMES_DELAYED + 1 ) * 2;
@@ -10625,12 +10630,24 @@ static void ksGpuTimer_Create( ksGpuContext * context, ksGpuTimer * timer )
 
 static void ksGpuTimer_Destroy( ksGpuContext * context, ksGpuTimer * timer )
 {
-	VC( context->device->vkDestroyQueryPool( context->device->device, timer->pool, VK_ALLOCATOR ) );
+	if (timer->supported)
+	{
+		VC( context->device->vkDestroyQueryPool( context->device->device, timer->pool, VK_ALLOCATOR ) );
+	}
+
 }
 
 static float ksGpuTimer_GetMilliseconds( ksGpuTimer * timer )
 {
-	return ( timer->data[1] - timer->data[0] ) * timer->period * ( 1.0f / 1000.0f / 1000.0f );
+	if (timer->supported)
+	{
+		return ( timer->data[1] - timer->data[0] ) * timer->period * ( 1.0f / 1000.0f / 1000.0f );
+	}
+	else
+	{
+		return 0;
+	}
+
 }
 
 /*
@@ -11511,17 +11528,29 @@ static void ksGpuCommandBuffer_ManageTimers( ksGpuCommandBuffer * commandBuffer 
 	for ( int i = 0; i < commandBuffer->currentTimerCount; i++ )
 	{
 		ksGpuTimer * timer = commandBuffer->currentTimers[i];
-		timer->index = ( timer->index + 1 ) % ( GPU_TIMER_FRAMES_DELAYED + 1 );
-		if ( timer->init >= GPU_TIMER_FRAMES_DELAYED )
+		if (timer->supported)
 		{
-			VC( device->vkGetQueryPoolResults( commandBuffer->context->device->device, timer->pool, timer->index * 2, 2,
-				2 * sizeof( uint64_t ), timer->data, sizeof( uint64_t ), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT ) );
+			timer->index = ( timer->index + 1 ) % ( GPU_TIMER_FRAMES_DELAYED + 1 );
+			if ( timer->init >= GPU_TIMER_FRAMES_DELAYED )
+			{
+				VC( device->vkGetQueryPoolResults( commandBuffer->context->device->device, timer->pool, timer->index * 2, 2,
+							2 * sizeof( uint64_t ), timer->data, sizeof( uint64_t ), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT ) );
+			}
+			else
+			{
+				timer->index = ( timer->index + 1 ) % ( GPU_TIMER_FRAMES_DELAYED + 1 );
+				if ( timer->init >= GPU_TIMER_FRAMES_DELAYED )
+				{
+					VC( device->vkGetQueryPoolResults( commandBuffer->context->device->device, timer->pool, timer->index * 2, 2,
+								2 * sizeof( uint64_t ), timer->data, sizeof( uint64_t ), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT ) );
+				}
+				else
+				{
+					timer->init++;
+				}
+				VC( device->vkCmdResetQueryPool( commandBuffer->cmdBuffers[commandBuffer->currentBuffer], timer->pool, timer->index * 2, 2 ) );
+			}
 		}
-		else
-		{
-			timer->init++;
-		}
-		VC( device->vkCmdResetQueryPool( commandBuffer->cmdBuffers[commandBuffer->currentBuffer], timer->pool, timer->index * 2, 2 ) );
 	}
 	commandBuffer->currentTimerCount = 0;
 }
@@ -11778,11 +11807,17 @@ static void ksGpuCommandBuffer_BeginTimer( ksGpuCommandBuffer * commandBuffer, k
 {
 	ksGpuDevice * device = commandBuffer->context->device;
 
+	if (!timer->supported)
+	{
+		return;
+	}
+
 	// Make sure this timer has not already been used.
 	for ( int i = 0; i < commandBuffer->currentTimerCount; i++ )
 	{
 		assert( commandBuffer->currentTimers[i] != timer );
 	}
+
 
 	VC( device->vkCmdWriteTimestamp( commandBuffer->cmdBuffers[commandBuffer->currentBuffer], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, timer->pool, timer->index * 2 + 0 ) );
 }
@@ -11790,6 +11825,11 @@ static void ksGpuCommandBuffer_BeginTimer( ksGpuCommandBuffer * commandBuffer, k
 static void ksGpuCommandBuffer_EndTimer( ksGpuCommandBuffer * commandBuffer, ksGpuTimer * timer )
 {
 	ksGpuDevice * device = commandBuffer->context->device;
+
+	if (!timer->supported)
+	{
+		return;
+	}
 
 	VC( device->vkCmdWriteTimestamp( commandBuffer->cmdBuffers[commandBuffer->currentBuffer], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, timer->pool, timer->index * 2 + 1 ) );
 
