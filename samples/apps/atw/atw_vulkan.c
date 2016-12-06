@@ -340,8 +340,10 @@ VERSION HISTORY
 	#endif
 #elif defined( __linux__ )
 	#define OS_LINUX
-	//#define OS_LINUX_XLIB
-	#define OS_LINUX_XCB
+	#if defined( SUPPORT_X )
+		//#define OS_LINUX_XLIB
+		#define OS_LINUX_XCB
+	#endif
 #else
 	#error "unknown platform"
 #endif
@@ -554,6 +556,12 @@ Platform headers / declarations
 		jobject		activity;	// Java activity object
 	} Java_t;
 
+#endif
+
+#if defined(OS_NEUTRAL_DISPLAY_SURFACE)
+	#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_KHR_DISPLAY_EXTENSION_NAME
+	#define PFN_vkCreateSurfaceKHR					PFN_vkCreateDisplayPlaneSurfaceKHR
+	#define vkCreateSurfaceKHR						vkCreateDisplayPlaneSurfaceKHR
 #endif
 
 /*
@@ -2846,6 +2854,13 @@ typedef struct
 	PFN_vkGetPhysicalDeviceSurfaceFormatsKHR			vkGetPhysicalDeviceSurfaceFormatsKHR;
 	PFN_vkGetPhysicalDeviceSurfacePresentModesKHR		vkGetPhysicalDeviceSurfacePresentModesKHR;
 
+#if defined( OS_NEUTRAL_DISPLAY_SURFACE )
+	PFN_vkGetPhysicalDeviceDisplayPropertiesKHR			vkGetPhysicalDeviceDisplayPropertiesKHR;
+	PFN_vkGetPhysicalDeviceDisplayPlanePropertiesKHR	vkGetPhysicalDeviceDisplayPlanePropertiesKHR;
+	PFN_vkGetDisplayPlaneSupportedDisplaysKHR			vkGetDisplayPlaneSupportedDisplaysKHR;
+	PFN_vkGetDisplayModePropertiesKHR					vkGetDisplayModePropertiesKHR;
+#endif
+
 	// Debug callback.
 	PFN_vkCreateDebugReportCallbackEXT					vkCreateDebugReportCallbackEXT;
 	PFN_vkDestroyDebugReportCallbackEXT					vkDestroyDebugReportCallbackEXT;
@@ -2992,6 +3007,9 @@ static bool ksDriverInstance_Create( ksDriverInstance * instance )
 	const ksDriverFeature requestedExtensions[] =
 	{
 		{ VK_KHR_SURFACE_EXTENSION_NAME,			false, true },
+#if defined( OS_NEUTRAL_DISPLAY_SURFACE )
+		{ VK_KHR_DISPLAY_EXTENSION_NAME,			false, true },
+#endif
 		{ VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME,	false, true },
 		{ VK_EXT_DEBUG_REPORT_EXTENSION_NAME,		true, false },
 	};
@@ -3101,6 +3119,13 @@ static bool ksDriverInstance_Create( ksDriverInstance * instance )
 	GET_INSTANCE_PROC_ADDR( vkEnumerateDeviceLayerProperties );
 	GET_INSTANCE_PROC_ADDR( vkCreateDevice );
 	GET_INSTANCE_PROC_ADDR( vkGetDeviceProcAddr );
+
+#if defined( OS_NEUTRAL_DISPLAY_SURFACE )
+	GET_INSTANCE_PROC_ADDR( vkGetPhysicalDeviceDisplayPropertiesKHR )
+	GET_INSTANCE_PROC_ADDR( vkGetPhysicalDeviceDisplayPlanePropertiesKHR )
+	GET_INSTANCE_PROC_ADDR( vkGetDisplayPlaneSupportedDisplaysKHR )
+	GET_INSTANCE_PROC_ADDR( vkGetDisplayModePropertiesKHR )
+#endif
 
 	// Get the surface extension functions.
 	GET_INSTANCE_PROC_ADDR( vkCreateSurfaceKHR );
@@ -4688,6 +4713,9 @@ typedef struct
 	int						desktopWidth;
 	int						desktopHeight;
 	float					desktopRefreshRate;
+#elif defined( OS_NEUTRAL_DISPLAY_SURFACE )
+	VkDisplayKHR			display;
+	VkDisplayModeKHR		mode;
 #elif defined( OS_ANDROID )
 	struct android_app *	app;
 	Java_t					java;
@@ -6694,6 +6722,161 @@ static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
 		return GPU_WINDOW_EVENT_ACTIVATED;
 	}
 
+	return GPU_WINDOW_EVENT_NONE;
+}
+
+#elif defined( OS_NEUTRAL_DISPLAY_SURFACE )
+
+//These are empty enums in neutral display surface since we have no input devices.
+//To make this work we need to disconnect the concepts of OS/input from presentation -
+//though this is more difficult since most of the time presentation *is* input.
+
+typedef enum
+{
+	KEY_A,
+	KEY_B,
+	KEY_C,
+	KEY_D,
+	KEY_E,
+	KEY_F,
+	KEY_G,
+	KEY_H,
+	KEY_I,
+	KEY_J,
+	KEY_K,
+	KEY_L,
+	KEY_M,
+	KEY_N,
+	KEY_O,
+	KEY_P,
+	KEY_Q,
+	KEY_R,
+	KEY_S,
+	KEY_T,
+	KEY_U,
+	KEY_V,
+	KEY_W,
+	KEY_X,
+	KEY_Y,
+	KEY_Z,
+	KEY_RETURN,
+	KEY_TAB,
+	KEY_ESCAPE,
+	KEY_SHIFT_LEFT,
+	KEY_CTRL_LEFT,
+	KEY_ALT_LEFT,
+	KEY_CURSOR_UP,
+	KEY_CURSOR_DOWN,
+	KEY_CURSOR_LEFT,
+	KEY_CURSOR_RIGHT
+} ksKeyboardKey;
+
+typedef enum
+{
+	MOUSE_LEFT,
+	MOUSE_RIGHT
+} ksMouseButton;
+
+static void ksGpuWindow_Destroy( ksGpuWindow * window )
+{
+	ksGpuWindow_DestroySurface( window );
+	ksGpuContext_Destroy( &window->context );
+	ksGpuDevice_Destroy( &window->device );
+}
+
+static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
+								const ksGpuQueueInfo * queueInfo, const int queueIndex,
+								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
+{
+	memset( window, 0, sizeof( ksGpuWindow ) );
+
+	window->colorFormat = colorFormat;
+	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
+	window->windowSwapInterval = 1;
+	window->windowRefreshRate = 60.0f;
+	window->windowFullscreen = fullscreen;
+	window->windowActive = true;
+	window->windowExit = false;
+	window->lastSwapTime = GetTimeMicroseconds();
+
+	VkSurfaceKHR surface;
+	ksGpuDevice_Create( &window->device, instance, GPU_DEVICE_CREATE_PHYSICAL_DEVICE, queueInfo, VK_NULL_HANDLE );
+
+	uint32_t displayPropertiesCount = 0;
+	VK( instance->vkGetPhysicalDeviceDisplayPropertiesKHR( window->device.physicalDevice, &displayPropertiesCount, NULL ) );
+
+	VkDisplayPropertiesKHR * displayProperties = (VkDisplayPropertiesKHR *) malloc( displayPropertiesCount * sizeof( VkDisplayPropertiesKHR ) );
+	VK( instance->vkGetPhysicalDeviceDisplayPropertiesKHR( window->device.physicalDevice, &displayPropertiesCount, displayProperties ) );
+
+	for ( int i = 0; i < displayPropertiesCount; i++)
+	{
+		printf("Display %d:\n", i);
+		printf("             Name: %s\n", displayProperties[i].displayName);
+		printf("       Dimensions: %ux%u\n", displayProperties[i].physicalDimensions.width, displayProperties[i].physicalDimensions.height);
+		printf("       Resolution: %ux%u\n", displayProperties[i].physicalResolution.width, displayProperties[i].physicalResolution.height);
+		printf("       Transforms: %x\n", displayProperties[i].supportedTransforms);
+		printf(" Plane reordering: %s\n", displayProperties[i].planeReorderPossible ? "YES" : "NO");
+		printf("       Persistent: %s\n", displayProperties[i].persistentContent ? "YES" : "NO");
+	}
+
+	//FIXME: Make mode and display selection configurable.
+	VkDisplayKHR display = displayProperties[0].display;
+
+	uint32_t displayModeCount = 0;
+	VK( instance->vkGetDisplayModePropertiesKHR( window->device.physicalDevice, display, &displayModeCount, NULL ) );
+
+	VkDisplayModePropertiesKHR * displayModes = (VkDisplayModePropertiesKHR *) malloc( displayModeCount * sizeof( VkDisplayModePropertiesKHR ) );
+	VK( instance->vkGetDisplayModePropertiesKHR( window->device.physicalDevice, display, &displayModeCount, displayModes ) );
+
+	for ( int i = 0; i < displayModeCount; i++)
+	{
+		printf("Mode %d:\n", i);
+		printf("    Visible Region: %ux%u\n", displayModes[i].parameters.visibleRegion.width, displayModes[i].parameters.visibleRegion.height);
+		printf("      Refresh Rate: %u\n", displayModes[i].parameters.refreshRate);
+	}
+
+	VkDisplaySurfaceCreateInfoKHR displaySurfaceCreateInfo;
+	displaySurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR;
+	displaySurfaceCreateInfo.pNext = NULL;
+	displaySurfaceCreateInfo.flags = 0;
+	displaySurfaceCreateInfo.displayMode = displayModes[0].displayMode;
+	displaySurfaceCreateInfo.planeIndex = 0;
+	displaySurfaceCreateInfo.planeStackIndex = 0;
+	displaySurfaceCreateInfo.transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+	displaySurfaceCreateInfo.globalAlpha = 0.0f;
+	displaySurfaceCreateInfo.alphaMode = VK_DISPLAY_PLANE_ALPHA_PER_PIXEL_BIT_KHR;
+	displaySurfaceCreateInfo.imageExtent.width = displayModes[0].parameters.visibleRegion.width;
+	displaySurfaceCreateInfo.imageExtent.height = displayModes[0].parameters.visibleRegion.height;
+
+	window->windowWidth = displaySurfaceCreateInfo.imageExtent.width;
+	window->windowHeight = displaySurfaceCreateInfo.imageExtent.height;
+
+	VK( instance->vkCreateSurfaceKHR( instance->instance, &displaySurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
+
+	ksGpuDevice_Create( &window->device, instance, GPU_DEVICE_CREATE_DEVICE, queueInfo, surface );
+	ksGpuContext_Create( &window->context, &window->device, queueIndex );
+	ksGpuWindow_CreateFromSurface( window, surface );
+
+	return true;
+}
+
+static bool ksGpuWindow_SupportedResolution( const int width, const int height )
+{
+	UNUSED_PARM( width );
+	UNUSED_PARM( height );
+
+	return true;
+}
+
+static void ksGpuWindow_Exit( ksGpuWindow * window )
+{
+	window->windowExit = true;
+}
+
+static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
+{
 	return GPU_WINDOW_EVENT_NONE;
 }
 
