@@ -17643,7 +17643,7 @@ static unsigned int StringHash( const char * string )
 		} \
 	} \
 	\
-	static Gltf##typeCapitalized##_t * ksGltf_Get##typeCapitalized##By##nameCapitalized( const ksGltfScene * scene, const char * name ) \
+	static ksGltf##typeCapitalized * ksGltf_Get##typeCapitalized##By##nameCapitalized( const ksGltfScene * scene, const char * name ) \
 	{ \
 		const unsigned int hash = StringHash( name ); \
 		for ( int i = scene->type##nameCapitalized##Hash[hash]; i >= 0; i = scene->type##nameCapitalized##Hash[HASH_TABLE_SIZE + i] ) \
