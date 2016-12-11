@@ -262,7 +262,7 @@ limitations are:
   it is advised to use a uniform buffer, which is the preferred approach for
   exposing large amounts of data anyway.
 
-- Graphics programs currently consist of only of a vertex and fragment shader.
+- Graphics programs currently consist of only a vertex and fragment shader.
   This can be easily extended if there is a need for geometry shaders etc.
 
 
@@ -915,9 +915,17 @@ static ksNanoseconds GetTimeNanoseconds()
 	ksNanoseconds counter = (ksNanoseconds) li.LowPart + 0xFFFFFFFFULL * li.HighPart;
 	return ( counter - timeBase ) * 1000ULL * 1000ULL * 1000ULL / ticksPerSecond;
 #elif defined( OS_ANDROID )
+	static ksNanoseconds timeBase = 0;
+
 	struct timespec ts;
 	clock_gettime( CLOCK_MONOTONIC, &ts );
-	return (ksNanoseconds) ts.tv_sec * 1000ULL * 1000ULL * 1000ULL + ts.tv_nsec;
+
+	if ( timeBase == 0 )
+	{
+		timeBase = (ksNanoseconds) ts.tv_sec * 1000ULL * 1000ULL * 1000ULL + ts.tv_nsec;
+	}
+
+	return (ksNanoseconds) ts.tv_sec * 1000ULL * 1000ULL * 1000ULL + ts.tv_nsec - timeBase;
 #else
 	static ksNanoseconds timeBase = 0;
 
@@ -926,7 +934,7 @@ static ksNanoseconds GetTimeNanoseconds()
 
 	if ( timeBase == 0 )
 	{
-		timeBase = (ksNanoseconds) tv.tv_sec * 1000ULL * 1000ULL * 1000ULL;
+		timeBase = (ksNanoseconds) tv.tv_sec * 1000ULL * 1000ULL * 1000ULL + tv.tv_usec * 1000ULL;
 	}
 
 	return (ksNanoseconds) tv.tv_sec * 1000ULL * 1000ULL * 1000ULL + tv.tv_usec * 1000ULL - timeBase;
@@ -13532,14 +13540,12 @@ static void ksTimeWarp_Render( ksTimeWarp * timeWarp )
 								&timeWarp->bargraphs, timeWarp->cpuTimes, timeWarp->gpuTimes );
 	}
 
-	const int gpuTimeFramesDelayed = ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS ) ? GPU_TIMER_FRAMES_DELAYED : 0;
-
 	ksFrameLog_EndFrame(	timeWarp->cpuTimes[PROFILE_TIME_TIME_WARP] +
 							timeWarp->cpuTimes[PROFILE_TIME_BAR_GRAPHS] +
 							timeWarp->cpuTimes[PROFILE_TIME_BLIT],
 							timeWarp->gpuTimes[PROFILE_TIME_TIME_WARP] +
 							timeWarp->gpuTimes[PROFILE_TIME_BAR_GRAPHS] +
-							timeWarp->gpuTimes[PROFILE_TIME_BLIT], gpuTimeFramesDelayed );
+							timeWarp->gpuTimes[PROFILE_TIME_BLIT], GPU_TIMER_FRAMES_DELAYED );
 
 	ksGpuWindow_SwapBuffers( timeWarp->window );
 
@@ -14364,6 +14370,7 @@ static void ksPerfScene_Simulate( ksPerfScene * scene, ksViewState * viewState, 
 
 	if ( !scene->settings.simulationPaused )
 	{
+		// FIXME: use double?
 		const float offset = time * ( MATH_PI / 1000.0f / 1000.0f / 1000.0f );
 		scene->bigRotationX = 20.0f * offset;
 		scene->bigRotationY = 10.0f * offset;
