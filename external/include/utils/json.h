@@ -66,12 +66,17 @@ in only a single string comparison per lookup. This implementation keeps
 objects in the same order in the DOM as they appear in the JSON text.
 
 This implementation stores the members of an object, or the elements
-of an array, as a single flat array per object or array. While this may
-require re-allocation during construction or parsing, with geometric
-growth there are only O(log(N)) allocations and the re-allocation is
-not nearly as costly as iterating a linked list of objects that are
-all separately allocated. Having a flat array is not only more cache
-friendly but also allows direct indexing of an array.
+of an array, as an exponentially growning mapped array per object or
+array. The mapping may need to be re-allocated but this is very rare
+and the mapping only holds pointers. The actual members are never
+re-allocated. Instead, exponentially growing chunks are added to the
+array. The mapping does result in one, and only one pointer redirection
+but that is still way faster than iterating a linked list of objects
+that are all separately allocated. By not re-allocating the actual
+array of members there is no danger of pointers to previous members
+going stale when additional members are added. Using an exponentially
+growing mapped array is not only cache friendly but also allows
+direct indexing of an array.
 
 This implementation includes several trivial optimizations that allow
 it to compete with 'rapidjson' when it comes to parsing performance.
@@ -241,11 +246,6 @@ The object members and array elements are kept in the order they are added.
 A JSON object or array can be cleared by calling Json_SetObject() or
 Json_SetArray() respectively.
 
-NOTE: be careful when building or modifying a DOM to not unnecessarily hold
-on to Json_t pointers. Adding new members or elements to an object or array
-may cause the array to be reallocated causing previous Json_t pointers to
-become invalid.
-
 
 EXAMPLES
 ========
@@ -315,25 +315,25 @@ COMPARISON
 
 The following DOM-style implementations were tested:
                                                             
-Name        Version               Source                                   Language
------------------------------------------------------------------------------------
-Json_t      1.0                   this file                                C99
-rapidjson   1.02                  https://github.com/miloyip/rapidjson     C++
-sajson      Mar 24, 2016          https://github.com/chadaustin/sajson     C++
-gason       Sep 16, 2015          https://github.com/vivkin/gason          C++
-ujson4c     1.0 (ultrajson 1.34)  https://github.com/esnme/ujson4c         C99
-cJSON       Mar 19, 2016          https://github.com/DaveGamble/cJSON      C99
-OVR::JSON   Apr 9, 2013           https://developer3.oculus.com/downloads  C++
-jsoncons    Aug 19, 2016          http://danielaparker.github.io/jsoncons  C++11
-json11      Jun 20, 2016          https://github.com/dropbox/json11        C++11
-nlohmann    2.0.0                 https://github.com/nlohmann/json         C++11
+Name        Version               Source                                          Language
+------------------------------------------------------------------------------------------
+Json_t      1.0                   https://github.com/KhronosGroup/Vulkan-Samples  C99
+rapidjson   1.02                  https://github.com/miloyip/rapidjson            C++
+sajson      Mar 24, 2016          https://github.com/chadaustin/sajson            C++
+gason       Sep 16, 2015          https://github.com/vivkin/gason                 C++
+ujson4c     1.0 (ultrajson 1.34)  https://github.com/esnme/ujson4c                C99
+cJSON       Mar 19, 2016          https://github.com/DaveGamble/cJSON             C99
+OVR::JSON   Apr 9, 2013           https://developer3.oculus.com/downloads         C++
+jsoncons    Aug 19, 2016          http://danielaparker.github.io/jsoncons         C++11
+json11      Jun 20, 2016          https://github.com/dropbox/json11               C++11
+nlohmann    2.0.0                 https://github.com/nlohmann/json                C++11
 
 These implementations have the following general properties:
 
            Const   Throws  Mutable  Maint. Member       Case       Supports  Supports  Supports  Supports  Supports  <= 4u   Clamp   Robust
 Name       source  except. DOM      order  storage      sensitive  UTF16     int32_t   uint32_t  int64_t   uint64_t  double  double  
 -------------------------------------------------------------------------------------------------------------------------------------------
-Json_t     yes     no      yes      yes    array        yes        yes       yes       yes       yes       yes       yes     yes     yes
+Json_t     yes     no      yes      yes    mapped-array yes        yes       yes       yes       yes       yes       yes     yes     yes
 rapidjson  yes     yes     yes      yes    array        yes        yes       yes       yes       yes       yes       yes     no      no
 sajson     yes     no      no       no     array        yes        yes       no        no        no        no        no      no      no
 gason      no      no      no       yes    linked-list  N/A        no        yes       yes       no        no        no      no      no
@@ -424,9 +424,12 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
 #include <string.h>
 #include <malloc.h>
 
-#define JSON_MIN( x, max )			( ( x <= max ) ? x : max )
+#define JSON_MIN( x, y )			( ( x <= y ) ? x : y )
+#define JSON_MAX( x, y )			( ( x >= y ) ? x : y )
 #define JSON_CLAMP( x, min, max )	( ( x >= min ) ? ( ( x <= max ) ? x : max ) : min )
 #define JSON_MAX_RECURSION			128
+#define JSON_MAP_GRANULARITY		4		// 64, 1024, 16384 etc. members
+#define JSON_BASE_ALLOCATION		8		// 8, 16, 32, 64, 128, 256, 512 etc. members
 
 // JSON value type
 typedef enum
@@ -449,21 +452,21 @@ typedef struct Json_t
 {
 	union
 	{
-		char *			name;			// only != NULL for named members
-		uint64_t		pad;			// make the structure size the same between 32-bit and 64-bit
+		char *			name;				// only != NULL for named members
+		uint64_t		pad;				// make the structure size the same between 32-bit and 64-bit
 	};
 	union
 	{
-		int64_t			valueInt64;		// 64-bit signed integer value
-		uint64_t		valueUint64;	// 64-bit unsigned integer value
-		double			valueDouble;	// 64-bit floating-point value
-		char *			valueString;	// string value
-		struct Json_t *	members;		// object/array members
+		int64_t				valueInt64;		// 64-bit signed integer value
+		uint64_t			valueUint64;	// 64-bit unsigned integer value
+		double				valueDouble;	// 64-bit floating-point value
+		char *				valueString;	// string value
+		struct Json_t **	memberMap;		// object/array members
 	};
-	JsonType_t		type;				// type of value
-	int				membersAllocated;	// number of allocated members
-	int				memberCount;		// number of actual members
-	int				memberIndex;		// mutable member index for faster lookups
+	JsonType_t		type;					// type of value
+	int				membersAllocated;		// number of allocated members
+	int				memberCount;			// number of actual members
+	int				memberIndex;			// mutable member index for faster lookups
 } Json_t;
 
 static Json_t * Json_Create()
@@ -474,21 +477,63 @@ static Json_t * Json_Create()
 	return json;
 }
 
+static int MemberIndexToMapIndex( int index )
+{
+	index /= JSON_BASE_ALLOCATION;
+#if defined( _MSC_VER )
+	DWORD offset;
+	if ( _BitScanReverse( &offset, (unsigned int) index ) )
+	{
+		return offset + 1;
+	}
+	return 0;
+#elif defined( __GNUC__ ) || defined( __clang__ )
+	return 32 - __builtin_clz( (unsigned int) index );
+#else
+	int r = 0;
+	int t;
+	index *= 2;
+	t = ( (~( ( index >> 16 ) + ~0U ) ) >> 27 ) & 0x10; r |= t; index >>= t;
+	t = ( (~( ( index >>  8 ) + ~0U ) ) >> 28 ) & 0x08; r |= t; index >>= t;
+	t = ( (~( ( index >>  4 ) + ~0U ) ) >> 29 ) & 0x04; r |= t; index >>= t;
+	t = ( (~( ( index >>  2 ) + ~0U ) ) >> 30 ) & 0x02; r |= t; index >>= t;
+	return ( r | ( index >> 1 ) );
+#endif
+}
+
+static int MapMemberOffset( int mapIndex )
+{
+	const int offset = ( 1 << ( mapIndex - 1 ) ) * JSON_BASE_ALLOCATION;
+	assert( mapIndex > 0 || offset = 0 );	// Protect againt negative shift not producing zero.
+	return offset;
+}
+
+static int MapMemberCount( int mapIndex, int memberCount )
+{
+	return JSON_MIN( ( 1 << mapIndex ) * JSON_BASE_ALLOCATION, memberCount ) - MapMemberOffset( mapIndex );
+}
+
 static Json_t * Json_AllocMember( Json_t * node )
 {
+	const int mapIndex = MemberIndexToMapIndex( node->memberCount );
 	if ( node->memberCount >= node->membersAllocated )
 	{
-		const int newAllocated = ( node->membersAllocated <= 0 ) ? 8 : node->membersAllocated * 2;
-		Json_t * newmembers = (Json_t *) malloc( newAllocated * sizeof( Json_t ) );
-		if ( node->membersAllocated > 0 )
+		if ( ( mapIndex & ( JSON_MAP_GRANULARITY - 1 ) ) == 0 )
 		{
-			memcpy( newmembers, node->members, node->membersAllocated * sizeof( Json_t ) );
-			free( node->members );
+			Json_t ** newMemberMap = (Json_t **) malloc( ( mapIndex + JSON_MAP_GRANULARITY ) * sizeof( Json_t * ) );
+			if ( mapIndex > 0 )
+			{
+				memcpy( newMemberMap, node->memberMap, mapIndex * sizeof( Json_t * ) );
+				free( node->memberMap );
+			}
+			node->memberMap = newMemberMap;
 		}
-		node->members = newmembers;
-		node->membersAllocated = newAllocated;
+		const int mapSize = JSON_MAX( MapMemberOffset( mapIndex ), JSON_BASE_ALLOCATION );
+		node->memberMap[mapIndex] = (Json_t *) malloc( mapSize * sizeof( Json_t ) );
+		node->membersAllocated += mapSize;
 	}
-	Json_t * member = &node->members[node->memberCount++];
+	const int memberOffset = MapMemberOffset( mapIndex );
+	Json_t * member = &node->memberMap[mapIndex][node->memberCount++ - memberOffset];
 	member->name = NULL;
 	member->valueInt64 = 0;
 	member->valueString = (char *)"null";
@@ -509,18 +554,26 @@ static void Json_FreeNode( Json_t * node, const bool freeName )
 	}
 	if ( node->type == JSON_OBJECT || node->type == JSON_ARRAY )
 	{
-		for ( int c = 0; c < node->memberCount; c++ )
+		const int endMapIndex = MemberIndexToMapIndex( node->memberCount - 1 );
+		for ( int mapIndex = 0; mapIndex <= endMapIndex; mapIndex++ )
 		{
-			Json_FreeNode( &node->members[c], true );
+			Json_t * members = node->memberMap[mapIndex];
+			const int mapMemberCount = MapMemberCount( mapIndex, node->memberCount ); 
+			for ( int i = 0; i < mapMemberCount; i++ )
+			{
+				Json_FreeNode( &members[i], true );
+			}
+			free( members );
 		}
-		free( node->members );
+		free( node->memberMap );
 	}
 	else if ( node->type == JSON_STRING )
 	{
 		free( node->valueString );
 	}
 	node->valueInt64 = 0;
-	node->type = JSON_NONE;
+	node->valueString = (char *)"null";
+	node->type = JSON_NULL;
 	node->membersAllocated = 0;
 	node->memberCount = 0;
 	node->memberIndex = 0;
@@ -880,8 +933,8 @@ static const char * Json_ParseValue( Json_t * json, const int recursion, const c
 	}
 	else if ( buffer[0] == '{' )
 	{
-		json->members = NULL;
 		json->type = JSON_OBJECT;
+		json->memberMap = NULL;
 
 		buffer++;
 		while ( *errorStringOut == NULL )
@@ -917,8 +970,8 @@ static const char * Json_ParseValue( Json_t * json, const int recursion, const c
 	}
 	else if ( buffer[0] == '[' )
 	{ 
-		json->members = NULL;
 		json->type = JSON_ARRAY;
+		json->memberMap = NULL;
 
 		buffer++;
 		while ( *errorStringOut == NULL )
@@ -1115,22 +1168,34 @@ static void Json_WriteValue( const Json_t * node, int recursion, char ** bufferI
 	else if ( node->type == JSON_OBJECT )
 	{
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "{\n" );
-		for ( int i = 0; i < node->memberCount; i++ )
+		const int endMapIndex = MemberIndexToMapIndex( node->memberCount - 1 );
+		for ( int mapIndex = 0; mapIndex <= endMapIndex; mapIndex++ )
 		{
-			const Json_t * member = &node->members[i];
-			Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1 + (int)strlen( member->name ) + 5, "%s\"%s\" : ", &indentTable[maxIndent - ( indent + 1 )], member->name );
-			Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
+			const Json_t * members = node->memberMap[mapIndex];
+			const int mapMemberCount = MapMemberCount( mapIndex, node->memberCount ); 
+			for ( int i = 0; i < mapMemberCount; i++ )
+			{
+				const Json_t * member = &members[i];
+				Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1 + (int)strlen( member->name ) + 5, "%s\"%s\" : ", &indentTable[maxIndent - ( indent + 1 )], member->name );
+				Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
+			}
 		}
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 2, "%s}%s\n", &indentTable[maxIndent - indent], lastChild ? "" : "," );
 	}
 	else if ( node->type == JSON_ARRAY )
 	{
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "[\n" );
-		for ( int i = 0; i < node->memberCount; i++ )
+		const int endMapIndex = MemberIndexToMapIndex( node->memberCount - 1 );
+		for ( int mapIndex = 0; mapIndex <= endMapIndex; mapIndex++ )
 		{
-			const Json_t * member = &node->members[i];
-			Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1, "%s", &indentTable[maxIndent - ( indent + 1 )] );
-			Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
+			const Json_t * members = node->memberMap[mapIndex];
+			const int mapMemberCount = MapMemberCount( mapIndex, node->memberCount ); 
+			for ( int i = 0; i < mapMemberCount; i++ )
+			{
+				const Json_t * member = &members[i];
+				Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1, "%s", &indentTable[maxIndent - ( indent + 1 )] );
+				Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
+			}
 		}
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 2, "%s]%s\n", &indentTable[maxIndent - indent], lastChild ? "" : "," );
 	}
@@ -1198,7 +1263,9 @@ static Json_t * Json_GetMemberByIndex( const Json_t * node, const int index )
 		{
 			if ( index >= 0 && index < node->memberCount )
 			{
-				return &node->members[index];
+				const int mapIndex = MemberIndexToMapIndex( index );
+				const int memberOffset = MapMemberOffset( mapIndex );
+				return &node->memberMap[mapIndex][index - memberOffset];
 			}
 		}
 	}
@@ -1210,15 +1277,37 @@ static Json_t * Json_GetMemberByName( const Json_t * node, const char * name )
 	if ( node != NULL && node->type == JSON_OBJECT )
 	{
 		assert( name != NULL );
-		for ( int i = 0; i < node->memberCount; i++ )
+		const int startMapIndex = MemberIndexToMapIndex( node->memberIndex );
+		const int endMapIndex = MemberIndexToMapIndex( node->memberCount - 1 );
+		int firstMemberOffset = node->memberIndex - MapMemberOffset( startMapIndex );
+		for ( int mapIndex = startMapIndex; mapIndex <= endMapIndex; mapIndex++ )
 		{
-			Json_t * member = &node->members[( node->memberIndex + i ) % node->memberCount];
-			if ( strcmp( member->name, name ) == 0 )
+			Json_t * members = node->memberMap[mapIndex];
+			const int mapMemberCount = MapMemberCount( mapIndex, node->memberCount ); 
+			for ( int i = firstMemberOffset; i < mapMemberCount; i++ )
 			{
-				*(int *)&node->memberIndex = ( node->memberIndex + i + 1 ) % node->memberCount;	// mutable
-				return member;
+				if ( strcmp( members[i].name, name ) == 0 )
+				{
+					const int newMemberIndex = MapMemberOffset( mapIndex ) + i + 1;
+					*(int *)&node->memberIndex = ( newMemberIndex < node->memberCount ) ? newMemberIndex : 0;	// mutable
+					return &members[i];
+				}
 			}
-			// Set a breakpoint here to find cases where the JSON is not parsed in order.
+			firstMemberOffset = 0;
+		}
+		for ( int mapIndex = 0; mapIndex < startMapIndex; mapIndex++ )
+		{
+			Json_t * members = node->memberMap[mapIndex];
+			const int mapMemberCount = MapMemberCount( mapIndex, node->memberIndex ); 
+			for ( int i = 0; i < mapMemberCount; i++ )
+			{
+				if ( strcmp( members[i].name, name ) == 0 )
+				{
+					const int newMemberIndex = MapMemberOffset( mapIndex ) + i + 1;
+					*(int *)&node->memberIndex = ( newMemberIndex < node->memberCount ) ? newMemberIndex : 0;	// mutable
+					return &members[i];
+				}
+			}
 		}
 	}
 	return NULL;
@@ -1399,7 +1488,6 @@ static inline Json_t * Json_SetObject( Json_t * node )
 	if ( node != NULL )
 	{
 		Json_FreeNode( node, false );
-		node->members = NULL;
 		node->type = JSON_OBJECT;
 	}
 	return node;
@@ -1410,7 +1498,6 @@ static inline Json_t * Json_SetArray( Json_t * node )
 	if ( node != NULL )
 	{
 		Json_FreeNode( node, false );
-		node->members = NULL;
 		node->type = JSON_ARRAY;
 	}
 	return node;
