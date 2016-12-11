@@ -241,6 +241,11 @@ The object members and array elements are kept in the order they are added.
 A JSON object or array can be cleared by calling Json_SetObject() or
 Json_SetArray() respectively.
 
+NOTE: be careful when building or modifying a DOM to not unnecessarily hold
+on to Json_t pointers. Adding new members or elements to an object or array
+may cause the array to be reallocated causing previous Json_t pointers to
+become invalid.
+
 
 EXAMPLES
 ========
@@ -427,25 +432,25 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
 typedef enum
 {
 	JSON_NONE		= 0,
-	JSON_NULL		= 1,	// null
-	JSON_BOOLEAN	= 2,	// true | false
-	JSON_INT		= 3,	// signed integer
-	JSON_UINT		= 4,	// unsigned integer
-	JSON_FLOAT		= 5,	// integer[.fraction][exponent]
-	JSON_STRING		= 6,	// "string"
-	JSON_OBJECT		= 7,	// { "name" : <value>, "name" : <value>, ... }
-	JSON_ARRAY		= 8		// [ <value>, <value>, ... ]
+	JSON_NULL		= 1,			// null
+	JSON_BOOLEAN	= 2,			// true | false
+	JSON_INT		= 3,			// signed integer
+	JSON_UINT		= 4,			// unsigned integer
+	JSON_FLOAT		= 5,			// integer[.fraction][exponent]
+	JSON_STRING		= 6,			// "string"
+	JSON_OBJECT		= 7,			// { "name" : <value>, "name" : <value>, ... }
+	JSON_ARRAY		= 8,			// [ <value>, <value>, ... ]
+	JSON_MAX_ENUM	= 0x7FFFFFFF	// Make sure this enum is 32 bits.
 } JsonType_t;
 
-// JSON value
-// 32-bit sizeof( Json_t ) = 32
-// 64-bit sizeof( Json_t ) = 32
+// JSON node
+// 32-bit sizeof( Json_t ) = 64-bit sizeof( Json_t ) = 32
 typedef struct Json_t
 {
 	union
 	{
 		char *			name;			// only != NULL for named members
-		long long		pad;			// make the structure size the same between 32-bit and 64-bit
+		uint64_t		pad;			// make the structure size the same between 32-bit and 64-bit
 	};
 	union
 	{
@@ -496,6 +501,7 @@ static Json_t * Json_AllocMember( Json_t * node )
 
 static void Json_FreeNode( Json_t * node, const bool freeName )
 {
+	assert( node->type >= JSON_NULL && node->type <= JSON_ARRAY );		// stale Json_t pointer?
 	if ( freeName )
 	{
 		free( node->name );
@@ -1175,13 +1181,19 @@ static bool Json_WriteToFile( const Json_t * rootNode, const char * fileName )
 
 static int Json_GetMemberCount( const Json_t * node )
 {
-	return ( node != NULL ) ? node->memberCount : 0;
+	if ( node != NULL )
+	{
+		assert( node->type >= JSON_NULL && node->type <= JSON_ARRAY );
+		return node->memberCount;
+	}
+	return 0;
 }
 
 static Json_t * Json_GetMemberByIndex( const Json_t * node, const int index )
 {
 	if ( node != NULL )
 	{
+		assert( node->type >= JSON_NULL && node->type <= JSON_ARRAY );
 		if ( node->type == JSON_OBJECT || node->type == JSON_ARRAY )
 		{
 			if ( index >= 0 && index < node->memberCount )
@@ -1216,6 +1228,7 @@ const char * Json_GetMemberName( const Json_t * node )
 {
 	if ( node != NULL && node->name != NULL )
 	{
+		assert( node->type >= JSON_NULL && node->type <= JSON_ARRAY );
 		return node->name;
 	}
 	return "";
