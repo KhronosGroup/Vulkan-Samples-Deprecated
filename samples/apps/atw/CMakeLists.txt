@@ -51,5 +51,12 @@ else()
     add_executable( atw_vulkan atw_vulkan.c )
     target_compile_options( atw_vulkan PRIVATE -std=c99 -Wall -Wno-unused-function -Wno-unused-const-variable )
 	set_target_properties( atw_vulkan PROPERTIES FOLDER apps )
-    target_link_libraries( atw_vulkan m pthread dl ${XLIB_LIBRARIES} ${XCB_LIBRARIES} )
+    target_link_libraries( atw_vulkan m pthread dl )
+
+	#It's possible to build a non-X Linux version of the vulkan sample, so only conditionally link against xcb and xlib
+	if( SUPPORT_X )
+		target_link_libraries( atw_vulkan ${XLIB_LIBRARIES} )
+		target_link_libraries( atw_vulkan ${XCB_LIBRARIES} )
+	endif()
+
 endif()

@@ -340,8 +340,10 @@ VERSION HISTORY
 	#endif
 #elif defined( __linux__ )
 	#define OS_LINUX
-	//#define OS_LINUX_XLIB
-	#define OS_LINUX_XCB
+	#if defined( SUPPORT_X )
+		//#define OS_LINUX_XLIB
+		#define OS_LINUX_XCB
+	#endif
 #else
 	#error "unknown platform"
 #endif
@@ -474,7 +476,7 @@ Platform headers / declarations
 
 	#include <time.h>							// for timespec
 	#include <sys/time.h>						// for gettimeofday()
-	#define __USE_UNIX98						// for pthread_mutexattr_settype
+	#define __USE_UNIX98 1						// for pthread_mutexattr_settype
 	#include <pthread.h>						// for pthread_create() etc.
 	#include <malloc.h>							// for memalign
 	#include <dlfcn.h>							// for dlopen
@@ -554,6 +556,12 @@ Platform headers / declarations
 		jobject		activity;	// Java activity object
 	} Java_t;
 
+#endif
+
+#if defined(OS_NEUTRAL_DISPLAY_SURFACE)
+	#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_KHR_DISPLAY_EXTENSION_NAME
+	#define PFN_vkCreateSurfaceKHR					PFN_vkCreateDisplayPlaneSurfaceKHR
+	#define vkCreateSurfaceKHR						vkCreateDisplayPlaneSurfaceKHR
 #endif
 
 /*
@@ -2846,6 +2854,13 @@ typedef struct
 	PFN_vkGetPhysicalDeviceSurfaceFormatsKHR			vkGetPhysicalDeviceSurfaceFormatsKHR;
 	PFN_vkGetPhysicalDeviceSurfacePresentModesKHR		vkGetPhysicalDeviceSurfacePresentModesKHR;
 
+#if defined( OS_NEUTRAL_DISPLAY_SURFACE )
+	PFN_vkGetPhysicalDeviceDisplayPropertiesKHR			vkGetPhysicalDeviceDisplayPropertiesKHR;
+	PFN_vkGetPhysicalDeviceDisplayPlanePropertiesKHR	vkGetPhysicalDeviceDisplayPlanePropertiesKHR;
+	PFN_vkGetDisplayPlaneSupportedDisplaysKHR			vkGetDisplayPlaneSupportedDisplaysKHR;
+	PFN_vkGetDisplayModePropertiesKHR					vkGetDisplayModePropertiesKHR;
+#endif
+
 	// Debug callback.
 	PFN_vkCreateDebugReportCallbackEXT					vkCreateDebugReportCallbackEXT;
 	PFN_vkDestroyDebugReportCallbackEXT					vkDestroyDebugReportCallbackEXT;
@@ -2992,6 +3007,9 @@ static bool ksDriverInstance_Create( ksDriverInstance * instance )
 	const ksDriverFeature requestedExtensions[] =
 	{
 		{ VK_KHR_SURFACE_EXTENSION_NAME,			false, true },
+#if defined( OS_NEUTRAL_DISPLAY_SURFACE )
+		{ VK_KHR_DISPLAY_EXTENSION_NAME,			false, true },
+#endif
 		{ VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME,	false, true },
 		{ VK_EXT_DEBUG_REPORT_EXTENSION_NAME,		true, false },
 	};
@@ -3102,6 +3120,13 @@ static bool ksDriverInstance_Create( ksDriverInstance * instance )
 	GET_INSTANCE_PROC_ADDR( vkCreateDevice );
 	GET_INSTANCE_PROC_ADDR( vkGetDeviceProcAddr );
 
+#if defined( OS_NEUTRAL_DISPLAY_SURFACE )
+	GET_INSTANCE_PROC_ADDR( vkGetPhysicalDeviceDisplayPropertiesKHR )
+	GET_INSTANCE_PROC_ADDR( vkGetPhysicalDeviceDisplayPlanePropertiesKHR )
+	GET_INSTANCE_PROC_ADDR( vkGetDisplayPlaneSupportedDisplaysKHR )
+	GET_INSTANCE_PROC_ADDR( vkGetDisplayModePropertiesKHR )
+#endif
+
 	// Get the surface extension functions.
 	GET_INSTANCE_PROC_ADDR( vkCreateSurfaceKHR );
 	GET_INSTANCE_PROC_ADDR( vkDestroySurfaceKHR );
@@ -3164,7 +3189,7 @@ ksGpuQueuePriority
 ksGpuQueueInfo
 ksGpuDevice
 
-static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instance,
+static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instance, const uint32_t createFlags
 							const ksGpuQueueInfo * queueInfo, const VkSurfaceKHR presentSurface );
 static void ksGpuDevice_Destroy( ksGpuDevice * device );
 
@@ -3343,22 +3368,29 @@ typedef struct
 #define GET_DEVICE_PROC_ADDR_EXP( function )	device->function = (PFN_##function)( device->instance->vkGetDeviceProcAddr( device->device, #function ) ); assert( device->function != NULL );
 #define GET_DEVICE_PROC_ADDR( function )		GET_DEVICE_PROC_ADDR_EXP( function )
 
-static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instance,
+#define GPU_DEVICE_CREATE_PHYSICAL_DEVICE (1 << 0)
+#define GPU_DEVICE_CREATE_DEVICE (1 << 1)
+#define GPU_DEVICE_CREATE_ALL (GPU_DEVICE_CREATE_PHYSICAL_DEVICE | GPU_DEVICE_CREATE_DEVICE)
+
+static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instance, const uint32_t createFlags,
 								const ksGpuQueueInfo * queueInfo, const VkSurfaceKHR presentSurface )
 {
-	memset( device, 0, sizeof( ksGpuDevice ) );
+	if (createFlags & GPU_DEVICE_CREATE_PHYSICAL_DEVICE)
+	{
+		memset( device, 0, sizeof( ksGpuDevice ) );
 
-	device->instance = instance;
+		device->instance = instance;
+	}
 
 	//
 	// Select an appropriate physical device
 	//
 
 	const VkQueueFlags requiredQueueFlags =
-			( ( ( queueInfo->queueProperties & GPU_QUEUE_PROPERTY_GRAPHICS ) != 0 ) ? VK_QUEUE_GRAPHICS_BIT : 0 ) |
-			( ( ( queueInfo->queueProperties & GPU_QUEUE_PROPERTY_COMPUTE ) != 0 ) ? VK_QUEUE_COMPUTE_BIT : 0 ) |
-			( ( ( queueInfo->queueProperties & GPU_QUEUE_PROPERTY_TRANSFER ) != 0 &&
-				( queueInfo->queueProperties & ( GPU_QUEUE_PROPERTY_GRAPHICS | GPU_QUEUE_PROPERTY_COMPUTE ) ) == 0 ) ? VK_QUEUE_TRANSFER_BIT : 0 );
+		( ( ( queueInfo->queueProperties & GPU_QUEUE_PROPERTY_GRAPHICS ) != 0 ) ? VK_QUEUE_GRAPHICS_BIT : 0 ) |
+		( ( ( queueInfo->queueProperties & GPU_QUEUE_PROPERTY_COMPUTE ) != 0 ) ? VK_QUEUE_COMPUTE_BIT : 0 ) |
+		( ( ( queueInfo->queueProperties & GPU_QUEUE_PROPERTY_TRANSFER ) != 0 &&
+			( queueInfo->queueProperties & ( GPU_QUEUE_PROPERTY_GRAPHICS | GPU_QUEUE_PROPERTY_COMPUTE ) ) == 0 ) ? VK_QUEUE_TRANSFER_BIT : 0 );
 
 	const char * enabledExtensionNames[32] = { 0 };
 	uint32_t enabledExtensionCount = 0;
@@ -3389,9 +3421,9 @@ static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instanc
 		Print( "--------------------------------\n" );
 		Print( "Device Name          : %s\n", physicalDeviceProperties.deviceName );
 		Print( "Device Type          : %s\n",	( ( physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ) ? "integrated GPU" :
-												( ( physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ) ? "discrete GPU" :
-												( ( physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU ) ? "virtual GPU" :
-												( ( physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU ) ? "CPU" : "unknown" ) ) ) ) );
+					( ( physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ) ? "discrete GPU" :
+					  ( ( physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU ) ? "virtual GPU" :
+						( ( physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU ) ? "CPU" : "unknown" ) ) ) ) );
 		Print( "Vendor ID            : 0x%04X\n", physicalDeviceProperties.vendorID );		// http://pcidatabase.com
 		Print( "Device ID            : 0x%04X\n", physicalDeviceProperties.deviceID );
 		Print( "Driver Version       : %d.%d.%d\n", driverMajor, driverMinor, driverPatch );
@@ -3408,14 +3440,14 @@ static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instanc
 		{
 			const VkQueueFlags queueFlags = queueFamilyProperties[queueFamilyIndex].queueFlags;
 			Print( "%-21s%c %d =%s%s%s (%d queues, %d priorities)\n",
-							( queueFamilyIndex == 0 ? "Queue Families" : "" ),
-							( queueFamilyIndex == 0 ? ':' : ' ' ),
-							queueFamilyIndex,
-							( queueFlags & VK_QUEUE_GRAPHICS_BIT ) ? " graphics" : "",
-							( queueFlags & VK_QUEUE_COMPUTE_BIT )  ? " compute"  : "",
-							( queueFlags & VK_QUEUE_TRANSFER_BIT ) ? " transfer" : "",
-							queueFamilyProperties[queueFamilyIndex].queueCount,
-							physicalDeviceProperties.limits.discreteQueuePriorities );
+					( queueFamilyIndex == 0 ? "Queue Families" : "" ),
+					( queueFamilyIndex == 0 ? ':' : ' ' ),
+					queueFamilyIndex,
+					( queueFlags & VK_QUEUE_GRAPHICS_BIT ) ? " graphics" : "",
+					( queueFlags & VK_QUEUE_COMPUTE_BIT )  ? " compute"  : "",
+					( queueFlags & VK_QUEUE_TRANSFER_BIT ) ? " transfer" : "",
+					queueFamilyProperties[queueFamilyIndex].queueCount,
+					physicalDeviceProperties.limits.discreteQueuePriorities );
 		}
 
 		// Check if this physical device supports the required queue families.
@@ -3483,9 +3515,9 @@ static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instanc
 			VK( instance->vkEnumerateDeviceExtensionProperties( physicalDevices[physicalDeviceIndex], NULL, &availableExtensionCount, availableExtensions ) );
 
 			requiedExtensionsAvailable = CheckFeatures( "Device Extensions", instance->validate, true,
-														requestedExtensions, ARRAY_SIZE( requestedExtensions ),
-														availableExtensions, availableExtensionCount,
-														enabledExtensionNames, &enabledExtensionCount );
+					requestedExtensions, ARRAY_SIZE( requestedExtensions ),
+					availableExtensions, availableExtensionCount,
+					enabledExtensionNames, &enabledExtensionCount );
 
 			free( availableExtensions );
 		}
@@ -3524,9 +3556,9 @@ static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instanc
 			VK( instance->vkEnumerateDeviceLayerProperties( physicalDevices[physicalDeviceIndex], &availableLayerCount, availableLayers ) );
 
 			requiredLayersAvailable = CheckFeatures( "Device Layers", instance->validate, false,
-													requestedLayers, ARRAY_SIZE( requestedLayers ),
-													availableLayers, availableLayerCount,
-													enabledLayerNames, &enabledLayerCount );
+					requestedLayers, ARRAY_SIZE( requestedLayers ),
+					availableLayers, availableLayerCount,
+					enabledLayerNames, &enabledLayerCount );
 
 			free( availableLayers );
 		}
@@ -3560,205 +3592,209 @@ static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instanc
 		return false;
 	}
 
-	// Allocate a bit mask for the available queues per family.
-	device->queueFamilyUsedQueues = (uint32_t *) malloc( device->queueFamilyCount * sizeof( uint32_t ) );
-	for ( uint32_t queueFamilyIndex = 0; queueFamilyIndex < device->queueFamilyCount; queueFamilyIndex++ )
+	if (createFlags & GPU_DEVICE_CREATE_DEVICE)
 	{
-		device->queueFamilyUsedQueues[queueFamilyIndex] = 0xFFFFFFFF << device->queueFamilyProperties[queueFamilyIndex].queueCount;
-	}
-
-	ksMutex_Create( &device->queueFamilyMutex );
-
-	//
-	// Create the logical device
-	//
-
-	float floatPriorities[MAX_QUEUES];
-	for ( int i = 0; i < queueInfo->queueCount; i++ )
-	{
-		const uint32_t discreteQueuePriorities = device->physicalDeviceProperties.limits.discreteQueuePriorities;
-		switch ( queueInfo->queuePriorities[i] )
+		// Allocate a bit mask for the available queues per family.
+		device->queueFamilyUsedQueues = (uint32_t *) malloc( device->queueFamilyCount * sizeof( uint32_t ) );
+		for ( uint32_t queueFamilyIndex = 0; queueFamilyIndex < device->queueFamilyCount; queueFamilyIndex++ )
 		{
-			case GPU_QUEUE_PRIORITY_LOW:	floatPriorities[i] = 0.0f; break;
-			case GPU_QUEUE_PRIORITY_MEDIUM:	floatPriorities[i] = ( discreteQueuePriorities <= 2 ) ? 0.0f : 0.5f; break;
-			case GPU_QUEUE_PRIORITY_HIGH:	floatPriorities[i] = 1.0f; break;
+			device->queueFamilyUsedQueues[queueFamilyIndex] = 0xFFFFFFFF << device->queueFamilyProperties[queueFamilyIndex].queueCount;
 		}
-	}
 
-	// Create the device.
-	VkDeviceQueueCreateInfo deviceQueueCreateInfo[2];
-	deviceQueueCreateInfo[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-	deviceQueueCreateInfo[0].pNext = NULL;
-	deviceQueueCreateInfo[0].flags = 0;
-	deviceQueueCreateInfo[0].queueFamilyIndex = device->workQueueFamilyIndex;
-	deviceQueueCreateInfo[0].queueCount = queueInfo->queueCount;
-	deviceQueueCreateInfo[0].pQueuePriorities = floatPriorities;
+		ksMutex_Create( &device->queueFamilyMutex );
 
-	deviceQueueCreateInfo[1].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-	deviceQueueCreateInfo[1].pNext = NULL;
-	deviceQueueCreateInfo[1].flags = 0;
-	deviceQueueCreateInfo[1].queueFamilyIndex = device->presentQueueFamilyIndex;
-	deviceQueueCreateInfo[1].queueCount = 1;
-	deviceQueueCreateInfo[1].pQueuePriorities = NULL;
+		//
+		// Create the logical device
+		//
 
-	VkDeviceCreateInfo deviceCreateInfo;
-	deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-	deviceCreateInfo.pNext = NULL;
-	deviceCreateInfo.flags = 0;
-	deviceCreateInfo.queueCreateInfoCount = 1 + ( device->presentQueueFamilyIndex != -1 && device->presentQueueFamilyIndex != device->workQueueFamilyIndex );
-	deviceCreateInfo.pQueueCreateInfos = deviceQueueCreateInfo;
-	deviceCreateInfo.enabledLayerCount = enabledLayerCount;
-	deviceCreateInfo.ppEnabledLayerNames = (const char * const *) ( enabledLayerCount != 0 ? enabledLayerNames : NULL );
-	deviceCreateInfo.enabledExtensionCount = enabledExtensionCount;
-	deviceCreateInfo.ppEnabledExtensionNames = (const char * const *) ( enabledExtensionCount != 0 ? enabledExtensionNames : NULL );
-	deviceCreateInfo.pEnabledFeatures = NULL;
+		float floatPriorities[MAX_QUEUES];
+		for ( int i = 0; i < queueInfo->queueCount; i++ )
+		{
+			const uint32_t discreteQueuePriorities = device->physicalDeviceProperties.limits.discreteQueuePriorities;
+			switch ( queueInfo->queuePriorities[i] )
+			{
+				case GPU_QUEUE_PRIORITY_LOW:	floatPriorities[i] = 0.0f; break;
+				case GPU_QUEUE_PRIORITY_MEDIUM:	floatPriorities[i] = ( discreteQueuePriorities <= 2 ) ? 0.0f : 0.5f; break;
+				case GPU_QUEUE_PRIORITY_HIGH:	floatPriorities[i] = 1.0f; break;
+			}
+		}
 
-	VK( instance->vkCreateDevice( device->physicalDevice, &deviceCreateInfo, VK_ALLOCATOR, &device->device ) );
+		// Create the device.
+		VkDeviceQueueCreateInfo deviceQueueCreateInfo[2];
+		deviceQueueCreateInfo[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		deviceQueueCreateInfo[0].pNext = NULL;
+		deviceQueueCreateInfo[0].flags = 0;
+		deviceQueueCreateInfo[0].queueFamilyIndex = device->workQueueFamilyIndex;
+		deviceQueueCreateInfo[0].queueCount = queueInfo->queueCount;
+		deviceQueueCreateInfo[0].pQueuePriorities = floatPriorities;
+
+		deviceQueueCreateInfo[1].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		deviceQueueCreateInfo[1].pNext = NULL;
+		deviceQueueCreateInfo[1].flags = 0;
+		deviceQueueCreateInfo[1].queueFamilyIndex = device->presentQueueFamilyIndex;
+		deviceQueueCreateInfo[1].queueCount = 1;
+		deviceQueueCreateInfo[1].pQueuePriorities = NULL;
+
+		VkDeviceCreateInfo deviceCreateInfo;
+		deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+		deviceCreateInfo.pNext = NULL;
+		deviceCreateInfo.flags = 0;
+		deviceCreateInfo.queueCreateInfoCount = 1 + ( device->presentQueueFamilyIndex != -1 && device->presentQueueFamilyIndex != device->workQueueFamilyIndex );
+		deviceCreateInfo.pQueueCreateInfos = deviceQueueCreateInfo;
+		deviceCreateInfo.enabledLayerCount = enabledLayerCount;
+		deviceCreateInfo.ppEnabledLayerNames = (const char * const *) ( enabledLayerCount != 0 ? enabledLayerNames : NULL );
+		deviceCreateInfo.enabledExtensionCount = enabledExtensionCount;
+		deviceCreateInfo.ppEnabledExtensionNames = (const char * const *) ( enabledExtensionCount != 0 ? enabledExtensionNames : NULL );
+		deviceCreateInfo.pEnabledFeatures = NULL;
+
+		VK( instance->vkCreateDevice( device->physicalDevice, &deviceCreateInfo, VK_ALLOCATOR, &device->device ) );
 
 #if defined( VK_USE_PLATFORM_IOS_MVK ) || defined( VK_USE_PLATFORM_MACOS_MVK )
-	// Specify some helpful MoltenVK extension configuration, such as performance logging.
-	MVKDeviceConfiguration mvkConfig;
-	vkGetMoltenVKDeviceConfigurationMVK( device->device, &mvkConfig );
-	mvkConfig.performanceTracking = true;
-	mvkConfig.performanceLoggingFrameCount = 60;	// Log once per second (actually once every 60 frames)
-	vkSetMoltenVKDeviceConfigurationMVK( device->device, &mvkConfig );
+		// Specify some helpful MoltenVK extension configuration, such as performance logging.
+		MVKDeviceConfiguration mvkConfig;
+		vkGetMoltenVKDeviceConfigurationMVK( device->device, &mvkConfig );
+		mvkConfig.performanceTracking = true;
+		mvkConfig.performanceLoggingFrameCount = 60;	// Log once per second (actually once every 60 frames)
+		vkSetMoltenVKDeviceConfigurationMVK( device->device, &mvkConfig );
 #endif
 
-	//
-	// Setup the device specific function pointers
-	//
+		//
+		// Setup the device specific function pointers
+		//
 
-	// Get the device functions.
-	GET_DEVICE_PROC_ADDR( vkDestroyDevice );
-	GET_DEVICE_PROC_ADDR( vkGetDeviceQueue );
-	GET_DEVICE_PROC_ADDR( vkQueueSubmit );
-	GET_DEVICE_PROC_ADDR( vkQueueWaitIdle );
-	GET_DEVICE_PROC_ADDR( vkDeviceWaitIdle );
-	GET_DEVICE_PROC_ADDR( vkAllocateMemory );
-	GET_DEVICE_PROC_ADDR( vkFreeMemory );
-	GET_DEVICE_PROC_ADDR( vkMapMemory );
-	GET_DEVICE_PROC_ADDR( vkUnmapMemory );
-	GET_DEVICE_PROC_ADDR( vkFlushMappedMemoryRanges );
-	GET_DEVICE_PROC_ADDR( vkInvalidateMappedMemoryRanges );
-	GET_DEVICE_PROC_ADDR( vkGetDeviceMemoryCommitment );
-	GET_DEVICE_PROC_ADDR( vkBindBufferMemory );
-	GET_DEVICE_PROC_ADDR( vkBindImageMemory );
-	GET_DEVICE_PROC_ADDR( vkGetBufferMemoryRequirements );
-	GET_DEVICE_PROC_ADDR( vkGetImageMemoryRequirements );
-	GET_DEVICE_PROC_ADDR( vkGetImageSparseMemoryRequirements );
-	GET_DEVICE_PROC_ADDR( vkQueueBindSparse );
-	GET_DEVICE_PROC_ADDR( vkCreateFence );
-	GET_DEVICE_PROC_ADDR( vkDestroyFence );
-	GET_DEVICE_PROC_ADDR( vkResetFences );
-	GET_DEVICE_PROC_ADDR( vkGetFenceStatus );
-	GET_DEVICE_PROC_ADDR( vkWaitForFences );
-	GET_DEVICE_PROC_ADDR( vkCreateSemaphore );
-	GET_DEVICE_PROC_ADDR( vkDestroySemaphore );
-	GET_DEVICE_PROC_ADDR( vkCreateEvent );
-	GET_DEVICE_PROC_ADDR( vkDestroyEvent );
-	GET_DEVICE_PROC_ADDR( vkGetEventStatus );
-	GET_DEVICE_PROC_ADDR( vkSetEvent );
-	GET_DEVICE_PROC_ADDR( vkResetEvent );
-	GET_DEVICE_PROC_ADDR( vkCreateQueryPool );
-	GET_DEVICE_PROC_ADDR( vkDestroyQueryPool );
-	GET_DEVICE_PROC_ADDR( vkGetQueryPoolResults );
-	GET_DEVICE_PROC_ADDR( vkCreateBuffer );
-	GET_DEVICE_PROC_ADDR( vkDestroyBuffer );
-	GET_DEVICE_PROC_ADDR( vkCreateBufferView );
-	GET_DEVICE_PROC_ADDR( vkDestroyBufferView );
-	GET_DEVICE_PROC_ADDR( vkCreateImage );
-	GET_DEVICE_PROC_ADDR( vkDestroyImage );
-	GET_DEVICE_PROC_ADDR( vkGetImageSubresourceLayout );
-	GET_DEVICE_PROC_ADDR( vkCreateImageView );
-	GET_DEVICE_PROC_ADDR( vkDestroyImageView );
-	GET_DEVICE_PROC_ADDR( vkCreateShaderModule );
-	GET_DEVICE_PROC_ADDR( vkDestroyShaderModule );
-	GET_DEVICE_PROC_ADDR( vkCreatePipelineCache );
-	GET_DEVICE_PROC_ADDR( vkDestroyPipelineCache );
-	GET_DEVICE_PROC_ADDR( vkGetPipelineCacheData );
-	GET_DEVICE_PROC_ADDR( vkMergePipelineCaches );
-	GET_DEVICE_PROC_ADDR( vkCreateGraphicsPipelines );
-	GET_DEVICE_PROC_ADDR( vkCreateComputePipelines );
-	GET_DEVICE_PROC_ADDR( vkDestroyPipeline );
-	GET_DEVICE_PROC_ADDR( vkCreatePipelineLayout );
-	GET_DEVICE_PROC_ADDR( vkDestroyPipelineLayout );
-	GET_DEVICE_PROC_ADDR( vkCreateSampler );
-	GET_DEVICE_PROC_ADDR( vkDestroySampler );
-	GET_DEVICE_PROC_ADDR( vkCreateDescriptorSetLayout );
-	GET_DEVICE_PROC_ADDR( vkDestroyDescriptorSetLayout );
-	GET_DEVICE_PROC_ADDR( vkCreateDescriptorPool );
-	GET_DEVICE_PROC_ADDR( vkDestroyDescriptorPool );
-	GET_DEVICE_PROC_ADDR( vkResetDescriptorPool );
-	GET_DEVICE_PROC_ADDR( vkAllocateDescriptorSets );
-	GET_DEVICE_PROC_ADDR( vkFreeDescriptorSets );
-	GET_DEVICE_PROC_ADDR( vkUpdateDescriptorSets );
-	GET_DEVICE_PROC_ADDR( vkCreateFramebuffer );
-	GET_DEVICE_PROC_ADDR( vkDestroyFramebuffer );
-	GET_DEVICE_PROC_ADDR( vkCreateRenderPass );
-	GET_DEVICE_PROC_ADDR( vkDestroyRenderPass );
-	GET_DEVICE_PROC_ADDR( vkGetRenderAreaGranularity );
-	GET_DEVICE_PROC_ADDR( vkCreateCommandPool );
-	GET_DEVICE_PROC_ADDR( vkDestroyCommandPool );
-	GET_DEVICE_PROC_ADDR( vkResetCommandPool );
-	GET_DEVICE_PROC_ADDR( vkAllocateCommandBuffers );
-	GET_DEVICE_PROC_ADDR( vkFreeCommandBuffers );
-	GET_DEVICE_PROC_ADDR( vkBeginCommandBuffer );
-	GET_DEVICE_PROC_ADDR( vkEndCommandBuffer );
-	GET_DEVICE_PROC_ADDR( vkResetCommandBuffer );
-	GET_DEVICE_PROC_ADDR( vkCmdBindPipeline );
-	GET_DEVICE_PROC_ADDR( vkCmdSetViewport );
-	GET_DEVICE_PROC_ADDR( vkCmdSetScissor );
-	GET_DEVICE_PROC_ADDR( vkCmdSetLineWidth );
-	GET_DEVICE_PROC_ADDR( vkCmdSetDepthBias );
-	GET_DEVICE_PROC_ADDR( vkCmdSetBlendConstants );
-	GET_DEVICE_PROC_ADDR( vkCmdSetDepthBounds );
-	GET_DEVICE_PROC_ADDR( vkCmdSetStencilCompareMask );
-	GET_DEVICE_PROC_ADDR( vkCmdSetStencilWriteMask );
-	GET_DEVICE_PROC_ADDR( vkCmdSetStencilReference );
-	GET_DEVICE_PROC_ADDR( vkCmdBindDescriptorSets );
-	GET_DEVICE_PROC_ADDR( vkCmdBindIndexBuffer );
-	GET_DEVICE_PROC_ADDR( vkCmdBindVertexBuffers );
-	GET_DEVICE_PROC_ADDR( vkCmdDraw );
-	GET_DEVICE_PROC_ADDR( vkCmdDrawIndexed );
-	GET_DEVICE_PROC_ADDR( vkCmdDrawIndirect );
-	GET_DEVICE_PROC_ADDR( vkCmdDrawIndexedIndirect );
-	GET_DEVICE_PROC_ADDR( vkCmdDispatch );
-	GET_DEVICE_PROC_ADDR( vkCmdDispatchIndirect );
-	GET_DEVICE_PROC_ADDR( vkCmdCopyBuffer );
-	GET_DEVICE_PROC_ADDR( vkCmdCopyImage );
-	GET_DEVICE_PROC_ADDR( vkCmdBlitImage );
-	GET_DEVICE_PROC_ADDR( vkCmdCopyBufferToImage );
-	GET_DEVICE_PROC_ADDR( vkCmdCopyImageToBuffer );
-	GET_DEVICE_PROC_ADDR( vkCmdUpdateBuffer );
-	GET_DEVICE_PROC_ADDR( vkCmdFillBuffer );
-	GET_DEVICE_PROC_ADDR( vkCmdClearColorImage );
-	GET_DEVICE_PROC_ADDR( vkCmdClearDepthStencilImage );
-	GET_DEVICE_PROC_ADDR( vkCmdClearAttachments );
-	GET_DEVICE_PROC_ADDR( vkCmdResolveImage );
-	GET_DEVICE_PROC_ADDR( vkCmdSetEvent );
-	GET_DEVICE_PROC_ADDR( vkCmdResetEvent );
-	GET_DEVICE_PROC_ADDR( vkCmdWaitEvents );
-	GET_DEVICE_PROC_ADDR( vkCmdPipelineBarrier );
-	GET_DEVICE_PROC_ADDR( vkCmdBeginQuery );
-	GET_DEVICE_PROC_ADDR( vkCmdEndQuery );
-	GET_DEVICE_PROC_ADDR( vkCmdResetQueryPool );
-	GET_DEVICE_PROC_ADDR( vkCmdWriteTimestamp );
-	GET_DEVICE_PROC_ADDR( vkCmdCopyQueryPoolResults );
-	GET_DEVICE_PROC_ADDR( vkCmdPushConstants );
-	GET_DEVICE_PROC_ADDR( vkCmdBeginRenderPass );
-	GET_DEVICE_PROC_ADDR( vkCmdNextSubpass );
-	GET_DEVICE_PROC_ADDR( vkCmdEndRenderPass );
-	GET_DEVICE_PROC_ADDR( vkCmdExecuteCommands );
+		// Get the device functions.
+		GET_DEVICE_PROC_ADDR( vkDestroyDevice );
+		GET_DEVICE_PROC_ADDR( vkGetDeviceQueue );
+		GET_DEVICE_PROC_ADDR( vkQueueSubmit );
+		GET_DEVICE_PROC_ADDR( vkQueueWaitIdle );
+		GET_DEVICE_PROC_ADDR( vkDeviceWaitIdle );
+		GET_DEVICE_PROC_ADDR( vkAllocateMemory );
+		GET_DEVICE_PROC_ADDR( vkFreeMemory );
+		GET_DEVICE_PROC_ADDR( vkMapMemory );
+		GET_DEVICE_PROC_ADDR( vkUnmapMemory );
+		GET_DEVICE_PROC_ADDR( vkFlushMappedMemoryRanges );
+		GET_DEVICE_PROC_ADDR( vkInvalidateMappedMemoryRanges );
+		GET_DEVICE_PROC_ADDR( vkGetDeviceMemoryCommitment );
+		GET_DEVICE_PROC_ADDR( vkBindBufferMemory );
+		GET_DEVICE_PROC_ADDR( vkBindImageMemory );
+		GET_DEVICE_PROC_ADDR( vkGetBufferMemoryRequirements );
+		GET_DEVICE_PROC_ADDR( vkGetImageMemoryRequirements );
+		GET_DEVICE_PROC_ADDR( vkGetImageSparseMemoryRequirements );
+		GET_DEVICE_PROC_ADDR( vkQueueBindSparse );
+		GET_DEVICE_PROC_ADDR( vkCreateFence );
+		GET_DEVICE_PROC_ADDR( vkDestroyFence );
+		GET_DEVICE_PROC_ADDR( vkResetFences );
+		GET_DEVICE_PROC_ADDR( vkGetFenceStatus );
+		GET_DEVICE_PROC_ADDR( vkWaitForFences );
+		GET_DEVICE_PROC_ADDR( vkCreateSemaphore );
+		GET_DEVICE_PROC_ADDR( vkDestroySemaphore );
+		GET_DEVICE_PROC_ADDR( vkCreateEvent );
+		GET_DEVICE_PROC_ADDR( vkDestroyEvent );
+		GET_DEVICE_PROC_ADDR( vkGetEventStatus );
+		GET_DEVICE_PROC_ADDR( vkSetEvent );
+		GET_DEVICE_PROC_ADDR( vkResetEvent );
+		GET_DEVICE_PROC_ADDR( vkCreateQueryPool );
+		GET_DEVICE_PROC_ADDR( vkDestroyQueryPool );
+		GET_DEVICE_PROC_ADDR( vkGetQueryPoolResults );
+		GET_DEVICE_PROC_ADDR( vkCreateBuffer );
+		GET_DEVICE_PROC_ADDR( vkDestroyBuffer );
+		GET_DEVICE_PROC_ADDR( vkCreateBufferView );
+		GET_DEVICE_PROC_ADDR( vkDestroyBufferView );
+		GET_DEVICE_PROC_ADDR( vkCreateImage );
+		GET_DEVICE_PROC_ADDR( vkDestroyImage );
+		GET_DEVICE_PROC_ADDR( vkGetImageSubresourceLayout );
+		GET_DEVICE_PROC_ADDR( vkCreateImageView );
+		GET_DEVICE_PROC_ADDR( vkDestroyImageView );
+		GET_DEVICE_PROC_ADDR( vkCreateShaderModule );
+		GET_DEVICE_PROC_ADDR( vkDestroyShaderModule );
+		GET_DEVICE_PROC_ADDR( vkCreatePipelineCache );
+		GET_DEVICE_PROC_ADDR( vkDestroyPipelineCache );
+		GET_DEVICE_PROC_ADDR( vkGetPipelineCacheData );
+		GET_DEVICE_PROC_ADDR( vkMergePipelineCaches );
+		GET_DEVICE_PROC_ADDR( vkCreateGraphicsPipelines );
+		GET_DEVICE_PROC_ADDR( vkCreateComputePipelines );
+		GET_DEVICE_PROC_ADDR( vkDestroyPipeline );
+		GET_DEVICE_PROC_ADDR( vkCreatePipelineLayout );
+		GET_DEVICE_PROC_ADDR( vkDestroyPipelineLayout );
+		GET_DEVICE_PROC_ADDR( vkCreateSampler );
+		GET_DEVICE_PROC_ADDR( vkDestroySampler );
+		GET_DEVICE_PROC_ADDR( vkCreateDescriptorSetLayout );
+		GET_DEVICE_PROC_ADDR( vkDestroyDescriptorSetLayout );
+		GET_DEVICE_PROC_ADDR( vkCreateDescriptorPool );
+		GET_DEVICE_PROC_ADDR( vkDestroyDescriptorPool );
+		GET_DEVICE_PROC_ADDR( vkResetDescriptorPool );
+		GET_DEVICE_PROC_ADDR( vkAllocateDescriptorSets );
+		GET_DEVICE_PROC_ADDR( vkFreeDescriptorSets );
+		GET_DEVICE_PROC_ADDR( vkUpdateDescriptorSets );
+		GET_DEVICE_PROC_ADDR( vkCreateFramebuffer );
+		GET_DEVICE_PROC_ADDR( vkDestroyFramebuffer );
+		GET_DEVICE_PROC_ADDR( vkCreateRenderPass );
+		GET_DEVICE_PROC_ADDR( vkDestroyRenderPass );
+		GET_DEVICE_PROC_ADDR( vkGetRenderAreaGranularity );
+		GET_DEVICE_PROC_ADDR( vkCreateCommandPool );
+		GET_DEVICE_PROC_ADDR( vkDestroyCommandPool );
+		GET_DEVICE_PROC_ADDR( vkResetCommandPool );
+		GET_DEVICE_PROC_ADDR( vkAllocateCommandBuffers );
+		GET_DEVICE_PROC_ADDR( vkFreeCommandBuffers );
+		GET_DEVICE_PROC_ADDR( vkBeginCommandBuffer );
+		GET_DEVICE_PROC_ADDR( vkEndCommandBuffer );
+		GET_DEVICE_PROC_ADDR( vkResetCommandBuffer );
+		GET_DEVICE_PROC_ADDR( vkCmdBindPipeline );
+		GET_DEVICE_PROC_ADDR( vkCmdSetViewport );
+		GET_DEVICE_PROC_ADDR( vkCmdSetScissor );
+		GET_DEVICE_PROC_ADDR( vkCmdSetLineWidth );
+		GET_DEVICE_PROC_ADDR( vkCmdSetDepthBias );
+		GET_DEVICE_PROC_ADDR( vkCmdSetBlendConstants );
+		GET_DEVICE_PROC_ADDR( vkCmdSetDepthBounds );
+		GET_DEVICE_PROC_ADDR( vkCmdSetStencilCompareMask );
+		GET_DEVICE_PROC_ADDR( vkCmdSetStencilWriteMask );
+		GET_DEVICE_PROC_ADDR( vkCmdSetStencilReference );
+		GET_DEVICE_PROC_ADDR( vkCmdBindDescriptorSets );
+		GET_DEVICE_PROC_ADDR( vkCmdBindIndexBuffer );
+		GET_DEVICE_PROC_ADDR( vkCmdBindVertexBuffers );
+		GET_DEVICE_PROC_ADDR( vkCmdDraw );
+		GET_DEVICE_PROC_ADDR( vkCmdDrawIndexed );
+		GET_DEVICE_PROC_ADDR( vkCmdDrawIndirect );
+		GET_DEVICE_PROC_ADDR( vkCmdDrawIndexedIndirect );
+		GET_DEVICE_PROC_ADDR( vkCmdDispatch );
+		GET_DEVICE_PROC_ADDR( vkCmdDispatchIndirect );
+		GET_DEVICE_PROC_ADDR( vkCmdCopyBuffer );
+		GET_DEVICE_PROC_ADDR( vkCmdCopyImage );
+		GET_DEVICE_PROC_ADDR( vkCmdBlitImage );
+		GET_DEVICE_PROC_ADDR( vkCmdCopyBufferToImage );
+		GET_DEVICE_PROC_ADDR( vkCmdCopyImageToBuffer );
+		GET_DEVICE_PROC_ADDR( vkCmdUpdateBuffer );
+		GET_DEVICE_PROC_ADDR( vkCmdFillBuffer );
+		GET_DEVICE_PROC_ADDR( vkCmdClearColorImage );
+		GET_DEVICE_PROC_ADDR( vkCmdClearDepthStencilImage );
+		GET_DEVICE_PROC_ADDR( vkCmdClearAttachments );
+		GET_DEVICE_PROC_ADDR( vkCmdResolveImage );
+		GET_DEVICE_PROC_ADDR( vkCmdSetEvent );
+		GET_DEVICE_PROC_ADDR( vkCmdResetEvent );
+		GET_DEVICE_PROC_ADDR( vkCmdWaitEvents );
+		GET_DEVICE_PROC_ADDR( vkCmdPipelineBarrier );
+		GET_DEVICE_PROC_ADDR( vkCmdBeginQuery );
+		GET_DEVICE_PROC_ADDR( vkCmdEndQuery );
+		GET_DEVICE_PROC_ADDR( vkCmdResetQueryPool );
+		GET_DEVICE_PROC_ADDR( vkCmdWriteTimestamp );
+		GET_DEVICE_PROC_ADDR( vkCmdCopyQueryPoolResults );
+		GET_DEVICE_PROC_ADDR( vkCmdPushConstants );
+		GET_DEVICE_PROC_ADDR( vkCmdBeginRenderPass );
+		GET_DEVICE_PROC_ADDR( vkCmdNextSubpass );
+		GET_DEVICE_PROC_ADDR( vkCmdEndRenderPass );
+		GET_DEVICE_PROC_ADDR( vkCmdExecuteCommands );
 
-	// Get the swapchain extension functions.
-	if ( device->foundSwapchainExtension )
-	{
-		GET_DEVICE_PROC_ADDR( vkCreateSwapchainKHR );
-		GET_DEVICE_PROC_ADDR( vkCreateSwapchainKHR );
-		GET_DEVICE_PROC_ADDR( vkDestroySwapchainKHR );
-		GET_DEVICE_PROC_ADDR( vkGetSwapchainImagesKHR );
-		GET_DEVICE_PROC_ADDR( vkAcquireNextImageKHR );
-		GET_DEVICE_PROC_ADDR( vkQueuePresentKHR );
+		// Get the swapchain extension functions.
+		if ( device->foundSwapchainExtension )
+		{
+			GET_DEVICE_PROC_ADDR( vkCreateSwapchainKHR );
+			GET_DEVICE_PROC_ADDR( vkCreateSwapchainKHR );
+			GET_DEVICE_PROC_ADDR( vkDestroySwapchainKHR );
+			GET_DEVICE_PROC_ADDR( vkGetSwapchainImagesKHR );
+			GET_DEVICE_PROC_ADDR( vkAcquireNextImageKHR );
+			GET_DEVICE_PROC_ADDR( vkQueuePresentKHR );
+		}
+
 	}
 
 	return true;
@@ -4677,6 +4713,9 @@ typedef struct
 	int						desktopWidth;
 	int						desktopHeight;
 	float					desktopRefreshRate;
+#elif defined( OS_NEUTRAL_DISPLAY_SURFACE )
+	VkDisplayKHR			display;
+	VkDisplayModeKHR		mode;
 #elif defined( OS_ANDROID )
 	struct android_app *	app;
 	Java_t					java;
@@ -4998,7 +5037,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	VkSurfaceKHR surface;
 	VK( instance->vkCreateSurfaceKHR( instance->instance, &win32SurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
 
-	ksGpuDevice_Create( &window->device, instance, queueInfo, surface );
+	ksGpuDevice_Create( &window->device, instance, GPU_DEVICE_CREATE_ALL, queueInfo, surface );
 	ksGpuContext_Create( &window->context, &window->device, queueIndex );
 	ksGpuWindow_CreateFromSurface( window, surface );
 
@@ -5192,7 +5231,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	VkSurfaceKHR surface;
 	VK( instance->vkCreateSurfaceKHR( instance->instance, &iosSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
 
-	ksGpuDevice_Create( &window->device, instance, queueInfo, surface );
+	ksGpuDevice_Create( &window->device, instance, GPU_DEVICE_CREATE_ALL, queueInfo, surface );
 	ksGpuContext_Create( &window->context, &window->device, queueIndex );
 	ksGpuWindow_CreateFromSurface( window, surface );
 
@@ -5492,7 +5531,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	VkSurfaceKHR surface;
 	VK( instance->vkCreateSurfaceKHR( instance->instance, &macosSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
 
-	ksGpuDevice_Create( &window->device, instance, queueInfo, surface );
+	ksGpuDevice_Create( &window->device, instance, GPU_DEVICE_CREATE_ALL, queueInfo, surface );
 	ksGpuContext_Create( &window->context, &window->device, queueIndex );
 	ksGpuWindow_CreateFromSurface( window, surface );
 
@@ -6117,7 +6156,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	VkSurfaceKHR surface;
 	VK( instance->vkCreateSurfaceKHR( instance->instance, &xlibSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
 
-	ksGpuDevice_Create( &window->device, instance, queueInfo, surface );
+	ksGpuDevice_Create( &window->device, instance, GPU_DEVICE_CREATE_ALL, queueInfo, surface );
 	ksGpuContext_Create( &window->context, &window->device, queueIndex );
 	ksGpuWindow_CreateFromSurface( window, surface );
 
@@ -6601,7 +6640,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	VkSurfaceKHR surface;
 	VK( instance->vkCreateSurfaceKHR( instance->instance, &xcbSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
 
-	ksGpuDevice_Create( &window->device, instance, queueInfo, surface );
+	ksGpuDevice_Create( &window->device, instance, GPU_DEVICE_CREATE_ALL, queueInfo, surface );
 	ksGpuContext_Create( &window->context, &window->device, queueIndex );
 	ksGpuWindow_CreateFromSurface( window, surface );
 
@@ -6683,6 +6722,161 @@ static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
 		return GPU_WINDOW_EVENT_ACTIVATED;
 	}
 
+	return GPU_WINDOW_EVENT_NONE;
+}
+
+#elif defined( OS_NEUTRAL_DISPLAY_SURFACE )
+
+//These are empty enums in neutral display surface since we have no input devices.
+//To make this work we need to disconnect the concepts of OS/input from presentation -
+//though this is more difficult since most of the time presentation *is* input.
+
+typedef enum
+{
+	KEY_A,
+	KEY_B,
+	KEY_C,
+	KEY_D,
+	KEY_E,
+	KEY_F,
+	KEY_G,
+	KEY_H,
+	KEY_I,
+	KEY_J,
+	KEY_K,
+	KEY_L,
+	KEY_M,
+	KEY_N,
+	KEY_O,
+	KEY_P,
+	KEY_Q,
+	KEY_R,
+	KEY_S,
+	KEY_T,
+	KEY_U,
+	KEY_V,
+	KEY_W,
+	KEY_X,
+	KEY_Y,
+	KEY_Z,
+	KEY_RETURN,
+	KEY_TAB,
+	KEY_ESCAPE,
+	KEY_SHIFT_LEFT,
+	KEY_CTRL_LEFT,
+	KEY_ALT_LEFT,
+	KEY_CURSOR_UP,
+	KEY_CURSOR_DOWN,
+	KEY_CURSOR_LEFT,
+	KEY_CURSOR_RIGHT
+} ksKeyboardKey;
+
+typedef enum
+{
+	MOUSE_LEFT,
+	MOUSE_RIGHT
+} ksMouseButton;
+
+static void ksGpuWindow_Destroy( ksGpuWindow * window )
+{
+	ksGpuWindow_DestroySurface( window );
+	ksGpuContext_Destroy( &window->context );
+	ksGpuDevice_Destroy( &window->device );
+}
+
+static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
+								const ksGpuQueueInfo * queueInfo, const int queueIndex,
+								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
+{
+	memset( window, 0, sizeof( ksGpuWindow ) );
+
+	window->colorFormat = colorFormat;
+	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
+	window->windowSwapInterval = 1;
+	window->windowRefreshRate = 60.0f;
+	window->windowFullscreen = fullscreen;
+	window->windowActive = true;
+	window->windowExit = false;
+	window->lastSwapTime = GetTimeMicroseconds();
+
+	VkSurfaceKHR surface;
+	ksGpuDevice_Create( &window->device, instance, GPU_DEVICE_CREATE_PHYSICAL_DEVICE, queueInfo, VK_NULL_HANDLE );
+
+	uint32_t displayPropertiesCount = 0;
+	VK( instance->vkGetPhysicalDeviceDisplayPropertiesKHR( window->device.physicalDevice, &displayPropertiesCount, NULL ) );
+
+	VkDisplayPropertiesKHR * displayProperties = (VkDisplayPropertiesKHR *) malloc( displayPropertiesCount * sizeof( VkDisplayPropertiesKHR ) );
+	VK( instance->vkGetPhysicalDeviceDisplayPropertiesKHR( window->device.physicalDevice, &displayPropertiesCount, displayProperties ) );
+
+	for ( int i = 0; i < displayPropertiesCount; i++)
+	{
+		printf("Display %d:\n", i);
+		printf("             Name: %s\n", displayProperties[i].displayName);
+		printf("       Dimensions: %ux%u\n", displayProperties[i].physicalDimensions.width, displayProperties[i].physicalDimensions.height);
+		printf("       Resolution: %ux%u\n", displayProperties[i].physicalResolution.width, displayProperties[i].physicalResolution.height);
+		printf("       Transforms: %x\n", displayProperties[i].supportedTransforms);
+		printf(" Plane reordering: %s\n", displayProperties[i].planeReorderPossible ? "YES" : "NO");
+		printf("       Persistent: %s\n", displayProperties[i].persistentContent ? "YES" : "NO");
+	}
+
+	//FIXME: Make mode and display selection configurable.
+	VkDisplayKHR display = displayProperties[0].display;
+
+	uint32_t displayModeCount = 0;
+	VK( instance->vkGetDisplayModePropertiesKHR( window->device.physicalDevice, display, &displayModeCount, NULL ) );
+
+	VkDisplayModePropertiesKHR * displayModes = (VkDisplayModePropertiesKHR *) malloc( displayModeCount * sizeof( VkDisplayModePropertiesKHR ) );
+	VK( instance->vkGetDisplayModePropertiesKHR( window->device.physicalDevice, display, &displayModeCount, displayModes ) );
+
+	for ( int i = 0; i < displayModeCount; i++)
+	{
+		printf("Mode %d:\n", i);
+		printf("    Visible Region: %ux%u\n", displayModes[i].parameters.visibleRegion.width, displayModes[i].parameters.visibleRegion.height);
+		printf("      Refresh Rate: %u\n", displayModes[i].parameters.refreshRate);
+	}
+
+	VkDisplaySurfaceCreateInfoKHR displaySurfaceCreateInfo;
+	displaySurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR;
+	displaySurfaceCreateInfo.pNext = NULL;
+	displaySurfaceCreateInfo.flags = 0;
+	displaySurfaceCreateInfo.displayMode = displayModes[0].displayMode;
+	displaySurfaceCreateInfo.planeIndex = 0;
+	displaySurfaceCreateInfo.planeStackIndex = 0;
+	displaySurfaceCreateInfo.transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+	displaySurfaceCreateInfo.globalAlpha = 0.0f;
+	displaySurfaceCreateInfo.alphaMode = VK_DISPLAY_PLANE_ALPHA_PER_PIXEL_BIT_KHR;
+	displaySurfaceCreateInfo.imageExtent.width = displayModes[0].parameters.visibleRegion.width;
+	displaySurfaceCreateInfo.imageExtent.height = displayModes[0].parameters.visibleRegion.height;
+
+	window->windowWidth = displaySurfaceCreateInfo.imageExtent.width;
+	window->windowHeight = displaySurfaceCreateInfo.imageExtent.height;
+
+	VK( instance->vkCreateSurfaceKHR( instance->instance, &displaySurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
+
+	ksGpuDevice_Create( &window->device, instance, GPU_DEVICE_CREATE_DEVICE, queueInfo, surface );
+	ksGpuContext_Create( &window->context, &window->device, queueIndex );
+	ksGpuWindow_CreateFromSurface( window, surface );
+
+	return true;
+}
+
+static bool ksGpuWindow_SupportedResolution( const int width, const int height )
+{
+	UNUSED_PARM( width );
+	UNUSED_PARM( height );
+
+	return true;
+}
+
+static void ksGpuWindow_Exit( ksGpuWindow * window )
+{
+	window->windowExit = true;
+}
+
+static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
+{
 	return GPU_WINDOW_EVENT_NONE;
 }
 
@@ -6933,7 +7127,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 		ANativeActivity_setWindowFlags( window->app->activity, AWINDOW_FLAG_FULLSCREEN | AWINDOW_FLAG_KEEP_SCREEN_ON, 0 );
 	}
 
-	ksGpuDevice_Create( &window->device, instance, queueInfo, VK_NULL_HANDLE );
+	ksGpuDevice_Create( &window->device, instance, GPU_DEVICE_CREATE_ALL, queueInfo, VK_NULL_HANDLE );
 	ksGpuContext_Create( &window->context, &window->device, queueIndex );
 
 	return true;
@@ -10604,6 +10798,11 @@ static void ksGpuTimer_Create( ksGpuContext * context, ksGpuTimer * timer )
 	memset( timer, 0, sizeof( ksGpuTimer ) );
 
 	timer->supported = context->device->queueFamilyProperties[context->queueFamilyIndex].timestampValidBits != 0;
+	if (!timer->supported)
+	{
+		return;
+	}
+
 	timer->period = context->device->physicalDeviceProperties.limits.timestampPeriod;
 
 	const uint32_t queryCount = ( GPU_TIMER_FRAMES_DELAYED + 1 ) * 2;
@@ -10625,12 +10824,24 @@ static void ksGpuTimer_Create( ksGpuContext * context, ksGpuTimer * timer )
 
 static void ksGpuTimer_Destroy( ksGpuContext * context, ksGpuTimer * timer )
 {
-	VC( context->device->vkDestroyQueryPool( context->device->device, timer->pool, VK_ALLOCATOR ) );
+	if (timer->supported)
+	{
+		VC( context->device->vkDestroyQueryPool( context->device->device, timer->pool, VK_ALLOCATOR ) );
+	}
+
 }
 
 static float ksGpuTimer_GetMilliseconds( ksGpuTimer * timer )
 {
-	return ( timer->data[1] - timer->data[0] ) * timer->period * ( 1.0f / 1000.0f / 1000.0f );
+	if (timer->supported)
+	{
+		return ( timer->data[1] - timer->data[0] ) * timer->period * ( 1.0f / 1000.0f / 1000.0f );
+	}
+	else
+	{
+		return 0;
+	}
+
 }
 
 /*
@@ -11511,17 +11722,29 @@ static void ksGpuCommandBuffer_ManageTimers( ksGpuCommandBuffer * commandBuffer 
 	for ( int i = 0; i < commandBuffer->currentTimerCount; i++ )
 	{
 		ksGpuTimer * timer = commandBuffer->currentTimers[i];
-		timer->index = ( timer->index + 1 ) % ( GPU_TIMER_FRAMES_DELAYED + 1 );
-		if ( timer->init >= GPU_TIMER_FRAMES_DELAYED )
+		if (timer->supported)
 		{
-			VC( device->vkGetQueryPoolResults( commandBuffer->context->device->device, timer->pool, timer->index * 2, 2,
-				2 * sizeof( uint64_t ), timer->data, sizeof( uint64_t ), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT ) );
+			timer->index = ( timer->index + 1 ) % ( GPU_TIMER_FRAMES_DELAYED + 1 );
+			if ( timer->init >= GPU_TIMER_FRAMES_DELAYED )
+			{
+				VC( device->vkGetQueryPoolResults( commandBuffer->context->device->device, timer->pool, timer->index * 2, 2,
+							2 * sizeof( uint64_t ), timer->data, sizeof( uint64_t ), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT ) );
+			}
+			else
+			{
+				timer->index = ( timer->index + 1 ) % ( GPU_TIMER_FRAMES_DELAYED + 1 );
+				if ( timer->init >= GPU_TIMER_FRAMES_DELAYED )
+				{
+					VC( device->vkGetQueryPoolResults( commandBuffer->context->device->device, timer->pool, timer->index * 2, 2,
+								2 * sizeof( uint64_t ), timer->data, sizeof( uint64_t ), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT ) );
+				}
+				else
+				{
+					timer->init++;
+				}
+				VC( device->vkCmdResetQueryPool( commandBuffer->cmdBuffers[commandBuffer->currentBuffer], timer->pool, timer->index * 2, 2 ) );
+			}
 		}
-		else
-		{
-			timer->init++;
-		}
-		VC( device->vkCmdResetQueryPool( commandBuffer->cmdBuffers[commandBuffer->currentBuffer], timer->pool, timer->index * 2, 2 ) );
 	}
 	commandBuffer->currentTimerCount = 0;
 }
@@ -11778,11 +12001,17 @@ static void ksGpuCommandBuffer_BeginTimer( ksGpuCommandBuffer * commandBuffer, k
 {
 	ksGpuDevice * device = commandBuffer->context->device;
 
+	if (!timer->supported)
+	{
+		return;
+	}
+
 	// Make sure this timer has not already been used.
 	for ( int i = 0; i < commandBuffer->currentTimerCount; i++ )
 	{
 		assert( commandBuffer->currentTimers[i] != timer );
 	}
+
 
 	VC( device->vkCmdWriteTimestamp( commandBuffer->cmdBuffers[commandBuffer->currentBuffer], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, timer->pool, timer->index * 2 + 0 ) );
 }
@@ -11790,6 +12019,11 @@ static void ksGpuCommandBuffer_BeginTimer( ksGpuCommandBuffer * commandBuffer, k
 static void ksGpuCommandBuffer_EndTimer( ksGpuCommandBuffer * commandBuffer, ksGpuTimer * timer )
 {
 	ksGpuDevice * device = commandBuffer->context->device;
+
+	if (!timer->supported)
+	{
+		return;
+	}
 
 	VC( device->vkCmdWriteTimestamp( commandBuffer->cmdBuffers[commandBuffer->currentBuffer], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, timer->pool, timer->index * 2 + 1 ) );
 
