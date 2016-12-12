@@ -383,6 +383,7 @@ Platform headers / declarations
 
 	#if defined( _MSC_VER )
 		#pragma warning( disable : 4204 )	// nonstandard extension used : non-constant aggregate initializer
+		#pragma warning( disable : 4221 )	// nonstandard extension used: 'layers': cannot be initialized using address of automatic variable 'layerProjection'
 		#pragma warning( disable : 4255 )	// '<name>' : no function prototype given: converting '()' to '(void)'
 		#pragma warning( disable : 4668 )	// '__cplusplus' is not defined as a preprocessor macro, replacing with '0' for '#if/#elif'
 		#pragma warning( disable : 4710	)	// 'int printf(const char *const ,...)': function not inlined
@@ -578,7 +579,7 @@ Common defines
 
 #define GRAPHICS_API_OPENGL				1
 
-#define USE_GLTF						1
+#define USE_GLTF						0
 #define PROGRAM( name )					name##GLSL
 
 #define GLSL_EXTENSIONS					"#extension GL_EXT_shader_io_blocks : enable\n"

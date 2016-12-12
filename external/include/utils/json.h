@@ -375,16 +375,16 @@ Text to DOM     2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
                 VS2015-up3     VS2015-up3     GCC 4.9        GCC 4.9        Clang 3.8      Clang 3.8
                 c++11          c++11          gnustl_static  gnustl_static  c++_static     c++_static
 ----------------------------------------------------------------------------------------------------------
-  Json_t        121.930 ms     107.169 ms      260.471 ms     229.713 ms     284.767 ms     244.413 ms
-  rapidjson     111.411 ms     112.965 ms      294.813 ms     217.756 ms     318.686 ms     267.120 ms
-  sajson         97.930 ms      67.170 ms      287.485 ms     167.319 ms     173.386 ms     182.552 ms
-  gason          63.300 ms      58.075 ms      116.311 ms     115.667 ms     195.282 ms     123.649 ms
-  ujson4c       118.903 ms     114.800 ms      417.591 ms     330.118 ms     364.956 ms     287.685 ms
-  cJSON         188.701 ms     169.897 ms      363.644 ms     315.248 ms     423.802 ms     319.888 ms
-  OVR::JSON     329.450 ms     294.698 ms      791.750 ms     883.271 ms     812.664 ms     879.435 ms
-  jsoncons      289.972 ms     230.264 ms      616.342 ms     582.109 ms     618.514 ms     451.056 ms
-  json11        507.506 ms     458.889 ms     2592.904 ms    2327.689 ms    2004.852 ms    1476.452 ms
-  nlohmann      470.255 ms     419.529 ms     1305.589 ms    1296.296 ms    1410.566 ms     988.472 ms
+  Json_t        123.704 ms     113.623 ms      260.471 ms     229.713 ms     284.767 ms     244.413 ms
+  rapidjson     113.475 ms     117.906 ms      294.813 ms     217.756 ms     318.686 ms     267.120 ms
+  sajson         99.068 ms      69.175 ms      287.485 ms     167.319 ms     173.386 ms     182.552 ms
+  gason          64.896 ms      57.836 ms      116.311 ms     115.667 ms     195.282 ms     123.649 ms
+  ujson4c       118.496 ms     106.542 ms      417.591 ms     330.118 ms     364.956 ms     287.685 ms
+  cJSON         189.076 ms     180.745 ms      363.644 ms     315.248 ms     423.802 ms     319.888 ms
+  OVR::JSON     334.811 ms     300.541 ms      791.750 ms     883.271 ms     812.664 ms     879.435 ms
+  jsoncons      276.632 ms     232.985 ms      616.342 ms     582.109 ms     618.514 ms     451.056 ms
+  json11        517.014 ms     467.236 ms     2592.904 ms    2327.689 ms    2004.852 ms    1476.452 ms
+  nlohmann      469.432 ms     422.636 ms     1305.589 ms    1296.296 ms    1410.566 ms     988.472 ms
 
 ----------------------------------------------------------------------------------------------------------
 Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 GHz        2.1 GHz 
@@ -393,16 +393,16 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
                 VS2015-up3     VS2015-up3     GCC 4.9        GCC 4.9        Clang 3.8      Clang 3.8
                 c++11          c++11          gnustl_static  gnustl_static  c++_static     c++_static
 ----------------------------------------------------------------------------------------------------------
-  Json_t         22.131 ms      19.727 ms      106.081 ms      39.828 ms      84.220 ms      42.936 ms
-  rapidjson      40.618 ms      29.887 ms       82.376 ms      48.170 ms      75.268 ms      49.578 ms
-  sajson         26.316 ms      42.084 ms      153.721 ms     113.389 ms      95.203 ms      56.443 ms
-  gason          22.675 ms      22.880 ms      212.653 ms      99.502 ms     218.437 ms     103.013 ms
-  ujson4c        24.249 ms      30.401 ms      141.612 ms      82.157 ms      96.826 ms      87.144 ms
-  cJSON         271.376 ms     330.203 ms      522.007 ms     468.991 ms     600.157 ms     571.723 ms
-  OVR::JSON      55.858 ms      55.793 ms      334.563 ms     205.061 ms     332.576 ms     202.970 ms
-  jsoncons      150.714 ms     137.073 ms      542.477 ms     421.545 ms     963.076 ms     796.742 ms
-  json11        139.426 ms     123.035 ms      576.560 ms     449.121 ms     462.324 ms     292.826 ms
-  nlohmann      102.583 ms      95.926 ms      401.062 ms     501.726 ms     267.339 ms     169.525 ms
+  Json_t         15.963 ms      15.765 ms      106.081 ms      39.828 ms      84.220 ms      42.936 ms
+  rapidjson      39.516 ms      31.692 ms       82.376 ms      48.170 ms      75.268 ms      49.578 ms
+  sajson         39.083 ms      43.925 ms      153.721 ms     113.389 ms      95.203 ms      56.443 ms
+  gason          21.963 ms      23.685 ms      212.653 ms      99.502 ms     218.437 ms     103.013 ms
+  ujson4c        25.110 ms      25.750 ms      141.612 ms      82.157 ms      96.826 ms      87.144 ms
+  cJSON         302.371 ms     380.556 ms      522.007 ms     468.991 ms     600.157 ms     571.723 ms
+  OVR::JSON      55.423 ms      55.772 ms      334.563 ms     205.061 ms     332.576 ms     202.970 ms
+  jsoncons      154.659 ms     138.156 ms      542.477 ms     421.545 ms     963.076 ms     796.742 ms
+  json11        144.897 ms     126.033 ms      576.560 ms     449.121 ms     462.324 ms     292.826 ms
+  nlohmann      101.242 ms      99.691 ms      401.062 ms     501.726 ms     267.339 ms     169.525 ms
 
 ================================================================================================================================
 */
@@ -431,8 +431,8 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
 #define JSON_MAX( x, y )			( ( x >= y ) ? x : y )
 #define JSON_CLAMP( x, min, max )	( ( x >= min ) ? ( ( x <= max ) ? x : max ) : min )
 #define JSON_MAX_RECURSION			128
-#define JSON_MAP_GRANULARITY		4		// 64, 1024, 16384 etc. members
-#define JSON_BASE_ALLOC_PWR			3		// 8, 16, 32, 64, 128, 256, 512 etc. members
+#define JSON_MAP_GRANULARITY		4	// 128, 2048 etc. members
+#define JSON_BASE_ALLOC_PWR			4	// [16, 32, 64, 128], [256, 512, 1024, 2048] etc. members
 
 // JSON value type
 typedef enum
