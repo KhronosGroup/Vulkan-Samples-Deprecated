@@ -16,25 +16,26 @@ set( MAJOR "1" )
 include_directories(
         "external/include"
         "../Vulkan-LoaderAndValidationLayers/include"
+        "../Vulkan-LoaderAndValidationLayers/build/generated/include"
         "$ENV{VK_SDK_PATH}/Include" )
 
 if( WIN32 )
     STRING( REGEX REPLACE "/" "\\\\" BASE_DIR "${CMAKE_SOURCE_DIR}" )
     add_custom_target( vk_dispatch_table_helper
-        COMMAND IF NOT exist ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\build\\layers (mkdir ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\build\\layers)
-        COMMAND python ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\scripts\\vk-generate.py AllPlatforms dispatch-table-ops layer > ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\build\\layers\\vk_dispatch_table_helper.h
+        COMMAND IF NOT exist ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\build\\generated\\include (mkdir ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\build\\generated\\include)
+        COMMAND python ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\scripts\\lvl_genvk.py -registry ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\scripts\\vk.xml vk_dispatch_table_helper.h -o ${BASE_DIR}\\..\\Vulkan-LoaderAndValidationLayers\\build\\generated\\include
         )
 elseif( APPLE )
     set( BASE_DIR "${CMAKE_SOURCE_DIR}" )
     add_custom_target( vk_dispatch_table_helper
-        COMMAND mkdir -p ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers
-        COMMAND python ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/scripts/vk-generate.py AllPlatforms dispatch-table-ops layer > ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h
+        COMMAND mkdir -p ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/generated/include
+        COMMAND python ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/scripts/lvl_genvk.py -registry ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/scripts/vk.xml vk_dispatch_table_helper.h -o ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/generated/include
         )
 else()
     set( BASE_DIR "${CMAKE_SOURCE_DIR}" )
     add_custom_target( vk_dispatch_table_helper
-        COMMAND mkdir -p ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers
-        COMMAND python ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/scripts/vk-generate.py AllPlatforms dispatch-table-ops layer > ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/layers/vk_dispatch_table_helper.h
+        COMMAND mkdir -p ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/generated/include
+        COMMAND python ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/scripts/lvl_genvk.py -registry ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/scripts/vk.xml vk_dispatch_table_helper.h -o ${BASE_DIR}/../Vulkan-LoaderAndValidationLayers/build/generated/include
         )
 
 	#Sanity check as we don't support compiling with more than one presentation/input path.

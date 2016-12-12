@@ -11,7 +11,7 @@ LOCAL_MODULE			:= VkLayer_glsl_shader
 LOCAL_C_INCLUDES		:= \
 							$(BASE_DIR)/Vulkan-Samples/external/include \
 							$(BASE_DIR)/Vulkan-LoaderAndValidationLayers/include \
-							$(BASE_DIR)/Vulkan-LoaderAndValidationLayers/build/layers \
+							$(BASE_DIR)/Vulkan-LoaderAndValidationLayers/build/generated/include \
 							$(BASE_DIR)/glslang \
 							$(VK_SDK_PATH)/Include \
 							$(VK_SDK_PATH)/Source/layers

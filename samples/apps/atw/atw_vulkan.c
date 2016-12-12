@@ -259,7 +259,7 @@ features. Some of the current limitations are:
   it is advised to use a uniform buffer, which is the preferred approach for
   exposing large amounts of data anyway.
 
-- Graphics programs currently consist of only of a vertex and fragment shader.
+- Graphics programs currently consist of only a vertex and fragment shader.
   This can be easily extended if there is a need for geometry shaders etc.
 
 
@@ -558,7 +558,7 @@ Platform headers / declarations
 
 #endif
 
-#if defined(OS_NEUTRAL_DISPLAY_SURFACE)
+#if defined( OS_NEUTRAL_DISPLAY_SURFACE )
 	#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_KHR_DISPLAY_EXTENSION_NAME
 	#define PFN_vkCreateSurfaceKHR					PFN_vkCreateDisplayPlaneSurfaceKHR
 	#define vkCreateSurfaceKHR						vkCreateDisplayPlaneSurfaceKHR
@@ -574,6 +574,7 @@ Common headers
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <math.h>
 #include <assert.h>
 #include <string.h>			// for memset
@@ -936,43 +937,51 @@ static const char * GetCPUVersion()
 	return "unknown";
 }
 
-typedef unsigned long long ksMicroseconds;
+typedef uint64_t ksNanoseconds;
 
-static ksMicroseconds GetTimeMicroseconds()
+static ksNanoseconds GetTimeNanoseconds()
 {
 #if defined( OS_WINDOWS )
-	static ksMicroseconds ticksPerSecond = 0;
-	static ksMicroseconds timeBase = 0;
+	static ksNanoseconds ticksPerSecond = 0;
+	static ksNanoseconds timeBase = 0;
 
 	if ( ticksPerSecond == 0 )
 	{
 		LARGE_INTEGER li;
 		QueryPerformanceFrequency( &li );
-		ticksPerSecond = (ksMicroseconds) li.QuadPart;
+		ticksPerSecond = (ksNanoseconds) li.QuadPart;
 		QueryPerformanceCounter( &li );
-		timeBase = (ksMicroseconds) li.LowPart + 0xFFFFFFFFULL * li.HighPart;
+		timeBase = (ksNanoseconds) li.LowPart + 0xFFFFFFFFULL * li.HighPart;
 	}
 
 	LARGE_INTEGER li;
 	QueryPerformanceCounter( &li );
-	ksMicroseconds counter = (ksMicroseconds) li.LowPart + 0xFFFFFFFFULL * li.HighPart;
-	return ( counter - timeBase ) * 1000ULL * 1000ULL / ticksPerSecond;
+	ksNanoseconds counter = (ksNanoseconds) li.LowPart + 0xFFFFFFFFULL * li.HighPart;
+	return ( counter - timeBase ) * 1000ULL * 1000ULL * 1000ULL / ticksPerSecond;
 #elif defined( OS_ANDROID )
+	static ksNanoseconds timeBase = 0;
+
 	struct timespec ts;
 	clock_gettime( CLOCK_MONOTONIC, &ts );
-	return (ksMicroseconds) ts.tv_sec * 1000ULL * 1000ULL + ts.tv_nsec / 1000ULL;
+
+	if ( timeBase == 0 )
+	{
+		timeBase = (ksNanoseconds) ts.tv_sec * 1000ULL * 1000ULL * 1000ULL + ts.tv_nsec;
+	}
+
+	return (ksNanoseconds) ts.tv_sec * 1000ULL * 1000ULL * 1000ULL + ts.tv_nsec - timeBase;
 #else
-	static ksMicroseconds timeBase = 0;
+	static ksNanoseconds timeBase = 0;
 
 	struct timeval tv;
 	gettimeofday( &tv, 0 );
 
 	if ( timeBase == 0 )
 	{
-		timeBase = (ksMicroseconds) tv.tv_sec * 1000ULL * 1000ULL;
+		timeBase = (ksNanoseconds) tv.tv_sec * 1000ULL * 1000ULL * 1000ULL + tv.tv_usec * 1000ULL;
 	}
 
-	return (ksMicroseconds) tv.tv_sec * 1000ULL * 1000ULL + tv.tv_usec - timeBase;
+	return (ksNanoseconds) tv.tv_sec * 1000ULL * 1000ULL * 1000ULL + tv.tv_usec * 1000ULL - timeBase;
 #endif
 }
 
@@ -1110,7 +1119,7 @@ ksSignal
 
 static void ksSignal_Create( ksSignal * signal, const bool autoReset );
 static void ksSignal_Destroy( ksSignal * signal );
-static bool ksSignal_Wait( ksSignal * signal, const ksMicroseconds timeOutMicroseconds );
+static bool ksSignal_Wait( ksSignal * signal, const ksNanoseconds timeOutNanoseconds );
 static void ksSignal_Raise( ksSignal * signal );
 static void ksSignal_Clear( ksSignal * signal );
 
@@ -1157,13 +1166,13 @@ static void ksSignal_Destroy( ksSignal * signal )
 
 // Waits for the object to enter the signalled state and returns true if this state is reached within the time-out period.
 // If 'autoReset' is true then the first thread that reaches the signalled state within the time-out period will clear the signalled state.
-// If 'timeOutMicroseconds' is SIGNAL_TIMEOUT_INFINITE then this will wait indefinitely until the signalled state is reached.
+// If 'timeOutNanoseconds' is SIGNAL_TIMEOUT_INFINITE then this will wait indefinitely until the signalled state is reached.
 // Returns true if the thread was released because the object entered the signalled state, returns false if the time-out is reached first.
-static bool ksSignal_Wait( ksSignal * signal, const ksMicroseconds timeOutMicroseconds )
+static bool ksSignal_Wait( ksSignal * signal, const ksNanoseconds timeOutNanoseconds )
 {
 #if defined( OS_WINDOWS )
-	DWORD result = WaitForSingleObject( signal->handle, ( timeOutMicroseconds == SIGNAL_TIMEOUT_INFINITE ) ? INFINITE : (DWORD)( timeOutMicroseconds / 1000 ) );
-	assert( result == WAIT_OBJECT_0 || ( timeOutMicroseconds != SIGNAL_TIMEOUT_INFINITE && result == WAIT_TIMEOUT ) );
+	DWORD result = WaitForSingleObject( signal->handle, ( timeOutNanoseconds == SIGNAL_TIMEOUT_INFINITE ) ? INFINITE : (DWORD)( timeOutNanoseconds / ( 1000 * 1000 ) ) );
+	assert( result == WAIT_OBJECT_0 || ( timeOutNanoseconds != SIGNAL_TIMEOUT_INFINITE && result == WAIT_TIMEOUT ) );
 	return ( result == WAIT_OBJECT_0 );
 #else
 	bool released = false;
@@ -1175,7 +1184,7 @@ static bool ksSignal_Wait( ksSignal * signal, const ksMicroseconds timeOutMicros
 	else
 	{
 		signal->waitCount++;
-		if ( timeOutMicroseconds == SIGNAL_TIMEOUT_INFINITE )
+		if ( timeOutNanoseconds == SIGNAL_TIMEOUT_INFINITE )
 		{
 			do
 			{
@@ -1183,13 +1192,13 @@ static bool ksSignal_Wait( ksSignal * signal, const ksMicroseconds timeOutMicros
 				// Must re-check condition because pthread_cond_wait may spuriously wake up.
 			} while ( signal->signaled == false );
 		}
-		else if ( timeOutMicroseconds > 0 )
+		else if ( timeOutNanoseconds > 0 )
 		{
 			struct timeval tp;
 			gettimeofday( &tp, NULL );
 			struct timespec ts;
-			ts.tv_sec = (time_t)( tp.tv_sec + timeOutMicroseconds / 1000000 );
-			ts.tv_nsec = (long)( ( tp.tv_usec + ( timeOutMicroseconds % 1000000 ) ) * 1000 );
+			ts.tv_sec = (time_t)( tp.tv_sec + timeOutNanoseconds / ( 1000 * 1000 * 1000 ) );
+			ts.tv_nsec = (long)( tp.tv_usec + ( timeOutNanoseconds % ( 1000 * 1000 * 1000 ) ) );
 			do
 			{
 				if ( pthread_cond_timedwait( &signal->cond, &signal->mutex, &ts ) == ETIMEDOUT )
@@ -1664,18 +1673,18 @@ ksFrameLog
 static void ksFrameLog_Open( const char * fileName, const int frameCount );
 static void ksFrameLog_Write( const char * fileName, const int lineNumber, const char * function );
 static void ksFrameLog_BeginFrame();
-static void ksFrameLog_EndFrame( const float cpuTimeMilliseconds, const float gpuTimeMilliseconds, const int gpuTimeFramesDelayed );
+static void ksFrameLog_EndFrame( const ksNanoseconds cpuTimeNanoseconds, const ksNanoseconds gpuTimeNanoseconds, const int gpuTimeFramesDelayed );
 
 ================================================================================================================================
 */
 
 typedef struct
 {
-	FILE *		fp;
-	float *		frameCpuTimes;
-	float *		frameGpuTimes;
-	int			frameCount;
-	int			frame;
+	FILE *			fp;
+	ksNanoseconds *	frameCpuTimes;
+	ksNanoseconds *	frameGpuTimes;
+	int				frameCount;
+	int				frame;
 } ksFrameLog;
 
 __thread ksFrameLog * threadFrameLog;
@@ -1705,8 +1714,8 @@ static void ksFrameLog_Open( const char * fileName, const int frameCount )
 		else
 		{
 			Print( "Opened frame log %s for %d frames.\n", fileName, frameCount );
-			l->frameCpuTimes = (float *) malloc( frameCount * sizeof( l->frameCpuTimes[0] ) );
-			l->frameGpuTimes = (float *) malloc( frameCount * sizeof( l->frameGpuTimes[0] ) );
+			l->frameCpuTimes = (ksNanoseconds *) malloc( frameCount * sizeof( l->frameCpuTimes[0] ) );
+			l->frameGpuTimes = (ksNanoseconds *) malloc( frameCount * sizeof( l->frameGpuTimes[0] ) );
 			memset( l->frameCpuTimes, 0, frameCount * sizeof( l->frameCpuTimes[0] ) );
 			memset( l->frameGpuTimes, 0, frameCount * sizeof( l->frameGpuTimes[0] ) );
 			l->frameCount = frameCount;
@@ -1741,21 +1750,21 @@ static void ksFrameLog_BeginFrame()
 	}
 }
 
-static void ksFrameLog_EndFrame( const float cpuTimeMilliseconds, const float gpuTimeMilliseconds, const int gpuTimeFramesDelayed )
+static void ksFrameLog_EndFrame( const ksNanoseconds cpuTimeNanoseconds, const ksNanoseconds gpuTimeNanoseconds, const int gpuTimeFramesDelayed )
 {
 	ksFrameLog * l = ksFrameLog_Get();
 	if ( l != NULL && l->fp != NULL )
 	{
 		if ( l->frame < l->frameCount )
 		{
-			l->frameCpuTimes[l->frame] = cpuTimeMilliseconds;
+			l->frameCpuTimes[l->frame] = cpuTimeNanoseconds;
 #if defined( _DEBUG )
 			fprintf( l->fp, "================ END FRAME %d ================\r\n", l->frame );
 #endif
 		}
 		if ( l->frame >= gpuTimeFramesDelayed && l->frame < l->frameCount + gpuTimeFramesDelayed )
 		{
-			l->frameGpuTimes[l->frame - gpuTimeFramesDelayed] = gpuTimeMilliseconds;
+			l->frameGpuTimes[l->frame - gpuTimeFramesDelayed] = gpuTimeNanoseconds;
 		}
 
 		l->frame++;
@@ -1764,7 +1773,7 @@ static void ksFrameLog_EndFrame( const float cpuTimeMilliseconds, const float gp
 		{
 			for ( int i = 0; i < l->frameCount; i++ )
 			{
-				fprintf( l->fp, "frame %d: CPU = %1.1f ms, GPU = %1.1f ms\r\n", i, l->frameCpuTimes[i], l->frameGpuTimes[i] );
+				fprintf( l->fp, "frame %d: CPU = %1.1f ms, GPU = %1.1f ms\r\n", i, l->frameCpuTimes[i] * 1e-6f, l->frameGpuTimes[i] * 1e-6f );
 			}
 
 			Print( "Closing frame log file (%d frames).\n", l->frameCount );
@@ -1817,10 +1826,10 @@ static void ksMatrix4x4f_CreateTranslation( ksMatrix4x4f * result, const float x
 static void ksMatrix4x4f_CreateRotation( ksMatrix4x4f * result, const float degreesX, const float degreesY, const float degreesZ );
 static void ksMatrix4x4f_CreateScale( ksMatrix4x4f * result, const float x, const float y, const float z );
 static void ksMatrix4x4f_CreateTranslationRotationScale( ksMatrix4x4f * result, const ksVector3f * scale, const ksQuatf * rotation, const ksVector3f * translation );
-static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float minX, const float maxX,
-											float const minY, const float maxY, const float nearZ, const float farZ );
-static void ksMatrix4x4f_CreateProjectionFov( ksMatrix4x4f * result, const float fovDegreesX, const float fovDegreesY,
-											const float offsetX, const float offsetY, const float nearZ, const float farZ );
+static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float tanAngleLeft, const float tanAngleRight,
+											const float tanAngleUp, float const tanAngleDown, const float nearZ, const float farZ );
+static void ksMatrix4x4f_CreateProjectionFov( ksMatrix4x4f * result, const float fovDegreesLeft, const float fovDegreesRight,
+											const float fovDegreeUp, const float fovDegreesDown, const float nearZ, const float farZ );
 static void ksMatrix4x4f_CreateFromQuaternion( ksMatrix3x4f * result, const ksQuatf * src );
 static void ksMatrix4x4f_CreateOffsetScaleForBounds( ksMatrix4x4f * result, const ksMatrix4x4f * matrix, const ksVector3f * mins, const ksVector3f * maxs );
 
@@ -1846,6 +1855,8 @@ static bool ksMatrix4x4f_CullBounds( const ksMatrix4x4f * mvp, const ksVector3f 
 
 ================================================================================================================================
 */
+
+#define DEFAULT_NEAR_Z		0.015625f		// exact floating point representation
 
 // 2D integer vector
 typedef struct
@@ -2308,17 +2319,17 @@ static void ksMatrix4x4f_CreateTranslationRotationScale( ksMatrix4x4f * result, 
 //		"Tightening the Precision of Perspective Rendering"
 //		Paul Upchurch, Mathieu Desbrun
 //		Journal of Graphics Tools, Volume 16, Issue 1, 2012
-static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float minX, const float maxX,
-											float const minY, const float maxY, const float nearZ, const float farZ )
+static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float tanAngleLeft, const float tanAngleRight,
+											const float tanAngleUp, float const tanAngleDown, const float nearZ, const float farZ )
 {
-	const float width = maxX - minX;
+	const float tanAngleWidth = tanAngleRight - tanAngleLeft;
 
 #if defined( GRAPHICS_API_VULKAN )
-	// Set to minY - maxY for a clip space with positive Y down (Vulkan).
-	const float height = minY - maxY;
+	// Set to tanAngleDown - tanAngleUp for a clip space with positive Y down (Vulkan).
+	const float tanAngleHeight = tanAngleDown - tanAngleUp;
 #else
-	// Set to maxY - minY for a clip space with positive Y up (OpenGL / D3D).
-	const float height = maxY - minY;
+	// Set to tanAngleUp - tanAngleDown for a clip space with positive Y up (OpenGL / D3D).
+	const float tanAngleHeight = tanAngleUp - tanAngleDown;
 #endif
 
 #if defined( GRAPHICS_API_OPENGL )
@@ -2332,14 +2343,14 @@ static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float mi
 	if ( farZ <= nearZ )
 	{
 		// place the far plane at infinity
-		result->m[0][0] = 2 * nearZ / width;
+		result->m[0][0] = 2 / tanAngleWidth;
 		result->m[1][0] = 0;
-		result->m[2][0] = ( maxX + minX ) / width;
+		result->m[2][0] = ( tanAngleRight + tanAngleLeft ) / tanAngleWidth;
 		result->m[3][0] = 0;
 
 		result->m[0][1] = 0;
-		result->m[1][1] = 2 * nearZ / height;
-		result->m[2][1] = ( maxY + minY ) / height;
+		result->m[1][1] = 2 / tanAngleHeight;
+		result->m[2][1] = ( tanAngleUp + tanAngleDown ) / tanAngleHeight;
 		result->m[3][1] = 0;
 
 		result->m[0][2] = 0;
@@ -2355,14 +2366,14 @@ static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float mi
 	else
 	{
 		// normal projection
-		result->m[0][0] = 2 * nearZ / width;
+		result->m[0][0] = 2 / tanAngleWidth;
 		result->m[1][0] = 0;
-		result->m[2][0] = ( maxX + minX ) / width;
+		result->m[2][0] = ( tanAngleRight + tanAngleLeft ) / tanAngleWidth;
 		result->m[3][0] = 0;
 
 		result->m[0][1] = 0;
-		result->m[1][1] = 2 * nearZ / height;
-		result->m[2][1] = ( maxY + minY ) / height;
+		result->m[1][1] = 2 / tanAngleHeight;
+		result->m[2][1] = ( tanAngleUp + tanAngleDown ) / tanAngleHeight;
 		result->m[3][1] = 0;
 
 		result->m[0][2] = 0;
@@ -2378,19 +2389,16 @@ static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float mi
 }
 
 // Creates a projection matrix based on the specified FOV.
-static void ksMatrix4x4f_CreateProjectionFov( ksMatrix4x4f * result, const float fovDegreesX, const float fovDegreesY,
-												const float offsetX, const float offsetY, const float nearZ, const float farZ )
+static void ksMatrix4x4f_CreateProjectionFov( ksMatrix4x4f * result, const float fovDegreesLeft, const float fovDegreesRight,
+												const float fovDegreesUp, const float fovDegreesDown, const float nearZ, const float farZ )
 {
-	const float halfWidth = nearZ * tanf( fovDegreesX * ( 0.5f * MATH_PI / 180.0f ) );
-	const float halfHeight = nearZ * tanf( fovDegreesY * ( 0.5f * MATH_PI / 180.0f ) );
+	const float tanLeft = - tanf( fovDegreesLeft * ( MATH_PI / 180.0f ) );
+	const float tanRight = tanf( fovDegreesRight * ( MATH_PI / 180.0f ) );
 
-	const float minX = offsetX - halfWidth;
-	const float maxX = offsetX + halfWidth;
+	const float tanDown = - tanf( fovDegreesDown * ( MATH_PI / 180.0f ) );
+	const float tanUp = tanf( fovDegreesUp * ( MATH_PI / 180.0f ) );
 
-	const float minY = offsetY - halfHeight;
-	const float maxY = offsetY + halfHeight;
-
-	ksMatrix4x4f_CreateProjection( result, minX, maxX, minY, maxY, nearZ, farZ );
+	ksMatrix4x4f_CreateProjection( result, tanLeft, tanRight, tanUp, tanDown, nearZ, farZ );
 }
 
 // Creates a matrix that transforms the -1 to 1 cube to cover the given 'mins' and 'maxs' transformed with the given 'matrix'.
@@ -2904,6 +2912,12 @@ VkBool32 DebugReportCallback( VkDebugReportFlagsEXT msgFlags, VkDebugReportObjec
 	// This performance warning is valid but this is how the the secondary command buffer is used.
 	// [DS] "vkBeginCommandBuffer(): Secondary Command Buffers (00000039460DB2F8) may perform better if a valid framebuffer parameter is specified."
 	if ( MatchStrings( pMsg, "vkBeginCommandBuffer(): Secondary Command Buffers (00000039460DB2F8) may perform better if a valid framebuffer parameter is specified." ) )
+	{
+		return VK_FALSE;
+	}
+
+	// [DS] "Cannot get query results on queryPool 0x1b3 with index 4 which is in flight."
+	if ( MatchStrings( pMsg, "Cannot get query results on queryPool 0x1b3 with index 4 which is in flight." ) )
 	{
 		return VK_FALSE;
 	}
@@ -3422,8 +3436,8 @@ static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instanc
 		Print( "Device Name          : %s\n", physicalDeviceProperties.deviceName );
 		Print( "Device Type          : %s\n",	( ( physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ) ? "integrated GPU" :
 					( ( physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ) ? "discrete GPU" :
-					  ( ( physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU ) ? "virtual GPU" :
-						( ( physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU ) ? "CPU" : "unknown" ) ) ) ) );
+					( ( physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU ) ? "virtual GPU" :
+					( ( physicalDeviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU ) ? "CPU" : "unknown" ) ) ) ) );
 		Print( "Vendor ID            : 0x%04X\n", physicalDeviceProperties.vendorID );		// http://pcidatabase.com
 		Print( "Device ID            : 0x%04X\n", physicalDeviceProperties.deviceID );
 		Print( "Driver Version       : %d.%d.%d\n", driverMajor, driverMinor, driverPatch );
@@ -4062,7 +4076,7 @@ ksGpuSwapchain
 static bool ksGpuSwapchain_Create( ksGpuContext * context, ksGpuSwapchain * swapchain, const VkSurfaceKHR surface,
 								const ksGpuSurfaceColorFormat colorFormat, const int width, const int height, const int swapInterval );
 static void ksGpuSwapchain_Destroy( ksGpuContext * context, ksGpuSwapchain * swapchain );
-static ksMicroseconds ksGpuSwapchain_SwapBuffers( ksGpuContext * context, ksGpuSwapchain * swapchain );
+static ksNanoseconds ksGpuSwapchain_SwapBuffers( ksGpuContext * context, ksGpuSwapchain * swapchain );
 
 ================================================================================================================================
 */
@@ -4404,7 +4418,7 @@ static void ksGpuSwapchain_Destroy( ksGpuContext * context, ksGpuSwapchain * swa
 	memset( swapchain, 0, sizeof( ksGpuSwapchain ) );
 }
 
-static ksMicroseconds ksGpuSwapchain_SwapBuffers( ksGpuContext * context, ksGpuSwapchain * swapchain )
+static ksNanoseconds ksGpuSwapchain_SwapBuffers( ksGpuContext * context, ksGpuSwapchain * swapchain )
 {
 	ksGpuDevice * device = context->device;
 
@@ -4430,7 +4444,7 @@ static ksMicroseconds ksGpuSwapchain_SwapBuffers( ksGpuContext * context, ksGpuS
 	// There should be no need to handle VK_SUBOPTIMAL_WSI and VK_ERROR_OUT_OF_DATE_WSI because the window size is fixed.
 	VK( device->vkQueuePresentKHR( swapchain->presentQueue, &presentInfo ) );
 
-	const ksMicroseconds swapTime = GetTimeMicroseconds();
+	const ksNanoseconds swapTime = GetTimeNanoseconds();
 
 	//
 	// Fetch the next image from the swapchain.
@@ -4635,8 +4649,8 @@ static void ksGpuWindow_Exit( ksGpuWindow * window );
 static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window );
 static void ksGpuWindow_SwapInterval( ksGpuWindow * window, const int swapInterval );
 static void ksGpuWindow_SwapBuffers( ksGpuWindow * window );
-static ksMicroseconds ksGpuWindow_GetNextSwapTimeMicroseconds( ksGpuWindow * window );
-static ksMicroseconds ksGpuWindow_GetFrameTimeMicroseconds( ksGpuWindow * window );
+static ksNanoseconds ksGpuWindow_GetNextSwapTimeNanoseconds( ksGpuWindow * window );
+static ksNanoseconds ksGpuWindow_GetFrameTimeNanoseconds( ksGpuWindow * window );
 
 static bool ksGpuWindowInput_ConsumeKeyboardKey( ksGpuWindowInput * input, const ksKeyboardKey key );
 static bool ksGpuWindowInput_ConsumeMouseButton( ksGpuWindowInput * input, const ksMouseButton button );
@@ -4676,7 +4690,7 @@ typedef struct
 	bool					windowActive;
 	bool					windowExit;
 	ksGpuWindowInput		input;
-	ksMicroseconds			lastSwapTime;
+	ksNanoseconds			lastSwapTime;
 
 	// The swapchain and depth buffer could be stored on the context like OpenGL but this makes more sense.
 	VkSurfaceKHR			surface;
@@ -4916,7 +4930,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	window->windowActive = false;
 	window->windowExit = false;
 	window->windowActiveState = false;
-	window->lastSwapTime = GetTimeMicroseconds();
+	window->lastSwapTime = GetTimeNanoseconds();
 
 	const LPCTSTR displayDevice = NULL;
 
@@ -5218,7 +5232,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	window->windowFullscreen = fullscreen;
 	window->windowActive = false;
 	window->windowExit = false;
-	window->lastSwapTime = GetTimeMicroseconds();
+	window->lastSwapTime = GetTimeNanoseconds();
 	window->uiView = myUIView;
 	window->uiWindow = myUIWindow;
 
@@ -5409,7 +5423,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	window->windowFullscreen = fullscreen;
 	window->windowActive = false;
 	window->windowExit = false;
-	window->lastSwapTime = GetTimeMicroseconds();
+	window->lastSwapTime = GetTimeNanoseconds();
 
 	// Get a list of all available displays.
 	CGDirectDisplayID displays[32];
@@ -6037,7 +6051,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	window->windowFullscreen = fullscreen;
 	window->windowActive = false;
 	window->windowExit = false;
-	window->lastSwapTime = GetTimeMicroseconds();
+	window->lastSwapTime = GetTimeNanoseconds();
 
 	const char * displayName = NULL;
 	window->xDisplay = XOpenDisplay( displayName );
@@ -6497,7 +6511,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	window->windowFullscreen = fullscreen;
 	window->windowActive = false;
 	window->windowExit = false;
-	window->lastSwapTime = GetTimeMicroseconds();
+	window->lastSwapTime = GetTimeNanoseconds();
 
 	const char * displayName = NULL;
 	int screen_number = 0;
@@ -6799,7 +6813,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	window->windowFullscreen = fullscreen;
 	window->windowActive = true;
 	window->windowExit = false;
-	window->lastSwapTime = GetTimeMicroseconds();
+	window->lastSwapTime = GetTimeNanoseconds();
 
 	VkSurfaceKHR surface;
 	ksGpuDevice_Create( &window->device, instance, GPU_DEVICE_CREATE_PHYSICAL_DEVICE, queueInfo, VK_NULL_HANDLE );
@@ -7105,7 +7119,7 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	window->windowFullscreen = true;
 	window->windowActive = false;
 	window->windowExit = false;
-	window->lastSwapTime = GetTimeMicroseconds();
+	window->lastSwapTime = GetTimeNanoseconds();
 
 	window->app = global_app;
 	window->nativeWindow = NULL;
@@ -7231,34 +7245,34 @@ static void ksGpuWindow_SwapInterval( ksGpuWindow * window, const int swapInterv
 
 static void ksGpuWindow_SwapBuffers( ksGpuWindow * window )
 {
-	ksMicroseconds newTimeMicroseconds = ksGpuSwapchain_SwapBuffers( &window->context, &window->swapchain );
+	ksNanoseconds newTimeNanoseconds = ksGpuSwapchain_SwapBuffers( &window->context, &window->swapchain );
 
 	// Even with smoothing, this is not particularly accurate.
-	const float frameTimeMicroseconds = 1000.0f * 1000.0f / window->windowRefreshRate;
-	const float deltaTimeMicroseconds = (float)newTimeMicroseconds - window->lastSwapTime - frameTimeMicroseconds;
-	if ( fabs( deltaTimeMicroseconds ) < frameTimeMicroseconds * 0.75f )
+	const float frameTimeNanoseconds = 1000.0f * 1000.0f * 1000.0f / window->windowRefreshRate;
+	const float deltaTimeNanoseconds = (float)newTimeNanoseconds - window->lastSwapTime - frameTimeNanoseconds;
+	if ( fabs( deltaTimeNanoseconds ) < frameTimeNanoseconds * 0.75f )
 	{
-		newTimeMicroseconds = (ksMicroseconds)( window->lastSwapTime + frameTimeMicroseconds + 0.025f * deltaTimeMicroseconds );
+		newTimeNanoseconds = (ksNanoseconds)( window->lastSwapTime + frameTimeNanoseconds + 0.025f * deltaTimeNanoseconds );
 	}
-	//const float smoothDeltaMicroseconds = (float)( newTimeMicroseconds - window->lastSwapTime );
-	//Print( "frame delta = %1.3f (error = %1.3f)\n", smoothDeltaMicroseconds * ( 1.0f / 1000.0f ),
-	//					( smoothDeltaMicroseconds - frameTimeMicroseconds ) * ( 1.0f / 1000.0f ) );
-	window->lastSwapTime = newTimeMicroseconds;
+	//const float smoothDeltaNanoseconds = (float)( newTimeNanoseconds - window->lastSwapTime );
+	//Print( "frame delta = %1.3f (error = %1.3f)\n", smoothDeltaNanoseconds * 1e-6f,
+	//					( smoothDeltaNanoseconds - frameTimeNanoseconds ) * 1e-6f );
+	window->lastSwapTime = newTimeNanoseconds;
 }
 
-static ksMicroseconds ksGpuWindow_GetNextSwapTimeMicroseconds( ksGpuWindow * window )
+static ksNanoseconds ksGpuWindow_GetNextSwapTimeNanoseconds( ksGpuWindow * window )
 {
-	const float frameTimeMicroseconds = 1000.0f * 1000.0f / window->windowRefreshRate;
-	return window->lastSwapTime + (ksMicroseconds)( frameTimeMicroseconds );
+	const float frameTimeNanoseconds = 1000.0f * 1000.0f * 1000.0f / window->windowRefreshRate;
+	return window->lastSwapTime + (ksNanoseconds)( frameTimeNanoseconds );
 }
 
-static ksMicroseconds ksGpuWindow_GetFrameTimeMicroseconds( ksGpuWindow * window )
+static ksNanoseconds ksGpuWindow_GetFrameTimeNanoseconds( ksGpuWindow * window )
 {
-	const float frameTimeMicroseconds = 1000.0f * 1000.0f / window->windowRefreshRate;
-	return (ksMicroseconds)( frameTimeMicroseconds );
+	const float frameTimeNanoseconds = 1000.0f * 1000.0f * 1000.0f / window->windowRefreshRate;
+	return (ksNanoseconds)( frameTimeNanoseconds );
 }
 
-static void ksGpuWindow_DelayBeforeSwap( ksGpuWindow * window, const ksMicroseconds delay )
+static void ksGpuWindow_DelayBeforeSwap( ksGpuWindow * window, const ksNanoseconds delay )
 {
 	UNUSED_PARM( window );
 	UNUSED_PARM( delay );
@@ -7496,7 +7510,7 @@ static bool ksGpuTexture_Create2DArray( ksGpuContext * context, ksGpuTexture * t
 static bool ksGpuTexture_CreateDefault( ksGpuContext * context, ksGpuTexture * texture, const ksGpuTextureDefault defaultType,
 									const int width, const int height, const int depth,
 									const int layerCount, const int faceCount, const bool mipmaps, const bool border );
-static bool ksGpuTexture_CreateFromSwapChain( ksGpuContext * context, ksGpuTexture * texture, const ksGpuWindow * window, int index );
+static bool ksGpuTexture_CreateFromSwapchain( ksGpuContext * context, ksGpuTexture * texture, const ksGpuWindow * window, int index );
 static bool ksGpuTexture_CreateFromFile( ksGpuContext * context, ksGpuTexture * texture, const char * fileName );
 static void ksGpuTexture_Destroy( ksGpuContext * context, ksGpuTexture * texture );
 
@@ -8589,7 +8603,7 @@ static bool ksGpuTexture_CreateDefault( ksGpuContext * context, ksGpuTexture * t
 	return success;
 }
 
-static bool ksGpuTexture_CreateFromSwapChain( ksGpuContext * context, ksGpuTexture * texture, const ksGpuWindow * window, int index )
+static bool ksGpuTexture_CreateFromSwapchain( ksGpuContext * context, ksGpuTexture * texture, const ksGpuWindow * window, int index )
 {
 	assert( index >= 0 && index < (int)window->swapchain.imageCount );
 
@@ -9549,7 +9563,7 @@ static bool ksGpuFramebuffer_CreateFromSwapchain( ksGpuWindow * window, ksGpuFra
 		assert( renderPass->colorFormat == window->colorFormat );
 		assert( renderPass->depthFormat == window->depthFormat );
 
-		ksGpuTexture_CreateFromSwapChain( &window->context, &framebuffer->colorTextures[imageIndex], window, imageIndex );
+		ksGpuTexture_CreateFromSwapchain( &window->context, &framebuffer->colorTextures[imageIndex], window, imageIndex );
 
 		assert( window->windowWidth == framebuffer->colorTextures[imageIndex].width );
 		assert( window->windowHeight == framebuffer->colorTextures[imageIndex].height );
@@ -10768,7 +10782,7 @@ GPU timer.
 
 A timer is used to measure the amount of time it takes to complete GPU commands.
 For optimal performance a timer should only be created at load time, not at runtime.
-To avoid synchronization, ksGpuTimer_GetMilliseconds() reports the time from GPU_TIMER_FRAMES_DELAYED frames ago.
+To avoid synchronization, ksGpuTimer_GetNanoseconds() reports the time from GPU_TIMER_FRAMES_DELAYED frames ago.
 Timer queries are allowed to overlap and can be nested.
 Timer queries that are issued inside a render pass may not produce accurate times on tiling GPUs.
 
@@ -10776,7 +10790,7 @@ ksGpuTimer
 
 static void ksGpuTimer_Create( ksGpuContext * context, ksGpuTimer * timer );
 static void ksGpuTimer_Destroy( ksGpuContext * context, ksGpuTimer * timer );
-static float ksGpuTimer_GetMilliseconds( ksGpuTimer * timer );
+static ksNanoseconds ksGpuTimer_GetNanoseconds( ksGpuTimer * timer );
 
 ================================================================================================================================
 */
@@ -10786,7 +10800,7 @@ static float ksGpuTimer_GetMilliseconds( ksGpuTimer * timer );
 typedef struct
 {
 	VkBool32			supported;
-	float				period;
+	ksNanoseconds		period;
 	VkQueryPool			pool;
 	uint32_t			init;
 	uint32_t			index;
@@ -10798,12 +10812,12 @@ static void ksGpuTimer_Create( ksGpuContext * context, ksGpuTimer * timer )
 	memset( timer, 0, sizeof( ksGpuTimer ) );
 
 	timer->supported = context->device->queueFamilyProperties[context->queueFamilyIndex].timestampValidBits != 0;
-	if (!timer->supported)
+	if ( !timer->supported )
 	{
 		return;
 	}
 
-	timer->period = context->device->physicalDeviceProperties.limits.timestampPeriod;
+	timer->period = (ksNanoseconds) context->device->physicalDeviceProperties.limits.timestampPeriod;
 
 	const uint32_t queryCount = ( GPU_TIMER_FRAMES_DELAYED + 1 ) * 2;
 
@@ -10824,18 +10838,18 @@ static void ksGpuTimer_Create( ksGpuContext * context, ksGpuTimer * timer )
 
 static void ksGpuTimer_Destroy( ksGpuContext * context, ksGpuTimer * timer )
 {
-	if (timer->supported)
+	if ( timer->supported )
 	{
 		VC( context->device->vkDestroyQueryPool( context->device->device, timer->pool, VK_ALLOCATOR ) );
 	}
 
 }
 
-static float ksGpuTimer_GetMilliseconds( ksGpuTimer * timer )
+static ksNanoseconds ksGpuTimer_GetNanoseconds( ksGpuTimer * timer )
 {
-	if (timer->supported)
+	if ( timer->supported )
 	{
-		return ( timer->data[1] - timer->data[0] ) * timer->period * ( 1.0f / 1000.0f / 1000.0f );
+		return ( timer->data[1] - timer->data[0] ) * timer->period;
 	}
 	else
 	{
@@ -12001,7 +12015,7 @@ static void ksGpuCommandBuffer_BeginTimer( ksGpuCommandBuffer * commandBuffer, k
 {
 	ksGpuDevice * device = commandBuffer->context->device;
 
-	if (!timer->supported)
+	if ( !timer->supported )
 	{
 		return;
 	}
@@ -12012,7 +12026,6 @@ static void ksGpuCommandBuffer_BeginTimer( ksGpuCommandBuffer * commandBuffer, k
 		assert( commandBuffer->currentTimers[i] != timer );
 	}
 
-
 	VC( device->vkCmdWriteTimestamp( commandBuffer->cmdBuffers[commandBuffer->currentBuffer], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, timer->pool, timer->index * 2 + 0 ) );
 }
 
@@ -12020,7 +12033,7 @@ static void ksGpuCommandBuffer_EndTimer( ksGpuCommandBuffer * commandBuffer, ksG
 {
 	ksGpuDevice * device = commandBuffer->context->device;
 
-	if (!timer->supported)
+	if ( !timer->supported )
 	{
 		return;
 	}
@@ -13063,8 +13076,8 @@ static void ksTimeWarpBarGraphs_RenderGraphics( ksGpuCommandBuffer * commandBuff
 static void ksTimeWarpBarGraphs_UpdateCompute( ksGpuCommandBuffer * commandBuffer, ksTimeWarpBarGraphs * bargraphs );
 static void ksTimeWarpBarGraphs_RenderCompute( ksGpuCommandBuffer * commandBuffer, ksTimeWarpBarGraphs * bargraphs, ksGpuFramebuffer * framebuffer );
 
-static float ksTimeWarpBarGraphs_GetGpuMillisecondsGraphics( ksTimeWarpBarGraphs * bargraphs );
-static float ksTimeWarpBarGraphs_GetGpuMillisecondsCompute( ksTimeWarpBarGraphs * bargraphs );
+static ksNanoseconds ksTimeWarpBarGraphs_GetGpuNanosecondsGraphics( ksTimeWarpBarGraphs * bargraphs );
+static ksNanoseconds ksTimeWarpBarGraphs_GetGpuNanosecondsCompute( ksTimeWarpBarGraphs * bargraphs );
 
 ================================================================================================================================
 */
@@ -13106,7 +13119,7 @@ typedef struct
 {
 	ksBarGraphState	barGraphState;
 
-	ksBarGraph		eyeTexturesFrameRateGraph;
+	ksBarGraph		applicationFrameRateGraph;
 	ksBarGraph		timeWarpFrameRateGraph;
 	ksBarGraph		frameCpuTimeBarGraph;
 	ksBarGraph		frameGpuTimeBarGraph;
@@ -13128,7 +13141,7 @@ typedef struct
 
 enum
 {
-	PROFILE_TIME_EYE_TEXTURES,
+	PROFILE_TIME_APPLICATION,
 	PROFILE_TIME_TIME_WARP,
 	PROFILE_TIME_BAR_GRAPHS,
 	PROFILE_TIME_BLIT,
@@ -13156,7 +13169,7 @@ static void ksTimeWarpBarGraphs_Create( ksGpuContext * context, ksTimeWarpBarGra
 {
 	bargraphs->barGraphState = BAR_GRAPH_VISIBLE;
 
-	ksBarGraph_CreateVirtualRect( context, &bargraphs->eyeTexturesFrameRateGraph, renderPass, &eyeTextureFrameRateBarGraphRect, 64, 1, &colorDarkGrey );
+	ksBarGraph_CreateVirtualRect( context, &bargraphs->applicationFrameRateGraph, renderPass, &eyeTextureFrameRateBarGraphRect, 64, 1, &colorDarkGrey );
 	ksBarGraph_CreateVirtualRect( context, &bargraphs->timeWarpFrameRateGraph, renderPass, &timeWarpFrameRateBarGraphRect, 64, 1, &colorDarkGrey );
 	ksBarGraph_CreateVirtualRect( context, &bargraphs->frameCpuTimeBarGraph, renderPass, &frameCpuTimeBarGraphRect, 64, PROFILE_TIME_MAX, &colorDarkGrey );
 	ksBarGraph_CreateVirtualRect( context, &bargraphs->frameGpuTimeBarGraph, renderPass, &frameGpuTimeBarGraphRect, 64, PROFILE_TIME_MAX, &colorDarkGrey );
@@ -13186,7 +13199,7 @@ static void ksTimeWarpBarGraphs_Create( ksGpuContext * context, ksTimeWarpBarGra
 
 static void ksTimeWarpBarGraphs_Destroy( ksGpuContext * context, ksTimeWarpBarGraphs * bargraphs )
 {
-	ksBarGraph_Destroy( context, &bargraphs->eyeTexturesFrameRateGraph );
+	ksBarGraph_Destroy( context, &bargraphs->applicationFrameRateGraph );
 	ksBarGraph_Destroy( context, &bargraphs->timeWarpFrameRateGraph );
 	ksBarGraph_Destroy( context, &bargraphs->frameCpuTimeBarGraph );
 	ksBarGraph_Destroy( context, &bargraphs->frameGpuTimeBarGraph );
@@ -13210,7 +13223,7 @@ static void ksTimeWarpBarGraphs_UpdateGraphics( ksGpuCommandBuffer * commandBuff
 {
 	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
 	{
-		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
+		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->applicationFrameRateGraph );
 		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
 		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
 		ksBarGraph_UpdateGraphics( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
@@ -13235,7 +13248,7 @@ static void ksTimeWarpBarGraphs_RenderGraphics( ksGpuCommandBuffer * commandBuff
 	{
 		ksGpuCommandBuffer_BeginTimer( commandBuffer, &bargraphs->barGraphTimer );
 
-		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
+		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->applicationFrameRateGraph );
 		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
 		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
 		ksBarGraph_RenderGraphics( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
@@ -13260,7 +13273,7 @@ static void ksTimeWarpBarGraphs_UpdateCompute( ksGpuCommandBuffer * commandBuffe
 {
 	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
 	{
-		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph );
+		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->applicationFrameRateGraph );
 		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->timeWarpFrameRateGraph );
 		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->frameCpuTimeBarGraph );
 		ksBarGraph_UpdateCompute( commandBuffer, &bargraphs->frameGpuTimeBarGraph );
@@ -13285,7 +13298,7 @@ static void ksTimeWarpBarGraphs_RenderCompute( ksGpuCommandBuffer * commandBuffe
 	{
 		ksGpuCommandBuffer_BeginTimer( commandBuffer, &bargraphs->barGraphTimer );
 
-		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->eyeTexturesFrameRateGraph, framebuffer );
+		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->applicationFrameRateGraph, framebuffer );
 		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->timeWarpFrameRateGraph, framebuffer );
 		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->frameCpuTimeBarGraph, framebuffer );
 		ksBarGraph_RenderCompute( commandBuffer, &bargraphs->frameGpuTimeBarGraph, framebuffer );
@@ -13306,22 +13319,22 @@ static void ksTimeWarpBarGraphs_RenderCompute( ksGpuCommandBuffer * commandBuffe
 	}
 }
 
-static float ksTimeWarpBarGraphs_GetGpuMillisecondsGraphics( ksTimeWarpBarGraphs * bargraphs )
+static ksNanoseconds ksTimeWarpBarGraphs_GetGpuNanosecondsGraphics( ksTimeWarpBarGraphs * bargraphs )
 {
 	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
 	{
-		return ksGpuTimer_GetMilliseconds( &bargraphs->barGraphTimer );
+		return ksGpuTimer_GetNanoseconds( &bargraphs->barGraphTimer );
 	}
-	return 0.0f;
+	return 0;
 }
 
-static float ksTimeWarpBarGraphs_GetGpuMillisecondsCompute( ksTimeWarpBarGraphs * bargraphs )
+static ksNanoseconds ksTimeWarpBarGraphs_GetGpuNanosecondsCompute( ksTimeWarpBarGraphs * bargraphs )
 {
 	if ( bargraphs->barGraphState != BAR_GRAPH_HIDDEN )
 	{
-		return ksGpuTimer_GetMilliseconds( &bargraphs->barGraphTimer );
+		return ksGpuTimer_GetNanoseconds( &bargraphs->barGraphTimer );
 	}
-	return 0.0f;
+	return 0;
 }
 
 /*
@@ -13405,7 +13418,7 @@ static const ksBodyInfo * GetDefaultBodyInfo()
 
 static bool hmd_headRotationDisabled = false;
 
-static void GetHmdViewMatrixForTime( ksMatrix4x4f * viewMatrix, const ksMicroseconds time )
+static void GetHmdViewMatrixForTime( ksMatrix4x4f * viewMatrix, const ksNanoseconds time )
 {
 	if ( hmd_headRotationDisabled )
 	{
@@ -13413,7 +13426,8 @@ static void GetHmdViewMatrixForTime( ksMatrix4x4f * viewMatrix, const ksMicrosec
 		return;
 	}
 
-	const float offset = time * ( MATH_PI / 1000.0f / 1000.0f );
+	// FIXME: use double?
+	const float offset = time * ( MATH_PI / 1000.0f / 1000.0f / 1000.0f );
 	const float degrees = 10.0f;
 	const float degreesX = sinf( offset ) * degrees;
 	const float degreesY = cosf( offset ) * degrees;
@@ -13582,11 +13596,11 @@ static void ksTimeWarpGraphics_Create( ksGpuContext * context, ksTimeWarpGraphic
 static void ksTimeWarpGraphics_Destroy( ksGpuContext * context, ksTimeWarpGraphics * graphics );
 static void ksTimeWarpGraphics_Render( ksGpuCommandBuffer * commandBuffer, ksTimeWarpGraphics * graphics,
 									ksGpuFramebuffer * framebuffer, ksGpuRenderPass * renderPass,
-									const ksMicroseconds refreshStartTime, const ksMicroseconds refreshEndTime,
+									const ksNanoseconds refreshStartTime, const ksNanoseconds refreshEndTime,
 									const ksMatrix4x4f * projectionMatrix, const ksMatrix4x4f * viewMatrix,
 									ksGpuTexture * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
 									const bool correctChromaticAberration, ksTimeWarpBarGraphs * bargraphs,
-									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] );
+									ksNanoseconds cpuTimes[PROFILE_TIME_MAX], ksNanoseconds gpuTimes[PROFILE_TIME_MAX] );
 
 ================================================================================================================================
 */
@@ -14149,13 +14163,13 @@ static void ksTimeWarpGraphics_Destroy( ksGpuContext * context, ksTimeWarpGraphi
 
 static void ksTimeWarpGraphics_Render( ksGpuCommandBuffer * commandBuffer, ksTimeWarpGraphics * graphics,
 									ksGpuFramebuffer * framebuffer, ksGpuRenderPass * renderPass,
-									const ksMicroseconds refreshStartTime, const ksMicroseconds refreshEndTime,
+									const ksNanoseconds refreshStartTime, const ksNanoseconds refreshEndTime,
 									const ksMatrix4x4f * projectionMatrix, const ksMatrix4x4f * viewMatrix,
 									ksGpuTexture * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
 									const bool correctChromaticAberration, ksTimeWarpBarGraphs * bargraphs,
-									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] )
+									ksNanoseconds cpuTimes[PROFILE_TIME_MAX], ksNanoseconds gpuTimes[PROFILE_TIME_MAX] )
 {
-	const ksMicroseconds t0 = GetTimeMicroseconds();
+	const ksNanoseconds t0 = GetTimeNanoseconds();
 
 	ksMatrix4x4f displayRefreshStartViewMatrix;
 	ksMatrix4x4f displayRefreshEndViewMatrix;
@@ -14198,7 +14212,7 @@ static void ksTimeWarpGraphics_Render( ksGpuCommandBuffer * commandBuffer, ksTim
 		ksGpuCommandBuffer_SubmitGraphicsCommand( commandBuffer, &command );
 	}
 
-	const ksMicroseconds t1 = GetTimeMicroseconds();
+	const ksNanoseconds t1 = GetTimeNanoseconds();
 
 	ksTimeWarpBarGraphs_RenderGraphics( commandBuffer, bargraphs );
 
@@ -14210,17 +14224,17 @@ static void ksTimeWarpGraphics_Render( ksGpuCommandBuffer * commandBuffer, ksTim
 
 	ksGpuCommandBuffer_SubmitPrimary( commandBuffer );
 
-	const ksMicroseconds t2 = GetTimeMicroseconds();
+	const ksNanoseconds t2 = GetTimeNanoseconds();
 
-	cpuTimes[PROFILE_TIME_TIME_WARP] = ( t1 - t0 ) * ( 1.0f / 1000.0f );
-	cpuTimes[PROFILE_TIME_BAR_GRAPHS] = ( t2 - t1 ) * ( 1.0f / 1000.0f );
-	cpuTimes[PROFILE_TIME_BLIT] = 0.0f;
+	cpuTimes[PROFILE_TIME_TIME_WARP] = t1 - t0;
+	cpuTimes[PROFILE_TIME_BAR_GRAPHS] = t2 - t1;
+	cpuTimes[PROFILE_TIME_BLIT] = 0;
 
-	const float barGraphGpuTime = ksTimeWarpBarGraphs_GetGpuMillisecondsGraphics( bargraphs );
+	const ksNanoseconds barGraphGpuTime = ksTimeWarpBarGraphs_GetGpuNanosecondsGraphics( bargraphs );
 
-	gpuTimes[PROFILE_TIME_TIME_WARP] = ksGpuTimer_GetMilliseconds( &graphics->timeWarpGpuTime ) - barGraphGpuTime;
+	gpuTimes[PROFILE_TIME_TIME_WARP] = ksGpuTimer_GetNanoseconds( &graphics->timeWarpGpuTime ) - barGraphGpuTime;
 	gpuTimes[PROFILE_TIME_BAR_GRAPHS] = barGraphGpuTime;
-	gpuTimes[PROFILE_TIME_BLIT] = 0.0f;
+	gpuTimes[PROFILE_TIME_BLIT] = 0;
 }
 
 /*
@@ -14235,11 +14249,11 @@ static void ksTimeWarpCompute_Create( ksGpuContext * context, ksTimeWarpCompute 
 static void ksTimeWarpCompute_Destroy( ksGpuContext * context, ksTimeWarpCompute * compute );
 static void ksTimeWarpCompute_Render( ksGpuCommandBuffer * commandBuffer, ksTimeWarpCompute * compute,
 									ksGpuFramebuffer * framebuffer,
-									const ksMicroseconds refreshStartTime, const ksMicroseconds refreshEndTime,
+									const ksNanoseconds refreshStartTime, const ksNanoseconds refreshEndTime,
 									const ksMatrix4x4f * projectionMatrix, const ksMatrix4x4f * viewMatrix,
 									ksGpuTexture * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
 									const bool correctChromaticAberration, ksTimeWarpBarGraphs * bargraphs,
-									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] );
+									ksNanoseconds cpuTimes[PROFILE_TIME_MAX], ksNanoseconds gpuTimes[PROFILE_TIME_MAX] );
 
 ================================================================================================================================
 */
@@ -14811,13 +14825,13 @@ static void ksTimeWarpCompute_Destroy( ksGpuContext * context, ksTimeWarpCompute
 
 static void ksTimeWarpCompute_Render( ksGpuCommandBuffer * commandBuffer, ksTimeWarpCompute * compute,
 									ksGpuFramebuffer * framebuffer,
-									const ksMicroseconds refreshStartTime, const ksMicroseconds refreshEndTime,
+									const ksNanoseconds refreshStartTime, const ksNanoseconds refreshEndTime,
 									const ksMatrix4x4f * projectionMatrix, const ksMatrix4x4f * viewMatrix,
 									ksGpuTexture * const eyeTexture[NUM_EYES], const int eyeArrayLayer[NUM_EYES],
 									const bool correctChromaticAberration, ksTimeWarpBarGraphs * bargraphs,
-									float cpuTimes[PROFILE_TIME_MAX], float gpuTimes[PROFILE_TIME_MAX] )
+									ksNanoseconds cpuTimes[PROFILE_TIME_MAX], ksNanoseconds gpuTimes[PROFILE_TIME_MAX] )
 {
-	const ksMicroseconds t0 = GetTimeMicroseconds();
+	const ksNanoseconds t0 = GetTimeNanoseconds();
 
 	ksMatrix4x4f displayRefreshStartViewMatrix;
 	ksMatrix4x4f displayRefreshEndViewMatrix;
@@ -14927,7 +14941,7 @@ static void ksTimeWarpCompute_Render( ksGpuCommandBuffer * commandBuffer, ksTime
 		ksGpuCommandBuffer_SubmitComputeCommand( commandBuffer, &command );
 	}
 
-	const ksMicroseconds t1 = GetTimeMicroseconds();
+	const ksNanoseconds t1 = GetTimeNanoseconds();
 
 	ksTimeWarpBarGraphs_UpdateCompute( commandBuffer, bargraphs );
 	ksTimeWarpBarGraphs_RenderCompute( commandBuffer, bargraphs, framebuffer );
@@ -14939,17 +14953,17 @@ static void ksTimeWarpCompute_Render( ksGpuCommandBuffer * commandBuffer, ksTime
 
 	ksGpuCommandBuffer_SubmitPrimary( commandBuffer );
 
-	const ksMicroseconds t2 = GetTimeMicroseconds();
+	const ksNanoseconds t2 = GetTimeNanoseconds();
 
-	cpuTimes[PROFILE_TIME_TIME_WARP] = ( t1 - t0 ) * ( 1.0f / 1000.0f );
-	cpuTimes[PROFILE_TIME_BAR_GRAPHS] = ( t2 - t1 ) * ( 1.0f / 1000.0f );
-	cpuTimes[PROFILE_TIME_BLIT] = 0.0f;
+	cpuTimes[PROFILE_TIME_TIME_WARP] = t1 - t0;
+	cpuTimes[PROFILE_TIME_BAR_GRAPHS] = t2 - t1;
+	cpuTimes[PROFILE_TIME_BLIT] = 0;
 
-	const float barGraphGpuTime = ksTimeWarpBarGraphs_GetGpuMillisecondsCompute( bargraphs );
+	const ksNanoseconds barGraphGpuTime = ksTimeWarpBarGraphs_GetGpuNanosecondsCompute( bargraphs );
 
-	gpuTimes[PROFILE_TIME_TIME_WARP] = ksGpuTimer_GetMilliseconds( &compute->timeWarpGpuTime ) - barGraphGpuTime;
+	gpuTimes[PROFILE_TIME_TIME_WARP] = ksGpuTimer_GetNanoseconds( &compute->timeWarpGpuTime ) - barGraphGpuTime;
 	gpuTimes[PROFILE_TIME_BAR_GRAPHS] = barGraphGpuTime;
-	gpuTimes[PROFILE_TIME_BLIT] = 0.0f;
+	gpuTimes[PROFILE_TIME_BLIT] = 0;
 }
 
 /*
@@ -14979,11 +14993,11 @@ static void ksTimeWarp_SetDrawCallLevel( ksTimeWarp * timeWarp, const int level 
 static void ksTimeWarp_SetTriangleLevel( ksTimeWarp * timeWarp, const int level );
 static void ksTimeWarp_SetFragmentLevel( ksTimeWarp * timeWarp, const int level );
 
-static ksMicroseconds ksTimeWarp_GetPredictedDisplayTime( ksTimeWarp * timeWarp, const int frameIndex );
-static void ksTimeWarp_SubmitFrame( ksTimeWarp * timeWarp, const int frameIndex, const ksMicroseconds displayTime,
+static ksNanoseconds ksTimeWarp_GetPredictedDisplayTime( ksTimeWarp * timeWarp, const int frameIndex );
+static void ksTimeWarp_SubmitFrame( ksTimeWarp * timeWarp, const int frameIndex, const ksNanoseconds displayTime,
 									const ksMatrix4x4f * viewMatrix, const Matrix4x4_t * projectionMatrix,
 									ksGpuTexture * eyeTexture[NUM_EYES], ksGpuFence * eyeCompletionFence[NUM_EYES],
-									int eyeArrayLayer[NUM_EYES], float eyeTexturesCpuTime, float eyeTexturesGpuTime );
+									int eyeArrayLayer[NUM_EYES], ksNanoseconds eyeTexturesCpuTime, ksNanoseconds eyeTexturesGpuTime );
 static void ksTimeWarp_Render( ksTimeWarp * timeWarp );
 
 ================================================================================================================================
@@ -15002,28 +15016,28 @@ typedef struct
 {
 	int							index;
 	int							frameIndex;
-	ksMicroseconds				displayTime;
+	ksNanoseconds				displayTime;
 	ksMatrix4x4f				viewMatrix;
 	ksMatrix4x4f				projectionMatrix;
 	ksGpuTexture *				texture[NUM_EYES];
 	ksGpuFence *				completionFence[NUM_EYES];
 	int							arrayLayer[NUM_EYES];
-	float						cpuTime;
-	float						gpuTime;
+	ksNanoseconds				cpuTime;
+	ksNanoseconds				gpuTime;
 } ksEyeTextures;
 
 typedef struct
 {
 	long long					frameIndex;
-	ksMicroseconds				vsyncTime;
-	ksMicroseconds				frameTime;
+	ksNanoseconds				vsyncTime;
+	ksNanoseconds				frameTime;
 } ksFrameTiming;
 
 typedef struct
 {
 	ksGpuWindow *				window;
 	ksGpuTexture				defaultTexture;
-	ksMicroseconds				displayTime;
+	ksNanoseconds				displayTime;
 	ksMatrix4x4f				viewMatrix;
 	ksMatrix4x4f				projectionMatrix;
 	ksGpuTexture *				eyeTexture[NUM_EYES];
@@ -15040,11 +15054,11 @@ typedef struct
 	ksSignal					vsyncSignal;
 
 	float						refreshRate;
-	ksMicroseconds				frameCpuTime[AVERAGE_FRAME_RATE_FRAMES];
+	ksNanoseconds				frameCpuTime[AVERAGE_FRAME_RATE_FRAMES];
 	int							eyeTexturesFrames[AVERAGE_FRAME_RATE_FRAMES];
 	int							timeWarpFrames;
-	float						cpuTimes[PROFILE_TIME_MAX];
-	float						gpuTimes[PROFILE_TIME_MAX];
+	ksNanoseconds				cpuTimes[PROFILE_TIME_MAX];
+	ksNanoseconds				gpuTimes[PROFILE_TIME_MAX];
 
 	ksGpuRenderPass				renderPass;
 	ksGpuFramebuffer			framebuffer;
@@ -15070,15 +15084,15 @@ static void ksTimeWarp_Create( ksTimeWarp * timeWarp, ksGpuWindow * window )
 	timeWarp->newEyeTextures.index = 0;
 	timeWarp->newEyeTextures.displayTime = 0;
 	ksMatrix4x4f_CreateIdentity( &timeWarp->newEyeTextures.viewMatrix );
-	ksMatrix4x4f_CreateProjectionFov( &timeWarp->newEyeTextures.projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
+	ksMatrix4x4f_CreateProjectionFov( &timeWarp->newEyeTextures.projectionMatrix, 40.0f, 40.0f, 40.0f, 40.0f, 0.1f, 0.0f );
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
 		timeWarp->newEyeTextures.texture[eye] = &timeWarp->defaultTexture;
 		timeWarp->newEyeTextures.completionFence[eye] = NULL;
 		timeWarp->newEyeTextures.arrayLayer[eye] = eye;
 	}
-	timeWarp->newEyeTextures.cpuTime = 0.0f;
-	timeWarp->newEyeTextures.gpuTime = 0.0f;
+	timeWarp->newEyeTextures.cpuTime = 0;
+	timeWarp->newEyeTextures.gpuTime = 0;
 
 	timeWarp->displayTime = 0;
 	timeWarp->viewMatrix = timeWarp->newEyeTextures.viewMatrix;
@@ -15240,7 +15254,7 @@ static void ksTimeWarp_SetFragmentLevel( ksTimeWarp * timeWarp, const int level 
 	}
 }
 
-static ksMicroseconds ksTimeWarp_GetPredictedDisplayTime( ksTimeWarp * timeWarp, const int frameIndex )
+static ksNanoseconds ksTimeWarp_GetPredictedDisplayTime( ksTimeWarp * timeWarp, const int frameIndex )
 {
 	ksMutex_Lock( &timeWarp->frameTimingMutex, true );
 	const ksFrameTiming frameTiming = timeWarp->frameTiming;
@@ -15248,18 +15262,19 @@ static ksMicroseconds ksTimeWarp_GetPredictedDisplayTime( ksTimeWarp * timeWarp,
 
 	// The time warp thread is currently released by SwapBuffers shortly after a V-Sync.
 	// Where possible, the time warp thread then waits until a short time before the next V-Sync,
-	// giving it just enough time to warp the latest eye textures onto the display. The time warp
-	// thread then tries to pick up the latest completed eye textures and warps them onto the
-	// display. The main thread is released right after the V-Sync and can start working on new
-	// eye textures that will be displayed effectively 2 display refresh cycles in the future.
+	// giving it just enough time to warp the last completed application frame onto the display.
+	// The time warp thread then tries to pick up the latest completed application frame and warps
+	// the frame onto the display. The application thread is released right after the V-Sync
+	// and can start working on a new frame that will be displayed effectively 2 display refresh
+	// cycles in the future.
 
 	return frameTiming.vsyncTime + ( frameIndex - frameTiming.frameIndex ) * frameTiming.frameTime;
 }
 
-static void ksTimeWarp_SubmitFrame( ksTimeWarp * timeWarp, const int frameIndex, const ksMicroseconds displayTime,
+static void ksTimeWarp_SubmitFrame( ksTimeWarp * timeWarp, const int frameIndex, const ksNanoseconds displayTime,
 									const ksMatrix4x4f * viewMatrix, const ksMatrix4x4f * projectionMatrix,
 									ksGpuTexture * eyeTexture[NUM_EYES], ksGpuFence * eyeCompletionFence[NUM_EYES],
-									int eyeArrayLayer[NUM_EYES], float eyeTexturesCpuTime, float eyeTexturesGpuTime )
+									int eyeArrayLayer[NUM_EYES], ksNanoseconds eyeTexturesCpuTime, ksNanoseconds eyeTexturesGpuTime )
 {
 	ksEyeTextures newEyeTextures;
 	newEyeTextures.index = timeWarp->eyeTexturesPresentIndex++;
@@ -15288,8 +15303,8 @@ static void ksTimeWarp_SubmitFrame( ksTimeWarp * timeWarp, const int frameIndex,
 
 	ksFrameTiming newFrameTiming;
 	newFrameTiming.frameIndex = frameIndex;
-	newFrameTiming.vsyncTime = ksGpuWindow_GetNextSwapTimeMicroseconds( timeWarp->window );
-	newFrameTiming.frameTime = ksGpuWindow_GetFrameTimeMicroseconds( timeWarp->window );
+	newFrameTiming.vsyncTime = ksGpuWindow_GetNextSwapTimeNanoseconds( timeWarp->window );
+	newFrameTiming.frameTime = ksGpuWindow_GetFrameTimeNanoseconds( timeWarp->window );
 
 	ksMutex_Lock( &timeWarp->frameTimingMutex, true );
 	timeWarp->frameTiming = newFrameTiming;
@@ -15298,8 +15313,8 @@ static void ksTimeWarp_SubmitFrame( ksTimeWarp * timeWarp, const int frameIndex,
 
 static void ksTimeWarp_Render( ksTimeWarp * timeWarp )
 {
-	const ksMicroseconds nextSwapTime = ksGpuWindow_GetNextSwapTimeMicroseconds( timeWarp->window );
-	const ksMicroseconds frameTime = ksGpuWindow_GetFrameTimeMicroseconds( timeWarp->window );
+	const ksNanoseconds nextSwapTime = ksGpuWindow_GetNextSwapTimeNanoseconds( timeWarp->window );
+	const ksNanoseconds frameTime = ksGpuWindow_GetFrameTimeNanoseconds( timeWarp->window );
 
 	// Wait until close to the next V-Sync but still far enough away to allow the time warp to complete rendering.
 	ksGpuWindow_DelayBeforeSwap( timeWarp->window, frameTime / 2 );
@@ -15332,8 +15347,8 @@ static void ksTimeWarp_Render( ksTimeWarp * timeWarp )
 				timeWarp->eyeTexture[eye] = newEyeTextures.texture[eye];
 				timeWarp->eyeArrayLayer[eye] = newEyeTextures.arrayLayer[eye];
 			}
-			timeWarp->cpuTimes[PROFILE_TIME_EYE_TEXTURES] = newEyeTextures.cpuTime;
-			timeWarp->gpuTimes[PROFILE_TIME_EYE_TEXTURES] = newEyeTextures.gpuTime;
+			timeWarp->cpuTimes[PROFILE_TIME_APPLICATION] = newEyeTextures.cpuTime;
+			timeWarp->gpuTimes[PROFILE_TIME_APPLICATION] = newEyeTextures.gpuTime;
 			timeWarp->eyeTexturesFrames[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES] = 1;
 			ksSignal_Clear( &timeWarp->vsyncSignal );
 			ksSignal_Raise( &timeWarp->newEyeTexturesConsumed );
@@ -15344,8 +15359,8 @@ static void ksTimeWarp_Render( ksTimeWarp * timeWarp )
 	float timeWarpFrameRate = timeWarp->refreshRate;
 	float eyeTexturesFrameRate = timeWarp->refreshRate;
 	{
-		ksMicroseconds lastTime = timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES];
-		ksMicroseconds time = nextSwapTime;
+		ksNanoseconds lastTime = timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES];
+		ksNanoseconds time = nextSwapTime;
 		timeWarp->frameCpuTime[timeWarp->timeWarpFrames % AVERAGE_FRAME_RATE_FRAMES] = time;
 		timeWarp->timeWarpFrames++;
 		if ( timeWarp->timeWarpFrames > AVERAGE_FRAME_RATE_FRAMES )
@@ -15357,28 +15372,28 @@ static void ksTimeWarp_Render( ksTimeWarp * timeWarp )
 				eyeTexturesFrames += timeWarp->eyeTexturesFrames[i];
 			}
 
-			timeWarpFrameRate = timeWarpFrames * 1000.0f * 1000.0f / ( time - lastTime );
-			eyeTexturesFrameRate = eyeTexturesFrames * 1000.0f * 1000.0f / ( time - lastTime );
+			timeWarpFrameRate = timeWarpFrames * 1e9f / ( time - lastTime );
+			eyeTexturesFrameRate = eyeTexturesFrames * 1e9f / ( time - lastTime );
 		}
 	}
 
 	// Update the bar graphs if not paused.
 	if ( timeWarp->bargraphs.barGraphState == BAR_GRAPH_VISIBLE )
 	{
-		const ksVector4f * eyeTexturesFrameRateColor = ( eyeTexturesFrameRate > timeWarp->refreshRate - 0.5f ) ? &colorPurple : &colorRed;
+		const ksVector4f * applicationFrameRateColor = ( eyeTexturesFrameRate > timeWarp->refreshRate - 0.5f ) ? &colorPurple : &colorRed;
 		const ksVector4f * timeWarpFrameRateColor = ( timeWarpFrameRate > timeWarp->refreshRate - 0.5f ) ? &colorGreen : &colorRed;
 
-		ksBarGraph_AddBar( &timeWarp->bargraphs.eyeTexturesFrameRateGraph, 0, eyeTexturesFrameRate / timeWarp->refreshRate, eyeTexturesFrameRateColor, true );
+		ksBarGraph_AddBar( &timeWarp->bargraphs.applicationFrameRateGraph, 0, eyeTexturesFrameRate / timeWarp->refreshRate, applicationFrameRateColor, true );
 		ksBarGraph_AddBar( &timeWarp->bargraphs.timeWarpFrameRateGraph, 0, timeWarpFrameRate / timeWarp->refreshRate, timeWarpFrameRateColor, true );
 
 		for ( int i = 0; i < 2; i++ )
 		{
-			const float * times = ( i == 0 ) ? timeWarp->cpuTimes : timeWarp->gpuTimes;
+			const ksNanoseconds * times = ( i == 0 ) ? timeWarp->cpuTimes : timeWarp->gpuTimes;
 			float barHeights[PROFILE_TIME_MAX];
 			float totalBarHeight = 0.0f;
 			for ( int p = 0; p < PROFILE_TIME_MAX; p++ )
 			{
-				barHeights[p] = times[p] * timeWarp->refreshRate * ( 1.0f / 1000.0f );
+				barHeights[p] = times[p] * timeWarp->refreshRate * 1e-9f;
 				totalBarHeight += barHeights[p];
 			}
 
@@ -15405,8 +15420,8 @@ static void ksTimeWarp_Render( ksTimeWarp * timeWarp )
 	ksFrameLog_BeginFrame();
 
 	//assert( timeWarp->displayTime == nextSwapTime );
-	const ksMicroseconds refreshStartTime = nextSwapTime;
-	const ksMicroseconds refreshEndTime = refreshStartTime /* + display refresh time for an incremental display refresh */;
+	const ksNanoseconds refreshStartTime = nextSwapTime;
+	const ksNanoseconds refreshEndTime = refreshStartTime /* + display refresh time for an incremental display refresh */;
 
 	if ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS )
 	{
@@ -15425,14 +15440,12 @@ static void ksTimeWarp_Render( ksTimeWarp * timeWarp )
 								&timeWarp->bargraphs, timeWarp->cpuTimes, timeWarp->gpuTimes );
 	}
 
-	const int gpuTimeFramesDelayed = ( timeWarp->implementation == TIMEWARP_IMPLEMENTATION_GRAPHICS ) ? GPU_TIMER_FRAMES_DELAYED : 0;
-
 	ksFrameLog_EndFrame(	timeWarp->cpuTimes[PROFILE_TIME_TIME_WARP] +
-						timeWarp->cpuTimes[PROFILE_TIME_BAR_GRAPHS] +
-						timeWarp->cpuTimes[PROFILE_TIME_BLIT],
-						timeWarp->gpuTimes[PROFILE_TIME_TIME_WARP] +
-						timeWarp->gpuTimes[PROFILE_TIME_BAR_GRAPHS] +
-						timeWarp->gpuTimes[PROFILE_TIME_BLIT], gpuTimeFramesDelayed );
+							timeWarp->cpuTimes[PROFILE_TIME_BAR_GRAPHS] +
+							timeWarp->cpuTimes[PROFILE_TIME_BLIT],
+							timeWarp->gpuTimes[PROFILE_TIME_TIME_WARP] +
+							timeWarp->gpuTimes[PROFILE_TIME_BAR_GRAPHS] +
+							timeWarp->gpuTimes[PROFILE_TIME_BLIT], GPU_TIMER_FRAMES_DELAYED );
 
 	ksGpuWindow_SwapBuffers( timeWarp->window );
 
@@ -15445,8 +15458,8 @@ static void ksTimeWarp_Render( ksTimeWarp * timeWarp )
 ksViewState
 
 static void ksViewState_Init( ksViewState * viewState, const float interpupillaryDistance );
-static void ksViewState_HandleInput( ksViewState * viewState, ksGpuWindowInput * input, const ksMicroseconds time );
-static void ksViewState_HandleHmd( ksViewState * viewState, const ksMicroseconds time );
+static void ksViewState_HandleInput( ksViewState * viewState, ksGpuWindowInput * input, const ksNanoseconds time );
+static void ksViewState_HandleHmd( ksViewState * viewState, const ksNanoseconds time );
 
 ================================================================================================================================
 */
@@ -15517,7 +15530,7 @@ static void ksViewState_Init( ksViewState * viewState, const float interpupillar
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
 		ksMatrix4x4f_CreateIdentity( &viewState->viewMatrix[eye] );
-		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 60.0f, 0.0f, 0.0f, 0.01f, 0.0f );
+		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 30.0f, 30.0f, DEFAULT_NEAR_Z, 0.0f );
 
 		ksMatrix4x4f_Invert( &viewState->viewInverseMatrix[eye], &viewState->viewMatrix[eye] );
 		ksMatrix4x4f_Invert( &viewState->projectionInverseMatrix[eye], &viewState->projectionMatrix[eye] );
@@ -15526,7 +15539,7 @@ static void ksViewState_Init( ksViewState * viewState, const float interpupillar
 	ksViewState_DerivedData( viewState );
 }
 
-static void ksViewState_HandleInput( ksViewState * viewState, ksGpuWindowInput * input, const ksMicroseconds time )
+static void ksViewState_HandleInput( ksViewState * viewState, ksGpuWindowInput * input, const ksNanoseconds time )
 {
 	static const float TRANSLATION_UNITS_PER_TAP		= 0.005f;
 	static const float TRANSLATION_UNITS_DECAY			= 0.0025f;
@@ -15607,13 +15620,13 @@ static void ksViewState_HandleInput( ksViewState * viewState, ksGpuWindowInput *
 		ksMatrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
 
 		ksMatrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
-		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 60.0f, 0.0f, 0.0f, 0.01f, 0.0f );
+		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 30.0f, 30.0f, DEFAULT_NEAR_Z, 0.0f );
 	}
 
 	ksViewState_DerivedData( viewState );
 }
 
-static void ksViewState_HandleHmd( ksViewState * viewState, const ksMicroseconds time )
+static void ksViewState_HandleHmd( ksViewState * viewState, const ksNanoseconds time )
 {
 	GetHmdViewMatrixForTime( &viewState->hmdViewMatrix, time );
 
@@ -15625,7 +15638,7 @@ static void ksViewState_HandleHmd( ksViewState * viewState, const ksMicroseconds
 		ksMatrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
 
 		ksMatrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
-		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 90.0f, 72.0f, 0.0f, 0.0f, 0.01f, 0.0f );
+		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 36.0f, 36.0f, DEFAULT_NEAR_Z, 0.0f );
 	}
 
 	ksViewState_DerivedData( viewState );
@@ -15791,7 +15804,7 @@ ksPerfScene
 
 static void ksPerfScene_Create( ksGpuContext * context, ksPerfScene * scene, ksSceneSettings * settings, ksGpuRenderPass * renderPass );
 static void ksPerfScene_Destroy( ksGpuContext * context, ksPerfScene * scene );
-static void ksPerfScene_Simulate( ksPerfScene * scene, ksViewState * viewState, const ksMicroseconds time );
+static void ksPerfScene_Simulate( ksPerfScene * scene, ksViewState * viewState, const ksNanoseconds time );
 static void ksPerfScene_UpdateBuffers( ksGpuCommandBuffer * commandBuffer, ksPerfScene * scene, ksViewState * viewState, const int eye );
 static void ksPerfScene_Render( ksGpuCommandBuffer * commandBuffer, ksPerfScene * scene );
 
@@ -17017,7 +17030,7 @@ static void ksPerfScene_Destroy( ksGpuContext * context, ksPerfScene * scene )
 	scene->modelMatrix = NULL;
 }
 
-static void ksPerfScene_Simulate( ksPerfScene * scene, ksViewState * viewState, const ksMicroseconds time )
+static void ksPerfScene_Simulate( ksPerfScene * scene, ksViewState * viewState, const ksNanoseconds time )
 {
 	// Must recreate the scene if multi-view is enabled/disabled.
 	assert( scene->settings.useMultiView == scene->newSettings->useMultiView );
@@ -17027,7 +17040,8 @@ static void ksPerfScene_Simulate( ksPerfScene * scene, ksViewState * viewState, 
 
 	if ( !scene->settings.simulationPaused )
 	{
-		const float offset = time * ( MATH_PI / 1000.0f / 1000.0f );
+		// FIXME: use double?
+		const float offset = time * ( MATH_PI / 1000.0f / 1000.0f / 1000.0f );
 		scene->bigRotationX = 20.0f * offset;
 		scene->bigRotationY = 10.0f * offset;
 		scene->smallRotationX = -60.0f * offset;
@@ -17105,7 +17119,7 @@ ksGltfScene
 
 static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * scene, const char * fileName, ksGpuRenderPass * renderPass );
 static void ksGltfScene_Destroy( ksGpuContext * context, ksGltfScene * scene );
-static void ksGltfScene_Simulate( ksGltfScene * scene, ksViewState * viewState, ksGpuWindowInput * input, const ksMicroseconds time );
+static void ksGltfScene_Simulate( ksGltfScene * scene, ksViewState * viewState, ksGpuWindowInput * input, const ksNanoseconds time );
 static void ksGltfScene_UpdateBuffers( ksGpuCommandBuffer * commandBuffer, const ksGltfScene * scene, const ksViewState * viewState, const int eye );
 static void ksGltfScene_Render( ksGpuCommandBuffer * commandBuffer, const ksGltfScene * scene, const ksViewState * viewState, const int eye );
 
@@ -18211,7 +18225,7 @@ static void ksGltf_SortNodes( ksGltfNode * nodes, const int nodeCount )
 
 static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * scene, const char * fileName, ksGpuRenderPass * renderPass )
 {
-	const ksMicroseconds t0 = GetTimeMicroseconds();
+	const ksNanoseconds t0 = GetTimeNanoseconds();
 
 	memset( scene, 0, sizeof( ksGltfScene ) );
 
@@ -18233,7 +18247,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 		// glTF buffers
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * buffers = Json_GetMemberByName( rootNode, "buffers" );
 			scene->bufferCount = Json_GetMemberCount( buffers );
@@ -18251,15 +18265,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			ksGltf_CreateBufferNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load buffers\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load buffers\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
 		// glTF bufferViews
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * bufferViews = Json_GetMemberByName( rootNode, "bufferViews" );
 			scene->bufferViewCount = Json_GetMemberCount( bufferViews );
@@ -18279,15 +18293,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			ksGltf_CreateBufferViewNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load buffer views\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load buffer views\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
 		// glTF accessors
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * accessors = Json_GetMemberByName( rootNode, "accessors" );
 			scene->accessorCount = Json_GetMemberCount( accessors );
@@ -18340,15 +18354,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			ksGltf_CreateAccessorNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load accessors\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load accessors\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
 		// glTF images
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * images = Json_GetMemberByName( rootNode, "images" );
 			scene->imageCount = Json_GetMemberCount( images );
@@ -18363,15 +18377,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			ksGltf_CreateImageNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load images\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load images\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
 		// glTF samplers
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * samplers = Json_GetMemberByName( rootNode, "samplers" );
 			scene->samplerCount = Json_GetMemberCount( samplers );
@@ -18388,15 +18402,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			ksGltf_CreateSamplerNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load samplers\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load samplers\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
 		// glTF textures
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * textures = Json_GetMemberByName( rootNode, "textures" );
 			scene->textureCount = Json_GetMemberCount( textures );
@@ -18420,15 +18434,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			ksGltf_CreateTextureNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load textures\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load textures\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
 		// glTF shaders
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * shaders = Json_GetMemberByName( rootNode, "shaders" );
 			scene->shaderCount = Json_GetMemberCount( shaders );
@@ -18451,15 +18465,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			ksGltf_CreateShaderNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load shaders\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load shaders\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
 		// glTF programs
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * programs = Json_GetMemberByName( rootNode, "programs" );
 			scene->programCount = Json_GetMemberCount( programs );
@@ -18489,15 +18503,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			ksGltf_CreateProgramNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load programs\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load programs\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
 		// glTF techniques
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * techniques = Json_GetMemberByName( rootNode, "techniques" );
 			scene->techniqueCount = Json_GetMemberCount( techniques );
@@ -18749,15 +18763,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			ksGltf_CreateTechniqueNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load techniques\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load techniques\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
 		// glTF materials
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * materials = Json_GetMemberByName( rootNode, "materials" );
 			scene->materialCount = Json_GetMemberCount( materials );
@@ -18817,15 +18831,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			ksGltf_CreateMaterialNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load materials\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load materials\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
 		// glTF meshes
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * models = Json_GetMemberByName( rootNode, "meshes" );
 			scene->modelCount = Json_GetMemberCount( models );
@@ -18863,10 +18877,10 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 					assert( surface->material != NULL );
 
 					const ksGltfAccessor * positionAccessor		= ksGltf_GetAccessorByNameAndType( scene, positionAccessorName,		"VEC3",		GL_FLOAT );
-					const ksGltfAccessor * normalAccessor		= ksGltf_GetAccessorByNameAndType( scene, normalAccessorName,			"VEC3",		GL_FLOAT );
+					const ksGltfAccessor * normalAccessor		= ksGltf_GetAccessorByNameAndType( scene, normalAccessorName,		"VEC3",		GL_FLOAT );
 					const ksGltfAccessor * tangentAccessor		= ksGltf_GetAccessorByNameAndType( scene, tangentAccessorName,		"VEC3",		GL_FLOAT );
 					const ksGltfAccessor * binormalAccessor		= ksGltf_GetAccessorByNameAndType( scene, binormalAccessorName,		"VEC3",		GL_FLOAT );
-					const ksGltfAccessor * colorAccessor		= ksGltf_GetAccessorByNameAndType( scene, colorAccessorName,			"VEC4",		GL_FLOAT );
+					const ksGltfAccessor * colorAccessor		= ksGltf_GetAccessorByNameAndType( scene, colorAccessorName,		"VEC4",		GL_FLOAT );
 					const ksGltfAccessor * uv0Accessor			= ksGltf_GetAccessorByNameAndType( scene, uv0AccessorName,			"VEC2",		GL_FLOAT );
 					const ksGltfAccessor * uv1Accessor			= ksGltf_GetAccessorByNameAndType( scene, uv1AccessorName,			"VEC2",		GL_FLOAT );
 					const ksGltfAccessor * uv2Accessor			= ksGltf_GetAccessorByNameAndType( scene, uv2AccessorName,			"VEC2",		GL_FLOAT );
@@ -18912,10 +18926,10 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 					ksGpuVertexAttributeArrays_Alloc( &attribs.base, DefaultVertexAttributeLayout, positionAccessor->count, attribFlags );
 
 					if ( positionAccessor != NULL )		memcpy( attribs.position,		ksGltf_GetBufferData( positionAccessor ),		positionAccessor->count		* sizeof( attribs.position[0] ) );
-					if ( normalAccessor != NULL )		memcpy( attribs.normal,			ksGltf_GetBufferData( normalAccessor ),		normalAccessor->count		* sizeof( attribs.normal[0] ) );
+					if ( normalAccessor != NULL )		memcpy( attribs.normal,			ksGltf_GetBufferData( normalAccessor ),			normalAccessor->count		* sizeof( attribs.normal[0] ) );
 					if ( tangentAccessor != NULL )		memcpy( attribs.tangent,		ksGltf_GetBufferData( tangentAccessor ),		tangentAccessor->count		* sizeof( attribs.tangent[0] ) );
 					if ( binormalAccessor != NULL )		memcpy( attribs.binormal,		ksGltf_GetBufferData( binormalAccessor ),		binormalAccessor->count		* sizeof( attribs.binormal[0] ) );
-					if ( colorAccessor != NULL )		memcpy( attribs.color,			ksGltf_GetBufferData( colorAccessor ),		colorAccessor->count		* sizeof( attribs.color[0] ) );
+					if ( colorAccessor != NULL )		memcpy( attribs.color,			ksGltf_GetBufferData( colorAccessor ),			colorAccessor->count		* sizeof( attribs.color[0] ) );
 					if ( uv0Accessor != NULL )			memcpy( attribs.uv0,			ksGltf_GetBufferData( uv0Accessor ),			uv0Accessor->count			* sizeof( attribs.uv0[0] ) );
 					if ( uv1Accessor != NULL )			memcpy( attribs.uv1,			ksGltf_GetBufferData( uv1Accessor ),			uv1Accessor->count			* sizeof( attribs.uv1[0] ) );
 					if ( uv2Accessor != NULL )			memcpy( attribs.uv2,			ksGltf_GetBufferData( uv2Accessor ),			uv2Accessor->count			* sizeof( attribs.uv2[0] ) );
@@ -18941,15 +18955,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			ksGltf_CreateModelNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load models\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load models\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
 		// glTF animations
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * animations = Json_GetMemberByName( rootNode, "animations" );
 			scene->animationCount = Json_GetMemberCount( animations );
@@ -19062,15 +19076,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			ksGltf_CreateAnimationNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load animations\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load animations\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
 		// glTF skins
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * skins = Json_GetMemberByName( rootNode, "skins" );
 			scene->skinCount = Json_GetMemberCount( skins );
@@ -19111,15 +19125,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			ksGltf_CreateSkinNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load skins\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load skins\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
 		// glTF cameras
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * cameras = Json_GetMemberByName( rootNode, "cameras" );
 			scene->cameraCount = Json_GetMemberCount( cameras );
@@ -19158,15 +19172,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			ksGltf_CreateCameraNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load cameras\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load cameras\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
 		// glTF nodes
 		//
 		{
-			const ksMicroseconds startTime = GetTimeMicroseconds();
+			const ksNanoseconds startTime = GetTimeNanoseconds();
 
 			const Json_t * nodes = Json_GetMemberByName( rootNode, "nodes" );
 			scene->nodeCount = Json_GetMemberCount( nodes );
@@ -19222,8 +19236,8 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			ksGltf_CreateNodeNameHash( scene );
 			ksGltf_CreateNodeJointNameHash( scene );
 
-			const ksMicroseconds endTime = GetTimeMicroseconds();
-			Print( "%1.3f seconds to load nodes\n", ( endTime - startTime ) * 1e-6f );
+			const ksNanoseconds endTime = GetTimeNanoseconds();
+			Print( "%1.3f seconds to load nodes\n", ( endTime - startTime ) * 1e-9f );
 		}
 
 		//
@@ -19343,9 +19357,9 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 		ksGpuGraphicsPipeline_Create( context, &scene->unitCubePipeline, &pipelineParms );
 	}
 
-	const ksMicroseconds t1 = GetTimeMicroseconds();
+	const ksNanoseconds t1 = GetTimeNanoseconds();
 
-	Print( "%1.3f seconds to load %s\n", ( t1 - t0 ) * 1e-6f, fileName );
+	Print( "%1.3f seconds to load %s\n", ( t1 - t0 ) * 1e-9f, fileName );
 
 	return true;
 }
@@ -19529,7 +19543,7 @@ static void ksGltfScene_Destroy( ksGpuContext * context, ksGltfScene * scene )
 	memset( scene, 0, sizeof( ksGltfScene ) );
 }
 
-static void ksGltfScene_Simulate( ksGltfScene * scene, ksViewState * viewState, ksGpuWindowInput * input, const ksMicroseconds time )
+static void ksGltfScene_Simulate( ksGltfScene * scene, ksViewState * viewState, ksGpuWindowInput * input, const ksNanoseconds time )
 {
 	// Apply animations to the nodes in the hierarchy.
 	for ( int animIndex = 0; animIndex < scene->animationCount; animIndex++ )
@@ -19540,7 +19554,7 @@ static void ksGltfScene_Simulate( ksGltfScene * scene, ksViewState * viewState, 
 			continue;
 		}
 
-		const float timeInSeconds = fmodf( time * 1e-6f, animation->sampleTimes[animation->sampleCount - 1] - animation->sampleTimes[0] );
+		const float timeInSeconds = fmodf( time * 1e-9f, animation->sampleTimes[animation->sampleCount - 1] - animation->sampleTimes[0] );
 		int frame = 0;
 		for ( int sampleCount = animation->sampleCount; sampleCount > 1; sampleCount >>= 1 )
 		{
@@ -19626,9 +19640,10 @@ static void ksGltfScene_Simulate( ksGltfScene * scene, ksViewState * viewState, 
 
 			ksMatrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
 			ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye],
-											cameraNode->camera->perspective.fovDegreesX,
-											cameraNode->camera->perspective.fovDegreesY,
-											0.0f, 0.0f,
+											cameraNode->camera->perspective.fovDegreesX * 0.5f,
+											cameraNode->camera->perspective.fovDegreesX * 0.5f,
+											cameraNode->camera->perspective.fovDegreesY * 0.5f,
+											cameraNode->camera->perspective.fovDegreesY * 0.5f,
 											cameraNode->camera->perspective.nearZ, cameraNode->camera->perspective.farZ );
 
 			ksViewState_DerivedData( viewState );
@@ -20029,9 +20044,9 @@ typedef struct
 	bool						hideGraphs;
 	ksTimeWarpImplementation	timeWarpImplementation;
 	ksRenderMode				renderMode;
-	ksMicroseconds				startupTimeMicroseconds;
-	ksMicroseconds				noVSyncMicroseconds;
-	ksMicroseconds				noLogMicroseconds;
+	ksNanoseconds				startupTimeNanoseconds;
+	ksNanoseconds				noVSyncNanoseconds;
+	ksNanoseconds				noLogNanoseconds;
 } ksStartupSettings;
 
 static int ksStartupSettings_StringToLevel( const char * string, const int maxLevels )
@@ -20150,7 +20165,7 @@ void SceneThread_Render( ksSceneThreadData * threadData )
 			ksFrameLog_Open( OUTPUT_PATH "framelog_scene.txt", 10 );
 		}
 
-		const ksMicroseconds nextDisplayTime = ksTimeWarp_GetPredictedDisplayTime( threadData->timeWarp, frameIndex );
+		const ksNanoseconds nextDisplayTime = ksTimeWarp_GetPredictedDisplayTime( threadData->timeWarp, frameIndex );
 
 #if USE_GLTF == 1
 		ksGltfScene_Simulate( &scene, &viewState, threadData->input, nextDisplayTime );
@@ -20160,7 +20175,7 @@ void SceneThread_Render( ksSceneThreadData * threadData )
 
 		ksFrameLog_BeginFrame();
 
-		const ksMicroseconds t0 = GetTimeMicroseconds();
+		const ksNanoseconds t0 = GetTimeNanoseconds();
 
 		if ( threadData->sceneSettings->useMultiView )
 		{
@@ -20226,15 +20241,15 @@ void SceneThread_Render( ksSceneThreadData * threadData )
 			eyeCompletionFence[eye] = ksGpuCommandBuffer_SubmitPrimary( &eyeCommandBuffer[eye] );
 		}
 
-		const ksMicroseconds t1 = GetTimeMicroseconds();
+		const ksNanoseconds t1 = GetTimeNanoseconds();
 
-		const float eyeTexturesCpuTime = ( t1 - t0 ) * ( 1.0f / 1000.0f );
-		const float eyeTexturesGpuTime = ksGpuTimer_GetMilliseconds( &eyeTimer[0] ) + ksGpuTimer_GetMilliseconds( &eyeTimer[1] );
+		const ksNanoseconds eyeTexturesCpuTime = t1 - t0;
+		const ksNanoseconds eyeTexturesGpuTime = ksGpuTimer_GetNanoseconds( &eyeTimer[0] ) + ksGpuTimer_GetNanoseconds( &eyeTimer[1] );
 
 		ksFrameLog_EndFrame( eyeTexturesCpuTime, eyeTexturesGpuTime, GPU_TIMER_FRAMES_DELAYED );
 
 		ksMatrix4x4f projectionMatrix;
-		ksMatrix4x4f_CreateProjectionFov( &projectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
+		ksMatrix4x4f_CreateProjectionFov( &projectionMatrix, 40.0f, 40.0f, 40.0f, 40.0f, DEFAULT_NEAR_Z, 0.0f );
 
 		ksTimeWarp_SubmitFrame( threadData->timeWarp, frameIndex, nextDisplayTime,
 								&viewState.hmdViewMatrix, &projectionMatrix,
@@ -20310,7 +20325,7 @@ bool RenderAsyncTimeWarp( ksStartupSettings * startupSettings )
 						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 1], startupSettings->fullscreen ),
 						startupSettings->fullscreen );
 
-	int swapInterval = ( startupSettings->noVSyncMicroseconds <= 0 );
+	int swapInterval = ( startupSettings->noVSyncNanoseconds <= 0 );
 	ksGpuWindow_SwapInterval( &window, swapInterval );
 
 	ksTimeWarp timeWarp;
@@ -20343,16 +20358,16 @@ bool RenderAsyncTimeWarp( ksStartupSettings * startupSettings )
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
 
-	ksMicroseconds startupTimeMicroseconds = startupSettings->startupTimeMicroseconds;
-	ksMicroseconds noVSyncMicroseconds = startupSettings->noVSyncMicroseconds;
-	ksMicroseconds noLogMicroseconds = startupSettings->noLogMicroseconds;
+	ksNanoseconds startupTimeNanoseconds = startupSettings->startupTimeNanoseconds;
+	ksNanoseconds noVSyncNanoseconds = startupSettings->noVSyncNanoseconds;
+	ksNanoseconds noLogNanoseconds = startupSettings->noLogNanoseconds;
 
 	ksThread_SetName( "atw:timewarp" );
 
 	bool exit = false;
 	while ( !exit )
 	{
-		const ksMicroseconds time = GetTimeMicroseconds();
+		const ksNanoseconds time = GetTimeNanoseconds();
 
 		const ksGpuWindowEvent handleEvent = ksGpuWindow_ProcessEvents( &window );
 		if ( handleEvent == GPU_WINDOW_EVENT_ACTIVATED )
@@ -20380,18 +20395,18 @@ bool RenderAsyncTimeWarp( ksStartupSettings * startupSettings )
 			break;
 		}
 		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
-			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
+			( noVSyncNanoseconds > 0 && time - startupTimeNanoseconds > noVSyncNanoseconds ) )
 		{
 			swapInterval = !swapInterval;
 			ksGpuWindow_SwapInterval( &window, swapInterval );
-			noVSyncMicroseconds = 0;
+			noVSyncNanoseconds = 0;
 		}
 		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
-			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
+			( noLogNanoseconds > 0 && time - startupTimeNanoseconds > noLogNanoseconds ) )
 		{
 			ksFrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
 			sceneThreadData.openFrameLog = true;
-			noLogMicroseconds = 0;
+			noLogNanoseconds = 0;
 		}
 		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
 		{
@@ -20500,7 +20515,7 @@ bool RenderTimeWarp( ksStartupSettings * startupSettings )
 						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 1], startupSettings->fullscreen ),
 						startupSettings->fullscreen );
 
-	int swapInterval = ( startupSettings->noVSyncMicroseconds <= 0 );
+	int swapInterval = ( startupSettings->noVSyncNanoseconds <= 0 );
 	ksGpuWindow_SwapInterval( &window, swapInterval );
 
 	ksTimeWarp timeWarp;
@@ -20512,16 +20527,16 @@ bool RenderTimeWarp( ksStartupSettings * startupSettings )
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
 
-	ksMicroseconds startupTimeMicroseconds = startupSettings->startupTimeMicroseconds;
-	ksMicroseconds noVSyncMicroseconds = startupSettings->noVSyncMicroseconds;
-	ksMicroseconds noLogMicroseconds = startupSettings->noLogMicroseconds;
+	ksNanoseconds startupTimeNanoseconds = startupSettings->startupTimeNanoseconds;
+	ksNanoseconds noVSyncNanoseconds = startupSettings->noVSyncNanoseconds;
+	ksNanoseconds noLogNanoseconds = startupSettings->noLogNanoseconds;
 
 	ksThread_SetName( "atw:timewarp" );
 
 	bool exit = false;
 	while ( !exit )
 	{
-		const ksMicroseconds time = GetTimeMicroseconds();
+		const ksNanoseconds time = GetTimeNanoseconds();
 
 		const ksGpuWindowEvent handleEvent = ksGpuWindow_ProcessEvents( &window );
 		if ( handleEvent == GPU_WINDOW_EVENT_ACTIVATED )
@@ -20548,17 +20563,17 @@ bool RenderTimeWarp( ksStartupSettings * startupSettings )
 			break;
 		}
 		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
-			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
+			( noVSyncNanoseconds > 0 && time - startupTimeNanoseconds > noVSyncNanoseconds ) )
 		{
 			swapInterval = !swapInterval;
 			ksGpuWindow_SwapInterval( &window, swapInterval );
-			noVSyncMicroseconds = 0;
+			noVSyncNanoseconds = 0;
 		}
 		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
-			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
+			( noLogNanoseconds > 0 && time - startupTimeNanoseconds > noLogNanoseconds ) )
 		{
 			ksFrameLog_Open( OUTPUT_PATH "framelog_timewarp.txt", 10 );
-			noLogMicroseconds = 0;
+			noLogNanoseconds = 0;
 		}
 		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
 		{
@@ -20633,7 +20648,7 @@ bool RenderScene( ksStartupSettings * startupSettings )
 						WINDOW_RESOLUTION( displayResolutionTable[startupSettings->displayResolutionLevel * 2 + 1], startupSettings->fullscreen ),
 						startupSettings->fullscreen );
 
-	int swapInterval = ( startupSettings->noVSyncMicroseconds <= 0 );
+	int swapInterval = ( startupSettings->noVSyncNanoseconds <= 0 );
 	ksGpuWindow_SwapInterval( &window, swapInterval );
 
 	ksGpuRenderPass renderPass;
@@ -20680,16 +20695,16 @@ bool RenderScene( ksStartupSettings * startupSettings )
 
 	hmd_headRotationDisabled = startupSettings->headRotationDisabled;
 
-	ksMicroseconds startupTimeMicroseconds = startupSettings->startupTimeMicroseconds;
-	ksMicroseconds noVSyncMicroseconds = startupSettings->noVSyncMicroseconds;
-	ksMicroseconds noLogMicroseconds = startupSettings->noLogMicroseconds;
+	ksNanoseconds startupTimeNanoseconds = startupSettings->startupTimeNanoseconds;
+	ksNanoseconds noVSyncNanoseconds = startupSettings->noVSyncNanoseconds;
+	ksNanoseconds noLogNanoseconds = startupSettings->noLogNanoseconds;
 
 	ksThread_SetName( "atw:scene" );
 
 	bool exit = false;
 	while ( !exit )
 	{
-		const ksMicroseconds time = GetTimeMicroseconds();
+		const ksNanoseconds time = GetTimeNanoseconds();
 
 		const ksGpuWindowEvent handleEvent = ksGpuWindow_ProcessEvents( &window );
 		if ( handleEvent == GPU_WINDOW_EVENT_ACTIVATED )
@@ -20717,17 +20732,17 @@ bool RenderScene( ksStartupSettings * startupSettings )
 			break;
 		}
 		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_V ) ||
-			( noVSyncMicroseconds > 0 && time - startupTimeMicroseconds > noVSyncMicroseconds ) )
+			( noVSyncNanoseconds > 0 && time - startupTimeNanoseconds > noVSyncNanoseconds ) )
 		{
 			swapInterval = !swapInterval;
 			ksGpuWindow_SwapInterval( &window, swapInterval );
-			noVSyncMicroseconds = 0;
+			noVSyncNanoseconds = 0;
 		}
 		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_L ) ||
-			( noLogMicroseconds > 0 && time - startupTimeMicroseconds > noLogMicroseconds ) )
+			( noLogNanoseconds > 0 && time - startupTimeNanoseconds > noLogNanoseconds ) )
 		{
 			ksFrameLog_Open( OUTPUT_PATH "framelog_scene.txt", 10 );
-			noLogMicroseconds = 0;
+			noLogNanoseconds = 0;
 		}
 		if ( ksGpuWindowInput_ConsumeKeyboardKey( &window.input, KEY_H ) )
 		{
@@ -20774,7 +20789,7 @@ bool RenderScene( ksStartupSettings * startupSettings )
 
 		if ( window.windowActive )
 		{
-			const ksMicroseconds nextSwapTime = ksGpuWindow_GetNextSwapTimeMicroseconds( &window );
+			const ksNanoseconds nextSwapTime = ksGpuWindow_GetNextSwapTimeNanoseconds( &window );
 
 #if USE_GLTF == 1
 			ksGltfScene_Simulate( &scene, &viewState, &window.input, nextSwapTime );
@@ -20784,7 +20799,7 @@ bool RenderScene( ksStartupSettings * startupSettings )
 
 			ksFrameLog_BeginFrame();
 
-			const ksMicroseconds t0 = GetTimeMicroseconds();
+			const ksNanoseconds t0 = GetTimeNanoseconds();
 
 			const ksScreenRect screenRect = ksGpuFramebuffer_GetRect( &framebuffer );
 
@@ -20823,15 +20838,15 @@ bool RenderScene( ksStartupSettings * startupSettings )
 
 			ksGpuCommandBuffer_SubmitPrimary( &commandBuffer );
 
-			const ksMicroseconds t1 = GetTimeMicroseconds();
+			const ksNanoseconds t1 = GetTimeNanoseconds();
 
-			const float sceneCpuTimeMilliseconds = ( t1 - t0 ) * ( 1.0f / 1000.0f );
-			const float sceneGpuTimeMilliseconds = ksGpuTimer_GetMilliseconds( &timer );
+			const ksNanoseconds sceneCpuTime = t1 - t0;
+			const ksNanoseconds sceneGpuTime = ksGpuTimer_GetNanoseconds( &timer );
 
-			ksFrameLog_EndFrame( sceneCpuTimeMilliseconds, sceneGpuTimeMilliseconds, GPU_TIMER_FRAMES_DELAYED );
+			ksFrameLog_EndFrame( sceneCpuTime, sceneGpuTime, GPU_TIMER_FRAMES_DELAYED );
 
-			ksBarGraph_AddBar( &frameCpuTimeBarGraph, 0, sceneCpuTimeMilliseconds * window.windowRefreshRate * ( 1.0f / 1000.0f ), &colorGreen, true );
-			ksBarGraph_AddBar( &frameGpuTimeBarGraph, 0, sceneGpuTimeMilliseconds * window.windowRefreshRate * ( 1.0f / 1000.0f ), &colorGreen, true );
+			ksBarGraph_AddBar( &frameCpuTimeBarGraph, 0, sceneCpuTime * window.windowRefreshRate * 1e-9f, &colorGreen, true );
+			ksBarGraph_AddBar( &frameGpuTimeBarGraph, 0, sceneGpuTime * window.windowRefreshRate * 1e-9f, &colorGreen, true );
 
 			ksGpuWindow_SwapBuffers( &window );
 		}
@@ -20866,7 +20881,7 @@ static int StartApplication( int argc, char * argv[] )
 {
 	ksStartupSettings startupSettings;
 	memset( &startupSettings, 0, sizeof( startupSettings ) );
-	startupSettings.startupTimeMicroseconds = GetTimeMicroseconds();
+	startupSettings.startupTimeNanoseconds = GetTimeNanoseconds();
 	
 	for ( int i = 1; i < argc; i++ )
 	{
@@ -20874,7 +20889,7 @@ static int StartApplication( int argc, char * argv[] )
 		if ( arg[0] == '-' ) { arg++; }
 
 		if ( strcmp( arg, "f" ) == 0 && i + 0 < argc )		{ startupSettings.fullscreen = true; }
-		else if ( strcmp( arg, "v" ) == 0 && i + 1 < argc )	{ startupSettings.noVSyncMicroseconds = (ksMicroseconds)( atof( argv[++i] ) * 1000 * 1000 ); }
+		else if ( strcmp( arg, "v" ) == 0 && i + 1 < argc )	{ startupSettings.noVSyncNanoseconds = (ksNanoseconds)( atof( argv[++i] ) * 1000 * 1000 * 1000 ); }
 		else if ( strcmp( arg, "h" ) == 0 && i + 0 < argc )	{ startupSettings.headRotationDisabled = true; }
 		else if ( strcmp( arg, "p" ) == 0 && i + 0 < argc )	{ startupSettings.simulationPaused = true; }
 		else if ( strcmp( arg, "r" ) == 0 && i + 1 < argc )	{ startupSettings.displayResolutionLevel = ksStartupSettings_StringToLevel( argv[++i], MAX_DISPLAY_RESOLUTION_LEVELS ); }
@@ -20888,7 +20903,7 @@ static int StartApplication( int argc, char * argv[] )
 		else if ( strcmp( arg, "i" ) == 0 && i + 1 < argc )	{ startupSettings.timeWarpImplementation = (ksTimeWarpImplementation)ksStartupSettings_StringToTimeWarpImplementation( argv[++i] ); }
 		else if ( strcmp( arg, "z" ) == 0 && i + 1 < argc )	{ startupSettings.renderMode = ksStartupSettings_StringToRenderMode( argv[++i] ); }
 		else if ( strcmp( arg, "g" ) == 0 && i + 0 < argc )	{ startupSettings.hideGraphs = true; }
-		else if ( strcmp( arg, "l" ) == 0 && i + 1 < argc )	{ startupSettings.noLogMicroseconds = (ksMicroseconds)( atof( argv[++i] ) * 1000 * 1000 ); }
+		else if ( strcmp( arg, "l" ) == 0 && i + 1 < argc )	{ startupSettings.noLogNanoseconds = (ksNanoseconds)( atof( argv[++i] ) * 1000 * 1000 * 1000 ); }
 		else if ( strcmp( arg, "d" ) == 0 && i + 0 < argc )	{ DumpGLSL(); exit( 0 ); }
 		else
 		{
@@ -20926,7 +20941,7 @@ static int StartApplication( int argc, char * argv[] )
 	//startupSettings.timeWarpImplementation = TIMEWARP_IMPLEMENTATION_COMPUTE;
 
 	Print( "    fullscreen = %d\n",					startupSettings.fullscreen );
-	Print( "    noVSyncMicroseconds = %lld\n",		startupSettings.noVSyncMicroseconds );
+	Print( "    noVSyncNanoseconds = %lld\n",		startupSettings.noVSyncNanoseconds );
 	Print( "    headRotationDisabled = %d\n",		startupSettings.headRotationDisabled );
 	Print( "    simulationPaused = %d\n",			startupSettings.simulationPaused );
 	Print( "    displayResolutionLevel = %d\n",		startupSettings.displayResolutionLevel );
@@ -20940,7 +20955,7 @@ static int StartApplication( int argc, char * argv[] )
 	Print( "    timeWarpImplementation = %d\n",		startupSettings.timeWarpImplementation );
 	Print( "    renderMode = %d\n",					startupSettings.renderMode );
 	Print( "    hideGraphs = %d\n",					startupSettings.hideGraphs );
-	Print( "    noLogMicroseconds = %lld\n",		startupSettings.noLogMicroseconds );
+	Print( "    noLogNanoseconds = %lld\n",			startupSettings.noLogNanoseconds );
 
 	for ( bool exit = false; !exit; )
 	{
