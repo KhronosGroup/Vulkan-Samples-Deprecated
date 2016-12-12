@@ -712,7 +712,7 @@ Default to no cache management
 #define NUM_EYES					2
 #define NUM_COLOR_CHANNELS			3
 
-typedef unsigned long long ksMicroseconds;
+typedef uint64_t ksNanoseconds;
 
 /*
 ================================
@@ -6152,7 +6152,7 @@ ksSignal
 
 static void ksSignal_Create( ksSignal * signal, const bool autoReset );
 static void ksSignal_Destroy( ksSignal * signal );
-static bool ksSignal_Wait( ksSignal * signal, const ksMicroseconds timeOutMicroseconds );
+static bool ksSignal_Wait( ksSignal * signal, const ksNanoseconds timeOutNanoseconds );
 static void ksSignal_Raise( ksSignal * signal );
 static void ksSignal_Clear( ksSignal * signal );
 
@@ -6214,13 +6214,13 @@ static void ksSignal_Destroy( ksSignal * signal )
 
 // Waits for the object to enter the signalled state and returns true if this state is reached within the time-out period.
 // If 'autoReset' is true then the first thread that reaches the signalled state within the time-out period will clear the signalled state.
-// If 'timeOutMicroseconds' is SIGNAL_TIMEOUT_INFINITE then this will wait indefinitely until the signalled state is reached.
+// If 'timeOutNanoseconds' is SIGNAL_TIMEOUT_INFINITE then this will wait indefinitely until the signalled state is reached.
 // Returns true if the thread was released because the object entered the signalled state, returns false if the time-out is reached first.
-static bool ksSignal_Wait( ksSignal * signal, const ksMicroseconds timeOutMicroseconds )
+static bool ksSignal_Wait( ksSignal * signal, const ksNanoseconds timeOutNanoseconds )
 {
 #if defined( OS_WINDOWS )
-	DWORD result = WaitForSingleObject( signal->handle, ( timeOutMicroseconds == SIGNAL_TIMEOUT_INFINITE ) ? INFINITE : (DWORD)( timeOutMicroseconds / 1000 ) );
-	assert( result == WAIT_OBJECT_0 || ( timeOutMicroseconds != SIGNAL_TIMEOUT_INFINITE && result == WAIT_TIMEOUT ) );
+	DWORD result = WaitForSingleObject( signal->handle, ( timeOutNanoseconds == SIGNAL_TIMEOUT_INFINITE ) ? INFINITE : (DWORD)( timeOutNanoseconds / ( 1000 * 1000 ) ) );
+	assert( result == WAIT_OBJECT_0 || ( timeOutNanoseconds != SIGNAL_TIMEOUT_INFINITE && result == WAIT_TIMEOUT ) );
 	return ( result == WAIT_OBJECT_0 );
 #elif defined( OS_HEXAGON )
 	bool released = false;
@@ -6264,7 +6264,7 @@ static bool ksSignal_Wait( ksSignal * signal, const ksMicroseconds timeOutMicros
 	else
 	{
 		signal->waitCount++;
-		if ( timeOutMicroseconds == SIGNAL_TIMEOUT_INFINITE )
+		if ( timeOutNanoseconds == SIGNAL_TIMEOUT_INFINITE )
 		{
 			do
 			{
@@ -6272,13 +6272,13 @@ static bool ksSignal_Wait( ksSignal * signal, const ksMicroseconds timeOutMicros
 				// Must re-check condition because pthread_cond_wait may spuriously wake up.
 			} while ( signal->signaled == false );
 		}
-		else if ( timeOutMicroseconds > 0 )
+		else if ( timeOutNanoseconds > 0 )
 		{
 			struct timeval tp;
 			gettimeofday( &tp, NULL );
 			struct timespec ts;
-			ts.tv_sec = (time_t)( tp.tv_sec + timeOutMicroseconds / 1000000 );
-			ts.tv_nsec = (long)( ( tp.tv_usec + ( timeOutMicroseconds % 1000000 ) ) * 1000 );
+			ts.tv_sec = (time_t)( tp.tv_sec + timeOutNanoseconds / ( 1000 * 1000 * 1000 ) );
+			ts.tv_nsec = (long)( tp.tv_usec + ( timeOutNanoseconds % ( 1000 * 1000 * 1000 ) ) );
 			do
 			{
 				if ( pthread_cond_timedwait( &signal->cond, &signal->mutex, &ts ) == ETIMEDOUT )
@@ -7820,41 +7820,49 @@ static const char * GetCPUVersion()
 	return "unknown";
 }
 
-static ksMicroseconds GetTimeMicroseconds()
+static ksNanoseconds GetTimeNanoseconds()
 {
 #if defined( OS_WINDOWS )
-	static ksMicroseconds ticksPerSecond = 0;
-	static ksMicroseconds timeBase = 0;
+	static ksNanoseconds ticksPerSecond = 0;
+	static ksNanoseconds timeBase = 0;
 
 	if ( ticksPerSecond == 0 )
 	{
 		LARGE_INTEGER li;
 		QueryPerformanceFrequency( &li );
-		ticksPerSecond = (ksMicroseconds) li.QuadPart;
+		ticksPerSecond = (ksNanoseconds) li.QuadPart;
 		QueryPerformanceCounter( &li );
-		timeBase = (ksMicroseconds) li.LowPart + 0xFFFFFFFFLL * li.HighPart;
+		timeBase = (ksNanoseconds) li.LowPart + 0xFFFFFFFFULL * li.HighPart;
 	}
 
 	LARGE_INTEGER li;
 	QueryPerformanceCounter( &li );
-	ksMicroseconds counter = (ksMicroseconds) li.LowPart + 0xFFFFFFFFLL * li.HighPart;
-	return ( counter - timeBase ) * 1000000LL / ticksPerSecond;
+	ksNanoseconds counter = (ksNanoseconds) li.LowPart + 0xFFFFFFFFULL * li.HighPart;
+	return ( counter - timeBase ) * 1000ULL * 1000ULL * 1000ULL / ticksPerSecond;
 #elif defined( OS_ANDROID )
+	static ksNanoseconds timeBase = 0;
+
 	struct timespec ts;
 	clock_gettime( CLOCK_MONOTONIC, &ts );
-	return (ksMicroseconds) ts.tv_sec * 1000ULL * 1000ULL + ts.tv_nsec / 1000ULL;
+
+	if ( timeBase == 0 )
+	{
+		timeBase = (ksNanoseconds) ts.tv_sec * 1000ULL * 1000ULL * 1000ULL + ts.tv_nsec;
+	}
+
+	return (ksNanoseconds) ts.tv_sec * 1000ULL * 1000ULL * 1000ULL + ts.tv_nsec - timeBase;
 #else
-	static ksMicroseconds timeBase = 0;
+	static ksNanoseconds timeBase = 0;
 
 	struct timeval tv;
 	gettimeofday( &tv, 0 );
 
 	if ( timeBase == 0 )
 	{
-		timeBase = (ksMicroseconds) tv.tv_sec * 1000 * 1000;
+		timeBase = (ksNanoseconds) tv.tv_sec * 1000ULL * 1000ULL * 1000ULL + tv.tv_usec * 1000ULL;
 	}
 
-	return (ksMicroseconds) tv.tv_sec * 1000 * 1000 + tv.tv_usec - timeBase;
+	return (ksNanoseconds) tv.tv_sec * 1000ULL * 1000ULL * 1000ULL + tv.tv_usec * 1000ULL - timeBase;
 #endif
 }
 
@@ -8074,11 +8082,11 @@ void TestTimeWarp( const int srcTexelsWide, const int srcTexelsHigh, const ksHmd
 		}
 		memset( dst, 0, dstSizeInBytes );
 
-		ksMicroseconds bestTime = 0xFFFFFFFFFFFFFFFF;
+		ksNanoseconds bestTime = 0xFFFFFFFFFFFFFFFF;
 
 		for ( int i = 0; i < 25; i++ )
 		{
-			const ksMicroseconds start = GetTimeMicroseconds();
+			const ksNanoseconds start = GetTimeNanoseconds();
 
 			TimeWarpInterface_TimeWarp(
 					packedRGB,
@@ -8101,7 +8109,7 @@ void TestTimeWarp( const int srcTexelsWide, const int srcTexelsHigh, const ksHmd
 					(int)meshSizeInBytes / sizeof( ksMeshCoord ),
 					sampling );
 
-			const ksMicroseconds end = GetTimeMicroseconds();
+			const ksNanoseconds end = GetTimeNanoseconds();
 
 			if ( end - start < bestTime )
 			{
@@ -8121,8 +8129,8 @@ void TestTimeWarp( const int srcTexelsWide, const int srcTexelsHigh, const ksHmd
 
 		Print( "%22s = %5.1f milliseconds (%1.0f Mpixels/sec)\n",
 				string,
-				bestTime / 1000.0f,
-				2.0f * hmdInfo->eyeTilesWide * hmdInfo->eyeTilesHigh * 32 * 32 / bestTime );
+				bestTime * ( 1.0f / 1000.0f / 1000.0f ),
+				2.0f * hmdInfo->eyeTilesWide * hmdInfo->eyeTilesHigh * 32 * 32 * 1000 / bestTime );
 
 		char fileName[1024];
 		sprintf( fileName, OUTPUT "warped-%d-%s.tga", sampling, string );

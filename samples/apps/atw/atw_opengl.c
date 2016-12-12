@@ -578,7 +578,7 @@ Common defines
 
 #define GRAPHICS_API_OPENGL				1
 
-#define USE_GLTF						0
+#define USE_GLTF						1
 #define PROGRAM( name )					name##GLSL
 
 #define GLSL_EXTENSIONS					"#extension GL_EXT_shader_io_blocks : enable\n"
@@ -12062,6 +12062,7 @@ static void GetHmdViewMatrixForTime( ksMatrix4x4f * viewMatrix, const ksNanoseco
 		return;
 	}
 
+	// FIXME: use double?
 	const float offset = time * ( MATH_PI / 1000.0f / 1000.0f / 1000.0f );
 	const float degrees = 10.0f;
 	const float degreesX = sinf( offset ) * degrees;

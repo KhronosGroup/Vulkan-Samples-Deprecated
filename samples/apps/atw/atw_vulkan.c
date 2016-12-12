@@ -10800,7 +10800,7 @@ static ksNanoseconds ksGpuTimer_GetNanoseconds( ksGpuTimer * timer );
 typedef struct
 {
 	VkBool32			supported;
-	ksNanoseconds			period;
+	ksNanoseconds		period;
 	VkQueryPool			pool;
 	uint32_t			init;
 	uint32_t			index;
@@ -10817,7 +10817,7 @@ static void ksGpuTimer_Create( ksGpuContext * context, ksGpuTimer * timer )
 		return;
 	}
 
-	timer->period = (ksNanoseconds)context->device->physicalDeviceProperties.limits.timestampPeriod;
+	timer->period = (ksNanoseconds) context->device->physicalDeviceProperties.limits.timestampPeriod;
 
 	const uint32_t queryCount = ( GPU_TIMER_FRAMES_DELAYED + 1 ) * 2;
 
@@ -13426,6 +13426,7 @@ static void GetHmdViewMatrixForTime( ksMatrix4x4f * viewMatrix, const ksNanoseco
 		return;
 	}
 
+	// FIXME: use double?
 	const float offset = time * ( MATH_PI / 1000.0f / 1000.0f / 1000.0f );
 	const float degrees = 10.0f;
 	const float degreesX = sinf( offset ) * degrees;

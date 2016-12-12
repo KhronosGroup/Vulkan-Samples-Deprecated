@@ -66,14 +66,14 @@ in only a single string comparison per lookup. This implementation keeps
 objects in the same order in the DOM as they appear in the JSON text.
 
 This implementation stores the members of an object, or the elements
-of an array, as an exponentially growning mapped array per object or
+of an array, in an exponentially growing mapped array per object or
 array. The mapping may need to be re-allocated but this is very rare
 and the mapping only holds pointers. The actual members are never
 re-allocated. Instead, exponentially growing chunks are added to the
-array. The mapping does result in one, and only one pointer redirection
-but that is still way faster than iterating a linked list of objects
-that are all separately allocated. By not re-allocating the actual
-array of members there is no danger of pointers to previous members
+array. The mapping does result in one, and only one additional pointer
+dereference, but that is still way faster than iterating a linked list
+of objects that are all separately allocated. By not re-allocating the
+actual array of members there is no danger of pointers to previous members
 going stale when additional members are added. Using an exponentially
 growing mapped array is not only cache friendly but also allows
 direct indexing of an array.
@@ -423,13 +423,16 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
 #include <assert.h>
 #include <string.h>
 #include <malloc.h>
+#if defined( _MSC_VER )
+#include <intrin.h>
+#endif
 
 #define JSON_MIN( x, y )			( ( x <= y ) ? x : y )
 #define JSON_MAX( x, y )			( ( x >= y ) ? x : y )
 #define JSON_CLAMP( x, min, max )	( ( x >= min ) ? ( ( x <= max ) ? x : max ) : min )
 #define JSON_MAX_RECURSION			128
 #define JSON_MAP_GRANULARITY		4		// 64, 1024, 16384 etc. members
-#define JSON_BASE_ALLOCATION		8		// 8, 16, 32, 64, 128, 256, 512 etc. members
+#define JSON_BASE_ALLOC_PWR			3		// 8, 16, 32, 64, 128, 256, 512 etc. members
 
 // JSON value type
 typedef enum
@@ -479,9 +482,9 @@ static Json_t * Json_Create()
 
 static int MemberIndexToMapIndex( int index )
 {
-	index /= JSON_BASE_ALLOCATION;
+	index >>= JSON_BASE_ALLOC_PWR;
 #if defined( _MSC_VER )
-	DWORD offset;
+	unsigned long offset;
 	if ( _BitScanReverse( &offset, (unsigned int) index ) )
 	{
 		return offset + 1;
@@ -492,7 +495,7 @@ static int MemberIndexToMapIndex( int index )
 #else
 	int r = 0;
 	int t;
-	index *= 2;
+	index <<= 1;
 	t = ( (~( ( index >> 16 ) + ~0U ) ) >> 27 ) & 0x10; r |= t; index >>= t;
 	t = ( (~( ( index >>  8 ) + ~0U ) ) >> 28 ) & 0x08; r |= t; index >>= t;
 	t = ( (~( ( index >>  4 ) + ~0U ) ) >> 29 ) & 0x04; r |= t; index >>= t;
@@ -503,14 +506,14 @@ static int MemberIndexToMapIndex( int index )
 
 static int MapMemberOffset( int mapIndex )
 {
-	const int offset = ( 1 << ( mapIndex - 1 ) ) * JSON_BASE_ALLOCATION;
-	assert( mapIndex > 0 || offset = 0 );	// Protect againt negative shift not producing zero.
+	const int offset = ( 1 << ( mapIndex - 1 ) ) << JSON_BASE_ALLOC_PWR;
+	assert( mapIndex >= 1 || offset == 0 );	// Protect againt negative shift not producing zero.
 	return offset;
 }
 
 static int MapMemberCount( int mapIndex, int memberCount )
 {
-	return JSON_MIN( ( 1 << mapIndex ) * JSON_BASE_ALLOCATION, memberCount ) - MapMemberOffset( mapIndex );
+	return JSON_MIN( ( 1 << ( JSON_BASE_ALLOC_PWR + mapIndex ) ), memberCount ) - MapMemberOffset( mapIndex );
 }
 
 static Json_t * Json_AllocMember( Json_t * node )
@@ -528,7 +531,7 @@ static Json_t * Json_AllocMember( Json_t * node )
 			}
 			node->memberMap = newMemberMap;
 		}
-		const int mapSize = JSON_MAX( MapMemberOffset( mapIndex ), JSON_BASE_ALLOCATION );
+		const int mapSize = JSON_MAX( MapMemberOffset( mapIndex ), ( 1 << JSON_BASE_ALLOC_PWR ) );
 		node->memberMap[mapIndex] = (Json_t *) malloc( mapSize * sizeof( Json_t ) );
 		node->membersAllocated += mapSize;
 	}
@@ -554,18 +557,21 @@ static void Json_FreeNode( Json_t * node, const bool freeName )
 	}
 	if ( node->type == JSON_OBJECT || node->type == JSON_ARRAY )
 	{
-		const int endMapIndex = MemberIndexToMapIndex( node->memberCount - 1 );
-		for ( int mapIndex = 0; mapIndex <= endMapIndex; mapIndex++ )
+		if ( node->memberCount > 0 )
 		{
-			Json_t * members = node->memberMap[mapIndex];
-			const int mapMemberCount = MapMemberCount( mapIndex, node->memberCount ); 
-			for ( int i = 0; i < mapMemberCount; i++ )
+			const int endMapIndex = MemberIndexToMapIndex( node->memberCount - 1 );
+			for ( int mapIndex = 0; mapIndex <= endMapIndex; mapIndex++ )
 			{
-				Json_FreeNode( &members[i], true );
+				Json_t * members = node->memberMap[mapIndex];
+				const int mapMemberCount = MapMemberCount( mapIndex, node->memberCount ); 
+				for ( int i = 0; i < mapMemberCount; i++ )
+				{
+					Json_FreeNode( &members[i], true );
+				}
+				free( members );
 			}
-			free( members );
+			free( node->memberMap );
 		}
-		free( node->memberMap );
 	}
 	else if ( node->type == JSON_STRING )
 	{
@@ -1168,16 +1174,19 @@ static void Json_WriteValue( const Json_t * node, int recursion, char ** bufferI
 	else if ( node->type == JSON_OBJECT )
 	{
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "{\n" );
-		const int endMapIndex = MemberIndexToMapIndex( node->memberCount - 1 );
-		for ( int mapIndex = 0; mapIndex <= endMapIndex; mapIndex++ )
+		if ( node->memberCount > 0 )
 		{
-			const Json_t * members = node->memberMap[mapIndex];
-			const int mapMemberCount = MapMemberCount( mapIndex, node->memberCount ); 
-			for ( int i = 0; i < mapMemberCount; i++ )
+			const int endMapIndex = MemberIndexToMapIndex( node->memberCount - 1 );
+			for ( int mapIndex = 0; mapIndex <= endMapIndex; mapIndex++ )
 			{
-				const Json_t * member = &members[i];
-				Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1 + (int)strlen( member->name ) + 5, "%s\"%s\" : ", &indentTable[maxIndent - ( indent + 1 )], member->name );
-				Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
+				const Json_t * members = node->memberMap[mapIndex];
+				const int mapMemberCount = MapMemberCount( mapIndex, node->memberCount ); 
+				for ( int i = 0; i < mapMemberCount; i++ )
+				{
+					const Json_t * member = &members[i];
+					Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1 + (int)strlen( member->name ) + 5, "%s\"%s\" : ", &indentTable[maxIndent - ( indent + 1 )], member->name );
+					Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
+				}
 			}
 		}
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 2, "%s}%s\n", &indentTable[maxIndent - indent], lastChild ? "" : "," );
@@ -1185,16 +1194,19 @@ static void Json_WriteValue( const Json_t * node, int recursion, char ** bufferI
 	else if ( node->type == JSON_ARRAY )
 	{
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "[\n" );
-		const int endMapIndex = MemberIndexToMapIndex( node->memberCount - 1 );
-		for ( int mapIndex = 0; mapIndex <= endMapIndex; mapIndex++ )
+		if ( node->memberCount > 0 )
 		{
-			const Json_t * members = node->memberMap[mapIndex];
-			const int mapMemberCount = MapMemberCount( mapIndex, node->memberCount ); 
-			for ( int i = 0; i < mapMemberCount; i++ )
+			const int endMapIndex = MemberIndexToMapIndex( node->memberCount - 1 );
+			for ( int mapIndex = 0; mapIndex <= endMapIndex; mapIndex++ )
 			{
-				const Json_t * member = &members[i];
-				Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1, "%s", &indentTable[maxIndent - ( indent + 1 )] );
-				Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
+				const Json_t * members = node->memberMap[mapIndex];
+				const int mapMemberCount = MapMemberCount( mapIndex, node->memberCount ); 
+				for ( int i = 0; i < mapMemberCount; i++ )
+				{
+					const Json_t * member = &members[i];
+					Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1, "%s", &indentTable[maxIndent - ( indent + 1 )] );
+					Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
+				}
 			}
 		}
 		Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 2, "%s]%s\n", &indentTable[maxIndent - indent], lastChild ? "" : "," );
@@ -1274,7 +1286,7 @@ static Json_t * Json_GetMemberByIndex( const Json_t * node, const int index )
 
 static Json_t * Json_GetMemberByName( const Json_t * node, const char * name )
 {
-	if ( node != NULL && node->type == JSON_OBJECT )
+	if ( node != NULL && node->type == JSON_OBJECT && node->memberCount > 0 )
 	{
 		assert( name != NULL );
 		const int startMapIndex = MemberIndexToMapIndex( node->memberIndex );
@@ -1295,7 +1307,7 @@ static Json_t * Json_GetMemberByName( const Json_t * node, const char * name )
 			}
 			firstMemberOffset = 0;
 		}
-		for ( int mapIndex = 0; mapIndex < startMapIndex; mapIndex++ )
+		for ( int mapIndex = 0; mapIndex <= startMapIndex; mapIndex++ )
 		{
 			Json_t * members = node->memberMap[mapIndex];
 			const int mapMemberCount = MapMemberCount( mapIndex, node->memberIndex ); 
