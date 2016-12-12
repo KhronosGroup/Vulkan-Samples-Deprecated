@@ -1814,6 +1814,7 @@ static bool ksMatrix4x4f_CullBounds( const ksMatrix4x4f * mvp, const ksVector3f 
 */
 
 #define DEFAULT_NEAR_Z		0.015625f		// exact floating point representation
+#define INFINITE_FAR_Z		0.0f
 
 // 2D integer vector
 typedef struct
@@ -13632,7 +13633,7 @@ static void ksViewState_Init( ksViewState * viewState, const float interpupillar
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
 		ksMatrix4x4f_CreateIdentity( &viewState->viewMatrix[eye] );
-		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 30.0f, 30.0f, DEFAULT_NEAR_Z, 0.0f );
+		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 30.0f, 30.0f, DEFAULT_NEAR_Z, INFINITE_FAR_Z );
 
 		ksMatrix4x4f_Invert( &viewState->viewInverseMatrix[eye], &viewState->viewMatrix[eye] );
 		ksMatrix4x4f_Invert( &viewState->projectionInverseMatrix[eye], &viewState->projectionMatrix[eye] );
@@ -13722,7 +13723,7 @@ static void ksViewState_HandleInput( ksViewState * viewState, ksGpuWindowInput *
 		ksMatrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
 
 		ksMatrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
-		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 30.0f, 30.0f, DEFAULT_NEAR_Z, 0.0f );
+		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 30.0f, 30.0f, DEFAULT_NEAR_Z, INFINITE_FAR_Z );
 	}
 
 	ksViewState_DerivedData( viewState );
@@ -13740,7 +13741,7 @@ static void ksViewState_HandleHmd( ksViewState * viewState, const ksNanoseconds 
 		ksMatrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
 
 		ksMatrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
-		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 36.0f, 36.0f, DEFAULT_NEAR_Z, 0.0f );
+		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 36.0f, 36.0f, DEFAULT_NEAR_Z, INFINITE_FAR_Z );
 	}
 
 	ksViewState_DerivedData( viewState );
@@ -17217,7 +17218,7 @@ void SceneThread_Render( ksSceneThreadData * threadData )
 		ksFrameLog_EndFrame( eyeTexturesCpuTime, eyeTexturesGpuTime, GPU_TIMER_FRAMES_DELAYED );
 
 		ksMatrix4x4f projectionMatrix;
-		ksMatrix4x4f_CreateProjectionFov( &projectionMatrix, 40.0f, 40.0f, 40.0f, 40.0f, DEFAULT_NEAR_Z, 0.0f );
+		ksMatrix4x4f_CreateProjectionFov( &projectionMatrix, 40.0f, 40.0f, 40.0f, 40.0f, DEFAULT_NEAR_Z, INFINITE_FAR_Z );
 
 		ksTimeWarp_SubmitFrame( threadData->timeWarp, frameIndex, nextDisplayTime,
 								&viewState.hmdViewMatrix, &projectionMatrix,
