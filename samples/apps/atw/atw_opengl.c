@@ -1782,7 +1782,7 @@ static void ksMatrix4x4f_CreateIdentity( ksMatrix4x4f * result );
 static void ksMatrix4x4f_CreateTranslation( ksMatrix4x4f * result, const float x, const float y, const float z );
 static void ksMatrix4x4f_CreateRotation( ksMatrix4x4f * result, const float degreesX, const float degreesY, const float degreesZ );
 static void ksMatrix4x4f_CreateScale( ksMatrix4x4f * result, const float x, const float y, const float z );
-static void ksMatrix4x4f_CreateTranslationRotationScale( ksMatrix4x4f * result, const ksVector3f * scale, const ksQuatf * rotation, const ksVector3f * translation );
+static void ksMatrix4x4f_CreateTranslationRotationScale( ksMatrix4x4f * result, const ksVector3f * translation, const ksQuatf * rotation, const ksVector3f * scale );
 static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float tanAngleLeft, const float tanAngleRight,
 											const float tanAngleUp, float const tanAngleDown, const float nearZ, const float farZ );
 static void ksMatrix4x4f_CreateProjectionFov( ksMatrix4x4f * result, const float fovDegreesLeft, const float fovDegreesRight,
@@ -2253,7 +2253,7 @@ static void ksMatrix4x4f_CreateFromQuaternion( ksMatrix4x4f * result, const ksQu
 }
 
 // Creates a combined translation(rotation(scale(object))) matrix.
-static void ksMatrix4x4f_CreateTranslationRotationScale( ksMatrix4x4f * result, const ksVector3f * scale, const ksQuatf * rotation, const ksVector3f * translation )
+static void ksMatrix4x4f_CreateTranslationRotationScale( ksMatrix4x4f * result, const ksVector3f * translation, const ksQuatf * rotation, const ksVector3f * scale )
 {
 	ksMatrix4x4f scaleMatrix;
 	ksMatrix4x4f_CreateScale( &scaleMatrix, scale->x, scale->y, scale->z );
@@ -3439,8 +3439,7 @@ ksGpuQueuePriority
 ksGpuQueueInfo
 ksGpuDevice
 
-static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instance,
-							const ksGpuQueueInfo * queueInfo, const VkSurfaceKHR presentSurface );
+static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instance, const ksGpuQueueInfo * queueInfo );
 static void ksGpuDevice_Destroy( ksGpuDevice * device );
 
 ================================================================================================================================
@@ -3475,8 +3474,7 @@ typedef struct
 	ksGpuQueueInfo		queueInfo;
 } ksGpuDevice;
 
-static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instance,
-								const ksGpuQueueInfo * queueInfo )
+static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instance, const ksGpuQueueInfo * queueInfo )
 {
 	/*
 		Use an extensions to select the appropriate device:
@@ -16198,9 +16196,9 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 					ksGltf_ParseFloatArray( &scene->nodes[nodeIndex].scale.x, 3, Json_GetMemberByName( node, "scale" ) );
 					ksGltf_ParseFloatArray( &scene->nodes[nodeIndex].translation.x, 3, Json_GetMemberByName( node, "translation" ) );
 					ksMatrix4x4f_CreateTranslationRotationScale( &scene->nodes[nodeIndex].localTransform,
-																&scene->nodes[nodeIndex].scale,
+																&scene->nodes[nodeIndex].translation,
 																&scene->nodes[nodeIndex].rotation,
-																&scene->nodes[nodeIndex].translation );
+																&scene->nodes[nodeIndex].scale );
 				}
 				scene->nodes[nodeIndex].globalTransform = scene->nodes[nodeIndex].localTransform;	// transformed to global space later
 
@@ -16588,7 +16586,7 @@ static void ksGltfScene_Simulate( ksGltfScene * scene, ksViewState * viewState, 
 		{
 			ksGltfNode * node = &subTree->nodes[nodeIndex];
 
-			ksMatrix4x4f_CreateTranslationRotationScale( &node->localTransform, &node->scale, &node->rotation, &node->translation );
+			ksMatrix4x4f_CreateTranslationRotationScale( &node->localTransform, &node->translation, &node->rotation, &node->scale );
 			if ( node->parent != NULL )
 			{
 				assert( node->parent < node );
