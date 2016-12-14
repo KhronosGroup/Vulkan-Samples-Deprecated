@@ -709,8 +709,8 @@ Default to no cache management
 #define UNUSED_PARM( x )			{ (void)(x); }
 #define ARRAY_SIZE( a )				( sizeof( (a) ) / sizeof( (a)[0] ) )
 
-#define NUM_EYES					2
-#define NUM_COLOR_CHANNELS			3
+#define EYE_COUNT					2
+#define COLOR_CHANNEL_COUNT			3
 
 typedef uint64_t ksNanoseconds;
 
@@ -5488,8 +5488,10 @@ static void Warp32x32_SampleChromaticBilinearPlanarRGB(
 */
 
 #define MATH_PI				3.14159265358979323846f
+#define DEFAULT_NEAR_Z		0.015625f		// exact floating point representation
+#define INFINITE_FAR_Z		0.0f
 
-// Row-major 4x4 matrix
+// Column-major 4x4 matrix
 typedef struct
 {
 	float m[4][4];
@@ -5512,17 +5514,17 @@ static void ksMatrix4x4f_CreateIdentity( ksMatrix4x4f * matrix )
 //		"Tightening the Precision of Perspective Rendering"
 //		Paul Upchurch, Mathieu Desbrun
 //		Journal of Graphics Tools, Volume 16, Issue 1, 2012
-static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * matrix, const float minX, const float maxX,
-											float const minY, const float maxY, const float nearZ, const float farZ )
+static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float tanAngleLeft, const float tanAngleRight,
+											const float tanAngleUp, float const tanAngleDown, const float nearZ, const float farZ )
 {
-	const float width = maxX - minX;
+	const float tanAngleWidth = tanAngleRight - tanAngleLeft;
 
 #if defined( GRAPHICS_API_VULKAN )
-	// Set to minY - maxY for a clip space with positive Y down (Vulkan).
-	const float height = minY - maxY;
+	// Set to tanAngleDown - tanAngleUp for a clip space with positive Y down (Vulkan).
+	const float tanAngleHeight = tanAngleDown - tanAngleUp;
 #else
-	// Set to maxY - minY for a clip space with positive Y up (OpenGL / D3D).
-	const float height = maxY - minY;
+	// Set to tanAngleUp - tanAngleDown for a clip space with positive Y up (OpenGL / D3D).
+	const float tanAngleHeight = tanAngleUp - tanAngleDown;
 #endif
 
 #if defined( GRAPHICS_API_OPENGL )
@@ -5536,143 +5538,106 @@ static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * matrix, const float mi
 	if ( farZ <= nearZ )
 	{
 		// place the far plane at infinity
-		matrix->m[0][0] = 2 * nearZ / width;
-		matrix->m[0][1] = 0;
-		matrix->m[0][2] = ( maxX + minX ) / width;
-		matrix->m[0][3] = 0;
+		result->m[0][0] = 2 / tanAngleWidth;
+		result->m[1][0] = 0;
+		result->m[2][0] = ( tanAngleRight + tanAngleLeft ) / tanAngleWidth;
+		result->m[3][0] = 0;
 
-		matrix->m[1][0] = 0;
-		matrix->m[1][1] = 2 * nearZ / height;
-		matrix->m[1][2] = ( maxY + minY ) / height;
-		matrix->m[1][3] = 0;
+		result->m[0][1] = 0;
+		result->m[1][1] = 2 / tanAngleHeight;
+		result->m[2][1] = ( tanAngleUp + tanAngleDown ) / tanAngleHeight;
+		result->m[3][1] = 0;
 
-		matrix->m[2][0] = 0;
-		matrix->m[2][1] = 0;
-		matrix->m[2][2] = -1;
-		matrix->m[2][3] = -( nearZ + offsetZ );
+		result->m[0][2] = 0;
+		result->m[1][2] = 0;
+		result->m[2][2] = -1;
+		result->m[3][2] = -( nearZ + offsetZ );
 
-		matrix->m[3][0] = 0;
-		matrix->m[3][1] = 0;
-		matrix->m[3][2] = -1;
-		matrix->m[3][3] = 0;
+		result->m[0][3] = 0;
+		result->m[1][3] = 0;
+		result->m[2][3] = -1;
+		result->m[3][3] = 0;
 	}
 	else
 	{
 		// normal projection
-		matrix->m[0][0] = 2 * nearZ / width;
-		matrix->m[0][1] = 0;
-		matrix->m[0][2] = ( maxX + minX ) / width;
-		matrix->m[0][3] = 0;
+		result->m[0][0] = 2 / tanAngleWidth;
+		result->m[1][0] = 0;
+		result->m[2][0] = ( tanAngleRight + tanAngleLeft ) / tanAngleWidth;
+		result->m[3][0] = 0;
 
-		matrix->m[1][0] = 0;
-		matrix->m[1][1] = 2 * nearZ / height;
-		matrix->m[1][2] = ( maxY + minY ) / height;
-		matrix->m[1][3] = 0;
+		result->m[0][1] = 0;
+		result->m[1][1] = 2 / tanAngleHeight;
+		result->m[2][1] = ( tanAngleUp + tanAngleDown ) / tanAngleHeight;
+		result->m[3][1] = 0;
 
-		matrix->m[2][0] = 0;
-		matrix->m[2][1] = 0;
-		matrix->m[2][2] = -( farZ + offsetZ ) / ( farZ - nearZ );
-		matrix->m[2][3] = -( farZ * ( nearZ + offsetZ ) ) / ( farZ - nearZ );
+		result->m[0][2] = 0;
+		result->m[1][2] = 0;
+		result->m[2][2] = -( farZ + offsetZ ) / ( farZ - nearZ );
+		result->m[3][2] = -( farZ * ( nearZ + offsetZ ) ) / ( farZ - nearZ );
 
-		matrix->m[3][0] = 0;
-		matrix->m[3][1] = 0;
-		matrix->m[3][2] = -1;
-		matrix->m[3][3] = 0;
+		result->m[0][3] = 0;
+		result->m[1][3] = 0;
+		result->m[2][3] = -1;
+		result->m[3][3] = 0;
 	}
 }
 
 // Creates a projection matrix based on the specified FOV.
-static void ksMatrix4x4f_CreateProjectionFov( ksMatrix4x4f * matrix, const float fovDegreesX, const float fovDegreesY,
-												const float offsetX, const float offsetY, const float nearZ, const float farZ )
+static void ksMatrix4x4f_CreateProjectionFov( ksMatrix4x4f * result, const float fovDegreesLeft, const float fovDegreesRight,
+												const float fovDegreesUp, const float fovDegreesDown, const float nearZ, const float farZ )
 {
-	const float halfWidth = nearZ * tanf( fovDegreesX * ( 0.5f * MATH_PI / 180.0f ) );
-	const float halfHeight = nearZ * tanf( fovDegreesY * ( 0.5f * MATH_PI / 180.0f ) );
+	const float tanLeft = - tanf( fovDegreesLeft * ( MATH_PI / 180.0f ) );
+	const float tanRight = tanf( fovDegreesRight * ( MATH_PI / 180.0f ) );
 
-	const float minX = offsetX - halfWidth;
-	const float maxX = offsetX + halfWidth;
+	const float tanDown = - tanf( fovDegreesDown * ( MATH_PI / 180.0f ) );
+	const float tanUp = tanf( fovDegreesUp * ( MATH_PI / 180.0f ) );
 
-	const float minY = offsetY - halfHeight;
-	const float maxY = offsetY + halfHeight;
-
-	ksMatrix4x4f_CreateProjection( matrix, minX, maxX, minY, maxY, nearZ, farZ );
+	ksMatrix4x4f_CreateProjection( result, tanLeft, tanRight, tanUp, tanDown, nearZ, farZ );
 }
 
 // Use left-multiplication to accumulate transformations.
 static void ksMatrix4x4f_Multiply( ksMatrix4x4f * result, const ksMatrix4x4f * a, const ksMatrix4x4f * b )
 {
-	result->m[0][0] = a->m[0][0] * b->m[0][0] + a->m[0][1] * b->m[1][0] + a->m[0][2] * b->m[2][0] + a->m[0][3] * b->m[3][0];
-	result->m[0][1] = a->m[0][0] * b->m[0][1] + a->m[0][1] * b->m[1][1] + a->m[0][2] * b->m[2][1] + a->m[0][3] * b->m[3][1];
-	result->m[0][2] = a->m[0][0] * b->m[0][2] + a->m[0][1] * b->m[1][2] + a->m[0][2] * b->m[2][2] + a->m[0][3] * b->m[3][2];
-	result->m[0][3] = a->m[0][0] * b->m[0][3] + a->m[0][1] * b->m[1][3] + a->m[0][2] * b->m[2][3] + a->m[0][3] * b->m[3][3];
+	result->m[0][0] = a->m[0][0] * b->m[0][0] + a->m[1][0] * b->m[0][1] + a->m[2][0] * b->m[0][2] + a->m[3][0] * b->m[0][3];
+	result->m[0][1] = a->m[0][1] * b->m[0][0] + a->m[1][1] * b->m[0][1] + a->m[2][1] * b->m[0][2] + a->m[3][1] * b->m[0][3];
+	result->m[0][2] = a->m[0][2] * b->m[0][0] + a->m[1][2] * b->m[0][1] + a->m[2][2] * b->m[0][2] + a->m[3][2] * b->m[0][3];
+	result->m[0][3] = a->m[0][3] * b->m[0][0] + a->m[1][3] * b->m[0][1] + a->m[2][3] * b->m[0][2] + a->m[3][3] * b->m[0][3];
 
-	result->m[1][0] = a->m[1][0] * b->m[0][0] + a->m[1][1] * b->m[1][0] + a->m[1][2] * b->m[2][0] + a->m[1][3] * b->m[3][0];
-	result->m[1][1] = a->m[1][0] * b->m[0][1] + a->m[1][1] * b->m[1][1] + a->m[1][2] * b->m[2][1] + a->m[1][3] * b->m[3][1];
-	result->m[1][2] = a->m[1][0] * b->m[0][2] + a->m[1][1] * b->m[1][2] + a->m[1][2] * b->m[2][2] + a->m[1][3] * b->m[3][2];
-	result->m[1][3] = a->m[1][0] * b->m[0][3] + a->m[1][1] * b->m[1][3] + a->m[1][2] * b->m[2][3] + a->m[1][3] * b->m[3][3];
+	result->m[1][0] = a->m[0][0] * b->m[1][0] + a->m[1][0] * b->m[1][1] + a->m[2][0] * b->m[1][2] + a->m[3][0] * b->m[1][3];
+	result->m[1][1] = a->m[0][1] * b->m[1][0] + a->m[1][1] * b->m[1][1] + a->m[2][1] * b->m[1][2] + a->m[3][1] * b->m[1][3];
+	result->m[1][2] = a->m[0][2] * b->m[1][0] + a->m[1][2] * b->m[1][1] + a->m[2][2] * b->m[1][2] + a->m[3][2] * b->m[1][3];
+	result->m[1][3] = a->m[0][3] * b->m[1][0] + a->m[1][3] * b->m[1][1] + a->m[2][3] * b->m[1][2] + a->m[3][3] * b->m[1][3];
 
-	result->m[2][0] = a->m[2][0] * b->m[0][0] + a->m[2][1] * b->m[1][0] + a->m[2][2] * b->m[2][0] + a->m[2][3] * b->m[3][0];
-	result->m[2][1] = a->m[2][0] * b->m[0][1] + a->m[2][1] * b->m[1][1] + a->m[2][2] * b->m[2][1] + a->m[2][3] * b->m[3][1];
-	result->m[2][2] = a->m[2][0] * b->m[0][2] + a->m[2][1] * b->m[1][2] + a->m[2][2] * b->m[2][2] + a->m[2][3] * b->m[3][2];
-	result->m[2][3] = a->m[2][0] * b->m[0][3] + a->m[2][1] * b->m[1][3] + a->m[2][2] * b->m[2][3] + a->m[2][3] * b->m[3][3];
+	result->m[2][0] = a->m[0][0] * b->m[2][0] + a->m[1][0] * b->m[2][1] + a->m[2][0] * b->m[2][2] + a->m[3][0] * b->m[2][3];
+	result->m[2][1] = a->m[0][1] * b->m[2][0] + a->m[1][1] * b->m[2][1] + a->m[2][1] * b->m[2][2] + a->m[3][1] * b->m[2][3];
+	result->m[2][2] = a->m[0][2] * b->m[2][0] + a->m[1][2] * b->m[2][1] + a->m[2][2] * b->m[2][2] + a->m[3][2] * b->m[2][3];
+	result->m[2][3] = a->m[0][3] * b->m[2][0] + a->m[1][3] * b->m[2][1] + a->m[2][3] * b->m[2][2] + a->m[3][3] * b->m[2][3];
 
-	result->m[3][0] = a->m[3][0] * b->m[0][0] + a->m[3][1] * b->m[1][0] + a->m[3][2] * b->m[2][0] + a->m[3][3] * b->m[3][0];
-	result->m[3][1] = a->m[3][0] * b->m[0][1] + a->m[3][1] * b->m[1][1] + a->m[3][2] * b->m[2][1] + a->m[3][3] * b->m[3][1];
-	result->m[3][2] = a->m[3][0] * b->m[0][2] + a->m[3][1] * b->m[1][2] + a->m[3][2] * b->m[2][2] + a->m[3][3] * b->m[3][2];
-	result->m[3][3] = a->m[3][0] * b->m[0][3] + a->m[3][1] * b->m[1][3] + a->m[3][2] * b->m[2][3] + a->m[3][3] * b->m[3][3];
+	result->m[3][0] = a->m[0][0] * b->m[3][0] + a->m[1][0] * b->m[3][1] + a->m[2][0] * b->m[3][2] + a->m[3][0] * b->m[3][3];
+	result->m[3][1] = a->m[0][1] * b->m[3][0] + a->m[1][1] * b->m[3][1] + a->m[2][1] * b->m[3][2] + a->m[3][1] * b->m[3][3];
+	result->m[3][2] = a->m[0][2] * b->m[3][0] + a->m[1][2] * b->m[3][1] + a->m[2][2] * b->m[3][2] + a->m[3][2] * b->m[3][3];
+	result->m[3][3] = a->m[0][3] * b->m[3][0] + a->m[1][3] * b->m[3][1] + a->m[2][3] * b->m[3][2] + a->m[3][3] * b->m[3][3];
 }
 
-// Returns a 3x3 minor of a 4x4 matrix.
-static float ksMatrix4x4f_Minor( const ksMatrix4x4f * src, int r0, int r1, int r2, int c0, int c1, int c2 )
-{
-	return	src->m[r0][c0] * ( src->m[r1][c1] * src->m[r2][c2] - src->m[r2][c1] * src->m[r1][c2] ) -
-			src->m[r0][c1] * ( src->m[r1][c0] * src->m[r2][c2] - src->m[r2][c0] * src->m[r1][c2] ) +
-			src->m[r0][c2] * ( src->m[r1][c0] * src->m[r2][c1] - src->m[r2][c0] * src->m[r1][c1] );
-}
- 
-// Calculates the inverse of an arbitrary 4x4 matrix.
-static void ksMatrix4x4f_Invert( ksMatrix4x4f * result, const ksMatrix4x4f * src )
-{
-	const float rcpDet = 1.0f / (	src->m[0][0] * ksMatrix4x4f_Minor( src, 1, 2, 3, 1, 2, 3 ) -
-									src->m[0][1] * ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 2, 3 ) +
-									src->m[0][2] * ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 1, 3 ) -
-									src->m[0][3] * ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 1, 2 ) );
-
-	result->m[0][0] =  ksMatrix4x4f_Minor( src, 1, 2, 3, 1, 2, 3 ) * rcpDet;
-	result->m[0][1] = -ksMatrix4x4f_Minor( src, 0, 2, 3, 1, 2, 3 ) * rcpDet;
-	result->m[0][2] =  ksMatrix4x4f_Minor( src, 0, 1, 3, 1, 2, 3 ) * rcpDet;
-	result->m[0][3] = -ksMatrix4x4f_Minor( src, 0, 1, 2, 1, 2, 3 ) * rcpDet;
-	result->m[1][0] = -ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 2, 3 ) * rcpDet;
-	result->m[1][1] =  ksMatrix4x4f_Minor( src, 0, 2, 3, 0, 2, 3 ) * rcpDet;
-	result->m[1][2] = -ksMatrix4x4f_Minor( src, 0, 1, 3, 0, 2, 3 ) * rcpDet;
-	result->m[1][3] =  ksMatrix4x4f_Minor( src, 0, 1, 2, 0, 2, 3 ) * rcpDet;
-	result->m[2][0] =  ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 1, 3 ) * rcpDet;
-	result->m[2][1] = -ksMatrix4x4f_Minor( src, 0, 2, 3, 0, 1, 3 ) * rcpDet;
-	result->m[2][2] =  ksMatrix4x4f_Minor( src, 0, 1, 3, 0, 1, 3 ) * rcpDet;
-	result->m[2][3] = -ksMatrix4x4f_Minor( src, 0, 1, 2, 0, 1, 3 ) * rcpDet;
-	result->m[3][0] = -ksMatrix4x4f_Minor( src, 1, 2, 3, 0, 1, 2 ) * rcpDet;
-	result->m[3][1] =  ksMatrix4x4f_Minor( src, 0, 2, 3, 0, 1, 2 ) * rcpDet;
-	result->m[3][2] = -ksMatrix4x4f_Minor( src, 0, 1, 3, 0, 1, 2 ) * rcpDet;
-	result->m[3][3] =  ksMatrix4x4f_Minor( src, 0, 1, 2, 0, 1, 2 ) * rcpDet;
-}
-
-// Calculates the inverse of a homogeneous matrix.
+// Calculates the inverse of a 4x4 homogeneous matrix.
 static void ksMatrix4x4f_InvertHomogeneous( ksMatrix4x4f * result, const ksMatrix4x4f * src )
 {
 	result->m[0][0] = src->m[0][0];
-	result->m[1][0] = src->m[0][1];
-	result->m[2][0] = src->m[0][2];
-	result->m[3][0] = 0.0f;
 	result->m[0][1] = src->m[1][0];
-	result->m[1][1] = src->m[1][1];
-	result->m[2][1] = src->m[1][2];
-	result->m[3][1] = 0.0f;
 	result->m[0][2] = src->m[2][0];
+	result->m[0][3] = 0.0f;
+	result->m[1][0] = src->m[0][1];
+	result->m[1][1] = src->m[1][1];
 	result->m[1][2] = src->m[2][1];
+	result->m[1][3] = 0.0f;
+	result->m[2][0] = src->m[0][2];
+	result->m[2][1] = src->m[1][2];
 	result->m[2][2] = src->m[2][2];
-	result->m[3][2] = 0.0f;
-	result->m[0][3] = -( src->m[0][0] * src->m[0][3] + src->m[1][0] * src->m[1][3] + src->m[2][0] * src->m[2][3] );
-	result->m[1][3] = -( src->m[0][1] * src->m[0][3] + src->m[1][1] * src->m[1][3] + src->m[2][1] * src->m[2][3] );
-	result->m[2][3] = -( src->m[0][2] * src->m[0][3] + src->m[1][2] * src->m[1][3] + src->m[2][2] * src->m[2][3] );
+	result->m[2][3] = 0.0f;
+	result->m[3][0] = -( src->m[0][0] * src->m[3][0] + src->m[0][1] * src->m[3][1] + src->m[0][2] * src->m[3][2] );
+	result->m[3][1] = -( src->m[1][0] * src->m[3][0] + src->m[1][1] * src->m[3][1] + src->m[1][2] * src->m[3][2] );
+	result->m[3][2] = -( src->m[2][0] * src->m[3][0] + src->m[2][1] * src->m[3][1] + src->m[2][2] * src->m[3][2] );
 	result->m[3][3] = 1.0f;
 }
 
@@ -5682,17 +5647,16 @@ Time Warp
 ================================================================================================
 */
 
-// Calculate a 4x4 time warp transformation matrix.
 static void CalculateTimeWarpTransform( ksMatrix4x4f * transform, const ksMatrix4x4f * renderProjectionMatrix,
-								const ksMatrix4x4f * renderViewMatrix, const ksMatrix4x4f * newViewMatrix )
+										const ksMatrix4x4f * renderViewMatrix, const ksMatrix4x4f * newViewMatrix )
 {
 	// Convert the projection matrix from [-1, 1] space to [0, 1] space.
 	const ksMatrix4x4f texCoordProjection =
 	{ {
-		{ 0.5f * renderProjectionMatrix->m[0][0], 0.0f, 0.5f * renderProjectionMatrix->m[0][2] - 0.5f, 0.0f },
-		{ 0.0f, 0.5f * renderProjectionMatrix->m[1][1], 0.5f * renderProjectionMatrix->m[1][2] - 0.5f, 0.0f },
-		{ 0.0f, 0.0f, -1.0f, 0.0f },
-		{ 0.0f, 0.0f,  0.0f, 1.0f }
+		{ 0.5f * renderProjectionMatrix->m[0][0],        0.0f,                                           0.0f,  0.0f },
+		{ 0.0f,                                          0.5f * renderProjectionMatrix->m[1][1],         0.0f,  0.0f },
+		{ 0.5f * renderProjectionMatrix->m[2][0] - 0.5f, 0.5f * renderProjectionMatrix->m[2][1] - 0.5f, -1.0f,  0.0f },
+		{ 0.0f,                                          0.0f,                                           0.0f,  1.0f }
 	} };
 
 	// Calculate the delta between the view matrix used for rendering and
@@ -5707,9 +5671,9 @@ static void CalculateTimeWarpTransform( ksMatrix4x4f * transform, const ksMatrix
 	ksMatrix4x4f_InvertHomogeneous( &inverseDeltaViewMatrix, &deltaViewMatrix );
 
 	// Make the delta rotation only.
-	inverseDeltaViewMatrix.m[0][3] = 0.0f;
-	inverseDeltaViewMatrix.m[1][3] = 0.0f;
-	inverseDeltaViewMatrix.m[2][3] = 0.0f;
+	inverseDeltaViewMatrix.m[3][0] = 0.0f;
+	inverseDeltaViewMatrix.m[3][1] = 0.0f;
+	inverseDeltaViewMatrix.m[3][2] = 0.0f;
 
 	// Accumulate the transforms.
 	ksMatrix4x4f_Multiply( transform, &texCoordProjection, &inverseDeltaViewMatrix );
@@ -5718,9 +5682,9 @@ static void CalculateTimeWarpTransform( ksMatrix4x4f * transform, const ksMatrix
 // Transforms the 2D coordinates by interpreting them as 3D homogeneous coordinates with Z = -1 and W = 1.
 static void TransformCoords( float result[3], const ksMatrix4x4f * transform, const float coords[2] )
 {
-	result[0] = transform->m[0][0] * coords[0] + transform->m[0][1] * coords[1] - transform->m[0][2] + transform->m[0][3];
-	result[1] = transform->m[1][0] * coords[0] + transform->m[1][1] * coords[1] - transform->m[1][2] + transform->m[1][3];
-	result[2] = transform->m[2][0] * coords[0] + transform->m[2][1] * coords[1] - transform->m[2][2] + transform->m[2][3];
+	result[0] = transform->m[0][0] * coords[0] + transform->m[1][0] * coords[1] - transform->m[2][0] + transform->m[3][0];
+	result[1] = transform->m[0][1] * coords[0] + transform->m[1][1] * coords[1] - transform->m[2][1] + transform->m[3][1];
+	result[2] = transform->m[0][2] * coords[0] + transform->m[1][2] * coords[1] - transform->m[2][2] + transform->m[3][2];
 }
 
 // Interpolate between two 3D vectors.
@@ -6896,12 +6860,12 @@ void TimeWarpThread( ksTimeWarpThreadData * data )
 
 	const size_t numMeshCoords = ( data->destTilesHigh + 1 ) * ( data->destTilesWide + 1 );
 	const ksMeshCoord * meshCoordsBasePtr = (const ksMeshCoord *) data->meshCoords;
-	const ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
+	const ksMeshCoord * meshCoords[EYE_COUNT][COLOR_CHANNEL_COUNT] =
 	{
 		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
 		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
 	};
-	ksMeshCoord * tempMeshCoords[NUM_COLOR_CHANNELS] =
+	ksMeshCoord * tempMeshCoords[COLOR_CHANNEL_COUNT] =
 	{
 		(ksMeshCoord *)meshCoordsBasePtr + 6 * numMeshCoords,
 		(ksMeshCoord *)meshCoordsBasePtr + 7 * numMeshCoords,
@@ -7149,7 +7113,7 @@ int TimeWarpInterface_TimeWarp(
 
 	// Projection matrix that was used to render the source data.
 	ksMatrix4x4f renderProjectionMatrix;
-	ksMatrix4x4f_CreateProjectionFov( &renderProjectionMatrix, 80.0f, 80.0f, 0.0f, 0.0f, 0.1f, 0.0f );
+	ksMatrix4x4f_CreateProjectionFov( &renderProjectionMatrix, 40.0f, 40.0f, 40.0f, 40.0f, DEFAULT_NEAR_Z, INFINITE_FAR_Z );
 
 	// View matrix that was used to render the source data;
 	ksMatrix4x4f renderViewMatrix;
@@ -7267,13 +7231,13 @@ static const ksHmdInfo * GetDefaultHmdInfo( const int displayPixelsWide, const i
 	hmdInfo.displayPixelsHigh = displayPixelsHigh;
 	hmdInfo.tilePixelsWide = 32;
 	hmdInfo.tilePixelsHigh = 32;
-	hmdInfo.eyeTilesWide = displayPixelsWide / hmdInfo.tilePixelsWide / NUM_EYES;
+	hmdInfo.eyeTilesWide = displayPixelsWide / hmdInfo.tilePixelsWide / EYE_COUNT;
 	hmdInfo.eyeTilesHigh = displayPixelsHigh / hmdInfo.tilePixelsHigh;
-	hmdInfo.visiblePixelsWide = hmdInfo.eyeTilesWide * hmdInfo.tilePixelsWide * NUM_EYES;
+	hmdInfo.visiblePixelsWide = hmdInfo.eyeTilesWide * hmdInfo.tilePixelsWide * EYE_COUNT;
 	hmdInfo.visiblePixelsHigh = hmdInfo.eyeTilesHigh * hmdInfo.tilePixelsHigh;
-	hmdInfo.visibleMetersWide = 0.11047f * ( hmdInfo.eyeTilesWide * hmdInfo.tilePixelsWide * NUM_EYES ) / displayPixelsWide;
+	hmdInfo.visibleMetersWide = 0.11047f * ( hmdInfo.eyeTilesWide * hmdInfo.tilePixelsWide * EYE_COUNT ) / displayPixelsWide;
 	hmdInfo.visibleMetersHigh = 0.06214f * ( hmdInfo.eyeTilesHigh * hmdInfo.tilePixelsHigh ) / displayPixelsHigh;
-	hmdInfo.lensSeparationInMeters = hmdInfo.visibleMetersWide / NUM_EYES;
+	hmdInfo.lensSeparationInMeters = hmdInfo.visibleMetersWide / EYE_COUNT;
 	hmdInfo.metersPerTanAngleAtCenter = 0.037f;
 	hmdInfo.numKnots = 11;
 	hmdInfo.K[0] = 1.0f;
@@ -7353,12 +7317,12 @@ static float EvaluateCatmullRomSpline( const float value, float const * K, const
 	return res;
 }
 
-static void BuildDistortionMeshes( ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS], const ksHmdInfo * hmdInfo )
+static void BuildDistortionMeshes( ksMeshCoord * meshCoords[EYE_COUNT][COLOR_CHANNEL_COUNT], const ksHmdInfo * hmdInfo )
 {
 	const float horizontalShiftMeters = ( hmdInfo->lensSeparationInMeters / 2 ) - ( hmdInfo->visibleMetersWide / 4 );
 	const float horizontalShiftView = horizontalShiftMeters / ( hmdInfo->visibleMetersWide / 2 );
 
-	for ( int eye = 0; eye < NUM_EYES; eye++ )
+	for ( int eye = 0; eye < EYE_COUNT; eye++ )
 	{
 		for ( int y = 0; y <= hmdInfo->eyeTilesHigh; y++ )
 		{
@@ -7385,7 +7349,7 @@ static void BuildDistortionMeshes( ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_
 
 				const float rsq = theta[0] * theta[0] + theta[1] * theta[1];
 				const float scale = EvaluateCatmullRomSpline( rsq, hmdInfo->K, hmdInfo->numKnots );
-				const float chromaScale[NUM_COLOR_CHANNELS] =
+				const float chromaScale[COLOR_CHANNEL_COUNT] =
 				{
 					scale * ( 1.0f + hmdInfo->chromaticAberration[0] + rsq * hmdInfo->chromaticAberration[1] ),
 					scale,
@@ -7393,7 +7357,7 @@ static void BuildDistortionMeshes( ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_
 				};
 
 				const int vertNum = y * ( hmdInfo->eyeTilesWide + 1 ) + x;
-				for ( int channel = 0; channel < NUM_COLOR_CHANNELS; channel++ )
+				for ( int channel = 0; channel < COLOR_CHANNEL_COUNT; channel++ )
 				{
 					meshCoords[eye][channel][vertNum].x = chromaScale[channel] * theta[0];
 					meshCoords[eye][channel][vertNum].y = chromaScale[channel] * theta[1];
@@ -8018,9 +7982,9 @@ void TestTimeWarp( const int srcTexelsWide, const int srcTexelsHigh, const ksHmd
 	unsigned char * planarB = packedRGB + 2 * srcTexelsWide * srcTexelsHigh;
 
 	const size_t numMeshCoords = ( hmdInfo->eyeTilesWide + 1 ) * ( hmdInfo->eyeTilesHigh + 1 );
-	const size_t meshSizeInBytes = ( NUM_EYES + 1 ) * NUM_COLOR_CHANNELS * numMeshCoords * sizeof( ksMeshCoord );
+	const size_t meshSizeInBytes = ( EYE_COUNT + 1 ) * COLOR_CHANNEL_COUNT * numMeshCoords * sizeof( ksMeshCoord );
 	ksMeshCoord * meshCoordsBasePtr = (ksMeshCoord *)AllocContiguousPhysicalMemory( meshSizeInBytes, MEMORY_CACHED );
-	ksMeshCoord * meshCoords[NUM_EYES][NUM_COLOR_CHANNELS] =
+	ksMeshCoord * meshCoords[EYE_COUNT][COLOR_CHANNEL_COUNT] =
 	{
 		{ meshCoordsBasePtr + 0 * numMeshCoords, meshCoordsBasePtr + 1 * numMeshCoords, meshCoordsBasePtr + 2 * numMeshCoords },
 		{ meshCoordsBasePtr + 3 * numMeshCoords, meshCoordsBasePtr + 4 * numMeshCoords, meshCoordsBasePtr + 5 * numMeshCoords }
@@ -8174,7 +8138,7 @@ int main( int argc, char * argv[] )
 	Print( "--------------------------------\n" );
 	Print( "OS      : %s\n", GetOSVersion() );
 	Print( "CPU     : %s\n", GetCPUVersion() );
-	Print( "DSP     : %s\n", dspVersion != 0 ? dspVersionString : "-" );
+	Print( "DSP     : %s\n", ( dspVersion != 0 ) ? dspVersionString : "-" );
 	Print( "Display : %4d x %4d\n", hmdInfo->displayPixelsWide, hmdInfo->displayPixelsHigh );
 	Print( "Eye Img : %4d x %4d\n", srcTexelsWide, srcTexelsHigh );
 	Print( "--------------------------------\n" );

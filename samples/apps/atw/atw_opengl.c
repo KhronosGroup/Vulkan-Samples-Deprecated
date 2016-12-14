@@ -1782,7 +1782,7 @@ static void ksMatrix4x4f_CreateIdentity( ksMatrix4x4f * result );
 static void ksMatrix4x4f_CreateTranslation( ksMatrix4x4f * result, const float x, const float y, const float z );
 static void ksMatrix4x4f_CreateRotation( ksMatrix4x4f * result, const float degreesX, const float degreesY, const float degreesZ );
 static void ksMatrix4x4f_CreateScale( ksMatrix4x4f * result, const float x, const float y, const float z );
-static void ksMatrix4x4f_CreateTranslationRotationScale( ksMatrix4x4f * result, const ksVector3f * scale, const ksQuatf * rotation, const ksVector3f * translation );
+static void ksMatrix4x4f_CreateTranslationRotationScale( ksMatrix4x4f * result, const ksVector3f * translation, const ksQuatf * rotation, const ksVector3f * scale );
 static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float tanAngleLeft, const float tanAngleRight,
 											const float tanAngleUp, float const tanAngleDown, const float nearZ, const float farZ );
 static void ksMatrix4x4f_CreateProjectionFov( ksMatrix4x4f * result, const float fovDegreesLeft, const float fovDegreesRight,
@@ -1814,6 +1814,7 @@ static bool ksMatrix4x4f_CullBounds( const ksMatrix4x4f * mvp, const ksVector3f 
 */
 
 #define DEFAULT_NEAR_Z		0.015625f		// exact floating point representation
+#define INFINITE_FAR_Z		0.0f
 
 // 2D integer vector
 typedef struct
@@ -2252,7 +2253,7 @@ static void ksMatrix4x4f_CreateFromQuaternion( ksMatrix4x4f * result, const ksQu
 }
 
 // Creates a combined translation(rotation(scale(object))) matrix.
-static void ksMatrix4x4f_CreateTranslationRotationScale( ksMatrix4x4f * result, const ksVector3f * scale, const ksQuatf * rotation, const ksVector3f * translation )
+static void ksMatrix4x4f_CreateTranslationRotationScale( ksMatrix4x4f * result, const ksVector3f * translation, const ksQuatf * rotation, const ksVector3f * scale )
 {
 	ksMatrix4x4f scaleMatrix;
 	ksMatrix4x4f_CreateScale( &scaleMatrix, scale->x, scale->y, scale->z );
@@ -3438,8 +3439,7 @@ ksGpuQueuePriority
 ksGpuQueueInfo
 ksGpuDevice
 
-static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instance,
-							const ksGpuQueueInfo * queueInfo, const VkSurfaceKHR presentSurface );
+static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instance, const ksGpuQueueInfo * queueInfo );
 static void ksGpuDevice_Destroy( ksGpuDevice * device );
 
 ================================================================================================================================
@@ -3474,8 +3474,7 @@ typedef struct
 	ksGpuQueueInfo		queueInfo;
 } ksGpuDevice;
 
-static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instance,
-								const ksGpuQueueInfo * queueInfo )
+static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instance, const ksGpuQueueInfo * queueInfo )
 {
 	/*
 		Use an extensions to select the appropriate device:
@@ -13632,7 +13631,7 @@ static void ksViewState_Init( ksViewState * viewState, const float interpupillar
 	for ( int eye = 0; eye < NUM_EYES; eye++ )
 	{
 		ksMatrix4x4f_CreateIdentity( &viewState->viewMatrix[eye] );
-		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 30.0f, 30.0f, DEFAULT_NEAR_Z, 0.0f );
+		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 30.0f, 30.0f, DEFAULT_NEAR_Z, INFINITE_FAR_Z );
 
 		ksMatrix4x4f_Invert( &viewState->viewInverseMatrix[eye], &viewState->viewMatrix[eye] );
 		ksMatrix4x4f_Invert( &viewState->projectionInverseMatrix[eye], &viewState->projectionMatrix[eye] );
@@ -13722,7 +13721,7 @@ static void ksViewState_HandleInput( ksViewState * viewState, ksGpuWindowInput *
 		ksMatrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
 
 		ksMatrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
-		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 30.0f, 30.0f, DEFAULT_NEAR_Z, 0.0f );
+		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 30.0f, 30.0f, DEFAULT_NEAR_Z, INFINITE_FAR_Z );
 	}
 
 	ksViewState_DerivedData( viewState );
@@ -13740,7 +13739,7 @@ static void ksViewState_HandleHmd( ksViewState * viewState, const ksNanoseconds 
 		ksMatrix4x4f_CreateTranslation( &eyeOffsetMatrix, ( eye ? -0.5f : 0.5f ) * viewState->interpupillaryDistance, 0.0f, 0.0f );
 
 		ksMatrix4x4f_Multiply( &viewState->viewMatrix[eye], &eyeOffsetMatrix, &viewState->centerViewMatrix );
-		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 36.0f, 36.0f, DEFAULT_NEAR_Z, 0.0f );
+		ksMatrix4x4f_CreateProjectionFov( &viewState->projectionMatrix[eye], 45.0f, 45.0f, 36.0f, 36.0f, DEFAULT_NEAR_Z, INFINITE_FAR_Z );
 	}
 
 	ksViewState_DerivedData( viewState );
@@ -16197,9 +16196,9 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 					ksGltf_ParseFloatArray( &scene->nodes[nodeIndex].scale.x, 3, Json_GetMemberByName( node, "scale" ) );
 					ksGltf_ParseFloatArray( &scene->nodes[nodeIndex].translation.x, 3, Json_GetMemberByName( node, "translation" ) );
 					ksMatrix4x4f_CreateTranslationRotationScale( &scene->nodes[nodeIndex].localTransform,
-																&scene->nodes[nodeIndex].scale,
+																&scene->nodes[nodeIndex].translation,
 																&scene->nodes[nodeIndex].rotation,
-																&scene->nodes[nodeIndex].translation );
+																&scene->nodes[nodeIndex].scale );
 				}
 				scene->nodes[nodeIndex].globalTransform = scene->nodes[nodeIndex].localTransform;	// transformed to global space later
 
@@ -16587,7 +16586,7 @@ static void ksGltfScene_Simulate( ksGltfScene * scene, ksViewState * viewState, 
 		{
 			ksGltfNode * node = &subTree->nodes[nodeIndex];
 
-			ksMatrix4x4f_CreateTranslationRotationScale( &node->localTransform, &node->scale, &node->rotation, &node->translation );
+			ksMatrix4x4f_CreateTranslationRotationScale( &node->localTransform, &node->translation, &node->rotation, &node->scale );
 			if ( node->parent != NULL )
 			{
 				assert( node->parent < node );
@@ -17217,7 +17216,7 @@ void SceneThread_Render( ksSceneThreadData * threadData )
 		ksFrameLog_EndFrame( eyeTexturesCpuTime, eyeTexturesGpuTime, GPU_TIMER_FRAMES_DELAYED );
 
 		ksMatrix4x4f projectionMatrix;
-		ksMatrix4x4f_CreateProjectionFov( &projectionMatrix, 40.0f, 40.0f, 40.0f, 40.0f, DEFAULT_NEAR_Z, 0.0f );
+		ksMatrix4x4f_CreateProjectionFov( &projectionMatrix, 40.0f, 40.0f, 40.0f, 40.0f, DEFAULT_NEAR_Z, INFINITE_FAR_Z );
 
 		ksTimeWarp_SubmitFrame( threadData->timeWarp, frameIndex, nextDisplayTime,
 								&viewState.hmdViewMatrix, &projectionMatrix,
