@@ -30,8 +30,6 @@ limitations under the License.
 
 
 DESCRIPTION
-
-blah
 ===========
 
 This implements the simplest form of time warp transform for OpenGL.
