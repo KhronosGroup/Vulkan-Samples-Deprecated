@@ -8138,7 +8138,7 @@ static bool ksGpuTexture_CreateInternal( ksGpuContext * context, ksGpuTexture * 
 					imageBlit.srcOffsets[0].z = 0;
 					imageBlit.srcOffsets[1].x = ( width >> prevMipLevel ) >= 1 ? ( width >> prevMipLevel ) : 0;
 					imageBlit.srcOffsets[1].y = ( height >> prevMipLevel ) >= 1 ? ( height >> prevMipLevel ) : 0;
-					imageBlit.srcOffsets[1].z = ( depth >> prevMipLevel ) >= 1 ? ( depth >> prevMipLevel ) : 0;
+					imageBlit.srcOffsets[1].z = ( depth >> prevMipLevel ) >= 1 ? ( depth >> prevMipLevel ) : 1;
 					imageBlit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 					imageBlit.dstSubresource.mipLevel = mipLevel;
 					imageBlit.dstSubresource.baseArrayLayer = 0;
@@ -8148,7 +8148,7 @@ static bool ksGpuTexture_CreateInternal( ksGpuContext * context, ksGpuTexture * 
 					imageBlit.dstOffsets[0].z = 0;
 					imageBlit.dstOffsets[1].x = ( width >> mipLevel ) >= 1 ? ( width >> mipLevel ) : 0;
 					imageBlit.dstOffsets[1].y = ( height >> mipLevel ) >= 1 ? ( height >> mipLevel ) : 0;
-					imageBlit.dstOffsets[1].z = ( depth >> mipLevel ) >= 1 ? ( depth >> mipLevel ) : 0;
+					imageBlit.dstOffsets[1].z = ( depth >> mipLevel ) >= 1 ? ( depth >> mipLevel ) : 1;
 
 					VC( context->device->vkCmdBlitImage( context->setupCommandBuffer,
 									texture->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
