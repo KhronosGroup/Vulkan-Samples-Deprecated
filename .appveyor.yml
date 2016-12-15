@@ -11,8 +11,8 @@ platform:
   - x64
 
 environment:
-  PYTHON_PATH: "C:/Python27"
-  PYTHON_PACKAGE_PATH: "C:/Python27/Scripts"
+  PYTHON_PATH: "C:/Python33"
+  PYTHON_PACKAGE_PATH: "C:/Python33/Scripts"
 
 configuration:
   - Debug
