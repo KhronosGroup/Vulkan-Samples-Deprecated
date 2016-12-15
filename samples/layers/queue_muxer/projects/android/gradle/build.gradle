@@ -49,7 +49,7 @@ model {
 		CFlags.addAll([
 			"-I${file("${baseDir}/external/include")}".toString(),
 			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/include")}".toString(),
-			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/build/layers")}".toString(),
+			"-I${file("${baseDir}/../Vulkan-LoaderAndValidationLayers/build/generated/include")}".toString(),
 			"-I${file("${vkSdkPath}/Include")}".toString(),
 			"-I${file("${vkSdkPath}/Source/layers")}".toString()
 		])

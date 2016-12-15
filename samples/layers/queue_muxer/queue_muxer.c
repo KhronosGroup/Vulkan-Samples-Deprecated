@@ -122,9 +122,9 @@ VERSION HISTORY
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
-#include <vulkan/vulkan.h>				// {SDK}/Include/       | Vulkan-LoaderAndValidationLayers/include/      | /usr/include/
-#include <vulkan/vk_layer.h>			// {SDK}/Include/       | Vulkan-LoaderAndValidationLayers/include/      | /usr/include/
-#include <vk_dispatch_table_helper.h>	// {SDK}/Source/layers/ | Vulkan-LoaderAndValidationLayers/build/layers/
+#include <vulkan/vulkan.h>				// {SDK}/Include/       | Vulkan-LoaderAndValidationLayers/include/                  | /usr/include/
+#include <vulkan/vk_layer.h>			// {SDK}/Include/       | Vulkan-LoaderAndValidationLayers/include/                  | /usr/include/
+#include <vk_dispatch_table_helper.h>	// {SDK}/Source/layers/ | Vulkan-LoaderAndValidationLayers/build/generated/include/
 
 #if defined( OS_ANDROID )
 #include <android/log.h>			// for __android_log_print()

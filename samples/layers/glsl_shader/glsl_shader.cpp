@@ -115,9 +115,9 @@ VERSION HISTORY
 #include <string.h>
 #include <assert.h>
 #include <vector>
-#include <vulkan/vulkan.h>				// {SDK}/Include/       | Vulkan-LoaderAndValidationLayers/include/      | /usr/include/
-#include <vulkan/vk_layer.h>			// {SDK}/Include/       | Vulkan-LoaderAndValidationLayers/include/      | /usr/include/
-#include <vk_dispatch_table_helper.h>	// {SDK}/Source/layers/ | Vulkan-LoaderAndValidationLayers/build/layers/
+#include <vulkan/vulkan.h>				// {SDK}/Include/       | Vulkan-LoaderAndValidationLayers/include/                  | /usr/include/
+#include <vulkan/vk_layer.h>			// {SDK}/Include/       | Vulkan-LoaderAndValidationLayers/include/                  | /usr/include/
+#include <vk_dispatch_table_helper.h>	// {SDK}/Source/layers/ | Vulkan-LoaderAndValidationLayers/build/generated/include/
 
 #include "SPIRV/GlslangToSpv.h"
 
