@@ -240,9 +240,9 @@ and version 3.1 of the OpenGL ES Specification.
 Supported platforms are:
 
 	- Microsoft Windows 7 or later
+	- Ubuntu Linux 14.04 or later
 	- Apple macOS 10.11 or later
 	- Apple iOS 9.0 or later
-	- Ubuntu Linux 14.04 or later
 	- Android 5.0 or later
 
 
@@ -281,9 +281,6 @@ Microsoft Windows: Intel Compiler 14.0
 	"C:\Program Files (x86)\Intel\Composer XE\bin\iclvars.bat" intel64
 	icl /Qstd=c99 /Zc:wchar_t /Zc:forScope /Wall /MD /GS /Gy /O2 /Oi /arch:SSE2 /Iinclude atw_opengl.c /link user32.lib gdi32.lib Advapi32.lib opengl32.lib
 
-Apple Mac OS X: Apple LLVM 6.0:
-	clang -std=c99 -x objective-c -fno-objc-arc -Wall -g -O2 -o atw_opengl atw_opengl.c -framework Cocoa -framework OpenGL
-
 Linux: GCC 4.8.2 Xlib:
 	sudo apt-get install libx11-dev
 	sudo apt-get install libxxf86vm-dev
@@ -299,6 +296,9 @@ Linux: GCC 4.8.2 XCB:
 	sudo apt-get install mesa-common-dev
 	sudo apt-get install libgl1-mesa-dev
 	gcc -std=c99 -Wall -g -O2 -o -m64 atw_opengl atw_opengl.c -lm -lpthread -lxcb -lxcb-keysyms -lxcb-randr -lxcb-glx -lxcb-dri2 -lGL
+
+Apple macOS: Apple LLVM 6.0:
+	clang -std=c99 -x objective-c -fno-objc-arc -Wall -g -O2 -o atw_opengl atw_opengl.c -framework Cocoa -framework OpenGL
 
 Android for ARM from Windows: NDK Revision 11c - Android 21 - ANT/Gradle
 	ANT:
@@ -413,43 +413,6 @@ Platform headers / declarations
 
 	#define __thread	__declspec( thread )
 
-#elif defined( OS_APPLE_MACOS )
-
-	// Apple is still at OpenGL 4.1
-	#define OPENGL_VERSION_MAJOR	4
-	#define OPENGL_VERSION_MINOR	1
-	#define GLSL_PROGRAM_VERSION	"410"
-	#define USE_SYNC_OBJECT			0			// 0 = GLsync, 1 = EGLSyncKHR, 2 = storage buffer
-
-	#include <sys/param.h>
-	#include <sys/sysctl.h>
-	#include <sys/time.h>
-	#include <pthread.h>
-	#include <Cocoa/Cocoa.h>
-	#define GL_DO_NOT_WARN_IF_MULTI_GL_VERSION_HEADERS_INCLUDED
-	#include <OpenGL/OpenGL.h>
-	#include <OpenGL/gl3.h>
-	#include <OpenGL/gl3ext.h>
-	#include <GL/gl_format.h>
-
-	#define OUTPUT_PATH				""
-
-	// Undocumented CGS and CGL
-	typedef void * CGSConnectionID;
-	typedef int CGSWindowID;
-	typedef int CGSSurfaceID;
-    
-	CGLError CGLSetSurface( CGLContextObj ctx, CGSConnectionID cid, CGSWindowID wid, CGSSurfaceID sid );
-	CGLError CGLGetSurface( CGLContextObj ctx, CGSConnectionID * cid, CGSWindowID * wid, CGSSurfaceID * sid );
-	CGLError CGLUpdateContext( CGLContextObj ctx );
-
-	#pragma clang diagnostic ignored "-Wunused-function"
-	#pragma clang diagnostic ignored "-Wunused-const-variable"
-
-#elif defined( OS_APPLE_IOS )
-
-// FIXME:
-
 #elif defined( OS_LINUX )
 
 	#define OPENGL_VERSION_MAJOR	4
@@ -492,6 +455,43 @@ Platform headers / declarations
 	extern int pthread_setaffinity_np( pthread_t thread, size_t cpusetsize, const cpu_set_t * cpuset );
 
 	#pragma GCC diagnostic ignored "-Wunused-function"
+
+#elif defined( OS_APPLE_MACOS )
+
+	// Apple is still at OpenGL 4.1
+	#define OPENGL_VERSION_MAJOR	4
+	#define OPENGL_VERSION_MINOR	1
+	#define GLSL_PROGRAM_VERSION	"410"
+	#define USE_SYNC_OBJECT			0			// 0 = GLsync, 1 = EGLSyncKHR, 2 = storage buffer
+
+	#include <sys/param.h>
+	#include <sys/sysctl.h>
+	#include <sys/time.h>
+	#include <pthread.h>
+	#include <Cocoa/Cocoa.h>
+	#define GL_DO_NOT_WARN_IF_MULTI_GL_VERSION_HEADERS_INCLUDED
+	#include <OpenGL/OpenGL.h>
+	#include <OpenGL/gl3.h>
+	#include <OpenGL/gl3ext.h>
+	#include <GL/gl_format.h>
+
+	#define OUTPUT_PATH				""
+
+	// Undocumented CGS and CGL
+	typedef void * CGSConnectionID;
+	typedef int CGSWindowID;
+	typedef int CGSSurfaceID;
+    
+	CGLError CGLSetSurface( CGLContextObj ctx, CGSConnectionID cid, CGSWindowID wid, CGSSurfaceID sid );
+	CGLError CGLGetSurface( CGLContextObj ctx, CGSConnectionID * cid, CGSWindowID * wid, CGSSurfaceID * sid );
+	CGLError CGLUpdateContext( CGLContextObj ctx );
+
+	#pragma clang diagnostic ignored "-Wunused-function"
+	#pragma clang diagnostic ignored "-Wunused-const-variable"
+
+#elif defined( OS_APPLE_IOS )
+
+// FIXME:
 
 #elif defined( OS_ANDROID )
 
@@ -631,6 +631,12 @@ static void Print( const char * format, ... )
 	va_end( args );
 
 	OutputDebugString( buffer );
+#elif defined( OS_LINUX )
+	va_list args;
+	va_start( args, format );
+	vprintf( format, args );
+	va_end( args );
+	fflush( stdout );
 #elif defined( OS_APPLE )
 	char buffer[4096];
 	va_list args;
@@ -639,12 +645,6 @@ static void Print( const char * format, ... )
 	va_end( args );
 
 	NSLog( @"%s", buffer );
-#elif defined( OS_LINUX )
-	va_list args;
-	va_start( args, format );
-	vprintf( format, args );
-	va_end( args );
-	fflush( stdout );
 #elif defined( OS_ANDROID )
 	char buffer[4096];
 	va_list args;
@@ -668,6 +668,32 @@ static void Error( const char * format, ... )
 	OutputDebugString( buffer );
 
 	MessageBox( NULL, buffer, "ERROR", MB_OK | MB_ICONINFORMATION );
+#elif defined( OS_LINUX )
+	va_list args;
+	va_start( args, format );
+	vprintf( format, args );
+	va_end( args );
+	printf( "\n" );
+	fflush( stdout );
+#elif defined( OS_APPLE_MACOS )
+	char buffer[4096];
+	va_list args;
+	va_start( args, format );
+	int length = vsnprintf( buffer, 4096, format, args );
+	va_end( args );
+
+	NSLog( @"%s\n", buffer );
+
+	if ( [NSThread isMainThread] )
+	{
+		NSString * string = [[NSString alloc] initWithBytes:buffer length:length encoding:NSASCIIStringEncoding];
+		NSAlert * alert = [[NSAlert alloc] init];
+		[alert addButtonWithTitle:@"OK"];
+		[alert setMessageText:@"Error"];
+		[alert setInformativeText:string];
+		[alert setAlertStyle:NSWarningAlertStyle];
+		[alert runModal];
+	}
 #elif defined( OS_APPLE_IOS )
 	char buffer[4096];
 	va_list args;
@@ -688,32 +714,6 @@ static void Error( const char * format, ... )
 												 handler: ^(UIAlertAction * action) {}]];
 		[UIApplication.sharedApplication.keyWindow.rootViewController presentViewController: alert animated: YES completion: nil];
 	}
-#elif defined( OS_APPLE_MACOS )
-	char buffer[4096];
-	va_list args;
-	va_start( args, format );
-	int length = vsnprintf( buffer, 4096, format, args );
-	va_end( args );
-
-	NSLog( @"%s\n", buffer );
-
-	if ( [NSThread isMainThread] )
-	{
-		NSString * string = [[NSString alloc] initWithBytes:buffer length:length encoding:NSASCIIStringEncoding];
-		NSAlert * alert = [[NSAlert alloc] init];
-		[alert addButtonWithTitle:@"OK"];
-		[alert setMessageText:@"Error"];
-		[alert setInformativeText:string];
-		[alert setAlertStyle:NSWarningAlertStyle];
-		[alert runModal];
-	}
-#elif defined( OS_LINUX )
-	va_list args;
-	va_start( args, format );
-	vprintf( format, args );
-	va_end( args );
-	printf( "\n" );
-	fflush( stdout );
 #elif defined( OS_ANDROID )
 	char buffer[4096];
 	va_list args;
@@ -746,10 +746,6 @@ static const char * GetOSVersion()
 	}
 
 	return "Microsoft Windows";
-#elif defined( OS_APPLE_IOS )
-	return [NSString stringWithFormat: @"Apple iOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
-#elif defined( OS_APPLE_MACOS )
-	return [NSString stringWithFormat: @"Apple macOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
 #elif defined( OS_LINUX )
 	static char buffer[1024];
 
@@ -787,6 +783,10 @@ static const char * GetOSVersion()
 	}
 
 	return "Linux";
+#elif defined( OS_APPLE_MACOS )
+	return [NSString stringWithFormat: @"Apple macOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
+#elif defined( OS_APPLE_IOS )
+	return [NSString stringWithFormat: @"Apple iOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
 #elif defined( OS_ANDROID )
 	static char version[1024];
 
@@ -1295,10 +1295,10 @@ static void ksThread_SetName( const char * name )
 	{
 		info.dwFlags = 0;
 	}
-#elif defined( OS_APPLE )
-	pthread_setname_np( name );
 #elif defined( OS_LINUX )
 	pthread_setname_np( pthread_self(), name );
+#elif defined( OS_APPLE )
+	pthread_setname_np( name );
 #elif defined( OS_ANDROID )
 	prctl( PR_SET_NAME, (long)name, 0, 0, 0 );
 #endif
@@ -1323,9 +1323,6 @@ static void ksThread_SetAffinity( int mask )
 	{
 		Print( "Thread %p affinity set to 0x%02X\n", thread, mask );
 	}
-#elif defined( OS_APPLE )
-	// iOS and macOS do not export interfaces that identify processors or control thread placement.
-	UNUSED_PARM( mask );
 #elif defined( OS_LINUX )
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
 	{
@@ -1349,6 +1346,9 @@ static void ksThread_SetAffinity( int mask )
 	{
 		Print( "Thread %d affinity set to 0x%02X\n", (unsigned int)pthread_self(), mask );
 	}
+#elif defined( OS_APPLE )
+	// macOS and iOS do not export interfaces that identify processors or control thread placement.
+	UNUSED_PARM( mask );
 #elif defined( OS_ANDROID )
 	// Optionally use the faster cores of a heterogeneous CPU.
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
@@ -1456,7 +1456,7 @@ static void ksThread_SetRealTimePriority( int priority )
 	{
 		Print( "Thread %p priority set to critical.\n", thread );
 	}
-#elif defined( OS_APPLE ) || defined( OS_LINUX )
+#elif defined( OS_LINUX ) || defined( OS_APPLE )
 	struct sched_param sp;
 	memset( &sp, 0, sizeof( struct sched_param ) );
 	sp.sched_priority = priority;
@@ -3562,9 +3562,6 @@ typedef struct
 #if defined( OS_WINDOWS )
 	HDC						hDC;
 	HGLRC					hGLRC;
-#elif defined( OS_APPLE_MACOS )
-	NSOpenGLContext *		nsContext;
-	CGLContextObj			cglContext;
 #elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB_GLX )
 	Display *				xDisplay;
 	uint32_t				visualid;
@@ -3579,6 +3576,9 @@ typedef struct
 	xcb_glx_drawable_t		glxDrawable;
 	xcb_glx_context_t		glxContext;
 	xcb_glx_context_tag_t	glxContextTag;
+#elif defined( OS_APPLE_MACOS )
+	NSOpenGLContext *		nsContext;
+	CGLContextObj			cglContext;
 #elif defined( OS_ANDROID )
 	EGLDisplay				display;
 	EGLConfig				config;
@@ -3779,49 +3779,6 @@ static bool ksGpuContext_CreateForSurface( ksGpuContext * context, const ksGpuDe
 		Error( "Failed to create GL context." );
 		return false;
 	}
-
-	return true;
-}
-
-#elif defined( OS_APPLE_MACOS )
-
-static bool ksGpuContext_CreateForSurface( ksGpuContext * context, const ksGpuDevice * device, const int queueIndex,
-										const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
-										const ksGpuSampleCount sampleCount, CGDirectDisplayID display )
-{
-	UNUSED_PARM( device );
-	UNUSED_PARM( queueIndex );
-
-	const ksGpuSurfaceBits bits = ksGpuContext_BitsForSurfaceFormat( colorFormat, depthFormat );
-
-	NSOpenGLPixelFormatAttribute pixelFormatAttributes[] =
-	{
-		NSOpenGLPFAMinimumPolicy,	1,
-		NSOpenGLPFAScreenMask,		CGDisplayIDToOpenGLDisplayMask( display ),
-		NSOpenGLPFAAccelerated,
-		NSOpenGLPFAOpenGLProfile,	NSOpenGLProfileVersion3_2Core,
-		NSOpenGLPFADoubleBuffer,
-		NSOpenGLPFAColorSize,		bits.colorBits,
-		NSOpenGLPFADepthSize,		bits.depthBits,
-		NSOpenGLPFASampleBuffers,	( sampleCount > GPU_SAMPLE_COUNT_1 ),
-		NSOpenGLPFASamples,			sampleCount,
-		0
-	};
-
-	NSOpenGLPixelFormat * pixelFormat = [[[NSOpenGLPixelFormat alloc] initWithAttributes:pixelFormatAttributes] autorelease];
-	if ( pixelFormat == nil )
-	{
-		return false;
-	}
-	context->nsContext = [[NSOpenGLContext alloc] initWithFormat:pixelFormat shareContext:nil];
-	if ( context->nsContext == nil )
-	{
-		return false;
-	}
-
-	context->cglContext = [context->nsContext CGLContextObj];
-
-	GlInitExtensions();
 
 	return true;
 }
@@ -4055,6 +4012,49 @@ static bool ksGpuContext_CreateForSurface( ksGpuContext * context, const ksGpuDe
 	return true;
 }
 
+#elif defined( OS_APPLE_MACOS )
+
+static bool ksGpuContext_CreateForSurface( ksGpuContext * context, const ksGpuDevice * device, const int queueIndex,
+										const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+										const ksGpuSampleCount sampleCount, CGDirectDisplayID display )
+{
+	UNUSED_PARM( device );
+	UNUSED_PARM( queueIndex );
+
+	const ksGpuSurfaceBits bits = ksGpuContext_BitsForSurfaceFormat( colorFormat, depthFormat );
+
+	NSOpenGLPixelFormatAttribute pixelFormatAttributes[] =
+	{
+		NSOpenGLPFAMinimumPolicy,	1,
+		NSOpenGLPFAScreenMask,		CGDisplayIDToOpenGLDisplayMask( display ),
+		NSOpenGLPFAAccelerated,
+		NSOpenGLPFAOpenGLProfile,	NSOpenGLProfileVersion3_2Core,
+		NSOpenGLPFADoubleBuffer,
+		NSOpenGLPFAColorSize,		bits.colorBits,
+		NSOpenGLPFADepthSize,		bits.depthBits,
+		NSOpenGLPFASampleBuffers,	( sampleCount > GPU_SAMPLE_COUNT_1 ),
+		NSOpenGLPFASamples,			sampleCount,
+		0
+	};
+
+	NSOpenGLPixelFormat * pixelFormat = [[[NSOpenGLPixelFormat alloc] initWithAttributes:pixelFormatAttributes] autorelease];
+	if ( pixelFormat == nil )
+	{
+		return false;
+	}
+	context->nsContext = [[NSOpenGLContext alloc] initWithFormat:pixelFormat shareContext:nil];
+	if ( context->nsContext == nil )
+	{
+		return false;
+	}
+
+	context->cglContext = [context->nsContext CGLContextObj];
+
+	GlInitExtensions();
+
+	return true;
+}
+
 #elif defined( OS_ANDROID )
 
 static bool ksGpuContext_CreateForSurface( ksGpuContext * context, const ksGpuDevice * device, const int queueIndex,
@@ -4179,24 +4179,6 @@ static bool ksGpuContext_CreateShared( ksGpuContext * context, const ksGpuContex
 	{
 		return false;
 	}
-#elif defined( OS_APPLE_MACOS )
-	context->nsContext = NULL;
-	CGLPixelFormatObj pf = CGLGetPixelFormat( other->cglContext );
-	if ( CGLCreateContext( pf, other->cglContext, &context->cglContext ) != kCGLNoError )
-	{
-		return false;
-	}
-	CGSConnectionID cid;
-	CGSWindowID wid;
-	CGSSurfaceID sid;
-	if ( CGLGetSurface( other->cglContext, &cid, &wid, &sid ) != kCGLNoError )
-	{
-		return false;
-	}
-	if ( CGLSetSurface( context->cglContext, cid, wid, sid ) != kCGLNoError )
-	{
-		return false;
-	}
 #elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB_GLX )
 	context->xDisplay = other->xDisplay;
 	context->visualid = other->visualid;
@@ -4216,6 +4198,24 @@ static bool ksGpuContext_CreateShared( ksGpuContext * context, const ksGpuContex
 	context->glxContext = xcb_generate_id( other->connection );
 	xcb_glx_create_context( other->connection, context->glxContext, other->visualid, other->screen_number, other->glxContext, 1 );
 	context->glxContextTag = 0;
+#elif defined( OS_APPLE_MACOS )
+	context->nsContext = NULL;
+	CGLPixelFormatObj pf = CGLGetPixelFormat( other->cglContext );
+	if ( CGLCreateContext( pf, other->cglContext, &context->cglContext ) != kCGLNoError )
+	{
+		return false;
+	}
+	CGSConnectionID cid;
+	CGSWindowID wid;
+	CGSSurfaceID sid;
+	if ( CGLGetSurface( other->cglContext, &cid, &wid, &sid ) != kCGLNoError )
+	{
+		return false;
+	}
+	if ( CGLSetSurface( context->cglContext, cid, wid, sid ) != kCGLNoError )
+	{
+		return false;
+	}
 #elif defined( OS_ANDROID )
 	context->display = other->display;
 	EGLint configID;
@@ -4298,19 +4298,6 @@ static void ksGpuContext_Destroy( ksGpuContext * context )
 		context->hGLRC = NULL;
 	}
 	context->hDC = NULL;
-#elif defined( OS_APPLE_MACOS )
-	CGLSetCurrentContext( NULL );
-	if ( context->nsContext != NULL )
-	{
-		[context->nsContext clearDrawable];
-		[context->nsContext release];
-		context->nsContext = nil;
-	}
-	else
-	{
-		CGLDestroyContext( context->cglContext );
-	}
-	context->cglContext = nil;
 #elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB_GLX )
 	glXDestroyContext( context->xDisplay, context->glxContext );
 	context->xDisplay = NULL;
@@ -4327,6 +4314,19 @@ static void ksGpuContext_Destroy( ksGpuContext * context )
 	context->glxDrawable = 0;
 	context->glxContext = 0;
 	context->glxContextTag = 0;
+#elif defined( OS_APPLE_MACOS )
+	CGLSetCurrentContext( NULL );
+	if ( context->nsContext != NULL )
+	{
+		[context->nsContext clearDrawable];
+		[context->nsContext release];
+		context->nsContext = nil;
+	}
+	else
+	{
+		CGLDestroyContext( context->cglContext );
+	}
+	context->cglContext = nil;
 #elif defined( OS_ANDROID )
 	if ( context->display != 0 )
 	{
@@ -4363,8 +4363,6 @@ static void ksGpuContext_SetCurrent( ksGpuContext * context )
 {
 #if defined( OS_WINDOWS )
 	wglMakeCurrent( context->hDC, context->hGLRC );
-#elif defined( OS_APPLE_MACOS )
-	CGLSetCurrentContext( context->cglContext );
 #elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB_GLX )
 	glXMakeCurrent( context->xDisplay, context->glxDrawable, context->glxContext );
 #elif defined( OS_LINUX_XCB )
@@ -4372,6 +4370,8 @@ static void ksGpuContext_SetCurrent( ksGpuContext * context )
 	xcb_glx_make_current_reply_t * glx_make_current_reply = xcb_glx_make_current_reply( context->connection, glx_make_current_cookie, NULL );
 	context->glxContextTag = glx_make_current_reply->context_tag;
 	free( glx_make_current_reply );
+#elif defined( OS_APPLE_MACOS )
+	CGLSetCurrentContext( context->cglContext );
 #elif defined( OS_ANDROID )
 	EGL( eglMakeCurrent( context->display, context->mainSurface, context->mainSurface, context->context ) );
 #endif
@@ -4381,12 +4381,12 @@ static void ksGpuContext_UnsetCurrent( ksGpuContext * context )
 {
 #if defined( OS_WINDOWS )
 	wglMakeCurrent( context->hDC, NULL );
-#elif defined( OS_APPLE_MACOS )
-	CGLSetCurrentContext( NULL );
 #elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB_GLX )
 	glXMakeCurrent( context->xDisplay, None, NULL );
 #elif defined( OS_LINUX_XCB )
 	xcb_glx_make_current( context->connection, 0, 0, 0 );
+#elif defined( OS_APPLE_MACOS )
+	CGLSetCurrentContext( NULL );
 #elif defined( OS_ANDROID )
 	EGL( eglMakeCurrent( context->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT ) );
 #endif
@@ -4396,12 +4396,12 @@ static bool ksGpuContext_CheckCurrent( ksGpuContext * context )
 {
 #if defined( OS_WINDOWS )
 	return ( wglGetCurrentContext() == context->hGLRC );
-#elif defined( OS_APPLE_MACOS )
-	return ( CGLGetCurrentContext() == context->cglContext );
 #elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB_GLX )
 	return ( glXGetCurrentContext() == context->glxContext );
 #elif defined( OS_LINUX_XCB )
 	return true;
+#elif defined( OS_APPLE_MACOS )
+	return ( CGLGetCurrentContext() == context->cglContext );
 #elif defined( OS_ANDROID )
 	return ( eglGetCurrentContext() == context->context );
 #endif
@@ -4481,14 +4481,6 @@ typedef struct
 	HDC						hDC;
 	HWND					hWnd;
 	bool					windowActiveState;
-#elif defined( OS_APPLE_IOS )
-	UIWindow *				uiWindow;
-	UIView *				uiView;
-#elif defined( OS_APPLE_MACOS )
-	CGDirectDisplayID		display;
-	CGDisplayModeRef		desktopDisplayMode;
-	NSWindow *				nsWindow;
-	NSView *				nsView;
 #elif defined( OS_LINUX_XLIB )
 	Display *				xDisplay;
 	int						xScreen;
@@ -4511,6 +4503,14 @@ typedef struct
 	int						desktopWidth;
 	int						desktopHeight;
 	float					desktopRefreshRate;
+#elif defined( OS_APPLE_MACOS )
+	CGDirectDisplayID		display;
+	CGDisplayModeRef		desktopDisplayMode;
+	NSWindow *				nsWindow;
+	NSView *				nsView;
+#elif defined( OS_APPLE_IOS )
+	UIWindow *				uiWindow;
+	UIView *				uiView;
 #elif defined( OS_ANDROID )
 	EGLDisplay				display;
 	EGLint					majorVersion;
@@ -4879,474 +4879,6 @@ static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
 		window->windowActive = window->windowActiveState;
 		return ( window->windowActiveState ) ? GPU_WINDOW_EVENT_ACTIVATED : GPU_WINDOW_EVENT_DEACTIVATED;
 	}
-	return GPU_WINDOW_EVENT_NONE;
-}
-
-#elif defined( OS_APPLE_IOS )
-
-typedef enum
-{
-	KEY_A				= 0x00,
-	KEY_B				= 0x0B,
-	KEY_C				= 0x08,
-	KEY_D				= 0x02,
-	KEY_E				= 0x0E,
-	KEY_F				= 0x03,
-	KEY_G				= 0x05,
-	KEY_H				= 0x04,
-	KEY_I				= 0x22,
-	KEY_J				= 0x26,
-	KEY_K				= 0x28,
-	KEY_L				= 0x25,
-	KEY_M				= 0x2E,
-	KEY_N				= 0x2D,
-	KEY_O				= 0x1F,
-	KEY_P				= 0x23,
-	KEY_Q				= 0x0C,
-	KEY_R				= 0x0F,
-	KEY_S				= 0x01,
-	KEY_T				= 0x11,
-	KEY_U				= 0x20,
-	KEY_V				= 0x09,
-	KEY_W				= 0x0D,
-	KEY_X				= 0x07,
-	KEY_Y				= 0x10,
-	KEY_Z				= 0x06,
-	KEY_RETURN			= 0x24,
-	KEY_TAB				= 0x30,
-	KEY_ESCAPE			= 0x35,
-	KEY_SHIFT_LEFT		= 0x38,
-	KEY_CTRL_LEFT		= 0x3B,
-	KEY_ALT_LEFT		= 0x3A,
-	KEY_CURSOR_UP		= 0x7E,
-	KEY_CURSOR_DOWN		= 0x7D,
-	KEY_CURSOR_LEFT		= 0x7B,
-	KEY_CURSOR_RIGHT	= 0x7C
-} ksKeyboardKey;
-
-typedef enum
-{
-	MOUSE_LEFT			= 0,
-	MOUSE_RIGHT			= 1
-} ksMouseButton;
-
-static NSAutoreleasePool * autoReleasePool;
-static UIView* myUIView;
-static UIWindow* myUIWindow;
-
-@interface MyUIView : UIView
-@end
-
-@implementation MyUIView
-
--(instancetype) initWithFrame:(CGRect)frameRect {
-	self = [super initWithFrame: frameRect];
-	if ( self ) {
-		self.contentScaleFactor = UIScreen.mainScreen.nativeScale;
-	}
-	return self;
-}
-
-+(Class) layerClass { return [CAMetalLayer class]; }
-
-@end
-
-@interface MyUIViewController : UIViewController
-@end
-
-@implementation MyUIViewController
-
--(UIInterfaceOrientationMask) supportedInterfaceOrientations { return UIInterfaceOrientationMaskLandscape; }
-
--(BOOL) shouldAutorotate { return TRUE; }
-
-@end
-
-static void ksGpuWindow_Destroy( ksGpuWindow * window )
-{
-	ksGpuWindow_DestroySurface( window );
-	ksGpuContext_Destroy( &window->context );
-	ksGpuDevice_Destroy( &window->device );
-
-	if ( window->uiWindow )
-	{
-		[window->uiWindow release];
-		window->uiWindow = nil;
-	}
-	if ( window->uiView )
-	{
-		[window->uiView release];
-		window->uiView = nil;
-	}
-}
-
-static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
-								const ksGpuQueueInfo * queueInfo, const int queueIndex,
-								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
-								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
-{
-	memset( window, 0, sizeof( ksGpuWindow ) );
-
-	window->colorFormat = colorFormat;
-	window->depthFormat = depthFormat;
-	window->sampleCount = sampleCount;
-	window->windowWidth = width;
-	window->windowHeight = height;
-	window->windowSwapInterval = 1;
-	window->windowRefreshRate = 60.0f;
-	window->windowFullscreen = fullscreen;
-	window->windowActive = false;
-	window->windowExit = false;
-	window->lastSwapTime = GetTimeNanoseconds();
-	window->uiView = myUIView;
-	window->uiWindow = myUIWindow;
-
-	ksGpuDevice_Create( &window->device, instance, queueInfo );
-	ksGpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, sampleCount, window->display );
-
-	return true;
-}
-
-static bool ksGpuWindow_SupportedResolution( const int width, const int height )
-{
-	UNUSED_PARM( width );
-	UNUSED_PARM( height );
-
-	return true;
-}
-
-static void ksGpuWindow_Exit( ksGpuWindow * window )
-{
-	window->windowExit = true;
-}
-
-static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
-{
-	[autoReleasePool release];
-	autoReleasePool = [[NSAutoreleasePool alloc] init];
-
-	if ( window->windowExit )
-	{
-		return GPU_WINDOW_EVENT_EXIT;
-	}
-
-	if ( window->windowActive == false )
-	{
-		window->windowActive = true;
-		return GPU_WINDOW_EVENT_ACTIVATED;
-	}
-	
-	return GPU_WINDOW_EVENT_NONE;
-}
-
-#elif defined( OS_APPLE_MACOS )
-
-typedef enum
-{
-	KEY_A				= 0x00,
-	KEY_B				= 0x0B,
-	KEY_C				= 0x08,
-	KEY_D				= 0x02,
-	KEY_E				= 0x0E,
-	KEY_F				= 0x03,
-	KEY_G				= 0x05,
-	KEY_H				= 0x04,
-	KEY_I				= 0x22,
-	KEY_J				= 0x26,
-	KEY_K				= 0x28,
-	KEY_L				= 0x25,
-	KEY_M				= 0x2E,
-	KEY_N				= 0x2D,
-	KEY_O				= 0x1F,
-	KEY_P				= 0x23,
-	KEY_Q				= 0x0C,
-	KEY_R				= 0x0F,
-	KEY_S				= 0x01,
-	KEY_T				= 0x11,
-	KEY_U				= 0x20,
-	KEY_V				= 0x09,
-	KEY_W				= 0x0D,
-	KEY_X				= 0x07,
-	KEY_Y				= 0x10,
-	KEY_Z				= 0x06,
-	KEY_RETURN			= 0x24,
-	KEY_TAB				= 0x30,
-	KEY_ESCAPE			= 0x35,
-	KEY_SHIFT_LEFT		= 0x38,
-	KEY_CTRL_LEFT		= 0x3B,
-	KEY_ALT_LEFT		= 0x3A,
-	KEY_CURSOR_UP		= 0x7E,
-	KEY_CURSOR_DOWN		= 0x7D,
-	KEY_CURSOR_LEFT		= 0x7B,
-	KEY_CURSOR_RIGHT	= 0x7C
-} ksKeyboardKey;
-
-typedef enum
-{
-	MOUSE_LEFT			= 0,
-	MOUSE_RIGHT			= 1
-} ksMouseButton;
-
-NSAutoreleasePool * autoReleasePool;
-
-@interface MyNSWindow : NSWindow
-- (BOOL)canBecomeMainWindow;
-- (BOOL)canBecomeKeyWindow;
-- (BOOL)acceptsFirstResponder;
-- (void)keyDown:(NSEvent *)event;
-@end
-
-@implementation MyNSWindow
-- (BOOL)canBecomeMainWindow { return YES; }
-- (BOOL)canBecomeKeyWindow { return YES; }
-- (BOOL)acceptsFirstResponder { return YES; }
-- (void)keyDown:(NSEvent *)event {}
-@end
-
-@interface MyNSView : NSView
-- (BOOL)acceptsFirstResponder;
-- (void)keyDown:(NSEvent *)event;
-@end
-
-@implementation MyNSView
-- (BOOL)acceptsFirstResponder { return YES; }
-- (void)keyDown:(NSEvent *)event {}
-@end
-
-static void ksGpuWindow_Destroy( ksGpuWindow * window )
-{
-	ksGpuContext_Destroy( &window->context );
-	ksGpuDevice_Destroy( &window->device );
-
-	if ( window->windowFullscreen )
-	{
-		CGDisplaySetDisplayMode( window->display, window->desktopDisplayMode, NULL );
-		CGDisplayModeRelease( window->desktopDisplayMode );
-		window->desktopDisplayMode = NULL;
-	}
-	if ( window->nsWindow )
-	{
-		[window->nsWindow release];
-		window->nsWindow = nil;
-	}
-	if ( window->nsView )
-	{
-		[window->nsView release];
-		window->nsView = nil;
-	}
-}
-
-static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
-								const ksGpuQueueInfo * queueInfo, const int queueIndex,
-								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
-								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
-{
-	memset( window, 0, sizeof( ksGpuWindow ) );
-
-	window->colorFormat = colorFormat;
-	window->depthFormat = depthFormat;
-	window->sampleCount = sampleCount;
-	window->windowWidth = width;
-	window->windowHeight = height;
-	window->windowSwapInterval = 1;
-	window->windowRefreshRate = 60.0f;
-	window->windowFullscreen = fullscreen;
-	window->windowActive = false;
-	window->windowExit = false;
-	window->lastSwapTime = GetTimeNanoseconds();
-
-	// Get a list of all available displays.
-	CGDirectDisplayID displays[32];
-	CGDisplayCount displayCount = 0;
-	CGDisplayErr err = CGGetActiveDisplayList( 32, displays, &displayCount );
-	if ( err != CGDisplayNoErr )
-	{
-		return false;
-	}
-	// Use the main display.
-	window->display = displays[0];
-	window->desktopDisplayMode = CGDisplayCopyDisplayMode( window->display );
-
-	// If fullscreen then switch to the best matching display mode.
-	if ( window->windowFullscreen )
-	{
-		CFArrayRef displayModes = CGDisplayCopyAllDisplayModes( window->display, NULL );
-		CFIndex displayModeCount = CFArrayGetCount( displayModes );
-		CGDisplayModeRef bestDisplayMode = nil;
-		size_t bestDisplayWidth = 0;
-		size_t bestDisplayHeight = 0;
-		float bestDisplayRefreshRate = 0;
-		size_t bestError = 0x7FFFFFFF;
-		for ( CFIndex i = 0; i < displayModeCount; i++ )
-		{
-			CGDisplayModeRef mode = (CGDisplayModeRef)CFArrayGetValueAtIndex( displayModes, i );
-
-			const size_t modeWidth = CGDisplayModeGetWidth( mode );
-			const size_t modeHeight = CGDisplayModeGetHeight( mode );
-			const double modeRefreshRate = CGDisplayModeGetRefreshRate( mode );
-			CFStringRef modePixelEncoding = CGDisplayModeCopyPixelEncoding( mode );
-			const bool modeBitsPerPixelIs32 = ( CFStringCompare( modePixelEncoding, CFSTR( IO32BitDirectPixels ), 0) == kCFCompareEqualTo );
-			CFRelease( modePixelEncoding );
-
-			if ( modeBitsPerPixelIs32 )
-			{
-				const size_t dw = modeWidth - width;
-				const size_t dh = modeHeight - height;
-				const size_t error = dw * dw + dh * dh;
-				if ( error < bestError )
-				{
-					bestError = error;
-					bestDisplayMode = mode;
-					bestDisplayWidth = modeWidth;
-					bestDisplayHeight = modeHeight;
-					bestDisplayRefreshRate = (float)modeRefreshRate;
-				}
-			}
-		}
-		CGDisplayErr err = CGDisplaySetDisplayMode( window->display, bestDisplayMode, NULL );
-		if ( err != CGDisplayNoErr )
-		{
-			CFRelease( displayModes );
-			return false;
-		}
-		CFRelease( displayModes );
-		window->windowWidth = (int)bestDisplayWidth;
-		window->windowHeight = (int)bestDisplayHeight;
-		window->windowRefreshRate = ( bestDisplayRefreshRate > 0.0f ) ? bestDisplayRefreshRate : 60.0f;
-	}
-	else
-	{
-		const float desktopDisplayRefreshRate = (float)CGDisplayModeGetRefreshRate( window->desktopDisplayMode );
-		window->windowRefreshRate = ( desktopDisplayRefreshRate > 0.0f ) ? desktopDisplayRefreshRate : 60.0f;
-	}
-
-	if ( window->windowFullscreen )
-	{
-		NSScreen * screen = [NSScreen mainScreen];
-		NSRect screenRect = [screen frame];
-		
-		window->nsView = [MyNSView alloc];
-		[window->nsView initWithFrame:screenRect];
-
-		const int style = NSBorderlessWindowMask;
-
-		window->nsWindow = [MyNSWindow alloc];
-		[window->nsWindow initWithContentRect:screenRect styleMask:style backing:NSBackingStoreBuffered defer:NO screen:screen];
-		[window->nsWindow setOpaque:YES];
-		[window->nsWindow setLevel:NSMainMenuWindowLevel+1];
-		[window->nsWindow setContentView:window->nsView];
-		[window->nsWindow makeMainWindow];
-		[window->nsWindow makeKeyAndOrderFront:nil];
-		[window->nsWindow makeFirstResponder:nil];
-	}
-	else
-	{
-		NSScreen * screen = [NSScreen mainScreen];
-		NSRect screenRect = [screen frame];
-
-		NSRect windowRect;
-		windowRect.origin.x = ( screenRect.size.width - width ) / 2;
-		windowRect.origin.y = ( screenRect.size.height - height ) / 2;
-		windowRect.size.width = width;
-		windowRect.size.height = height;
-
-		window->nsView = [MyNSView alloc];
-		[window->nsView initWithFrame:windowRect];
-
-		// Fixed size window.
-		const int style = NSTitledWindowMask;// | NSClosableWindowMask | NSResizableWindowMask;
-
-		window->nsWindow = [MyNSWindow alloc];
-		[window->nsWindow initWithContentRect:windowRect styleMask:style backing:NSBackingStoreBuffered defer:NO screen:screen];
-		[window->nsWindow setTitle:@WINDOW_TITLE];
-		[window->nsWindow setOpaque:YES];
-		[window->nsWindow setContentView:window->nsView];
-		[window->nsWindow makeMainWindow];
-		[window->nsWindow makeKeyAndOrderFront:nil];
-		[window->nsWindow makeFirstResponder:nil];
-	}
-
-	ksGpuDevice_Create( &window->device, instance, queueInfo );
-	ksGpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, sampleCount, window->display );
-
-	[window->context.nsContext setView:window->nsView];
-
-	ksGpuContext_SetCurrent( &window->context );
-
-	// The color buffers are not cleared by default.
-	for ( int i = 0; i < 2; i++ )
-	{
-		GL( glClearColor( 0.0f, 0.0f, 0.0f, 1.0f ) );
-		GL( glClear( GL_COLOR_BUFFER_BIT ) );
-		CGLFlushDrawable( window->context.cglContext );
-	}
-
-	return true;
-}
-
-static bool ksGpuWindow_SupportedResolution( const int width, const int height )
-{
-	UNUSED_PARM( width );
-	UNUSED_PARM( height );
-
-	return true;
-}
-
-static void ksGpuWindow_Exit( ksGpuWindow * window )
-{
-	window->windowExit = true;
-}
-
-static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
-{
-	[autoReleasePool release];
-	autoReleasePool = [[NSAutoreleasePool alloc] init];
-
-	for ( ; ; )
-	{
-		NSEvent * event = [NSApp nextEventMatchingMask:NSAnyEventMask untilDate:[NSDate distantPast] inMode:NSDefaultRunLoopMode dequeue:YES];
-		if ( event == nil )
-		{
-			break;
-		}
-
-		if ( event.type == NSKeyDown )
-		{
-			unsigned short key = [event keyCode];
-			if ( key >= 0 && key < 256 )
-			{
-				window->input.keyInput[key] = true;
-			}
-		}
-		else if ( event.type == NSLeftMouseDown )
-		{
-			NSPoint point = [event locationInWindow];
-			window->input.mouseInput[MOUSE_LEFT] = true;
-			window->input.mouseInputX[MOUSE_LEFT] = point.x;
-			window->input.mouseInputY[MOUSE_LEFT] = point.y - 1;	// change to zero-based
-		}
-		else if ( event.type == NSRightMouseDown )
-		{
-			NSPoint point = [event locationInWindow];
-			window->input.mouseInput[MOUSE_RIGHT] = true;
-			window->input.mouseInputX[MOUSE_RIGHT] = point.x;
-			window->input.mouseInputY[MOUSE_RIGHT] = point.y - 1;	// change to zero-based
-		}
-
-		[NSApp sendEvent:event];
-	}
-
-	if ( window->windowExit )
-	{
-		return GPU_WINDOW_EVENT_EXIT;
-	}
-
-	if ( window->windowActive == false )
-	{
-		window->windowActive = true;
-		return GPU_WINDOW_EVENT_ACTIVATED;
-	}
-
 	return GPU_WINDOW_EVENT_NONE;
 }
 
@@ -6503,6 +6035,474 @@ static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
 	return GPU_WINDOW_EVENT_NONE;
 }
 
+#elif defined( OS_APPLE_MACOS )
+
+typedef enum
+{
+	KEY_A				= 0x00,
+	KEY_B				= 0x0B,
+	KEY_C				= 0x08,
+	KEY_D				= 0x02,
+	KEY_E				= 0x0E,
+	KEY_F				= 0x03,
+	KEY_G				= 0x05,
+	KEY_H				= 0x04,
+	KEY_I				= 0x22,
+	KEY_J				= 0x26,
+	KEY_K				= 0x28,
+	KEY_L				= 0x25,
+	KEY_M				= 0x2E,
+	KEY_N				= 0x2D,
+	KEY_O				= 0x1F,
+	KEY_P				= 0x23,
+	KEY_Q				= 0x0C,
+	KEY_R				= 0x0F,
+	KEY_S				= 0x01,
+	KEY_T				= 0x11,
+	KEY_U				= 0x20,
+	KEY_V				= 0x09,
+	KEY_W				= 0x0D,
+	KEY_X				= 0x07,
+	KEY_Y				= 0x10,
+	KEY_Z				= 0x06,
+	KEY_RETURN			= 0x24,
+	KEY_TAB				= 0x30,
+	KEY_ESCAPE			= 0x35,
+	KEY_SHIFT_LEFT		= 0x38,
+	KEY_CTRL_LEFT		= 0x3B,
+	KEY_ALT_LEFT		= 0x3A,
+	KEY_CURSOR_UP		= 0x7E,
+	KEY_CURSOR_DOWN		= 0x7D,
+	KEY_CURSOR_LEFT		= 0x7B,
+	KEY_CURSOR_RIGHT	= 0x7C
+} ksKeyboardKey;
+
+typedef enum
+{
+	MOUSE_LEFT			= 0,
+	MOUSE_RIGHT			= 1
+} ksMouseButton;
+
+NSAutoreleasePool * autoReleasePool;
+
+@interface MyNSWindow : NSWindow
+- (BOOL)canBecomeMainWindow;
+- (BOOL)canBecomeKeyWindow;
+- (BOOL)acceptsFirstResponder;
+- (void)keyDown:(NSEvent *)event;
+@end
+
+@implementation MyNSWindow
+- (BOOL)canBecomeMainWindow { return YES; }
+- (BOOL)canBecomeKeyWindow { return YES; }
+- (BOOL)acceptsFirstResponder { return YES; }
+- (void)keyDown:(NSEvent *)event {}
+@end
+
+@interface MyNSView : NSView
+- (BOOL)acceptsFirstResponder;
+- (void)keyDown:(NSEvent *)event;
+@end
+
+@implementation MyNSView
+- (BOOL)acceptsFirstResponder { return YES; }
+- (void)keyDown:(NSEvent *)event {}
+@end
+
+static void ksGpuWindow_Destroy( ksGpuWindow * window )
+{
+	ksGpuContext_Destroy( &window->context );
+	ksGpuDevice_Destroy( &window->device );
+
+	if ( window->windowFullscreen )
+	{
+		CGDisplaySetDisplayMode( window->display, window->desktopDisplayMode, NULL );
+		CGDisplayModeRelease( window->desktopDisplayMode );
+		window->desktopDisplayMode = NULL;
+	}
+	if ( window->nsWindow )
+	{
+		[window->nsWindow release];
+		window->nsWindow = nil;
+	}
+	if ( window->nsView )
+	{
+		[window->nsView release];
+		window->nsView = nil;
+	}
+}
+
+static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
+								const ksGpuQueueInfo * queueInfo, const int queueIndex,
+								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
+{
+	memset( window, 0, sizeof( ksGpuWindow ) );
+
+	window->colorFormat = colorFormat;
+	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
+	window->windowWidth = width;
+	window->windowHeight = height;
+	window->windowSwapInterval = 1;
+	window->windowRefreshRate = 60.0f;
+	window->windowFullscreen = fullscreen;
+	window->windowActive = false;
+	window->windowExit = false;
+	window->lastSwapTime = GetTimeNanoseconds();
+
+	// Get a list of all available displays.
+	CGDirectDisplayID displays[32];
+	CGDisplayCount displayCount = 0;
+	CGDisplayErr err = CGGetActiveDisplayList( 32, displays, &displayCount );
+	if ( err != CGDisplayNoErr )
+	{
+		return false;
+	}
+	// Use the main display.
+	window->display = displays[0];
+	window->desktopDisplayMode = CGDisplayCopyDisplayMode( window->display );
+
+	// If fullscreen then switch to the best matching display mode.
+	if ( window->windowFullscreen )
+	{
+		CFArrayRef displayModes = CGDisplayCopyAllDisplayModes( window->display, NULL );
+		CFIndex displayModeCount = CFArrayGetCount( displayModes );
+		CGDisplayModeRef bestDisplayMode = nil;
+		size_t bestDisplayWidth = 0;
+		size_t bestDisplayHeight = 0;
+		float bestDisplayRefreshRate = 0;
+		size_t bestError = 0x7FFFFFFF;
+		for ( CFIndex i = 0; i < displayModeCount; i++ )
+		{
+			CGDisplayModeRef mode = (CGDisplayModeRef)CFArrayGetValueAtIndex( displayModes, i );
+
+			const size_t modeWidth = CGDisplayModeGetWidth( mode );
+			const size_t modeHeight = CGDisplayModeGetHeight( mode );
+			const double modeRefreshRate = CGDisplayModeGetRefreshRate( mode );
+			CFStringRef modePixelEncoding = CGDisplayModeCopyPixelEncoding( mode );
+			const bool modeBitsPerPixelIs32 = ( CFStringCompare( modePixelEncoding, CFSTR( IO32BitDirectPixels ), 0) == kCFCompareEqualTo );
+			CFRelease( modePixelEncoding );
+
+			if ( modeBitsPerPixelIs32 )
+			{
+				const size_t dw = modeWidth - width;
+				const size_t dh = modeHeight - height;
+				const size_t error = dw * dw + dh * dh;
+				if ( error < bestError )
+				{
+					bestError = error;
+					bestDisplayMode = mode;
+					bestDisplayWidth = modeWidth;
+					bestDisplayHeight = modeHeight;
+					bestDisplayRefreshRate = (float)modeRefreshRate;
+				}
+			}
+		}
+		CGDisplayErr err = CGDisplaySetDisplayMode( window->display, bestDisplayMode, NULL );
+		if ( err != CGDisplayNoErr )
+		{
+			CFRelease( displayModes );
+			return false;
+		}
+		CFRelease( displayModes );
+		window->windowWidth = (int)bestDisplayWidth;
+		window->windowHeight = (int)bestDisplayHeight;
+		window->windowRefreshRate = ( bestDisplayRefreshRate > 0.0f ) ? bestDisplayRefreshRate : 60.0f;
+	}
+	else
+	{
+		const float desktopDisplayRefreshRate = (float)CGDisplayModeGetRefreshRate( window->desktopDisplayMode );
+		window->windowRefreshRate = ( desktopDisplayRefreshRate > 0.0f ) ? desktopDisplayRefreshRate : 60.0f;
+	}
+
+	if ( window->windowFullscreen )
+	{
+		NSScreen * screen = [NSScreen mainScreen];
+		NSRect screenRect = [screen frame];
+		
+		window->nsView = [MyNSView alloc];
+		[window->nsView initWithFrame:screenRect];
+
+		const int style = NSBorderlessWindowMask;
+
+		window->nsWindow = [MyNSWindow alloc];
+		[window->nsWindow initWithContentRect:screenRect styleMask:style backing:NSBackingStoreBuffered defer:NO screen:screen];
+		[window->nsWindow setOpaque:YES];
+		[window->nsWindow setLevel:NSMainMenuWindowLevel+1];
+		[window->nsWindow setContentView:window->nsView];
+		[window->nsWindow makeMainWindow];
+		[window->nsWindow makeKeyAndOrderFront:nil];
+		[window->nsWindow makeFirstResponder:nil];
+	}
+	else
+	{
+		NSScreen * screen = [NSScreen mainScreen];
+		NSRect screenRect = [screen frame];
+
+		NSRect windowRect;
+		windowRect.origin.x = ( screenRect.size.width - width ) / 2;
+		windowRect.origin.y = ( screenRect.size.height - height ) / 2;
+		windowRect.size.width = width;
+		windowRect.size.height = height;
+
+		window->nsView = [MyNSView alloc];
+		[window->nsView initWithFrame:windowRect];
+
+		// Fixed size window.
+		const int style = NSTitledWindowMask;// | NSClosableWindowMask | NSResizableWindowMask;
+
+		window->nsWindow = [MyNSWindow alloc];
+		[window->nsWindow initWithContentRect:windowRect styleMask:style backing:NSBackingStoreBuffered defer:NO screen:screen];
+		[window->nsWindow setTitle:@WINDOW_TITLE];
+		[window->nsWindow setOpaque:YES];
+		[window->nsWindow setContentView:window->nsView];
+		[window->nsWindow makeMainWindow];
+		[window->nsWindow makeKeyAndOrderFront:nil];
+		[window->nsWindow makeFirstResponder:nil];
+	}
+
+	ksGpuDevice_Create( &window->device, instance, queueInfo );
+	ksGpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, sampleCount, window->display );
+
+	[window->context.nsContext setView:window->nsView];
+
+	ksGpuContext_SetCurrent( &window->context );
+
+	// The color buffers are not cleared by default.
+	for ( int i = 0; i < 2; i++ )
+	{
+		GL( glClearColor( 0.0f, 0.0f, 0.0f, 1.0f ) );
+		GL( glClear( GL_COLOR_BUFFER_BIT ) );
+		CGLFlushDrawable( window->context.cglContext );
+	}
+
+	return true;
+}
+
+static bool ksGpuWindow_SupportedResolution( const int width, const int height )
+{
+	UNUSED_PARM( width );
+	UNUSED_PARM( height );
+
+	return true;
+}
+
+static void ksGpuWindow_Exit( ksGpuWindow * window )
+{
+	window->windowExit = true;
+}
+
+static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
+{
+	[autoReleasePool release];
+	autoReleasePool = [[NSAutoreleasePool alloc] init];
+
+	for ( ; ; )
+	{
+		NSEvent * event = [NSApp nextEventMatchingMask:NSAnyEventMask untilDate:[NSDate distantPast] inMode:NSDefaultRunLoopMode dequeue:YES];
+		if ( event == nil )
+		{
+			break;
+		}
+
+		if ( event.type == NSKeyDown )
+		{
+			unsigned short key = [event keyCode];
+			if ( key >= 0 && key < 256 )
+			{
+				window->input.keyInput[key] = true;
+			}
+		}
+		else if ( event.type == NSLeftMouseDown )
+		{
+			NSPoint point = [event locationInWindow];
+			window->input.mouseInput[MOUSE_LEFT] = true;
+			window->input.mouseInputX[MOUSE_LEFT] = point.x;
+			window->input.mouseInputY[MOUSE_LEFT] = point.y - 1;	// change to zero-based
+		}
+		else if ( event.type == NSRightMouseDown )
+		{
+			NSPoint point = [event locationInWindow];
+			window->input.mouseInput[MOUSE_RIGHT] = true;
+			window->input.mouseInputX[MOUSE_RIGHT] = point.x;
+			window->input.mouseInputY[MOUSE_RIGHT] = point.y - 1;	// change to zero-based
+		}
+
+		[NSApp sendEvent:event];
+	}
+
+	if ( window->windowExit )
+	{
+		return GPU_WINDOW_EVENT_EXIT;
+	}
+
+	if ( window->windowActive == false )
+	{
+		window->windowActive = true;
+		return GPU_WINDOW_EVENT_ACTIVATED;
+	}
+
+	return GPU_WINDOW_EVENT_NONE;
+}
+
+#elif defined( OS_APPLE_IOS )
+
+typedef enum
+{
+	KEY_A				= 0x00,
+	KEY_B				= 0x0B,
+	KEY_C				= 0x08,
+	KEY_D				= 0x02,
+	KEY_E				= 0x0E,
+	KEY_F				= 0x03,
+	KEY_G				= 0x05,
+	KEY_H				= 0x04,
+	KEY_I				= 0x22,
+	KEY_J				= 0x26,
+	KEY_K				= 0x28,
+	KEY_L				= 0x25,
+	KEY_M				= 0x2E,
+	KEY_N				= 0x2D,
+	KEY_O				= 0x1F,
+	KEY_P				= 0x23,
+	KEY_Q				= 0x0C,
+	KEY_R				= 0x0F,
+	KEY_S				= 0x01,
+	KEY_T				= 0x11,
+	KEY_U				= 0x20,
+	KEY_V				= 0x09,
+	KEY_W				= 0x0D,
+	KEY_X				= 0x07,
+	KEY_Y				= 0x10,
+	KEY_Z				= 0x06,
+	KEY_RETURN			= 0x24,
+	KEY_TAB				= 0x30,
+	KEY_ESCAPE			= 0x35,
+	KEY_SHIFT_LEFT		= 0x38,
+	KEY_CTRL_LEFT		= 0x3B,
+	KEY_ALT_LEFT		= 0x3A,
+	KEY_CURSOR_UP		= 0x7E,
+	KEY_CURSOR_DOWN		= 0x7D,
+	KEY_CURSOR_LEFT		= 0x7B,
+	KEY_CURSOR_RIGHT	= 0x7C
+} ksKeyboardKey;
+
+typedef enum
+{
+	MOUSE_LEFT			= 0,
+	MOUSE_RIGHT			= 1
+} ksMouseButton;
+
+static NSAutoreleasePool * autoReleasePool;
+static UIView* myUIView;
+static UIWindow* myUIWindow;
+
+@interface MyUIView : UIView
+@end
+
+@implementation MyUIView
+
+-(instancetype) initWithFrame:(CGRect)frameRect {
+	self = [super initWithFrame: frameRect];
+	if ( self ) {
+		self.contentScaleFactor = UIScreen.mainScreen.nativeScale;
+	}
+	return self;
+}
+
++(Class) layerClass { return [CAMetalLayer class]; }
+
+@end
+
+@interface MyUIViewController : UIViewController
+@end
+
+@implementation MyUIViewController
+
+-(UIInterfaceOrientationMask) supportedInterfaceOrientations { return UIInterfaceOrientationMaskLandscape; }
+
+-(BOOL) shouldAutorotate { return TRUE; }
+
+@end
+
+static void ksGpuWindow_Destroy( ksGpuWindow * window )
+{
+	ksGpuWindow_DestroySurface( window );
+	ksGpuContext_Destroy( &window->context );
+	ksGpuDevice_Destroy( &window->device );
+
+	if ( window->uiWindow )
+	{
+		[window->uiWindow release];
+		window->uiWindow = nil;
+	}
+	if ( window->uiView )
+	{
+		[window->uiView release];
+		window->uiView = nil;
+	}
+}
+
+static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
+								const ksGpuQueueInfo * queueInfo, const int queueIndex,
+								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
+{
+	memset( window, 0, sizeof( ksGpuWindow ) );
+
+	window->colorFormat = colorFormat;
+	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
+	window->windowWidth = width;
+	window->windowHeight = height;
+	window->windowSwapInterval = 1;
+	window->windowRefreshRate = 60.0f;
+	window->windowFullscreen = fullscreen;
+	window->windowActive = false;
+	window->windowExit = false;
+	window->lastSwapTime = GetTimeNanoseconds();
+	window->uiView = myUIView;
+	window->uiWindow = myUIWindow;
+
+	ksGpuDevice_Create( &window->device, instance, queueInfo );
+	ksGpuContext_CreateForSurface( &window->context, &window->device, queueIndex, colorFormat, depthFormat, sampleCount, window->display );
+
+	return true;
+}
+
+static bool ksGpuWindow_SupportedResolution( const int width, const int height )
+{
+	UNUSED_PARM( width );
+	UNUSED_PARM( height );
+
+	return true;
+}
+
+static void ksGpuWindow_Exit( ksGpuWindow * window )
+{
+	window->windowExit = true;
+}
+
+static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
+{
+	[autoReleasePool release];
+	autoReleasePool = [[NSAutoreleasePool alloc] init];
+
+	if ( window->windowExit )
+	{
+		return GPU_WINDOW_EVENT_EXIT;
+	}
+
+	if ( window->windowActive == false )
+	{
+		window->windowActive = true;
+		return GPU_WINDOW_EVENT_ACTIVATED;
+	}
+	
+	return GPU_WINDOW_EVENT_NONE;
+}
+
 #elif defined( OS_ANDROID )
 
 typedef enum	// https://developer.android.com/ndk/reference/group___input.html
@@ -6865,14 +6865,14 @@ static void ksGpuWindow_SwapInterval( ksGpuWindow * window, const int swapInterv
 	{
 #if defined( OS_WINDOWS )
 		wglSwapIntervalEXT( swapInterval );
-#elif defined( OS_APPLE_MACOS )
-		CGLSetParameter( window->context.cglContext, kCGLCPSwapInterval, &swapInterval );
 #elif defined( OS_LINUX_XLIB )
 		glXSwapIntervalEXT( window->context.xDisplay, window->xWindow, swapInterval );
 #elif defined( OS_LINUX_XCB )
 		xcb_dri2_swap_interval( window->context.connection, window->context.glxDrawable, swapInterval );
 #elif defined( OS_LINUX_XCB_GLX )
 		glXSwapIntervalEXT( window->context.xDisplay, window->glxWindow, swapInterval );
+#elif defined( OS_APPLE_MACOS )
+		CGLSetParameter( window->context.cglContext, kCGLCPSwapInterval, &swapInterval );
 #elif defined( OS_ANDROID )
 		EGL( eglSwapInterval( window->context.display, swapInterval ) );
 #endif
@@ -6884,14 +6884,14 @@ static void ksGpuWindow_SwapBuffers( ksGpuWindow * window )
 {
 #if defined( OS_WINDOWS )
 	SwapBuffers( window->context.hDC );
-#elif defined( OS_APPLE_MACOS )
-	CGLFlushDrawable( window->context.cglContext );
 #elif defined( OS_LINUX_XLIB )
 	glXSwapBuffers( window->context.xDisplay, window->xWindow );
 #elif defined( OS_LINUX_XCB )
 	xcb_glx_swap_buffers( window->context.connection, window->context.glxContextTag, window->glxWindow );
 #elif defined( OS_LINUX_XCB_GLX )
 	glXSwapBuffers( window->context.xDisplay, window->glxWindow );
+#elif defined( OS_APPLE_MACOS )
+	CGLFlushDrawable( window->context.cglContext );
 #elif defined( OS_ANDROID )
 	EGL( eglSwapBuffers( window->context.display, window->context.mainSurface ) );
 #endif
@@ -17979,47 +17979,11 @@ int APIENTRY WinMain( HINSTANCE hCurrentInst, HINSTANCE hPreviousInst, LPSTR lps
 	return StartApplication( argc, argv );
 }
 
-#elif defined( OS_APPLE_IOS )
-
-static int argc_deferred;
-static char** argv_deferred;
-
-@interface MyAppDelegate : NSObject <UIApplicationDelegate> {}
-@end
-
-@implementation MyAppDelegate
-
--(BOOL) application: (UIApplication*) application didFinishLaunchingWithOptions: (NSDictionary*) launchOptions {
-
-	CGRect screenRect = UIScreen.mainScreen.bounds;
-	myUIView = [[MyUIView alloc] initWithFrame: screenRect];
-	UIViewController* myUIVC = [[[MyUIViewController alloc] init] autorelease];
-	myUIVC.view = myUIView;
-
-	myUIWindow = [[UIWindow alloc] initWithFrame: screenRect];
-	[myUIWindow addSubview: myUIView];
-	myUIWindow.rootViewController = myUIVC;
-	[myUIWindow makeKeyAndVisible];
-
-	// Delay to allow startup runloop to complete.
-	[self performSelector: @selector(startApplication:) withObject: nil afterDelay: 0.25f];
-
-	return YES;
-}
-
--(void) startApplication: (id) argObj {
-	autoReleasePool = [[NSAutoreleasePool alloc] init];
-	StartApplication( argc_deferred, argv_deferred );
-}
-
-@end
+#elif defined( OS_LINUX )
 
 int main( int argc, char * argv[] )
 {
-	argc_deferred = argc;
-	argv_deferred = argv;
-
-	return UIApplicationMain( argc, argv, nil, @"MyAppDelegate" );
+	return StartApplication( argc, argv );
 }
 
 #elif defined( OS_APPLE_MACOS )
@@ -18195,11 +18159,47 @@ int main( int argc, char * argv[] )
 	return StartApplication( argc, argv );
 }
 
-#elif defined( OS_LINUX )
+#elif defined( OS_APPLE_IOS )
+
+static int argc_deferred;
+static char** argv_deferred;
+
+@interface MyAppDelegate : NSObject <UIApplicationDelegate> {}
+@end
+
+@implementation MyAppDelegate
+
+-(BOOL) application: (UIApplication*) application didFinishLaunchingWithOptions: (NSDictionary*) launchOptions {
+
+	CGRect screenRect = UIScreen.mainScreen.bounds;
+	myUIView = [[MyUIView alloc] initWithFrame: screenRect];
+	UIViewController* myUIVC = [[[MyUIViewController alloc] init] autorelease];
+	myUIVC.view = myUIView;
+
+	myUIWindow = [[UIWindow alloc] initWithFrame: screenRect];
+	[myUIWindow addSubview: myUIView];
+	myUIWindow.rootViewController = myUIVC;
+	[myUIWindow makeKeyAndVisible];
+
+	// Delay to allow startup runloop to complete.
+	[self performSelector: @selector(startApplication:) withObject: nil afterDelay: 0.25f];
+
+	return YES;
+}
+
+-(void) startApplication: (id) argObj {
+	autoReleasePool = [[NSAutoreleasePool alloc] init];
+	StartApplication( argc_deferred, argv_deferred );
+}
+
+@end
 
 int main( int argc, char * argv[] )
 {
-	return StartApplication( argc, argv );
+	argc_deferred = argc;
+	argv_deferred = argv;
+
+	return UIApplicationMain( argc, argv, nil, @"MyAppDelegate" );
 }
 
 #elif defined( OS_ANDROID )
