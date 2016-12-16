@@ -28,6 +28,4 @@ if [[ $TRAVIS_OS_NAME == 'osx' ]]; then
     esac
     pyenv rehash
     python -m pip install --user virtualenv
-else
-    # Install some custom requirements on Linux
 fi
