@@ -102,10 +102,10 @@ before_install:
   - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then export JAVA_HOME="/usr/lib/jvm/java-8-oracle"; fi
 
 install:
-  - pip install --user nose
-  - pip install --user cpp-coveralls
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then pip install --user nose; fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then pip install --user cpp-coveralls; fi
     # Make sure we can find the above Python packages
-  - export PATH=$HOME/.local/bin:$PATH
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then export PATH=$HOME/.local/bin:$PATH; fi
 
 before_script:
   - git clone https://github.com/KhronosGroup/glslang.git ../glslang
