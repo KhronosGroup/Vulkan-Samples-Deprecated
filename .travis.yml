@@ -4,6 +4,9 @@
 language:
   - cpp
 
+python:
+  - "3.5"
+
 jdk: oraclejdk8
 
 matrix:
@@ -56,12 +59,12 @@ matrix:
     - os: osx
       compiler: clang
       sudo: required
-      env: VULKAN_SAMPLES_BUILD_CONFIG=NORMAL VULKAN_SAMPLES_BUILD_TYPE=Debug
+      env: TOXENV=py35 VULKAN_SAMPLES_BUILD_CONFIG=NORMAL VULKAN_SAMPLES_BUILD_TYPE=Debug
     # Mac OS X Clang release build.
     - os: osx
       compiler: clang
       sudo: required
-      env: VULKAN_SAMPLES_BUILD_CONFIG=NORMAL VULKAN_SAMPLES_BUILD_TYPE=Release
+      env: TOXENV=py35 VULKAN_SAMPLES_BUILD_CONFIG=NORMAL VULKAN_SAMPLES_BUILD_TYPE=Release
 
 cache:
   apt: true
@@ -100,6 +103,7 @@ install:
   - pip install --user cpp-coveralls
     # Make sure we can find the above Python packages
   - export PATH=$HOME/.local/bin:$PATH
+  - ./.travis_python.sh
 
 before_script:
   - git clone https://github.com/KhronosGroup/glslang.git ../glslang
