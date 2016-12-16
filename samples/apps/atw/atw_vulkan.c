@@ -401,7 +401,9 @@ Platform headers / declarations
 
 	#include <time.h>							// for timespec
 	#include <sys/time.h>						// for gettimeofday()
-	#define __USE_UNIX98 1						// for pthread_mutexattr_settype
+	#if !defined( __USE_UNIX98 )
+		#define __USE_UNIX98	1				// for pthread_mutexattr_settype
+	#endif
 	#include <pthread.h>						// for pthread_create() etc.
 	#include <malloc.h>							// for memalign
 	#include <dlfcn.h>							// for dlopen

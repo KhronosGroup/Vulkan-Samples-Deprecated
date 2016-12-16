@@ -244,7 +244,9 @@ Linux x86 or x64
 #include <errno.h>					// for EBUSY, ETIMEDOUT etc.
 #include <ctype.h>					// for isspace() and isdigit()
 #include <sys/time.h>				// for gettimeofday()
-#define __USE_UNIX98				// for pthread_mutexattr_settype
+#if !defined( __USE_UNIX98 )
+	#define __USE_UNIX98	1		// for pthread_mutexattr_settype
+#endif
 #include <pthread.h>				// for pthread_create() etc.
 #include <x86intrin.h>				// for SSE intrinsics
 
