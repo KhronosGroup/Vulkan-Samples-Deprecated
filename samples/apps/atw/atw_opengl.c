@@ -477,6 +477,8 @@ Platform headers / declarations
 	#include <OpenGL/gl3ext.h>
 	#include <GL/gl_format.h>
 
+	#undef MAX
+	#undef MIN
 	#define OUTPUT_PATH				""
 
 	// Undocumented CGS and CGL

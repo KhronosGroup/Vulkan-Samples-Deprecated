@@ -515,6 +515,8 @@ Platform headers / declarations
 		#endif
 	#endif
 
+	#undef MAX
+	#undef MIN
 	#define OUTPUT_PATH		""
 
 	#pragma clang diagnostic ignored "-Wunused-function"
@@ -10491,7 +10493,7 @@ static void InitVertexAttributes( const bool instance,
 				{
 					attributes[*attributeCount + location].location = *attributeCount + location;
 					attributes[*attributeCount + location].binding = *bindingCount;
-					attributes[*attributeCount + location].format = v->attributeFormat;
+					attributes[*attributeCount + location].format = (VkFormat) v->attributeFormat;
 					attributes[*attributeCount + location].offset = (uint32_t)( location * v->attributeSize / v->locationCount );	// limited offset used for packed vertex data
 				}
 
