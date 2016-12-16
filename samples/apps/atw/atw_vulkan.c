@@ -515,6 +515,8 @@ Platform headers / declarations
 		#endif
 	#endif
 
+	#undef MAX
+	#undef MIN
 	#define OUTPUT_PATH		""
 
 	#pragma clang diagnostic ignored "-Wunused-function"
@@ -2331,7 +2333,7 @@ static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float ta
 	// Set to tanAngleDown - tanAngleUp for a clip space with positive Y down (Vulkan).
 	const float tanAngleHeight = tanAngleDown - tanAngleUp;
 #else
-	// Set to tanAngleUp - tanAngleDown for a clip space with positive Y up (OpenGL / D3D).
+	// Set to tanAngleUp - tanAngleDown for a clip space with positive Y up (OpenGL / D3D / Metal).
 	const float tanAngleHeight = tanAngleUp - tanAngleDown;
 #endif
 
@@ -2339,7 +2341,7 @@ static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float ta
 	// Set to nearZ for a [-1,1] Z clip space (OpenGL).
 	const float offsetZ = nearZ;
 #else
-	// Set to zero for a [0,1] Z clip space (D3D / Vulkan).
+	// Set to zero for a [0,1] Z clip space (Vulkan / D3D / Metal).
 	const float offsetZ = 0;
 #endif
 
@@ -8801,14 +8803,22 @@ ksGpuVertexAttributeArraysBase
 
 typedef unsigned short ksGpuTriangleIndex;
 
+typedef enum
+{
+	GPU_ATTRIBUTE_FORMAT_R32_SFLOAT				= VK_FORMAT_R32_SFLOAT,
+	GPU_ATTRIBUTE_FORMAT_R32G32_SFLOAT			= VK_FORMAT_R32G32_SFLOAT,
+	GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT		= VK_FORMAT_R32G32B32_SFLOAT,
+	GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT	= VK_FORMAT_R32G32B32A32_SFLOAT
+} ksGpuAttributeFormat;
+
 typedef struct
 {
-	int				attributeFlag;		// VERTEX_ATTRIBUTE_FLAG_
-	size_t			attributeOffset;	// Offset in bytes to the pointer in ksGpuVertexAttributeArraysBase
-	size_t			attributeSize;		// Size in bytes of a single attribute
-	int				attributeFormat;	// VkFormat of the attribute
-	int				locationCount;		// Number of attribute locations
-	const char *	name;				// Name in vertex program
+	int						attributeFlag;		// VERTEX_ATTRIBUTE_FLAG_
+	size_t					attributeOffset;	// Offset in bytes to the pointer in ksGpuVertexAttributeArraysBase
+	size_t					attributeSize;		// Size in bytes of a single attribute
+	ksGpuAttributeFormat	attributeFormat;	// Format of the attribute
+	int						locationCount;		// Number of attribute locations
+	const char *			name;				// Name in vertex program
 } ksGpuVertexAttribute;
 
 typedef struct
@@ -9026,17 +9036,17 @@ typedef struct
 
 static const ksGpuVertexAttribute DefaultVertexAttributeLayout[] =
 {
-	{ VERTEX_ATTRIBUTE_FLAG_POSITION,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, position ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, position[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexPosition" },
-	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, normal ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, normal[0] ),			VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexNormal" },
-	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, tangent ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, tangent[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexTangent" },
-	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, binormal ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, binormal[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexBinormal" },
-	{ VERTEX_ATTRIBUTE_FLAG_COLOR,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, color ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, color[0] ),			VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexColor" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV0,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv0 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv0[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv0" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV1,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv1 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv1[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv1" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV2,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv2 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv2[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv2" },
-	{ VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES,	OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, jointIndices ),SIZEOF_MEMBER( ksGpuVertexAttributeArrays, jointIndices[0] ),	VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointIndices" },
-	{ VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS,	OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, jointWeights ),SIZEOF_MEMBER( ksGpuVertexAttributeArrays, jointWeights[0] ),	VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointWeights" },
-	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, transform ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, transform[0] ),		VK_FORMAT_R32G32B32A32_SFLOAT,	4,	"vertexTransform" },
+	{ VERTEX_ATTRIBUTE_FLAG_POSITION,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, position ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, position[0] ),		GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT,		1,	"vertexPosition" },
+	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, normal ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, normal[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT,		1,	"vertexNormal" },
+	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, tangent ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, tangent[0] ),		GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT,		1,	"vertexTangent" },
+	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, binormal ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, binormal[0] ),		GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT,		1,	"vertexBinormal" },
+	{ VERTEX_ATTRIBUTE_FLAG_COLOR,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, color ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, color[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexColor" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV0,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv0 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv0[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32_SFLOAT,			1,	"vertexUv0" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV1,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv1 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv1[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32_SFLOAT,			1,	"vertexUv1" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV2,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv2 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv2[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32_SFLOAT,			1,	"vertexUv2" },
+	{ VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES,	OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, jointIndices ),SIZEOF_MEMBER( ksGpuVertexAttributeArrays, jointIndices[0] ),	GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointIndices" },
+	{ VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS,	OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, jointWeights ),SIZEOF_MEMBER( ksGpuVertexAttributeArrays, jointWeights[0] ),	GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointWeights" },
+	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, transform ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, transform[0] ),		GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT,	4,	"vertexTransform" },
 	{ 0, 0, 0, 0, 0, "" }
 };
 
@@ -9614,7 +9624,8 @@ static bool ksGpuFramebuffer_CreateFromTextures( ksGpuContext * context, ksGpuFr
 
 	framebuffer->colorTextures = (ksGpuTexture *) malloc( numBuffers * sizeof( ksGpuTexture ) );
 	framebuffer->textureViews = NULL;
-	framebuffer->renderViews = NULL;	framebuffer->framebuffers = (VkFramebuffer *) malloc( numBuffers * sizeof( VkFramebuffer ) );
+	framebuffer->renderViews = NULL;
+	framebuffer->framebuffers = (VkFramebuffer *) malloc( numBuffers * sizeof( VkFramebuffer ) );
 	framebuffer->renderPass = renderPass;
 	framebuffer->window = NULL;
 	framebuffer->swapchainCreateCount = 0;
@@ -10482,7 +10493,7 @@ static void InitVertexAttributes( const bool instance,
 				{
 					attributes[*attributeCount + location].location = *attributeCount + location;
 					attributes[*attributeCount + location].binding = *bindingCount;
-					attributes[*attributeCount + location].format = v->attributeFormat;
+					attributes[*attributeCount + location].format = (VkFormat) v->attributeFormat;
 					attributes[*attributeCount + location].offset = (uint32_t)( location * v->attributeSize / v->locationCount );	// limited offset used for packed vertex data
 				}
 
@@ -10845,7 +10856,6 @@ static void ksGpuTimer_Destroy( ksGpuContext * context, ksGpuTimer * timer )
 	{
 		VC( context->device->vkDestroyQueryPool( context->device->device, timer->pool, VK_ALLOCATOR ) );
 	}
-
 }
 
 static ksNanoseconds ksGpuTimer_GetNanoseconds( ksGpuTimer * timer )
@@ -10858,7 +10868,6 @@ static ksNanoseconds ksGpuTimer_GetNanoseconds( ksGpuTimer * timer )
 	{
 		return 0;
 	}
-
 }
 
 /*

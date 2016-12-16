@@ -21,6 +21,8 @@ Windows 7+ with additional required software packages:
   - Older versions may work, but this has not been tested.
 - CMake (from http://www.cmake.org/download/).
   - Tell the installer to "Add CMake to the system PATH" environment variable.
+- Python 3.3 or later (from https://www.python.org/downloads/).
+  - Select to install the optional sub-package to add Python to the system PATH environment variable.
 - Vulkan SDK for Windows (from https://vulkan.lunarg.com).
   - Verify that the VK_SDK_PATH environment variable is set.
 
@@ -29,6 +31,7 @@ Windows 7+ with additional required software packages:
 A compatible Linux distribution.
 
 - The samples have been tested with Ubuntu Linux 14.04 and later versions.
+- Python 3.3 or later (sudo apt-get install python3).
 - Vulkan SDK for Linux (from https://vulkan.lunarg.com).
 
 Samples using Xlib typically require the following packages.
@@ -44,6 +47,18 @@ sudo apt-get install libxcb1-dev
 sudo apt-get install libxcb-keysyms1-dev
 sudo apt-get install libxcb-icccm4-dev
 ```
+
+## MacOS
+
+Version 10.11 or later.
+
+- Homebrew and components
+  - Follow instructions on brew.sh to get homebrew installed.
+    /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+- Make sure Homebrew is at the beginning of the PATH:
+  - export PATH=/usr/local/bin:$PATH
+- Additional packages.
+  - brew install cmake python python3
 
 ## Android
 
