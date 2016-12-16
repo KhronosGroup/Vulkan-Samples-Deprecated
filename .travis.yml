@@ -92,7 +92,7 @@ before_install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install python3; fi
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then virtualenv venv -p python3; fi
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then source venv/bin/activate; fi
-  a# Install the appropriate Linux packages.
+  # Install the appropriate Linux packages.
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update && sudo apt-get -y install python3 libx11-dev libxxf86vm-dev libxrandr-dev libxcb1-dev libxcb-keysyms1-dev libxcb-icccm4-dev clang; fi
   # Install the Android NDK.
   - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then export ARCH=`uname -m`; fi
