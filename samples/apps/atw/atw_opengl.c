@@ -2288,7 +2288,7 @@ static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float ta
 	// Set to tanAngleDown - tanAngleUp for a clip space with positive Y down (Vulkan).
 	const float tanAngleHeight = tanAngleDown - tanAngleUp;
 #else
-	// Set to tanAngleUp - tanAngleDown for a clip space with positive Y up (OpenGL / D3D).
+	// Set to tanAngleUp - tanAngleDown for a clip space with positive Y up (OpenGL / D3D / Metal).
 	const float tanAngleHeight = tanAngleUp - tanAngleDown;
 #endif
 
@@ -2296,7 +2296,7 @@ static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float ta
 	// Set to nearZ for a [-1,1] Z clip space (OpenGL).
 	const float offsetZ = nearZ;
 #else
-	// Set to zero for a [0,1] Z clip space (D3D / Vulkan).
+	// Set to zero for a [0,1] Z clip space (Vulkan / D3D / Metal).
 	const float offsetZ = 0;
 #endif
 
@@ -8082,15 +8082,22 @@ ksGpuVertexAttributeArraysBase
 
 typedef unsigned short ksGpuTriangleIndex;
 
+typedef enum
+{
+	GPU_ATTRIBUTE_FORMAT_R32_SFLOAT				= ( 1 << 16 ) | GL_FLOAT,
+	GPU_ATTRIBUTE_FORMAT_R32G32_SFLOAT			= ( 2 << 16 ) | GL_FLOAT,
+	GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT		= ( 3 << 16 ) | GL_FLOAT,
+	GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT	= ( 4 << 16 ) | GL_FLOAT
+} ksGpuAttributeFormat;
+
 typedef struct
 {
-	int				attributeFlag;		// VERTEX_ATTRIBUTE_FLAG_
-	size_t			attributeOffset;	// Offset in bytes to the pointer in ksGpuVertexAttributeArraysBase
-	size_t			attributeSize;		// Size in bytes of a single attribute
-	int				componentType;		// OpenGL type of a single component
-	int				componentCount;		// Number of components per location
-	int				locationCount;		// Number of attribute locations
-	const char *	name;				// Name in vertex program
+	int						attributeFlag;		// VERTEX_ATTRIBUTE_FLAG_
+	size_t					attributeOffset;	// Offset in bytes to the pointer in ksGpuVertexAttributeArraysBase
+	size_t					attributeSize;		// Size in bytes of a single attribute
+	ksGpuAttributeFormat	attributeFormat;	// Format of the attribute
+	int						locationCount;		// Number of attribute locations
+	const char *			name;				// Name in vertex program
 } ksGpuVertexAttribute;
 
 typedef struct
@@ -8308,18 +8315,18 @@ typedef struct
 
 static const ksGpuVertexAttribute DefaultVertexAttributeLayout[] =
 {
-	{ VERTEX_ATTRIBUTE_FLAG_POSITION,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, position ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, position[0] ),		GL_FLOAT,	3,	1,	"vertexPosition" },
-	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, normal ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, normal[0] ),			GL_FLOAT,	3,	1,	"vertexNormal" },
-	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, tangent ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, tangent[0] ),		GL_FLOAT,	3,	1,	"vertexTangent" },
-	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, binormal ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, binormal[0] ),		GL_FLOAT,	3,	1,	"vertexBinormal" },
-	{ VERTEX_ATTRIBUTE_FLAG_COLOR,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, color ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, color[0] ),			GL_FLOAT,	4,	1,	"vertexColor" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV0,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv0 ),				SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv0[0] ),			GL_FLOAT,	2,	1,	"vertexUv0" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV1,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv1 ),				SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv1[0] ),			GL_FLOAT,	2,	1,	"vertexUv1" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV2,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv2 ),				SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv2[0] ),			GL_FLOAT,	2,	1,	"vertexUv2" },
-	{ VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES,	OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, jointIndices ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, jointIndices[0] ),	GL_FLOAT,	4,	1,	"vertexJointIndices" },
-	{ VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS,	OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, jointWeights ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, jointWeights[0] ),	GL_FLOAT,	4,	1,	"vertexJointWeights" },
-	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, transform ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, transform[0] ),		GL_FLOAT,	4,	4,	"vertexTransform" },
-	{ 0, 0, 0, 0, 0, 0, "" }
+	{ VERTEX_ATTRIBUTE_FLAG_POSITION,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, position ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, position[0] ),		GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT,		1,	"vertexPosition" },
+	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, normal ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, normal[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT,		1,	"vertexNormal" },
+	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, tangent ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, tangent[0] ),		GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT,		1,	"vertexTangent" },
+	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, binormal ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, binormal[0] ),		GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT,		1,	"vertexBinormal" },
+	{ VERTEX_ATTRIBUTE_FLAG_COLOR,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, color ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, color[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexColor" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV0,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv0 ),				SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv0[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32_SFLOAT,			1,	"vertexUv0" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV1,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv1 ),				SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv1[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32_SFLOAT,			1,	"vertexUv1" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV2,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv2 ),				SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv2[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32_SFLOAT,			1,	"vertexUv2" },
+	{ VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES,	OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, jointIndices ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, jointIndices[0] ),	GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointIndices" },
+	{ VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS,	OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, jointWeights ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, jointWeights[0] ),	GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointWeights" },
+	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, transform ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, transform[0] ),		GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT,	4,	"vertexTransform" },
+	{ 0, 0, 0, 0, 0, "" }
 };
 
 /*
@@ -9723,7 +9730,7 @@ static void InitVertexAttributes( const bool instance,
 				for ( int location = 0; location < v->locationCount; location++ )
 				{
 					GL( glEnableVertexAttribArray( *attribLocationCount + location ) );
-					GL( glVertexAttribPointer( *attribLocationCount + location, v->componentCount, v->componentType, GL_FALSE,
+					GL( glVertexAttribPointer( *attribLocationCount + location, v->attributeFormat >> 16, v->attributeFormat & 0xFFFF, GL_FALSE,
 												(GLsizei)attribStride, (void *)( offset + location * attribLocationSize ) ) );
 					GL( glVertexAttribDivisor( *attribLocationCount + location, instance ? 1 : 0 ) );
 				}
