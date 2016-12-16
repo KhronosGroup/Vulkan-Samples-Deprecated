@@ -812,7 +812,7 @@ SSE and AVX vector constants
 
 static const __m128i vector_uint8_0				= _MM_SET1_EPI8( 0 );
 static const __m128i vector_uint8_127			= _MM_SET1_EPI8( 127 );
-static const __m128i vector_uint8_255			= _MM_SET1_EPI8( -1 );
+static const __m128i vector_uint8_255			= _MM_SET1_EPI8( 255 );
 static const __m128i vector_uint8_unpack_hilo	= _MM_SET_EPI8( 15, 11, 14, 10, 13, 9, 12, 8, 7, 3, 6, 2, 5, 1, 4, 0 );
 
 static const __m128i vector_int16_1				= _MM_SET1_EPI16( 1 );
