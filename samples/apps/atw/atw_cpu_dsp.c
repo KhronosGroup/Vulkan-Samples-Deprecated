@@ -58,8 +58,8 @@ libraries.
 Supported platforms are:
 
 	- Microsoft Windows 7 or later
-	- Apple Mac OS X 10.9 or later
 	- Ubuntu Linux 14.04 or later
+	- Apple macOS 10.9 or later
 	- Android 5.0 or later
 
 The source texture resolution is limited to 2048x2048 RGBA texels because the
@@ -96,11 +96,11 @@ Microsoft Windows: Intel Compiler 14.0
 	"C:\Program Files (x86)\Intel\Composer XE\bin\iclvars.bat" intel64
 	icl /Qstd=c99 /Zc:forScope /Wall /WX /MD /GS /Gy /O2 /Oi /arch:CORE-AVX2 atw_cpu_dsp.c
 
-Apple Mac OS: Apple LLVM 6.0:
-	clang -std=c99 -march=native -Wall -g -O2 -m64 -o atw_cpu_dsp atw_cpu_dsp.c -lm -lpthread
-
 Linux: GCC 4.8.2:
 	gcc -std=c99 -march=native -Wall -g -O2 -m64 -o atw_cpu_dsp atw_cpu_dsp.c -lm -lpthread
+
+Apple macOS: Apple LLVM 6.0:
+	clang -std=c99 -march=native -Wall -g -O2 -m64 -o atw_cpu_dsp atw_cpu_dsp.c -lm -lpthread
 
 Android for ARM from Windows: NDK Revision 11c - Android 21
 	set path=%path%;%ANDROID_NDK_HOME%\toolchains\arm-linux-androideabi-4.9\prebuilt\windows-x86_64\bin\
@@ -136,7 +136,13 @@ VERSION HISTORY
 #elif defined( __hexagon__ ) || defined( __qdsp6__ )
 	#define OS_HEXAGON
 #elif defined( __APPLE__ )
-	#define OS_MAC
+	#define OS_APPLE
+	#include <Availability.h>
+	#if __IPHONE_OS_VERSION_MAX_ALLOWED
+		#define OS_APPLE_IOS
+	#elif __MAC_OS_X_VERSION_MAX_ALLOWED
+		#define OS_APPLE_MACOS
+	#endif
 #elif defined( __linux__ )
 	#define OS_LINUX
 #else
@@ -215,7 +221,6 @@ Windows, x86 or x64
 ================================
 Linux x86 or x64
 ================================
-
 */
 
 #ifdef __clang__
@@ -239,7 +244,9 @@ Linux x86 or x64
 #include <errno.h>					// for EBUSY, ETIMEDOUT etc.
 #include <ctype.h>					// for isspace() and isdigit()
 #include <sys/time.h>				// for gettimeofday()
-#define __USE_UNIX98				// for pthread_mutexattr_settype
+#if !defined( __USE_UNIX98 )
+	#define __USE_UNIX98	1		// for pthread_mutexattr_settype
+#endif
 #include <pthread.h>				// for pthread_create() etc.
 #include <x86intrin.h>				// for SSE intrinsics
 
@@ -274,13 +281,12 @@ Linux x86 or x64
 extern int pthread_setname_np( pthread_t __target_thread, __const char *__name );
 extern int pthread_setaffinity_np( pthread_t thread, size_t cpusetsize, const cpu_set_t * cpuset );
 
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 
 /*
 ================================
 Mac OS X
 ================================
-
 */
 
 #ifdef __clang__
@@ -806,7 +812,7 @@ SSE and AVX vector constants
 
 static const __m128i vector_uint8_0				= _MM_SET1_EPI8( 0 );
 static const __m128i vector_uint8_127			= _MM_SET1_EPI8( 127 );
-static const __m128i vector_uint8_255			= _MM_SET1_EPI8( -1 );
+static const __m128i vector_uint8_255			= _MM_SET1_EPI8( 255 );
 static const __m128i vector_uint8_unpack_hilo	= _MM_SET_EPI8( 15, 11, 14, 10, 13, 9, 12, 8, 7, 3, 6, 2, 5, 1, 4, 0 );
 
 static const __m128i vector_int16_1				= _MM_SET1_EPI16( 1 );
@@ -6398,10 +6404,10 @@ static void ksThread_SetName( const char * name )
 	{
 		info.dwFlags = 0;
 	}
-#elif defined( OS_MAC )
-	pthread_setname_np( name );
 #elif defined( OS_LINUX )
 	pthread_setname_np( pthread_self(), name );
+#elif defined( OS_APPLE )
+	pthread_setname_np( name );
 #elif defined( OS_ANDROID )
 	prctl( PR_SET_NAME, (long)name, 0, 0, 0 );
 #endif
@@ -6426,9 +6432,6 @@ static void ksThread_SetAffinity( int mask )
 	{
 		Print( "Thread %p affinity set to 0x%02X\n", thread, mask );
 	}
-#elif defined( OS_MAC )
-	// OS X does not export interfaces that identify processors or control thread placement.
-	UNUSED_PARM( mask );
 #elif defined( OS_LINUX )
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
 	{
@@ -6452,6 +6455,9 @@ static void ksThread_SetAffinity( int mask )
 	{
 		Print( "Thread %d affinity set to 0x%02X\n", (unsigned int)pthread_self(), mask );
 	}
+#elif defined( OS_APPLE )
+	// OS X does not export interfaces that identify processors or control thread placement.
+	UNUSED_PARM( mask );
 #elif defined( OS_ANDROID )
 	// Optionally use the faster cores of a heterogeneous CPU.
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
@@ -6559,7 +6565,7 @@ static void ksThread_SetRealTimePriority( int priority )
 	{
 		Print( "Thread %p priority set to critical.\n", thread );
 	}
-#elif defined( OS_MAC ) || defined( OS_LINUX )
+#elif defined( OS_LINUX ) || defined( OS_APPLE )
 	struct sched_param sp;
 	memset( &sp, 0, sizeof( struct sched_param ) );
 	sp.sched_priority = priority;
@@ -7404,7 +7410,7 @@ static void * AllocAlignedMemory( size_t size, size_t alignment )
 	alignment = ( alignment < sizeof( void * ) ) ? sizeof( void * ) : alignment;
 #if defined( OS_WINDOWS )
 	return _aligned_malloc( size, alignment );
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	void * ptr = NULL;
 	return ( posix_memalign( &ptr, alignment, size ) == 0 ) ? ptr : NULL;
 #else
@@ -7619,27 +7625,6 @@ static const char * GetOSVersion()
 	}
 
 	return "Microsoft Windows";
-#elif defined( OS_MAC )
-	static char version[1024];
-	size_t len;
-	int mib[2] = { CTL_KERN, KERN_OSRELEASE };
-    
-	if ( sysctl( mib, 2, version, &len, NULL, 0 ) == 0 )
-	{
-		const char * dot = strstr( version, "." );
-		if ( dot != NULL )
-		{
-			const int kernelMajor = (int)strtol( version, (char **)NULL, 10 );
-			const int kernelMinor = (int)strtol( dot + 1, (char **)NULL, 10 );
-			const int osxMajor = 10;
-			const int osxMinor = kernelMajor - 4;
-			const int osxSub = kernelMinor + 1;
-			snprintf( version, sizeof( version ), "Apple Mac OS X %d.%d.%d", osxMajor, osxMinor, osxSub );
-			return version;
-		}
-	}
-
-	return "Apple Mac OS X";
 #elif defined( OS_LINUX )
 	static char buffer[1024];
 
@@ -7677,6 +7662,27 @@ static const char * GetOSVersion()
 	}
 
 	return "Linux";
+#elif defined( OS_APPLE )
+	static char version[1024];
+	size_t len;
+	int mib[2] = { CTL_KERN, KERN_OSRELEASE };
+    
+	if ( sysctl( mib, 2, version, &len, NULL, 0 ) == 0 )
+	{
+		const char * dot = strstr( version, "." );
+		if ( dot != NULL )
+		{
+			const int kernelMajor = (int)strtol( version, (char **)NULL, 10 );
+			const int kernelMinor = (int)strtol( dot + 1, (char **)NULL, 10 );
+			const int osxMajor = 10;
+			const int osxMinor = kernelMajor - 4;
+			const int osxSub = kernelMinor + 1;
+			snprintf( version, sizeof( version ), "Apple Mac OS X %d.%d.%d", osxMajor, osxMinor, osxSub );
+			return version;
+		}
+	}
+
+	return "Apple Mac OS X";
 #elif defined( OS_ANDROID )
 	static char version[1024];
 
@@ -7718,7 +7724,7 @@ static const char * GetCPUVersion()
 			return processor;
 		}
 	}
-#elif defined( OS_MAC )
+#elif defined( OS_APPLE )
 	static char processor[1024];
 	size_t processor_length = sizeof( processor );
 	sysctlbyname( "machdep.cpu.brand_string", &processor, &processor_length, NULL, 0 );

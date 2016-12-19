@@ -237,9 +237,9 @@ The code is written against version 1.0.2 of the Vulkan Specification.
 Supported platforms are:
 
 	- Microsoft Windows 7 or later
+	- Ubuntu Linux 14.04 or later
 	- Apple macOS 10.11 or later
 	- Apple iOS 9.0 or later
-	- Ubuntu Linux 14.04 or later
 	- Android 5.0 or later
 
 
@@ -274,9 +274,6 @@ Microsoft Windows: Intel Compiler 14.0
 	"C:\Program Files (x86)\Intel\Composer XE\bin\iclvars.bat" intel64
 	icl /Qstd=c99 /Zc:wchar_t /Zc:forScope /Wall /MD /GS /Gy /O2 /Oi /I%VK_SDK_PATH%\Include atw_vulkan.c /link user32.lib gdi32.lib Advapi32.lib Shlwapi.lib
 
-Apple macOS: Apple LLVM 6.0:
-	clang -std=c99 -x objective-c -fno-objc-arc -Wall -g -O2 -m64 -o atw_vulkan atw_vulkan.c -framework Cocoa
-
 Linux: GCC 4.8.2 Xlib:
 	sudo apt-get install libx11-dev
 	sudo apt-get install libxxf86vm-dev
@@ -288,6 +285,9 @@ Linux: GCC 4.8.2 XCB:
 	sudo apt-get install libxcb-keysyms1-dev
 	sudo apt-get install libxcb-icccm4-dev
 	gcc -std=c99 -Wall -g -O2 -m64 -o atw_vulkan atw_vulkan.c -lm -lpthread -ldl -lxcb -lxcb-keysyms -lxcb-randr
+
+Apple macOS: Apple LLVM 6.0:
+	clang -std=c99 -x objective-c -fno-objc-arc -Wall -g -O2 -m64 -o atw_vulkan atw_vulkan.c -framework Cocoa
 
 Android for ARM from Windows: NDK Revision 11c - Android 21 - ANT/Gradle
 	ANT:
@@ -391,6 +391,60 @@ Platform headers / declarations
 
 	#define __thread	__declspec( thread )
 
+#elif defined( OS_LINUX )
+
+	#if __STDC_VERSION__ >= 199901L
+	#define _XOPEN_SOURCE 600
+	#else
+	#define _XOPEN_SOURCE 500
+	#endif
+
+	#include <time.h>							// for timespec
+	#include <sys/time.h>						// for gettimeofday()
+	#if !defined( __USE_UNIX98 )
+		#define __USE_UNIX98	1				// for pthread_mutexattr_settype
+	#endif
+	#include <pthread.h>						// for pthread_create() etc.
+	#include <malloc.h>							// for memalign
+	#include <dlfcn.h>							// for dlopen
+	#if defined( OS_LINUX_XLIB )
+		#include <X11/Xlib.h>
+		#include <X11/Xatom.h>
+		#include <X11/extensions/xf86vmode.h>	// for fullscreen video mode
+		#include <X11/extensions/Xrandr.h>		// for resolution changes
+	#elif defined( OS_LINUX_XCB )
+		#include <X11/keysym.h>
+		#include <xcb/xcb.h>
+		#include <xcb/xcb_keysyms.h>
+		#include <xcb/xcb_icccm.h>
+		#include <xcb/randr.h>
+	#endif
+
+	#if defined( OS_LINUX_XLIB )
+		#define VK_USE_PLATFORM_XLIB_KHR
+		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_KHR_XLIB_SURFACE_EXTENSION_NAME
+		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateXlibSurfaceKHR
+		#define vkCreateSurfaceKHR						vkCreateXlibSurfaceKHR
+	#elif defined( OS_LINUX_XCB )
+		#define VK_USE_PLATFORM_XCB_KHR
+		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_KHR_XCB_SURFACE_EXTENSION_NAME
+		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateXcbSurfaceKHR
+		#define vkCreateSurfaceKHR						vkCreateXcbSurfaceKHR
+	#endif
+
+	#include "vulkan/vulkan.h"
+	#include "vulkan/vk_sdk_platform.h"
+	#include "vulkan/vk_format.h"
+
+	#define VULKAN_LOADER	"libvulkan-1.so"
+	#define OUTPUT_PATH		""
+
+	// These prototypes are only included when __USE_GNU is defined but that causes other compile errors.
+	extern int pthread_setname_np( pthread_t __target_thread, __const char *__name );
+	extern int pthread_setaffinity_np( pthread_t thread, size_t cpusetsize, const cpu_set_t * cpuset );
+
+	#pragma GCC diagnostic ignored "-Wunused-function"
+
 #elif defined( OS_APPLE )
 
 	#include <sys/param.h>
@@ -461,62 +515,12 @@ Platform headers / declarations
 		#endif
 	#endif
 
+	#undef MAX
+	#undef MIN
 	#define OUTPUT_PATH		""
 
 	#pragma clang diagnostic ignored "-Wunused-function"
 	#pragma clang diagnostic ignored "-Wunused-const-variable"
-
-#elif defined( OS_LINUX )
-
-	#if __STDC_VERSION__ >= 199901L
-	#define _XOPEN_SOURCE 600
-	#else
-	#define _XOPEN_SOURCE 500
-	#endif
-
-	#include <time.h>							// for timespec
-	#include <sys/time.h>						// for gettimeofday()
-	#define __USE_UNIX98 1						// for pthread_mutexattr_settype
-	#include <pthread.h>						// for pthread_create() etc.
-	#include <malloc.h>							// for memalign
-	#include <dlfcn.h>							// for dlopen
-	#if defined( OS_LINUX_XLIB )
-		#include <X11/Xlib.h>
-		#include <X11/Xatom.h>
-		#include <X11/extensions/xf86vmode.h>	// for fullscreen video mode
-		#include <X11/extensions/Xrandr.h>		// for resolution changes
-	#elif defined( OS_LINUX_XCB )
-		#include <X11/keysym.h>
-		#include <xcb/xcb.h>
-		#include <xcb/xcb_keysyms.h>
-		#include <xcb/xcb_icccm.h>
-		#include <xcb/randr.h>
-	#endif
-
-	#if defined( OS_LINUX_XLIB )
-		#define VK_USE_PLATFORM_XLIB_KHR
-		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_KHR_XLIB_SURFACE_EXTENSION_NAME
-		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateXlibSurfaceKHR
-		#define vkCreateSurfaceKHR						vkCreateXlibSurfaceKHR
-	#elif defined( OS_LINUX_XCB )
-		#define VK_USE_PLATFORM_XCB_KHR
-		#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME	VK_KHR_XCB_SURFACE_EXTENSION_NAME
-		#define PFN_vkCreateSurfaceKHR					PFN_vkCreateXcbSurfaceKHR
-		#define vkCreateSurfaceKHR						vkCreateXcbSurfaceKHR
-	#endif
-
-	#include "vulkan/vulkan.h"
-	#include "vulkan/vk_sdk_platform.h"
-	#include "vulkan/vk_format.h"
-
-	#define VULKAN_LOADER	"libvulkan-1.so"
-	#define OUTPUT_PATH		""
-
-	// These prototypes are only included when __USE_GNU is defined but that causes other compile errors.
-	extern int pthread_setname_np( pthread_t __target_thread, __const char *__name );
-	extern int pthread_setaffinity_np( pthread_t thread, size_t cpusetsize, const cpu_set_t * cpuset );
-
-	#pragma GCC diagnostic ignored "-Wunused-function"
 
 #elif defined( OS_ANDROID )
 
@@ -674,6 +678,12 @@ static void Print( const char * format, ... )
 	va_end( args );
 
 	OutputDebugString( buffer );
+#elif defined( OS_LINUX )
+	va_list args;
+	va_start( args, format );
+	vprintf( format, args );
+	va_end( args );
+	fflush( stdout );
 #elif defined( OS_APPLE )
 	char buffer[4096];
 	va_list args;
@@ -682,12 +692,6 @@ static void Print( const char * format, ... )
 	va_end( args );
 
 	NSLog( @"%s", buffer );
-#elif defined( OS_LINUX )
-	va_list args;
-	va_start( args, format );
-	vprintf( format, args );
-	va_end( args );
-	fflush( stdout );
 #elif defined( OS_ANDROID )
 	char buffer[4096];
 	va_list args;
@@ -711,6 +715,32 @@ static void Error( const char * format, ... )
 	OutputDebugString( buffer );
 
 	MessageBox( NULL, buffer, "ERROR", MB_OK | MB_ICONINFORMATION );
+#elif defined( OS_LINUX )
+	va_list args;
+	va_start( args, format );
+	vprintf( format, args );
+	va_end( args );
+	printf( "\n" );
+	fflush( stdout );
+#elif defined( OS_APPLE_MACOS )
+	char buffer[4096];
+	va_list args;
+	va_start( args, format );
+	int length = vsnprintf( buffer, 4096, format, args );
+	va_end( args );
+
+	NSLog( @"%s\n", buffer );
+
+	if ( [NSThread isMainThread] )
+	{
+		NSString * string = [[NSString alloc] initWithBytes:buffer length:length encoding:NSASCIIStringEncoding];
+		NSAlert * alert = [[NSAlert alloc] init];
+		[alert addButtonWithTitle:@"OK"];
+		[alert setMessageText:@"Error"];
+		[alert setInformativeText:string];
+		[alert setAlertStyle:NSWarningAlertStyle];
+		[alert runModal];
+	}
 #elif defined( OS_APPLE_IOS )
 	char buffer[4096];
 	va_list args;
@@ -731,32 +761,6 @@ static void Error( const char * format, ... )
 												 handler: ^(UIAlertAction * action) {}]];
 		[UIApplication.sharedApplication.keyWindow.rootViewController presentViewController: alert animated: YES completion: nil];
 	}
-#elif defined( OS_APPLE_MACOS )
-	char buffer[4096];
-	va_list args;
-	va_start( args, format );
-	int length = vsnprintf( buffer, 4096, format, args );
-	va_end( args );
-
-	NSLog( @"%s\n", buffer );
-
-	if ( [NSThread isMainThread] )
-	{
-		NSString * string = [[NSString alloc] initWithBytes:buffer length:length encoding:NSASCIIStringEncoding];
-		NSAlert * alert = [[NSAlert alloc] init];
-		[alert addButtonWithTitle:@"OK"];
-		[alert setMessageText:@"Error"];
-		[alert setInformativeText:string];
-		[alert setAlertStyle:NSWarningAlertStyle];
-		[alert runModal];
-	}
-#elif defined( OS_LINUX )
-	va_list args;
-	va_start( args, format );
-	vprintf( format, args );
-	va_end( args );
-	printf( "\n" );
-	fflush( stdout );
 #elif defined( OS_ANDROID )
 	char buffer[4096];
 	va_list args;
@@ -789,10 +793,6 @@ static const char * GetOSVersion()
 	}
 
 	return "Microsoft Windows";
-#elif defined( OS_APPLE_IOS )
-	return [NSString stringWithFormat: @"Apple iOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
-#elif defined( OS_APPLE_MACOS )
-	return [NSString stringWithFormat: @"Apple macOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
 #elif defined( OS_LINUX )
 	static char buffer[1024];
 
@@ -830,6 +830,10 @@ static const char * GetOSVersion()
 	}
 
 	return "Linux";
+#elif defined( OS_APPLE_MACOS )
+	return [NSString stringWithFormat: @"Apple macOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
+#elif defined( OS_APPLE_IOS )
+	return [NSString stringWithFormat: @"Apple iOS %@", NSProcessInfo.processInfo.operatingSystemVersionString].UTF8String;
 #elif defined( OS_ANDROID )
 	static char version[1024];
 
@@ -1338,10 +1342,10 @@ static void ksThread_SetName( const char * name )
 	{
 		info.dwFlags = 0;
 	}
-#elif defined( OS_APPLE )
-	pthread_setname_np( name );
 #elif defined( OS_LINUX )
 	pthread_setname_np( pthread_self(), name );
+#elif defined( OS_APPLE )
+	pthread_setname_np( name );
 #elif defined( OS_ANDROID )
 	prctl( PR_SET_NAME, (long)name, 0, 0, 0 );
 #endif
@@ -1366,9 +1370,6 @@ static void ksThread_SetAffinity( int mask )
 	{
 		Print( "Thread %p affinity set to 0x%02X\n", thread, mask );
 	}
-#elif defined( OS_APPLE )
-	// iOS and macOS do not export interfaces that identify processors or control thread placement.
-	UNUSED_PARM( mask );
 #elif defined( OS_LINUX )
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
 	{
@@ -1392,6 +1393,9 @@ static void ksThread_SetAffinity( int mask )
 	{
 		Print( "Thread %d affinity set to 0x%02X\n", (unsigned int)pthread_self(), mask );
 	}
+#elif defined( OS_APPLE )
+	// macOS and iOS do not export interfaces that identify processors or control thread placement.
+	UNUSED_PARM( mask );
 #elif defined( OS_ANDROID )
 	// Optionally use the faster cores of a heterogeneous CPU.
 	if ( mask == THREAD_AFFINITY_BIG_CORES )
@@ -1499,7 +1503,7 @@ static void ksThread_SetRealTimePriority( int priority )
 	{
 		Print( "Thread %p priority set to critical.\n", thread );
 	}
-#elif defined( OS_APPLE ) || defined( OS_LINUX )
+#elif defined( OS_LINUX ) || defined( OS_APPLE )
 	struct sched_param sp;
 	memset( &sp, 0, sizeof( struct sched_param ) );
 	sp.sched_priority = priority;
@@ -2329,7 +2333,7 @@ static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float ta
 	// Set to tanAngleDown - tanAngleUp for a clip space with positive Y down (Vulkan).
 	const float tanAngleHeight = tanAngleDown - tanAngleUp;
 #else
-	// Set to tanAngleUp - tanAngleDown for a clip space with positive Y up (OpenGL / D3D).
+	// Set to tanAngleUp - tanAngleDown for a clip space with positive Y up (OpenGL / D3D / Metal).
 	const float tanAngleHeight = tanAngleUp - tanAngleDown;
 #endif
 
@@ -2337,7 +2341,7 @@ static void ksMatrix4x4f_CreateProjection( ksMatrix4x4f * result, const float ta
 	// Set to nearZ for a [-1,1] Z clip space (OpenGL).
 	const float offsetZ = nearZ;
 #else
-	// Set to zero for a [0,1] Z clip space (D3D / Vulkan).
+	// Set to zero for a [0,1] Z clip space (Vulkan / D3D / Metal).
 	const float offsetZ = 0;
 #endif
 
@@ -4697,14 +4701,6 @@ typedef struct
 	HINSTANCE				hInstance;
 	HWND					hWnd;
 	bool					windowActiveState;
-#elif defined( OS_APPLE_IOS )
-	UIWindow *				uiWindow;
-	UIView *				uiView;
-#elif defined( OS_APPLE_MACOS )
-	CGDirectDisplayID		display;
-	CGDisplayModeRef		desktopDisplayMode;
-	NSWindow *				nsWindow;
-	NSView *				nsView;
 #elif defined( OS_LINUX_XLIB )
 	Display *				xDisplay;
 	int						xScreen;
@@ -4722,14 +4718,22 @@ typedef struct
 	int						desktopWidth;
 	int						desktopHeight;
 	float					desktopRefreshRate;
-#elif defined( OS_NEUTRAL_DISPLAY_SURFACE )
-	VkDisplayKHR			display;
-	VkDisplayModeKHR		mode;
+#elif defined( OS_APPLE_MACOS )
+	CGDirectDisplayID		display;
+	CGDisplayModeRef		desktopDisplayMode;
+	NSWindow *				nsWindow;
+	NSView *				nsView;
+#elif defined( OS_APPLE_IOS )
+	UIWindow *				uiWindow;
+	UIView *				uiView;
 #elif defined( OS_ANDROID )
 	struct android_app *	app;
 	Java_t					java;
 	ANativeWindow *			nativeWindow;
 	bool					resumed;
+#elif defined( OS_NEUTRAL_DISPLAY_SURFACE )
+	VkDisplayKHR			display;
+	VkDisplayModeKHR		mode;
 #endif
 } ksGpuWindow;
 
@@ -5110,509 +5114,6 @@ static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
 		window->windowActive = window->windowActiveState;
 		return ( window->windowActiveState ) ? GPU_WINDOW_EVENT_ACTIVATED : GPU_WINDOW_EVENT_DEACTIVATED;
 	}
-	return GPU_WINDOW_EVENT_NONE;
-}
-
-#elif defined( OS_APPLE_IOS )
-
-typedef enum
-{
-	KEY_A				= 0x00,
-	KEY_B				= 0x0B,
-	KEY_C				= 0x08,
-	KEY_D				= 0x02,
-	KEY_E				= 0x0E,
-	KEY_F				= 0x03,
-	KEY_G				= 0x05,
-	KEY_H				= 0x04,
-	KEY_I				= 0x22,
-	KEY_J				= 0x26,
-	KEY_K				= 0x28,
-	KEY_L				= 0x25,
-	KEY_M				= 0x2E,
-	KEY_N				= 0x2D,
-	KEY_O				= 0x1F,
-	KEY_P				= 0x23,
-	KEY_Q				= 0x0C,
-	KEY_R				= 0x0F,
-	KEY_S				= 0x01,
-	KEY_T				= 0x11,
-	KEY_U				= 0x20,
-	KEY_V				= 0x09,
-	KEY_W				= 0x0D,
-	KEY_X				= 0x07,
-	KEY_Y				= 0x10,
-	KEY_Z				= 0x06,
-	KEY_RETURN			= 0x24,
-	KEY_TAB				= 0x30,
-	KEY_ESCAPE			= 0x35,
-	KEY_SHIFT_LEFT		= 0x38,
-	KEY_CTRL_LEFT		= 0x3B,
-	KEY_ALT_LEFT		= 0x3A,
-	KEY_CURSOR_UP		= 0x7E,
-	KEY_CURSOR_DOWN		= 0x7D,
-	KEY_CURSOR_LEFT		= 0x7B,
-	KEY_CURSOR_RIGHT	= 0x7C
-} ksKeyboardKey;
-
-typedef enum
-{
-	MOUSE_LEFT			= 0,
-	MOUSE_RIGHT			= 1
-} ksMouseButton;
-
-static NSAutoreleasePool * autoReleasePool;
-static UIView* myUIView;
-static UIWindow* myUIWindow;
-
-@interface MyUIView : UIView
-@end
-
-@implementation MyUIView
-
--(instancetype) initWithFrame:(CGRect)frameRect {
-	self = [super initWithFrame: frameRect];
-	if ( self ) {
-		self.contentScaleFactor = UIScreen.mainScreen.nativeScale;
-	}
-	return self;
-}
-
-+(Class) layerClass { return [CAMetalLayer class]; }
-
-@end
-
-@interface MyUIViewController : UIViewController
-@end
-
-@implementation MyUIViewController
-
--(UIInterfaceOrientationMask) supportedInterfaceOrientations { return UIInterfaceOrientationMaskLandscape; }
-
--(BOOL) shouldAutorotate { return TRUE; }
-
-@end
-
-static void ksGpuWindow_Destroy( ksGpuWindow * window )
-{
-	ksGpuWindow_DestroySurface( window );
-	ksGpuContext_Destroy( &window->context );
-	ksGpuDevice_Destroy( &window->device );
-
-	if ( window->uiWindow )
-	{
-		[window->uiWindow release];
-		window->uiWindow = nil;
-	}
-	if ( window->uiView )
-	{
-		[window->uiView release];
-		window->uiView = nil;
-	}
-}
-
-static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
-								const ksGpuQueueInfo * queueInfo, const int queueIndex,
-								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
-								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
-{
-	memset( window, 0, sizeof( ksGpuWindow ) );
-
-	window->colorFormat = colorFormat;
-	window->depthFormat = depthFormat;
-	window->sampleCount = sampleCount;
-	window->windowWidth = width;
-	window->windowHeight = height;
-	window->windowSwapInterval = 1;
-	window->windowRefreshRate = 60.0f;
-	window->windowFullscreen = fullscreen;
-	window->windowActive = false;
-	window->windowExit = false;
-	window->lastSwapTime = GetTimeNanoseconds();
-	window->uiView = myUIView;
-	window->uiWindow = myUIWindow;
-
-	VkIOSSurfaceCreateInfoKHR iosSurfaceCreateInfo;
-	iosSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR;
-	iosSurfaceCreateInfo.pNext = NULL;
-	iosSurfaceCreateInfo.flags = 0;
-	iosSurfaceCreateInfo.pView = window->uiView;
-
-	VkSurfaceKHR surface;
-	VK( instance->vkCreateSurfaceKHR( instance->instance, &iosSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
-
-	ksGpuDevice_SelectPhysicalDevice( &window->device, instance, queueInfo, surface );
-	ksGpuDevice_Create( &window->device, instance, queueInfo );
-	ksGpuContext_Create( &window->context, &window->device, queueIndex );
-	ksGpuWindow_CreateFromSurface( window, surface );
-
-	return true;
-}
-
-static bool ksGpuWindow_SupportedResolution( const int width, const int height )
-{
-	UNUSED_PARM( width );
-	UNUSED_PARM( height );
-
-	return true;
-}
-
-static void ksGpuWindow_Exit( ksGpuWindow * window )
-{
-	window->windowExit = true;
-}
-
-static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
-{
-	[autoReleasePool release];
-	autoReleasePool = [[NSAutoreleasePool alloc] init];
-
-	if ( window->windowExit )
-	{
-		return GPU_WINDOW_EVENT_EXIT;
-	}
-
-	if ( window->windowActive == false )
-	{
-		window->windowActive = true;
-		return GPU_WINDOW_EVENT_ACTIVATED;
-	}
-	
-	return GPU_WINDOW_EVENT_NONE;
-}
-
-#elif defined( OS_APPLE_MACOS )
-
-typedef enum
-{
-	KEY_A				= 0x00,
-	KEY_B				= 0x0B,
-	KEY_C				= 0x08,
-	KEY_D				= 0x02,
-	KEY_E				= 0x0E,
-	KEY_F				= 0x03,
-	KEY_G				= 0x05,
-	KEY_H				= 0x04,
-	KEY_I				= 0x22,
-	KEY_J				= 0x26,
-	KEY_K				= 0x28,
-	KEY_L				= 0x25,
-	KEY_M				= 0x2E,
-	KEY_N				= 0x2D,
-	KEY_O				= 0x1F,
-	KEY_P				= 0x23,
-	KEY_Q				= 0x0C,
-	KEY_R				= 0x0F,
-	KEY_S				= 0x01,
-	KEY_T				= 0x11,
-	KEY_U				= 0x20,
-	KEY_V				= 0x09,
-	KEY_W				= 0x0D,
-	KEY_X				= 0x07,
-	KEY_Y				= 0x10,
-	KEY_Z				= 0x06,
-	KEY_RETURN			= 0x24,
-	KEY_TAB				= 0x30,
-	KEY_ESCAPE			= 0x35,
-	KEY_SHIFT_LEFT		= 0x38,
-	KEY_CTRL_LEFT		= 0x3B,
-	KEY_ALT_LEFT		= 0x3A,
-	KEY_CURSOR_UP		= 0x7E,
-	KEY_CURSOR_DOWN		= 0x7D,
-	KEY_CURSOR_LEFT		= 0x7B,
-	KEY_CURSOR_RIGHT	= 0x7C
-} ksKeyboardKey;
-
-typedef enum
-{
-	MOUSE_LEFT			= 0,
-	MOUSE_RIGHT			= 1
-} ksMouseButton;
-
-NSAutoreleasePool * autoReleasePool;
-
-@interface MyNSWindow : NSWindow
-- (BOOL)canBecomeMainWindow;
-- (BOOL)canBecomeKeyWindow;
-- (BOOL)acceptsFirstResponder;
-- (void)keyDown:(NSEvent *)event;
-@end
-
-@implementation MyNSWindow
-- (BOOL)canBecomeMainWindow { return YES; }
-- (BOOL)canBecomeKeyWindow { return YES; }
-- (BOOL)acceptsFirstResponder { return YES; }
-- (void)keyDown:(NSEvent *)event {}
-@end
-
-@interface MyNSView : NSView
-- (BOOL)acceptsFirstResponder;
-- (void)keyDown:(NSEvent *)event;
-@end
-
-@implementation MyNSView
-- (BOOL)acceptsFirstResponder { return YES; }
-- (void)keyDown:(NSEvent *)event {}
-
-#if defined( VK_USE_PLATFORM_MACOS_MVK )
-
--(instancetype) initWithFrame:(NSRect)frameRect {
-	self = [super initWithFrame: frameRect];
-	if ( self ) {
-		self.wantsLayer = YES;		// Back the view with a layer created by the makeBackingLayer method.
-	}
-	return self;
-}
-
-// Indicates that the view wants to draw using the backing layer instead of using drawRect.
--(BOOL) wantsUpdateLayer { return YES; }
-
-// If the wantsLayer property is set to YES, this method will be invoked to return a layer instance.
--(CALayer *) makeBackingLayer {
-	CALayer * layer = [[CAMetalLayer class] layer];
-	CGSize viewScale = [self convertSizeToBacking: CGSizeMake( 1.0f, 1.0f )];
-	layer.contentsScale = MIN( viewScale.width, viewScale.height );
-	return layer;
-}
-
-#endif
-
-@end
-
-static void ksGpuWindow_Destroy( ksGpuWindow * window )
-{
-	ksGpuWindow_DestroySurface( window );
-	ksGpuContext_Destroy( &window->context );
-	ksGpuDevice_Destroy( &window->device );
-
-	if ( window->windowFullscreen )
-	{
-		CGDisplaySetDisplayMode( window->display, window->desktopDisplayMode, NULL );
-		CGDisplayModeRelease( window->desktopDisplayMode );
-		window->desktopDisplayMode = NULL;
-	}
-	if ( window->nsWindow )
-	{
-		[window->nsWindow release];
-		window->nsWindow = nil;
-	}
-	if ( window->nsView )
-	{
-		[window->nsView release];
-		window->nsView = nil;
-	}
-}
-
-static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
-								const ksGpuQueueInfo * queueInfo, const int queueIndex,
-								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
-								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
-{
-	memset( window, 0, sizeof( ksGpuWindow ) );
-
-	window->colorFormat = colorFormat;
-	window->depthFormat = depthFormat;
-	window->sampleCount = sampleCount;
-	window->windowWidth = width;
-	window->windowHeight = height;
-	window->windowSwapInterval = 1;
-	window->windowRefreshRate = 60.0f;
-	window->windowFullscreen = fullscreen;
-	window->windowActive = false;
-	window->windowExit = false;
-	window->lastSwapTime = GetTimeNanoseconds();
-
-	// Get a list of all available displays.
-	CGDirectDisplayID displays[32];
-	CGDisplayCount displayCount = 0;
-	CGDisplayErr err = CGGetActiveDisplayList( 32, displays, &displayCount );
-	if ( err != CGDisplayNoErr )
-	{
-		return false;
-	}
-	// Use the main display.
-	window->display = displays[0];
-	window->desktopDisplayMode = CGDisplayCopyDisplayMode( window->display );
-
-	// If fullscreen then switch to the best matching display mode.
-	if ( window->windowFullscreen )
-	{
-		CFArrayRef displayModes = CGDisplayCopyAllDisplayModes( window->display, NULL );
-		CFIndex displayModeCount = CFArrayGetCount( displayModes );
-		CGDisplayModeRef bestDisplayMode = nil;
-		size_t bestDisplayWidth = 0;
-		size_t bestDisplayHeight = 0;
-		float bestDisplayRefreshRate = 0;
-		size_t bestError = 0x7FFFFFFF;
-		for ( CFIndex i = 0; i < displayModeCount; i++ )
-		{
-			CGDisplayModeRef mode = (CGDisplayModeRef)CFArrayGetValueAtIndex( displayModes, i );
-
-			const size_t modeWidth = CGDisplayModeGetWidth( mode );
-			const size_t modeHeight = CGDisplayModeGetHeight( mode );
-			const double modeRefreshRate = CGDisplayModeGetRefreshRate( mode );
-			CFStringRef modePixelEncoding = CGDisplayModeCopyPixelEncoding( mode );
-			const bool modeBitsPerPixelIs32 = ( CFStringCompare( modePixelEncoding, CFSTR( IO32BitDirectPixels ), 0) == kCFCompareEqualTo );
-			CFRelease( modePixelEncoding );
-
-			if ( modeBitsPerPixelIs32 )
-			{
-				const size_t dw = modeWidth - width;
-				const size_t dh = modeHeight - height;
-				const size_t error = dw * dw + dh * dh;
-				if ( error < bestError )
-				{
-					bestError = error;
-					bestDisplayMode = mode;
-					bestDisplayWidth = modeWidth;
-					bestDisplayHeight = modeHeight;
-					bestDisplayRefreshRate = (float)modeRefreshRate;
-				}
-			}
-		}
-		CGDisplayErr err = CGDisplaySetDisplayMode( window->display, bestDisplayMode, NULL );
-		if ( err != CGDisplayNoErr )
-		{
-			CFRelease( displayModes );
-			return false;
-		}
-		CFRelease( displayModes );
-		window->windowWidth = (int)bestDisplayWidth;
-		window->windowHeight = (int)bestDisplayHeight;
-		window->windowRefreshRate = ( bestDisplayRefreshRate > 0.0f ) ? bestDisplayRefreshRate : 60.0f;
-	}
-	else
-	{
-		const float desktopDisplayRefreshRate = (float)CGDisplayModeGetRefreshRate( window->desktopDisplayMode );
-		window->windowRefreshRate = ( desktopDisplayRefreshRate > 0.0f ) ? desktopDisplayRefreshRate : 60.0f;
-	}
-
-	if ( window->windowFullscreen )
-	{
-		NSScreen * screen = [NSScreen mainScreen];
-		NSRect screenRect = [screen frame];
-		
-		window->nsView = [MyNSView alloc];
-		[window->nsView initWithFrame:screenRect];
-
-		const int style = NSBorderlessWindowMask;
-
-		window->nsWindow = [MyNSWindow alloc];
-		[window->nsWindow initWithContentRect:screenRect styleMask:style backing:NSBackingStoreBuffered defer:NO screen:screen];
-		[window->nsWindow setOpaque:YES];
-		[window->nsWindow setLevel:NSMainMenuWindowLevel+1];
-		[window->nsWindow setContentView:window->nsView];
-		[window->nsWindow makeMainWindow];
-		[window->nsWindow makeKeyAndOrderFront:nil];
-		[window->nsWindow makeFirstResponder:nil];
-	}
-	else
-	{
-		NSScreen * screen = [NSScreen mainScreen];
-		NSRect screenRect = [screen frame];
-
-		NSRect windowRect;
-		windowRect.origin.x = ( screenRect.size.width - width ) / 2;
-		windowRect.origin.y = ( screenRect.size.height - height ) / 2;
-		windowRect.size.width = width;
-		windowRect.size.height = height;
-
-		window->nsView = [MyNSView alloc];
-		[window->nsView initWithFrame:windowRect];
-
-		// Fixed size window.
-		const int style = NSTitledWindowMask;// | NSClosableWindowMask | NSResizableWindowMask;
-
-		window->nsWindow = [MyNSWindow alloc];
-		[window->nsWindow initWithContentRect:windowRect styleMask:style backing:NSBackingStoreBuffered defer:NO screen:screen];
-		[window->nsWindow setTitle:@WINDOW_TITLE];
-		[window->nsWindow setOpaque:YES];
-		[window->nsWindow setContentView:window->nsView];
-		[window->nsWindow makeMainWindow];
-		[window->nsWindow makeKeyAndOrderFront:nil];
-		[window->nsWindow makeFirstResponder:nil];
-	}
-
-	VkMacOSSurfaceCreateInfoKHR macosSurfaceCreateInfo;
-	macosSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_KHR;
-	macosSurfaceCreateInfo.pNext = NULL;
-	macosSurfaceCreateInfo.flags = 0;
-	macosSurfaceCreateInfo.pView = window->nsView;
-
-	VkSurfaceKHR surface;
-	VK( instance->vkCreateSurfaceKHR( instance->instance, &macosSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
-
-	ksGpuDevice_SelectPhysicalDevice( &window->device, instance, queueInfo, surface );
-	ksGpuDevice_Create( &window->device, instance, queueInfo );
-	ksGpuContext_Create( &window->context, &window->device, queueIndex );
-	ksGpuWindow_CreateFromSurface( window, surface );
-
-	return true;
-}
-
-static bool ksGpuWindow_SupportedResolution( const int width, const int height )
-{
-	UNUSED_PARM( width );
-	UNUSED_PARM( height );
-
-	return true;
-}
-
-static void ksGpuWindow_Exit( ksGpuWindow * window )
-{
-	window->windowExit = true;
-}
-
-static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
-{
-	[autoReleasePool release];
-	autoReleasePool = [[NSAutoreleasePool alloc] init];
-
-	for ( ; ; )
-	{
-		NSEvent * event = [NSApp nextEventMatchingMask:NSAnyEventMask untilDate:[NSDate distantPast] inMode:NSDefaultRunLoopMode dequeue:YES];
-		if ( event == nil )
-		{
-			break;
-		}
-
-		if ( event.type == NSKeyDown )
-		{
-			unsigned short key = [event keyCode];
-			if ( key >= 0 && key < 256 )
-			{
-				window->input.keyInput[key] = true;
-			}
-		}
-		else if ( event.type == NSLeftMouseDown )
-		{
-			NSPoint point = [event locationInWindow];
-			window->input.mouseInput[MOUSE_LEFT] = true;
-			window->input.mouseInputX[MOUSE_LEFT] = point.x;
-			window->input.mouseInputY[MOUSE_LEFT] = point.y - 1;	// change to zero-based
-		}
-		else if ( event.type == NSRightMouseDown )
-		{
-			NSPoint point = [event locationInWindow];
-			window->input.mouseInput[MOUSE_RIGHT] = true;
-			window->input.mouseInputX[MOUSE_RIGHT] = point.x;
-			window->input.mouseInputY[MOUSE_RIGHT] = point.y - 1;	// change to zero-based
-		}
-
-		[NSApp sendEvent:event];
-	}
-
-	if ( window->windowExit )
-	{
-		return GPU_WINDOW_EVENT_EXIT;
-	}
-
-	if ( window->windowActive == false )
-	{
-		window->windowActive = true;
-		return GPU_WINDOW_EVENT_ACTIVATED;
-	}
-
 	return GPU_WINDOW_EVENT_NONE;
 }
 
@@ -6739,63 +6240,126 @@ static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
 	return GPU_WINDOW_EVENT_NONE;
 }
 
-#elif defined( OS_NEUTRAL_DISPLAY_SURFACE )
-
-//These are empty enums in neutral display surface since we have no input devices.
-//To make this work we need to disconnect the concepts of OS/input from presentation -
-//though this is more difficult since most of the time presentation *is* input.
+#elif defined( OS_APPLE_MACOS )
 
 typedef enum
 {
-	KEY_A,
-	KEY_B,
-	KEY_C,
-	KEY_D,
-	KEY_E,
-	KEY_F,
-	KEY_G,
-	KEY_H,
-	KEY_I,
-	KEY_J,
-	KEY_K,
-	KEY_L,
-	KEY_M,
-	KEY_N,
-	KEY_O,
-	KEY_P,
-	KEY_Q,
-	KEY_R,
-	KEY_S,
-	KEY_T,
-	KEY_U,
-	KEY_V,
-	KEY_W,
-	KEY_X,
-	KEY_Y,
-	KEY_Z,
-	KEY_RETURN,
-	KEY_TAB,
-	KEY_ESCAPE,
-	KEY_SHIFT_LEFT,
-	KEY_CTRL_LEFT,
-	KEY_ALT_LEFT,
-	KEY_CURSOR_UP,
-	KEY_CURSOR_DOWN,
-	KEY_CURSOR_LEFT,
-	KEY_CURSOR_RIGHT
+	KEY_A				= 0x00,
+	KEY_B				= 0x0B,
+	KEY_C				= 0x08,
+	KEY_D				= 0x02,
+	KEY_E				= 0x0E,
+	KEY_F				= 0x03,
+	KEY_G				= 0x05,
+	KEY_H				= 0x04,
+	KEY_I				= 0x22,
+	KEY_J				= 0x26,
+	KEY_K				= 0x28,
+	KEY_L				= 0x25,
+	KEY_M				= 0x2E,
+	KEY_N				= 0x2D,
+	KEY_O				= 0x1F,
+	KEY_P				= 0x23,
+	KEY_Q				= 0x0C,
+	KEY_R				= 0x0F,
+	KEY_S				= 0x01,
+	KEY_T				= 0x11,
+	KEY_U				= 0x20,
+	KEY_V				= 0x09,
+	KEY_W				= 0x0D,
+	KEY_X				= 0x07,
+	KEY_Y				= 0x10,
+	KEY_Z				= 0x06,
+	KEY_RETURN			= 0x24,
+	KEY_TAB				= 0x30,
+	KEY_ESCAPE			= 0x35,
+	KEY_SHIFT_LEFT		= 0x38,
+	KEY_CTRL_LEFT		= 0x3B,
+	KEY_ALT_LEFT		= 0x3A,
+	KEY_CURSOR_UP		= 0x7E,
+	KEY_CURSOR_DOWN		= 0x7D,
+	KEY_CURSOR_LEFT		= 0x7B,
+	KEY_CURSOR_RIGHT	= 0x7C
 } ksKeyboardKey;
 
 typedef enum
 {
-	MOUSE_LEFT,
-	MOUSE_RIGHT
+	MOUSE_LEFT			= 0,
+	MOUSE_RIGHT			= 1
 } ksMouseButton;
+
+NSAutoreleasePool * autoReleasePool;
+
+@interface MyNSWindow : NSWindow
+- (BOOL)canBecomeMainWindow;
+- (BOOL)canBecomeKeyWindow;
+- (BOOL)acceptsFirstResponder;
+- (void)keyDown:(NSEvent *)event;
+@end
+
+@implementation MyNSWindow
+- (BOOL)canBecomeMainWindow { return YES; }
+- (BOOL)canBecomeKeyWindow { return YES; }
+- (BOOL)acceptsFirstResponder { return YES; }
+- (void)keyDown:(NSEvent *)event {}
+@end
+
+@interface MyNSView : NSView
+- (BOOL)acceptsFirstResponder;
+- (void)keyDown:(NSEvent *)event;
+@end
+
+@implementation MyNSView
+- (BOOL)acceptsFirstResponder { return YES; }
+- (void)keyDown:(NSEvent *)event {}
+
+#if defined( VK_USE_PLATFORM_MACOS_MVK )
+
+-(instancetype) initWithFrame:(NSRect)frameRect {
+	self = [super initWithFrame: frameRect];
+	if ( self ) {
+		self.wantsLayer = YES;		// Back the view with a layer created by the makeBackingLayer method.
+	}
+	return self;
+}
+
+// Indicates that the view wants to draw using the backing layer instead of using drawRect.
+-(BOOL) wantsUpdateLayer { return YES; }
+
+// If the wantsLayer property is set to YES, this method will be invoked to return a layer instance.
+-(CALayer *) makeBackingLayer {
+	CALayer * layer = [[CAMetalLayer class] layer];
+	CGSize viewScale = [self convertSizeToBacking: CGSizeMake( 1.0f, 1.0f )];
+	layer.contentsScale = MIN( viewScale.width, viewScale.height );
+	return layer;
+}
+
+#endif
+
+@end
 
 static void ksGpuWindow_Destroy( ksGpuWindow * window )
 {
 	ksGpuWindow_DestroySurface( window );
 	ksGpuContext_Destroy( &window->context );
 	ksGpuDevice_Destroy( &window->device );
+
+	if ( window->windowFullscreen )
+	{
+		CGDisplaySetDisplayMode( window->display, window->desktopDisplayMode, NULL );
+		CGDisplayModeRelease( window->desktopDisplayMode );
+		window->desktopDisplayMode = NULL;
+	}
+	if ( window->nsWindow )
+	{
+		[window->nsWindow release];
+		window->nsWindow = nil;
+	}
+	if ( window->nsView )
+	{
+		[window->nsView release];
+		window->nsView = nil;
+	}
 }
 
 static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
@@ -6808,67 +6372,136 @@ static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instanc
 	window->colorFormat = colorFormat;
 	window->depthFormat = depthFormat;
 	window->sampleCount = sampleCount;
+	window->windowWidth = width;
+	window->windowHeight = height;
 	window->windowSwapInterval = 1;
 	window->windowRefreshRate = 60.0f;
 	window->windowFullscreen = fullscreen;
-	window->windowActive = true;
+	window->windowActive = false;
 	window->windowExit = false;
 	window->lastSwapTime = GetTimeNanoseconds();
 
-	ksGpuDevice_SelectPhysicalDevice( &window->device, instance, queueInfo, VK_NULL_HANDLE );
-
-	uint32_t displayPropertiesCount = 0;
-	VK( instance->vkGetPhysicalDeviceDisplayPropertiesKHR( window->device.physicalDevice, &displayPropertiesCount, NULL ) );
-
-	VkDisplayPropertiesKHR * displayProperties = (VkDisplayPropertiesKHR *) malloc( displayPropertiesCount * sizeof( VkDisplayPropertiesKHR ) );
-	VK( instance->vkGetPhysicalDeviceDisplayPropertiesKHR( window->device.physicalDevice, &displayPropertiesCount, displayProperties ) );
-
-	for ( int i = 0; i < displayPropertiesCount; i++)
+	// Get a list of all available displays.
+	CGDirectDisplayID displays[32];
+	CGDisplayCount displayCount = 0;
+	CGDisplayErr err = CGGetActiveDisplayList( 32, displays, &displayCount );
+	if ( err != CGDisplayNoErr )
 	{
-		Printf( "Display %d:\n", i);
-		Printf( "Name             : %s\n", displayProperties[i].displayName );
-		Printf( "Dimensions       : %ux%u\n", displayProperties[i].physicalDimensions.width, displayProperties[i].physicalDimensions.height );
-		Printf( "Resolution       : %ux%u\n", displayProperties[i].physicalResolution.width, displayProperties[i].physicalResolution.height );
-		Printf( "Transforms       : %x\n", displayProperties[i].supportedTransforms );
-		Printf( "Plane reordering : %s\n", displayProperties[i].planeReorderPossible ? "YES" : "NO" );
-		Printf( "Persistent       : %s\n", displayProperties[i].persistentContent ? "YES" : "NO" );
+		return false;
+	}
+	// Use the main display.
+	window->display = displays[0];
+	window->desktopDisplayMode = CGDisplayCopyDisplayMode( window->display );
+
+	// If fullscreen then switch to the best matching display mode.
+	if ( window->windowFullscreen )
+	{
+		CFArrayRef displayModes = CGDisplayCopyAllDisplayModes( window->display, NULL );
+		CFIndex displayModeCount = CFArrayGetCount( displayModes );
+		CGDisplayModeRef bestDisplayMode = nil;
+		size_t bestDisplayWidth = 0;
+		size_t bestDisplayHeight = 0;
+		float bestDisplayRefreshRate = 0;
+		size_t bestError = 0x7FFFFFFF;
+		for ( CFIndex i = 0; i < displayModeCount; i++ )
+		{
+			CGDisplayModeRef mode = (CGDisplayModeRef)CFArrayGetValueAtIndex( displayModes, i );
+
+			const size_t modeWidth = CGDisplayModeGetWidth( mode );
+			const size_t modeHeight = CGDisplayModeGetHeight( mode );
+			const double modeRefreshRate = CGDisplayModeGetRefreshRate( mode );
+			CFStringRef modePixelEncoding = CGDisplayModeCopyPixelEncoding( mode );
+			const bool modeBitsPerPixelIs32 = ( CFStringCompare( modePixelEncoding, CFSTR( IO32BitDirectPixels ), 0) == kCFCompareEqualTo );
+			CFRelease( modePixelEncoding );
+
+			if ( modeBitsPerPixelIs32 )
+			{
+				const size_t dw = modeWidth - width;
+				const size_t dh = modeHeight - height;
+				const size_t error = dw * dw + dh * dh;
+				if ( error < bestError )
+				{
+					bestError = error;
+					bestDisplayMode = mode;
+					bestDisplayWidth = modeWidth;
+					bestDisplayHeight = modeHeight;
+					bestDisplayRefreshRate = (float)modeRefreshRate;
+				}
+			}
+		}
+		CGDisplayErr err = CGDisplaySetDisplayMode( window->display, bestDisplayMode, NULL );
+		if ( err != CGDisplayNoErr )
+		{
+			CFRelease( displayModes );
+			return false;
+		}
+		CFRelease( displayModes );
+		window->windowWidth = (int)bestDisplayWidth;
+		window->windowHeight = (int)bestDisplayHeight;
+		window->windowRefreshRate = ( bestDisplayRefreshRate > 0.0f ) ? bestDisplayRefreshRate : 60.0f;
+	}
+	else
+	{
+		const float desktopDisplayRefreshRate = (float)CGDisplayModeGetRefreshRate( window->desktopDisplayMode );
+		window->windowRefreshRate = ( desktopDisplayRefreshRate > 0.0f ) ? desktopDisplayRefreshRate : 60.0f;
 	}
 
-	// FIXME: Make mode and display selection configurable.
-	VkDisplayKHR display = displayProperties[0].display;
-
-	uint32_t displayModeCount = 0;
-	VK( instance->vkGetDisplayModePropertiesKHR( window->device.physicalDevice, display, &displayModeCount, NULL ) );
-
-	VkDisplayModePropertiesKHR * displayModes = (VkDisplayModePropertiesKHR *) malloc( displayModeCount * sizeof( VkDisplayModePropertiesKHR ) );
-	VK( instance->vkGetDisplayModePropertiesKHR( window->device.physicalDevice, display, &displayModeCount, displayModes ) );
-
-	for ( int i = 0; i < displayModeCount; i++)
+	if ( window->windowFullscreen )
 	{
-		Printf( "Mode %d:\n", i);
-		Printf( "Visible Region : %ux%u\n", displayModes[i].parameters.visibleRegion.width, displayModes[i].parameters.visibleRegion.height );
-		Printf( "Refresh Rate   : %u\n", displayModes[i].parameters.refreshRate );
+		NSScreen * screen = [NSScreen mainScreen];
+		NSRect screenRect = [screen frame];
+		
+		window->nsView = [MyNSView alloc];
+		[window->nsView initWithFrame:screenRect];
+
+		const int style = NSBorderlessWindowMask;
+
+		window->nsWindow = [MyNSWindow alloc];
+		[window->nsWindow initWithContentRect:screenRect styleMask:style backing:NSBackingStoreBuffered defer:NO screen:screen];
+		[window->nsWindow setOpaque:YES];
+		[window->nsWindow setLevel:NSMainMenuWindowLevel+1];
+		[window->nsWindow setContentView:window->nsView];
+		[window->nsWindow makeMainWindow];
+		[window->nsWindow makeKeyAndOrderFront:nil];
+		[window->nsWindow makeFirstResponder:nil];
+	}
+	else
+	{
+		NSScreen * screen = [NSScreen mainScreen];
+		NSRect screenRect = [screen frame];
+
+		NSRect windowRect;
+		windowRect.origin.x = ( screenRect.size.width - width ) / 2;
+		windowRect.origin.y = ( screenRect.size.height - height ) / 2;
+		windowRect.size.width = width;
+		windowRect.size.height = height;
+
+		window->nsView = [MyNSView alloc];
+		[window->nsView initWithFrame:windowRect];
+
+		// Fixed size window.
+		const int style = NSTitledWindowMask;// | NSClosableWindowMask | NSResizableWindowMask;
+
+		window->nsWindow = [MyNSWindow alloc];
+		[window->nsWindow initWithContentRect:windowRect styleMask:style backing:NSBackingStoreBuffered defer:NO screen:screen];
+		[window->nsWindow setTitle:@WINDOW_TITLE];
+		[window->nsWindow setOpaque:YES];
+		[window->nsWindow setContentView:window->nsView];
+		[window->nsWindow makeMainWindow];
+		[window->nsWindow makeKeyAndOrderFront:nil];
+		[window->nsWindow makeFirstResponder:nil];
 	}
 
-	VkDisplaySurfaceCreateInfoKHR displaySurfaceCreateInfo;
-	displaySurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR;
-	displaySurfaceCreateInfo.pNext = NULL;
-	displaySurfaceCreateInfo.flags = 0;
-	displaySurfaceCreateInfo.displayMode = displayModes[0].displayMode;
-	displaySurfaceCreateInfo.planeIndex = 0;
-	displaySurfaceCreateInfo.planeStackIndex = 0;
-	displaySurfaceCreateInfo.transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-	displaySurfaceCreateInfo.globalAlpha = 0.0f;
-	displaySurfaceCreateInfo.alphaMode = VK_DISPLAY_PLANE_ALPHA_PER_PIXEL_BIT_KHR;
-	displaySurfaceCreateInfo.imageExtent.width = displayModes[0].parameters.visibleRegion.width;
-	displaySurfaceCreateInfo.imageExtent.height = displayModes[0].parameters.visibleRegion.height;
-
-	window->windowWidth = displaySurfaceCreateInfo.imageExtent.width;
-	window->windowHeight = displaySurfaceCreateInfo.imageExtent.height;
+	VkMacOSSurfaceCreateInfoKHR macosSurfaceCreateInfo;
+	macosSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_KHR;
+	macosSurfaceCreateInfo.pNext = NULL;
+	macosSurfaceCreateInfo.flags = 0;
+	macosSurfaceCreateInfo.pView = window->nsView;
 
 	VkSurfaceKHR surface;
-	VK( instance->vkCreateSurfaceKHR( instance->instance, &displaySurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
+	VK( instance->vkCreateSurfaceKHR( instance->instance, &macosSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
 
+	ksGpuDevice_SelectPhysicalDevice( &window->device, instance, queueInfo, surface );
 	ksGpuDevice_Create( &window->device, instance, queueInfo );
 	ksGpuContext_Create( &window->context, &window->device, queueIndex );
 	ksGpuWindow_CreateFromSurface( window, surface );
@@ -6891,6 +6524,222 @@ static void ksGpuWindow_Exit( ksGpuWindow * window )
 
 static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
 {
+	[autoReleasePool release];
+	autoReleasePool = [[NSAutoreleasePool alloc] init];
+
+	for ( ; ; )
+	{
+		NSEvent * event = [NSApp nextEventMatchingMask:NSAnyEventMask untilDate:[NSDate distantPast] inMode:NSDefaultRunLoopMode dequeue:YES];
+		if ( event == nil )
+		{
+			break;
+		}
+
+		if ( event.type == NSKeyDown )
+		{
+			unsigned short key = [event keyCode];
+			if ( key >= 0 && key < 256 )
+			{
+				window->input.keyInput[key] = true;
+			}
+		}
+		else if ( event.type == NSLeftMouseDown )
+		{
+			NSPoint point = [event locationInWindow];
+			window->input.mouseInput[MOUSE_LEFT] = true;
+			window->input.mouseInputX[MOUSE_LEFT] = point.x;
+			window->input.mouseInputY[MOUSE_LEFT] = point.y - 1;	// change to zero-based
+		}
+		else if ( event.type == NSRightMouseDown )
+		{
+			NSPoint point = [event locationInWindow];
+			window->input.mouseInput[MOUSE_RIGHT] = true;
+			window->input.mouseInputX[MOUSE_RIGHT] = point.x;
+			window->input.mouseInputY[MOUSE_RIGHT] = point.y - 1;	// change to zero-based
+		}
+
+		[NSApp sendEvent:event];
+	}
+
+	if ( window->windowExit )
+	{
+		return GPU_WINDOW_EVENT_EXIT;
+	}
+
+	if ( window->windowActive == false )
+	{
+		window->windowActive = true;
+		return GPU_WINDOW_EVENT_ACTIVATED;
+	}
+
+	return GPU_WINDOW_EVENT_NONE;
+}
+
+#elif defined( OS_APPLE_IOS )
+
+typedef enum
+{
+	KEY_A				= 0x00,
+	KEY_B				= 0x0B,
+	KEY_C				= 0x08,
+	KEY_D				= 0x02,
+	KEY_E				= 0x0E,
+	KEY_F				= 0x03,
+	KEY_G				= 0x05,
+	KEY_H				= 0x04,
+	KEY_I				= 0x22,
+	KEY_J				= 0x26,
+	KEY_K				= 0x28,
+	KEY_L				= 0x25,
+	KEY_M				= 0x2E,
+	KEY_N				= 0x2D,
+	KEY_O				= 0x1F,
+	KEY_P				= 0x23,
+	KEY_Q				= 0x0C,
+	KEY_R				= 0x0F,
+	KEY_S				= 0x01,
+	KEY_T				= 0x11,
+	KEY_U				= 0x20,
+	KEY_V				= 0x09,
+	KEY_W				= 0x0D,
+	KEY_X				= 0x07,
+	KEY_Y				= 0x10,
+	KEY_Z				= 0x06,
+	KEY_RETURN			= 0x24,
+	KEY_TAB				= 0x30,
+	KEY_ESCAPE			= 0x35,
+	KEY_SHIFT_LEFT		= 0x38,
+	KEY_CTRL_LEFT		= 0x3B,
+	KEY_ALT_LEFT		= 0x3A,
+	KEY_CURSOR_UP		= 0x7E,
+	KEY_CURSOR_DOWN		= 0x7D,
+	KEY_CURSOR_LEFT		= 0x7B,
+	KEY_CURSOR_RIGHT	= 0x7C
+} ksKeyboardKey;
+
+typedef enum
+{
+	MOUSE_LEFT			= 0,
+	MOUSE_RIGHT			= 1
+} ksMouseButton;
+
+static NSAutoreleasePool * autoReleasePool;
+static UIView* myUIView;
+static UIWindow* myUIWindow;
+
+@interface MyUIView : UIView
+@end
+
+@implementation MyUIView
+
+-(instancetype) initWithFrame:(CGRect)frameRect {
+	self = [super initWithFrame: frameRect];
+	if ( self ) {
+		self.contentScaleFactor = UIScreen.mainScreen.nativeScale;
+	}
+	return self;
+}
+
++(Class) layerClass { return [CAMetalLayer class]; }
+
+@end
+
+@interface MyUIViewController : UIViewController
+@end
+
+@implementation MyUIViewController
+
+-(UIInterfaceOrientationMask) supportedInterfaceOrientations { return UIInterfaceOrientationMaskLandscape; }
+
+-(BOOL) shouldAutorotate { return TRUE; }
+
+@end
+
+static void ksGpuWindow_Destroy( ksGpuWindow * window )
+{
+	ksGpuWindow_DestroySurface( window );
+	ksGpuContext_Destroy( &window->context );
+	ksGpuDevice_Destroy( &window->device );
+
+	if ( window->uiWindow )
+	{
+		[window->uiWindow release];
+		window->uiWindow = nil;
+	}
+	if ( window->uiView )
+	{
+		[window->uiView release];
+		window->uiView = nil;
+	}
+}
+
+static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
+								const ksGpuQueueInfo * queueInfo, const int queueIndex,
+								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
+{
+	memset( window, 0, sizeof( ksGpuWindow ) );
+
+	window->colorFormat = colorFormat;
+	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
+	window->windowWidth = width;
+	window->windowHeight = height;
+	window->windowSwapInterval = 1;
+	window->windowRefreshRate = 60.0f;
+	window->windowFullscreen = fullscreen;
+	window->windowActive = false;
+	window->windowExit = false;
+	window->lastSwapTime = GetTimeNanoseconds();
+	window->uiView = myUIView;
+	window->uiWindow = myUIWindow;
+
+	VkIOSSurfaceCreateInfoKHR iosSurfaceCreateInfo;
+	iosSurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR;
+	iosSurfaceCreateInfo.pNext = NULL;
+	iosSurfaceCreateInfo.flags = 0;
+	iosSurfaceCreateInfo.pView = window->uiView;
+
+	VkSurfaceKHR surface;
+	VK( instance->vkCreateSurfaceKHR( instance->instance, &iosSurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
+
+	ksGpuDevice_SelectPhysicalDevice( &window->device, instance, queueInfo, surface );
+	ksGpuDevice_Create( &window->device, instance, queueInfo );
+	ksGpuContext_Create( &window->context, &window->device, queueIndex );
+	ksGpuWindow_CreateFromSurface( window, surface );
+
+	return true;
+}
+
+static bool ksGpuWindow_SupportedResolution( const int width, const int height )
+{
+	UNUSED_PARM( width );
+	UNUSED_PARM( height );
+
+	return true;
+}
+
+static void ksGpuWindow_Exit( ksGpuWindow * window )
+{
+	window->windowExit = true;
+}
+
+static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
+{
+	[autoReleasePool release];
+	autoReleasePool = [[NSAutoreleasePool alloc] init];
+
+	if ( window->windowExit )
+	{
+		return GPU_WINDOW_EVENT_EXIT;
+	}
+
+	if ( window->windowActive == false )
+	{
+		window->windowActive = true;
+		return GPU_WINDOW_EVENT_ACTIVATED;
+	}
+	
 	return GPU_WINDOW_EVENT_NONE;
 }
 
@@ -7227,6 +7076,161 @@ static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
 	{
 		return ( window->windowActive ) ? GPU_WINDOW_EVENT_ACTIVATED : GPU_WINDOW_EVENT_DEACTIVATED;
 	}
+	return GPU_WINDOW_EVENT_NONE;
+}
+
+#elif defined( OS_NEUTRAL_DISPLAY_SURFACE )
+
+//These are empty enums in neutral display surface since we have no input devices.
+//To make this work we need to disconnect the concepts of OS/input from presentation -
+//though this is more difficult since most of the time presentation *is* input.
+
+typedef enum
+{
+	KEY_A,
+	KEY_B,
+	KEY_C,
+	KEY_D,
+	KEY_E,
+	KEY_F,
+	KEY_G,
+	KEY_H,
+	KEY_I,
+	KEY_J,
+	KEY_K,
+	KEY_L,
+	KEY_M,
+	KEY_N,
+	KEY_O,
+	KEY_P,
+	KEY_Q,
+	KEY_R,
+	KEY_S,
+	KEY_T,
+	KEY_U,
+	KEY_V,
+	KEY_W,
+	KEY_X,
+	KEY_Y,
+	KEY_Z,
+	KEY_RETURN,
+	KEY_TAB,
+	KEY_ESCAPE,
+	KEY_SHIFT_LEFT,
+	KEY_CTRL_LEFT,
+	KEY_ALT_LEFT,
+	KEY_CURSOR_UP,
+	KEY_CURSOR_DOWN,
+	KEY_CURSOR_LEFT,
+	KEY_CURSOR_RIGHT
+} ksKeyboardKey;
+
+typedef enum
+{
+	MOUSE_LEFT,
+	MOUSE_RIGHT
+} ksMouseButton;
+
+static void ksGpuWindow_Destroy( ksGpuWindow * window )
+{
+	ksGpuWindow_DestroySurface( window );
+	ksGpuContext_Destroy( &window->context );
+	ksGpuDevice_Destroy( &window->device );
+}
+
+static bool ksGpuWindow_Create( ksGpuWindow * window, ksDriverInstance * instance,
+								const ksGpuQueueInfo * queueInfo, const int queueIndex,
+								const ksGpuSurfaceColorFormat colorFormat, const ksGpuSurfaceDepthFormat depthFormat,
+								const ksGpuSampleCount sampleCount, const int width, const int height, const bool fullscreen )
+{
+	memset( window, 0, sizeof( ksGpuWindow ) );
+
+	window->colorFormat = colorFormat;
+	window->depthFormat = depthFormat;
+	window->sampleCount = sampleCount;
+	window->windowSwapInterval = 1;
+	window->windowRefreshRate = 60.0f;
+	window->windowFullscreen = fullscreen;
+	window->windowActive = true;
+	window->windowExit = false;
+	window->lastSwapTime = GetTimeNanoseconds();
+
+	ksGpuDevice_SelectPhysicalDevice( &window->device, instance, queueInfo, VK_NULL_HANDLE );
+
+	uint32_t displayPropertiesCount = 0;
+	VK( instance->vkGetPhysicalDeviceDisplayPropertiesKHR( window->device.physicalDevice, &displayPropertiesCount, NULL ) );
+
+	VkDisplayPropertiesKHR * displayProperties = (VkDisplayPropertiesKHR *) malloc( displayPropertiesCount * sizeof( VkDisplayPropertiesKHR ) );
+	VK( instance->vkGetPhysicalDeviceDisplayPropertiesKHR( window->device.physicalDevice, &displayPropertiesCount, displayProperties ) );
+
+	for ( int i = 0; i < displayPropertiesCount; i++)
+	{
+		Printf( "Display %d:\n", i);
+		Printf( "Name             : %s\n", displayProperties[i].displayName );
+		Printf( "Dimensions       : %ux%u\n", displayProperties[i].physicalDimensions.width, displayProperties[i].physicalDimensions.height );
+		Printf( "Resolution       : %ux%u\n", displayProperties[i].physicalResolution.width, displayProperties[i].physicalResolution.height );
+		Printf( "Transforms       : %x\n", displayProperties[i].supportedTransforms );
+		Printf( "Plane reordering : %s\n", displayProperties[i].planeReorderPossible ? "YES" : "NO" );
+		Printf( "Persistent       : %s\n", displayProperties[i].persistentContent ? "YES" : "NO" );
+	}
+
+	// FIXME: Make mode and display selection configurable.
+	VkDisplayKHR display = displayProperties[0].display;
+
+	uint32_t displayModeCount = 0;
+	VK( instance->vkGetDisplayModePropertiesKHR( window->device.physicalDevice, display, &displayModeCount, NULL ) );
+
+	VkDisplayModePropertiesKHR * displayModes = (VkDisplayModePropertiesKHR *) malloc( displayModeCount * sizeof( VkDisplayModePropertiesKHR ) );
+	VK( instance->vkGetDisplayModePropertiesKHR( window->device.physicalDevice, display, &displayModeCount, displayModes ) );
+
+	for ( int i = 0; i < displayModeCount; i++)
+	{
+		Printf( "Mode %d:\n", i);
+		Printf( "Visible Region : %ux%u\n", displayModes[i].parameters.visibleRegion.width, displayModes[i].parameters.visibleRegion.height );
+		Printf( "Refresh Rate   : %u\n", displayModes[i].parameters.refreshRate );
+	}
+
+	VkDisplaySurfaceCreateInfoKHR displaySurfaceCreateInfo;
+	displaySurfaceCreateInfo.sType = VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR;
+	displaySurfaceCreateInfo.pNext = NULL;
+	displaySurfaceCreateInfo.flags = 0;
+	displaySurfaceCreateInfo.displayMode = displayModes[0].displayMode;
+	displaySurfaceCreateInfo.planeIndex = 0;
+	displaySurfaceCreateInfo.planeStackIndex = 0;
+	displaySurfaceCreateInfo.transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+	displaySurfaceCreateInfo.globalAlpha = 0.0f;
+	displaySurfaceCreateInfo.alphaMode = VK_DISPLAY_PLANE_ALPHA_PER_PIXEL_BIT_KHR;
+	displaySurfaceCreateInfo.imageExtent.width = displayModes[0].parameters.visibleRegion.width;
+	displaySurfaceCreateInfo.imageExtent.height = displayModes[0].parameters.visibleRegion.height;
+
+	window->windowWidth = displaySurfaceCreateInfo.imageExtent.width;
+	window->windowHeight = displaySurfaceCreateInfo.imageExtent.height;
+
+	VkSurfaceKHR surface;
+	VK( instance->vkCreateSurfaceKHR( instance->instance, &displaySurfaceCreateInfo, VK_ALLOCATOR, &surface ) );
+
+	ksGpuDevice_Create( &window->device, instance, queueInfo );
+	ksGpuContext_Create( &window->context, &window->device, queueIndex );
+	ksGpuWindow_CreateFromSurface( window, surface );
+
+	return true;
+}
+
+static bool ksGpuWindow_SupportedResolution( const int width, const int height )
+{
+	UNUSED_PARM( width );
+	UNUSED_PARM( height );
+
+	return true;
+}
+
+static void ksGpuWindow_Exit( ksGpuWindow * window )
+{
+	window->windowExit = true;
+}
+
+static ksGpuWindowEvent ksGpuWindow_ProcessEvents( ksGpuWindow * window )
+{
 	return GPU_WINDOW_EVENT_NONE;
 }
 
@@ -8799,14 +8803,22 @@ ksGpuVertexAttributeArraysBase
 
 typedef unsigned short ksGpuTriangleIndex;
 
+typedef enum
+{
+	GPU_ATTRIBUTE_FORMAT_R32_SFLOAT				= VK_FORMAT_R32_SFLOAT,
+	GPU_ATTRIBUTE_FORMAT_R32G32_SFLOAT			= VK_FORMAT_R32G32_SFLOAT,
+	GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT		= VK_FORMAT_R32G32B32_SFLOAT,
+	GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT	= VK_FORMAT_R32G32B32A32_SFLOAT
+} ksGpuAttributeFormat;
+
 typedef struct
 {
-	int				attributeFlag;		// VERTEX_ATTRIBUTE_FLAG_
-	size_t			attributeOffset;	// Offset in bytes to the pointer in ksGpuVertexAttributeArraysBase
-	size_t			attributeSize;		// Size in bytes of a single attribute
-	int				attributeFormat;	// VkFormat of the attribute
-	int				locationCount;		// Number of attribute locations
-	const char *	name;				// Name in vertex program
+	int						attributeFlag;		// VERTEX_ATTRIBUTE_FLAG_
+	size_t					attributeOffset;	// Offset in bytes to the pointer in ksGpuVertexAttributeArraysBase
+	size_t					attributeSize;		// Size in bytes of a single attribute
+	ksGpuAttributeFormat	attributeFormat;	// Format of the attribute
+	int						locationCount;		// Number of attribute locations
+	const char *			name;				// Name in vertex program
 } ksGpuVertexAttribute;
 
 typedef struct
@@ -9024,17 +9036,17 @@ typedef struct
 
 static const ksGpuVertexAttribute DefaultVertexAttributeLayout[] =
 {
-	{ VERTEX_ATTRIBUTE_FLAG_POSITION,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, position ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, position[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexPosition" },
-	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, normal ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, normal[0] ),			VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexNormal" },
-	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, tangent ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, tangent[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexTangent" },
-	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, binormal ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, binormal[0] ),		VK_FORMAT_R32G32B32_SFLOAT,		1,	"vertexBinormal" },
-	{ VERTEX_ATTRIBUTE_FLAG_COLOR,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, color ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, color[0] ),			VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexColor" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV0,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv0 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv0[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv0" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV1,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv1 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv1[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv1" },
-	{ VERTEX_ATTRIBUTE_FLAG_UV2,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv2 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv2[0] ),			VK_FORMAT_R32G32_SFLOAT,		1,	"vertexUv2" },
-	{ VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES,	OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, jointIndices ),SIZEOF_MEMBER( ksGpuVertexAttributeArrays, jointIndices[0] ),	VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointIndices" },
-	{ VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS,	OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, jointWeights ),SIZEOF_MEMBER( ksGpuVertexAttributeArrays, jointWeights[0] ),	VK_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointWeights" },
-	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, transform ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, transform[0] ),		VK_FORMAT_R32G32B32A32_SFLOAT,	4,	"vertexTransform" },
+	{ VERTEX_ATTRIBUTE_FLAG_POSITION,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, position ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, position[0] ),		GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT,		1,	"vertexPosition" },
+	{ VERTEX_ATTRIBUTE_FLAG_NORMAL,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, normal ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, normal[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT,		1,	"vertexNormal" },
+	{ VERTEX_ATTRIBUTE_FLAG_TANGENT,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, tangent ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, tangent[0] ),		GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT,		1,	"vertexTangent" },
+	{ VERTEX_ATTRIBUTE_FLAG_BINORMAL,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, binormal ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, binormal[0] ),		GPU_ATTRIBUTE_FORMAT_R32G32B32_SFLOAT,		1,	"vertexBinormal" },
+	{ VERTEX_ATTRIBUTE_FLAG_COLOR,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, color ),		SIZEOF_MEMBER( ksGpuVertexAttributeArrays, color[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexColor" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV0,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv0 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv0[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32_SFLOAT,			1,	"vertexUv0" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV1,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv1 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv1[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32_SFLOAT,			1,	"vertexUv1" },
+	{ VERTEX_ATTRIBUTE_FLAG_UV2,			OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, uv2 ),			SIZEOF_MEMBER( ksGpuVertexAttributeArrays, uv2[0] ),			GPU_ATTRIBUTE_FORMAT_R32G32_SFLOAT,			1,	"vertexUv2" },
+	{ VERTEX_ATTRIBUTE_FLAG_JOINT_INDICES,	OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, jointIndices ),SIZEOF_MEMBER( ksGpuVertexAttributeArrays, jointIndices[0] ),	GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointIndices" },
+	{ VERTEX_ATTRIBUTE_FLAG_JOINT_WEIGHTS,	OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, jointWeights ),SIZEOF_MEMBER( ksGpuVertexAttributeArrays, jointWeights[0] ),	GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT,	1,	"vertexJointWeights" },
+	{ VERTEX_ATTRIBUTE_FLAG_TRANSFORM,		OFFSETOF_MEMBER( ksGpuVertexAttributeArrays, transform ),	SIZEOF_MEMBER( ksGpuVertexAttributeArrays, transform[0] ),		GPU_ATTRIBUTE_FORMAT_R32G32B32A32_SFLOAT,	4,	"vertexTransform" },
 	{ 0, 0, 0, 0, 0, "" }
 };
 
@@ -9612,7 +9624,8 @@ static bool ksGpuFramebuffer_CreateFromTextures( ksGpuContext * context, ksGpuFr
 
 	framebuffer->colorTextures = (ksGpuTexture *) malloc( numBuffers * sizeof( ksGpuTexture ) );
 	framebuffer->textureViews = NULL;
-	framebuffer->renderViews = NULL;	framebuffer->framebuffers = (VkFramebuffer *) malloc( numBuffers * sizeof( VkFramebuffer ) );
+	framebuffer->renderViews = NULL;
+	framebuffer->framebuffers = (VkFramebuffer *) malloc( numBuffers * sizeof( VkFramebuffer ) );
 	framebuffer->renderPass = renderPass;
 	framebuffer->window = NULL;
 	framebuffer->swapchainCreateCount = 0;
@@ -10480,7 +10493,7 @@ static void InitVertexAttributes( const bool instance,
 				{
 					attributes[*attributeCount + location].location = *attributeCount + location;
 					attributes[*attributeCount + location].binding = *bindingCount;
-					attributes[*attributeCount + location].format = v->attributeFormat;
+					attributes[*attributeCount + location].format = (VkFormat) v->attributeFormat;
 					attributes[*attributeCount + location].offset = (uint32_t)( location * v->attributeSize / v->locationCount );	// limited offset used for packed vertex data
 				}
 
@@ -10843,7 +10856,6 @@ static void ksGpuTimer_Destroy( ksGpuContext * context, ksGpuTimer * timer )
 	{
 		VC( context->device->vkDestroyQueryPool( context->device->device, timer->pool, VK_ALLOCATOR ) );
 	}
-
 }
 
 static ksNanoseconds ksGpuTimer_GetNanoseconds( ksGpuTimer * timer )
@@ -10856,7 +10868,6 @@ static ksNanoseconds ksGpuTimer_GetNanoseconds( ksGpuTimer * timer )
 	{
 		return 0;
 	}
-
 }
 
 /*
@@ -21008,47 +21019,11 @@ int APIENTRY WinMain( HINSTANCE hCurrentInst, HINSTANCE hPreviousInst, LPSTR lps
 	return StartApplication( argc, argv );
 }
 
-#elif defined( OS_APPLE_IOS )
-
-static int argc_deferred;
-static char** argv_deferred;
-
-@interface MyAppDelegate : NSObject <UIApplicationDelegate> {}
-@end
-
-@implementation MyAppDelegate
-
--(BOOL) application: (UIApplication*) application didFinishLaunchingWithOptions: (NSDictionary*) launchOptions {
-
-	CGRect screenRect = UIScreen.mainScreen.bounds;
-	myUIView = [[MyUIView alloc] initWithFrame: screenRect];
-	UIViewController* myUIVC = [[[MyUIViewController alloc] init] autorelease];
-	myUIVC.view = myUIView;
-
-	myUIWindow = [[UIWindow alloc] initWithFrame: screenRect];
-	[myUIWindow addSubview: myUIView];
-	myUIWindow.rootViewController = myUIVC;
-	[myUIWindow makeKeyAndVisible];
-
-	// Delay to allow startup runloop to complete.
-	[self performSelector: @selector(startApplication:) withObject: nil afterDelay: 0.25f];
-
-	return YES;
-}
-
--(void) startApplication: (id) argObj {
-	autoReleasePool = [[NSAutoreleasePool alloc] init];
-	StartApplication( argc_deferred, argv_deferred );
-}
-
-@end
+#elif defined( OS_LINUX )
 
 int main( int argc, char * argv[] )
 {
-	argc_deferred = argc;
-	argv_deferred = argv;
-
-	return UIApplicationMain( argc, argv, nil, @"MyAppDelegate" );
+	return StartApplication( argc, argv );
 }
 
 #elif defined( OS_APPLE_MACOS )
@@ -21224,11 +21199,47 @@ int main( int argc, char * argv[] )
 	return StartApplication( argc, argv );
 }
 
-#elif defined( OS_LINUX )
+#elif defined( OS_APPLE_IOS )
+
+static int argc_deferred;
+static char** argv_deferred;
+
+@interface MyAppDelegate : NSObject <UIApplicationDelegate> {}
+@end
+
+@implementation MyAppDelegate
+
+-(BOOL) application: (UIApplication*) application didFinishLaunchingWithOptions: (NSDictionary*) launchOptions {
+
+	CGRect screenRect = UIScreen.mainScreen.bounds;
+	myUIView = [[MyUIView alloc] initWithFrame: screenRect];
+	UIViewController* myUIVC = [[[MyUIViewController alloc] init] autorelease];
+	myUIVC.view = myUIView;
+
+	myUIWindow = [[UIWindow alloc] initWithFrame: screenRect];
+	[myUIWindow addSubview: myUIView];
+	myUIWindow.rootViewController = myUIVC;
+	[myUIWindow makeKeyAndVisible];
+
+	// Delay to allow startup runloop to complete.
+	[self performSelector: @selector(startApplication:) withObject: nil afterDelay: 0.25f];
+
+	return YES;
+}
+
+-(void) startApplication: (id) argObj {
+	autoReleasePool = [[NSAutoreleasePool alloc] init];
+	StartApplication( argc_deferred, argv_deferred );
+}
+
+@end
 
 int main( int argc, char * argv[] )
 {
-	return StartApplication( argc, argv );
+	argc_deferred = argc;
+	argv_deferred = argv;
+
+	return UIApplicationMain( argc, argv, nil, @"MyAppDelegate" );
 }
 
 #elif defined( OS_ANDROID )

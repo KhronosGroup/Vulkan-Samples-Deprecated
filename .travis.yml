@@ -4,6 +4,9 @@
 language:
   - cpp
 
+python:
+  - "3.5"
+
 jdk: oraclejdk8
 
 matrix:
@@ -85,9 +88,14 @@ android:
 
 before_install:
   # Install ninja on Mac OS X.
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update && brew install ninja; fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install ninja; fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install python3; fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then virtualenv venv -p python3; fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then source venv/bin/activate; fi
   # Install the appropriate Linux packages.
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update && sudo apt-get -y install python3 libx11-dev libxxf86vm-dev libxrandr-dev libxcb1-dev libxcb-keysyms1-dev libxcb-icccm4-dev clang; fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update; fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get -y install python3 libx11-dev libxxf86vm-dev libxrandr-dev libxcb1-dev libxcb-keysyms1-dev libxcb-icccm4-dev clang; fi
   # Install the Android NDK.
   - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then export ARCH=`uname -m`; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then wget http://dl.google.com/android/repository/android-ndk-r12b-linux-${ARCH}.zip; fi
@@ -96,10 +104,10 @@ before_install:
   - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then export JAVA_HOME="/usr/lib/jvm/java-8-oracle"; fi
 
 install:
-  - pip install --user nose
-  - pip install --user cpp-coveralls
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then pip install --user nose; fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then pip install --user cpp-coveralls; fi
     # Make sure we can find the above Python packages
-  - export PATH=$HOME/.local/bin:$PATH
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then export PATH=$HOME/.local/bin:$PATH; fi
 
 before_script:
   - git clone https://github.com/KhronosGroup/glslang.git ../glslang
