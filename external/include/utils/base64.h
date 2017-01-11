@@ -49,10 +49,10 @@ https://www.ietf.org/rfc/rfc4648.txt
 INTERFACE
 =========
 
-int Base64_EncodeSizeInBytes( int dataSizeInBytes );
-int Base64_DecodeSizeInBytes( const char * base64, const int base64SizeInBytes );
-int Base64_Encode( char * base64, const unsigned char * data, const int dataSizeInBytes );
-int Base64_Decode( unsigned char * data, const char * base64, const int base64SizeInBytes );
+size_t Base64_EncodeSizeInBytes( size_t dataSizeInBytes );
+size_t Base64_DecodeSizeInBytes( const char * base64, const size_t base64SizeInBytes );
+size_t Base64_Encode( char * base64, const unsigned char * data, const size_t dataSizeInBytes );
+size_t Base64_Decode( unsigned char * data, const char * base64, const size_t base64SizeInBytes, const size_t maxDecodeSizeInBytes );
 
 ================================================================================================================================
 */
@@ -88,34 +88,34 @@ static const char base64_radix64[] =
 	 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
 };
 
-static inline int Base64_EncodeSizeInBytes( int dataSizeInBytes )
+static inline size_t Base64_EncodeSizeInBytes( size_t dataSizeInBytes )
 {
 	return ( dataSizeInBytes + 2 ) / 3 * 4;
 }
 
-static inline int Base64_DecodeSizeInBytes( const char * base64, const int base64SizeInBytes )
+static inline size_t Base64_DecodeSizeInBytes( const char * base64, const size_t base64SizeInBytes )
 {
 	int padding = 0;
-	for ( int i = base64SizeInBytes - 1; i >= 0 && base64[i] == '='; i-- )
+	for ( size_t i = base64SizeInBytes - 1; i > 0 && base64[i] == '='; i-- )
 	{
 		padding++;
 	}
 	return ( ( 3 * base64SizeInBytes + 3 ) / 4 ) - padding;
 }
 
-static inline int Base64_Encode( char * base64, const unsigned char * data, const int dataSizeInBytes )
+static inline size_t Base64_Encode( char * base64, const unsigned char * data, const size_t dataSizeInBytes )
 {
-	int base64SizeInBytes = 0;
+	size_t base64SizeInBytes = 0;
+	size_t byteCount = 0;
 	unsigned char bytes[3];
-	int byteCount = 0;
 
-	for ( int i = 0; i < dataSizeInBytes; i++ )
+	for ( size_t i = 0; i < dataSizeInBytes; i++ )
 	{
 		bytes[byteCount++] = data[i];
 		if ( byteCount == 3 || i == dataSizeInBytes - 1 )
 		{
 			// Pad the input data with zeros up to three bytes.
-			for ( int j = byteCount; j < 3; j++ )
+			for ( size_t j = byteCount; j < 3; j++ )
 			{
 				bytes[j] = 0;
 			}
@@ -128,13 +128,13 @@ static inline int Base64_Encode( char * base64, const unsigned char * data, cons
 			radix64[3] = (unsigned char)( ( ( bytes[2] & 0x3F ) >> 0 ) );
 
 			// Convert from radix-64 to the base64 alphabet.
-			for ( int j = 0; j < byteCount + 1; j++ )
+			for ( size_t j = 0; j < byteCount + 1; j++ )
 			{
 				base64[base64SizeInBytes++] = base64_alphabet[radix64[j]];
 			}
 
 			// Pad the base64 data with '='.
-			for ( int j = byteCount + 1; j < 4; j++ )
+			for ( size_t j = byteCount + 1; j < 4; j++ )
 			{
 				base64[base64SizeInBytes++] = '=';
 			}
@@ -144,19 +144,20 @@ static inline int Base64_Encode( char * base64, const unsigned char * data, cons
 	return base64SizeInBytes;
 }
 
-static inline int Base64_Decode( unsigned char * data, const char * base64, const int base64SizeInBytes )
+static inline size_t Base64_Decode( unsigned char * data, const char * base64, const size_t base64SizeInBytes, const size_t maxDecodeSizeInBytes )
 {
-	int dataSizeInBytes = 0;
+	size_t maxDecodeBytes = ( maxDecodeSizeInBytes > 0 ) ? maxDecodeSizeInBytes : SIZE_MAX;
+	size_t dataSizeInBytes = 0;
+	size_t alphabetCount = 0;
 	unsigned char alphabet[4];
-	int alphabetCount = 0;
 
-	for ( int i = 0; i < base64SizeInBytes; i++ )
+	for ( size_t i = 0; i < base64SizeInBytes && dataSizeInBytes < maxDecodeBytes; i++ )
 	{
 		alphabet[alphabetCount++] = base64[i];
 		if ( alphabetCount == 4 || i == base64SizeInBytes - 1 )
 		{
 			// Pad the base64 data with '=' in case there is no padding.
-			for ( int j = alphabetCount; j < 4; j++ )
+			for ( size_t j = alphabetCount; j < 4; j++ )
 			{
 				alphabet[j] = '=';
 			}
@@ -169,7 +170,7 @@ static inline int Base64_Decode( unsigned char * data, const char * base64, cons
 
 			// Convert from the base64 alphabet to radix-64.
 			char radix64[4];
-			for ( int j = 0; j < 4; j++ )
+			for ( size_t j = 0; j < 4; j++ )
 			{
 				radix64[j] = base64_radix64[alphabet[j]];
 			}
@@ -181,7 +182,7 @@ static inline int Base64_Decode( unsigned char * data, const char * base64, cons
 			bytes[2] = (unsigned char)( ( ( radix64[2] & 0x03 ) << 6 ) + radix64[3] );
 
 			// Store output data.
-			for ( int j = 0; j < alphabetCount - 1; j++ )
+			for ( size_t j = 0; j < alphabetCount - 1 && dataSizeInBytes < maxDecodeBytes; j++ )
 			{
 				data[dataSizeInBytes++] = bytes[j];
 			}
