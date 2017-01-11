@@ -1185,7 +1185,7 @@ static void Json_WriteValue( const Json_t * node, int recursion, char ** bufferI
 				{
 					const Json_t * member = &members[i];
 					Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1 + (int)strlen( member->name ) + 5, "%s\"%s\" : ", &indentTable[maxIndent - ( indent + 1 )], member->name );
-					Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
+					Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( mapIndex == endMapIndex && i == mapMemberCount - 1 ) );
 				}
 			}
 		}
@@ -1205,7 +1205,7 @@ static void Json_WriteValue( const Json_t * node, int recursion, char ** bufferI
 				{
 					const Json_t * member = &members[i];
 					Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1, "%s", &indentTable[maxIndent - ( indent + 1 )] );
-					Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( i == node->memberCount - 1 ) );
+					Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( mapIndex == endMapIndex && i == mapMemberCount - 1 ) );
 				}
 			}
 		}
