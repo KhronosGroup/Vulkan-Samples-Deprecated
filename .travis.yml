@@ -152,7 +152,7 @@ script:
 after_success:
   # Collect coverage and push to coveralls.info.
   # Ignore third party source code and tests.
-  - if [[ "$CC" == "gcc" && "$VULKAN_SAMPLES_CODE_COVERAGE" == "ON" ]]; then
+  - if [[ "$KSB_TARGET" == "COVERAGE" ]]; then
       coveralls
         --root ../
         --build-root ./
