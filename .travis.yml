@@ -102,6 +102,7 @@ before_install:
   - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then unzip -u -q android-ndk-r13b-linux-${ARCH}.zip; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then export ANDROID_NDK_HOME=`pwd`/android-ndk-r13b; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then export JAVA_HOME="/usr/lib/jvm/java-8-oracle"; fi
+  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then export PATH="$ANDROID_NDK_HOME:$PATH"; fi
 
 install:
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then pip install --user nose; fi
