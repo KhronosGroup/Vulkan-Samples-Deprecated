@@ -20496,7 +20496,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 		{
 			const Json_t * buffer = Json_GetMemberByIndex( buffers, bufferIndex );
 			scene->buffers[bufferIndex].name = ksGltf_strdup( Json_GetMemberName( buffer ) );
-			scene->buffers[bufferIndex].byteLength = Json_GetUint64( Json_GetMemberByName( buffer, "byteLength" ), 0 );
+			scene->buffers[bufferIndex].byteLength = (size_t) Json_GetUint64( Json_GetMemberByName( buffer, "byteLength" ), 0 );
 			scene->buffers[bufferIndex].type = ksGltf_strdup( Json_GetString( Json_GetMemberByName( buffer, "type" ), "" ) );
 			if ( strcmp( scene->buffers[bufferIndex].name, "binary_glTF" ) == 0 )
 			{
