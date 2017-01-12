@@ -98,9 +98,9 @@ before_install:
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get -y install python3 libx11-dev libxxf86vm-dev libxrandr-dev libxcb1-dev libxcb-keysyms1-dev libxcb-icccm4-dev clang; fi
   # Install the Android NDK.
   - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then export ARCH=`uname -m`; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then wget http://dl.google.com/android/repository/android-ndk-r12b-linux-${ARCH}.zip; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then unzip -u -q android-ndk-r12b-linux-${ARCH}.zip; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then export ANDROID_NDK_HOME=`pwd`/android-ndk-r12b; fi
+  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then wget http://dl.google.com/android/repository/android-ndk-r13b-linux-${ARCH}.zip; fi
+  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then unzip -u -q android-ndk-r13b-linux-${ARCH}.zip; fi
+  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then export ANDROID_NDK_HOME=`pwd`/android-ndk-r13b; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then export JAVA_HOME="/usr/lib/jvm/java-8-oracle"; fi
 
 install:

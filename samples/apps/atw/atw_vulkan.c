@@ -17894,7 +17894,6 @@ This glTF implementation overcomes some of these issues.
 #define GL_FLOAT_MAT4x2					0x8B69
 #define GL_FLOAT_MAT4x3					0x8B6A
 #define GL_FLOAT_MAT4					0x8B5C
-#define GL_SAMPLER_1D					0x8B5D
 #define GL_SAMPLER_2D					0x8B5E
 #define GL_SAMPLER_3D					0x8B5F
 #define GL_SAMPLER_CUBE					0x8B60
@@ -21060,7 +21059,6 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 				ksGpuProgramParmType parmType = KS_GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED;
 				switch ( type )
 				{
-					case GL_SAMPLER_1D:				parmType = KS_GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED; break; 
 					case GL_SAMPLER_2D:				parmType = KS_GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED; break;
 					case GL_SAMPLER_3D:				parmType = KS_GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED; break;
 					case GL_SAMPLER_CUBE:			parmType = KS_GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED; break;
