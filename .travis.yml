@@ -14,8 +14,8 @@ matrix:
   fast_finish: true
   include:
     # Android build.
-    - language: android
-      os: linux
+    - os: linux
+      compiler: gcc
       sudo: required
       env: KSB_TARGET=ANDROID ANDROID_TARGET=android-21 ANDROID_ABI=armeabi-v7a
     # Linux GCC debug build.
