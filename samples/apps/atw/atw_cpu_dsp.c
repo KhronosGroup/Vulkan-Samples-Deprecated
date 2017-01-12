@@ -1271,7 +1271,7 @@ static void Warp32x32_SampleNearestPackedRGB(
 			"	uxth		%[dx], %[dx]							\n\t"
 			"	orr			%[dx], %[dx], %[dy], lsl #16			\n\t"
 
-			".LOOP_NEAREST_PACKED_RGB_1:							\n\t"
+			".LP_NEAREST_PACKED_RGB_1%=:							\n\t"
 			"	sxtb		r0, %[sx], ror #8						\n\t"	// srcX >> 8;
 			"	sxtb		r1, %[sx], ror #24						\n\t"	// srcY >> 8;
 			"	mla			r0, r1, %[p], r0						\n\t"	// ( srcY >> 8 ) * srcPitchInTexels + ( srcX >> 8 );
@@ -1340,7 +1340,7 @@ static void Warp32x32_SampleNearestPackedRGB(
 			"	vst1.u64	{d2, d3}, [%[d]], r3					\n\t"
 
 			"	cmp			%[d], r4								\n\t"	// destRow == ( dest + y * destPitchInPixels + 32 )
-			"	bne			.LOOP_NEAREST_PACKED_RGB_1				\n\t"
+			"	bne			.LP_NEAREST_PACKED_RGB_1%=				\n\t"
 			:
 			:	[sx] "r" (localSrcX8),
 				[sy] "r" (localSrcY8),
@@ -1362,7 +1362,7 @@ static void Warp32x32_SampleNearestPackedRGB(
 			"	uxth		%[dx], %[dx]					\n\t"
 			"	orr			%[dx], %[dx], %[dy], lsl #16	\n\t"
 			"	mov			r2, #32							\n\t"
-			".LOOP_NEAREST_PACKED_RGB_2:					\n\t"
+			".LP_NEAREST_PACKED_RGB_2%=:					\n\t"
 			"	sxtb		r0, %[sx], ror #8				\n\t"	// srcX >> 8;
 			"	sxtb		r1, %[sx], ror #24				\n\t"	// srcY >> 8;
 			"	mla			r0, r1, %[p], r0				\n\t"	// ( srcY >> 8 ) * srcPitchInTexels + ( srcX >> 8 );
@@ -1370,7 +1370,7 @@ static void Warp32x32_SampleNearestPackedRGB(
 			"	ldr			r0, [%[s], r0, lsl #2]			\n\t"	// temp = localSrc[( srcY >> 8 ) * srcPitchInTexels + ( srcX >> 8 ) * 4];
 			"	str			r0, [%[d]], #4					\n\t"	// destRow[0] = temp; destRow++;
 			"	subs		r2, r2, #1						\n\t"
-			"	bne			.LOOP_NEAREST_PACKED_RGB_2		\n\t"
+			"	bne			.LP_NEAREST_PACKED_RGB_2%=		\n\t"
 			:
 			:	[sx] "r" (localSrcX8),
 				[sy] "r" (localSrcY8),
@@ -1801,7 +1801,7 @@ static void Warp32x32_SampleLinearPackedRGB(
 
 			"	add			r3, %[d], #128							\n\t"	// &destRow[32]
 
-			".LOOP_LINEAR_PACKED_RGB_1:								\n\t"
+			".LP_LINEAR_PACKED_RGB_1%=:								\n\t"
 			"	sxtb		r0, %[sx], ror #8						\n\t"	// srcX >> 8;
 			"	sxtb		r1, %[sx], ror #24						\n\t"	// srcY >> 8;
 			"	mla			r0, r1, %[p], r0						\n\t"	// ( srcY >> 8 ) * srcPitchInTexels + ( srcX >> 8 );
@@ -1899,7 +1899,7 @@ static void Warp32x32_SampleLinearPackedRGB(
 			"	vadd.u8		q0, q0, q1								\n\t"	// update the bilinear weights (fracX^-1), (fracX)
 
 			"	cmp			%[d], r3								\n\t"	// destRow == ( dest + y * destPitchInPixels + 32 )
-			"	bne			.LOOP_LINEAR_PACKED_RGB_1				\n\t"
+			"	bne			.LP_LINEAR_PACKED_RGB_1%=				\n\t"
 			:
 			:	[sx] "r" (localSrcX8),
 				[sy] "r" (localSrcY8),
@@ -1932,7 +1932,7 @@ static void Warp32x32_SampleLinearPackedRGB(
 
 			"	mov			r2, #32							\n\t"
 
-			".LOOP_LINEAR_PACKED_RGB_2:						\n\t"
+			".LP_LINEAR_PACKED_RGB_2%=:						\n\t"
 			"	sxtb		r0, %[sx], ror #8				\n\t"	// srcX >> 8;
 			"	sxtb		r1, %[sx], ror #24				\n\t"	// srcY >> 8;
 			"	mla			r0, r1, %[p], r0				\n\t"	// ( srcY >> 8 ) * srcPitchInTexels + ( srcX >> 8 );
@@ -1947,7 +1947,7 @@ static void Warp32x32_SampleLinearPackedRGB(
 			"	vst1.u32	d2[0], [%[d]], r3				\n\r"	// store destination pixel, destRow++;
 
 			"	subs		r2, r2, #1						\n\t"
-			"	bne			.LOOP_LINEAR_PACKED_RGB_2		\n\t"
+			"	bne			.LP_LINEAR_PACKED_RGB_2%=		\n\t"
 			:
 			:	[sx] "r" (localSrcX8),
 				[sy] "r" (localSrcY8),
@@ -2510,7 +2510,7 @@ static void Warp32x32_SampleBilinearPackedRGB(
 
 			"	add			%[sy], %[d], #128						\n\t"	// &destRow[32]
 
-			".LOOP_BILINEAR_PACKED_RGB_1:							\n\t"
+			".LP_BILINEAR_PACKED_RGB_1%=:							\n\t"
 			"	sxtb		r0, %[sx], ror #8						\n\t"	// srcX >> 8;
 			"	sxtb		r1, %[sx], ror #24						\n\t"	// srcY >> 8;
 			"	mla			r0, r1, %[p], r0						\n\t"	// ( srcY >> 8 ) * srcPitchInTexels + ( srcX >> 8 );
@@ -2646,7 +2646,7 @@ static void Warp32x32_SampleBilinearPackedRGB(
 			"	vadd.u8		q2, q2, q3								\n\t"	// update the bilinear weights (fracY^-1), (fracY)
 
 			"	cmp			%[d], %[sy]								\n\t"	// destRow == ( dest + y * destPitchInPixels + 32 )
-			"	bne			.LOOP_BILINEAR_PACKED_RGB_1				\n\t"
+			"	bne			.LP_BILINEAR_PACKED_RGB_1%=				\n\t"
 			:
 			:	[sx] "r" (localSrcX8),
 				[sy] "r" (localSrcY8),
@@ -2691,7 +2691,7 @@ static void Warp32x32_SampleBilinearPackedRGB(
 
 			"	mov			r4, #32								\n\t"
 
-			".LOOP_BILINEAR_PACKED_RGB_2:						\n\t"
+			".LP_BILINEAR_PACKED_RGB_2%=:						\n\t"
 			"	sxtb		r0, %[sx], ror #8					\n\t"	// srcX >> 8;
 			"	sxtb		r1, %[sx], ror #24					\n\t"	// srcY >> 8;
 			"	mla			r0, r1, %[p], r0					\n\t"	// ( srcY >> 8 ) * srcPitchInTexels + ( srcX >> 8 );
@@ -2711,7 +2711,7 @@ static void Warp32x32_SampleBilinearPackedRGB(
 			"	vst1.u32	d8[0], [%[d]], r3					\n\r"	// store destination pixel, destRow++;
 
 			"	subs		r4, r4, #1							\n\t"
-			"	bne			.LOOP_BILINEAR_PACKED_RGB_2			\n\t"
+			"	bne			.LP_BILINEAR_PACKED_RGB_2%=			\n\t"
 			:
 			:	[sx] "r" (localSrcX8),
 				[sy] "r" (localSrcY8),
@@ -3502,7 +3502,7 @@ static void Warp32x32_SampleBilinearPlanarRGB(
 			"	add			%[sy], %[d], #128							\n\t"	// &destRow[32]
 			"	mov			%[dy], #4									\n\t"	// dest pixel pitch
 
-			".LOOP_BILINEAR_PLANAR_RGB:									\n\t"
+			".LP_BILINEAR_PLANAR_RGB%=:									\n\t"
 			"	sxtb		r0, %[sx], ror #8							\n\t"	// srcX >> 8;
 			"	sxtb		r1, %[sx], ror #24							\n\t"	// srcY >> 8;
 			"	mla			r0, r1, %[p], r0							\n\t"	// ( srcY >> 8 ) * srcPitchInTexels + ( srcX >> 8 );
@@ -3670,7 +3670,7 @@ static void Warp32x32_SampleBilinearPlanarRGB(
 			"	vadd.u8		q2, q2, q3									\n\t"	// update the bilinear weights (fracY^-1), (fracY)
 
 			"	cmp			%[d], %[sy]									\n\t"	// destRow == ( dest + y * destPitchInPixels + 32 )
-			"	bne			.LOOP_BILINEAR_PLANAR_RGB					\n\t"
+			"	bne			.LP_BILINEAR_PLANAR_RGB%=					\n\t"
 			:
 			:	[sx] "r" (localSrcX8),
 				[sy] "r" (localSrcY8),
@@ -4945,7 +4945,7 @@ static void Warp32x32_SampleChromaticBilinearPlanarRGB(
 			"	add			r1, %[d], #128								\n\t"	// destRow + 32
 			"	str			r1, [sp, #48]								\n\t"	// store end pointer on the stack
 
-			".LOOP_CHROMATIC_PLANAR_RGB:								\n\t"
+			".LP_CHROMATIC_PLANAR_RGB%=:								\n\t"
 			"	sxtb		r0, %[srxy], ror #8							\n\t"	// srcRedX >> 8;
 			"	sxtb		r1, %[srxy], ror #24						\n\t"	// srcRedY >> 8;
 			"	mla			r0, r1, %[p], r0							\n\t"	// ( srcRedY >> 8 ) * srcPitchInTexels + ( srcRedX >> 8 );
@@ -5219,7 +5219,7 @@ static void Warp32x32_SampleChromaticBilinearPlanarRGB(
 			"	vadd.u8		q5, q5, q11									\n\t"	// update the bilinear weights (fracBlueY^-1), (fracBlueY)
 
 			"	cmp			%[d], r1									\n\t"
-			"	bne			.LOOP_CHROMATIC_PLANAR_RGB					\n\t"
+			"	bne			.LP_CHROMATIC_PLANAR_RGB%=					\n\t"
 
 			"	add			sp, sp, #64									\n\t"	// release stack space
 			:

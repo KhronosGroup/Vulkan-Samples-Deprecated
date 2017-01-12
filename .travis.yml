@@ -13,58 +13,76 @@ matrix:
   # Show final status immediately if a test fails.
   fast_finish: true
   include:
-    # Android build.
-    - language: android
-      os: linux
+    # Android ndk build.
+    - os: linux
+      compiler: gcc
       sudo: required
-      dist: precise
-      env: VULKAN_SAMPLES_BUILD_CONFIG=ANDROID ANDROID_TARGET=android-21 ANDROID_ABI=armeabi-v7a
+      dist: trusty
+      env: KSB_TARGET=ANDROID KSB_TYPE=NDK
+    # Android gradle build.
+    - os: linux
+      compiler: gcc
+      sudo: required
+      dist: trusty
+      env: KSB_TARGET=ANDROID KSB_TYPE=GRADLE
     # Linux GCC debug build.
     - os: linux
       compiler: gcc
       sudo: required
       dist: trusty
-      env: VULKAN_SAMPLES_BUILD_CONFIG=NORMAL VULKAN_SAMPLES_BUILD_TYPE=Debug
+      env: KSB_TARGET=LINUX KSB_TYPE=Debug
     # Linux GCC release build.
     - os: linux
       compiler: gcc
       sudo: required
       dist: trusty
-      env: VULKAN_SAMPLES_BUILD_CONFIG=NORMAL VULKAN_SAMPLES_BUILD_TYPE=Release
+      env: KSB_TARGET=LINUX KSB_TYPE=Release
     # Linux Clang debug build.
     - os: linux
       compiler: clang
       sudo: required
       dist: trusty
-      env: VULKAN_SAMPLES_BUILD_CONFIG=NORMAL VULKAN_SAMPLES_BUILD_TYPE=Debug
+      env: KSB_TARGET=LINUX KSB_TYPE=Debug
     # Linux Clang release build.
     - os: linux
       compiler: clang
       sudo: required
       dist: trusty
-      env: VULKAN_SAMPLES_BUILD_CONFIG=NORMAL VULKAN_SAMPLES_BUILD_TYPE=Release
-    # Linux GCC build for code coverage.
+      env: KSB_TARGET=LINUX KSB_TYPE=Release
+    # Linux GCC debug build for code coverage.
     - os: linux
       compiler: gcc
       sudo: required
       dist: trusty
-      env: VULKAN_SAMPLES_BUILD_CONFIG=COVERAGE
-    # Linux Clang build for scan-build.
+      env: KSB_TARGET=COVERAGE KSB_TYPE=Debug
+    # Linux GCC release build for code coverage.
+    - os: linux
+      compiler: gcc
+      sudo: required
+      dist: trusty
+      env: KSB_TARGET=COVERAGE KSB_TYPE=Release
+    # Linux Clang debug build for scan-build.
     - os: linux
       compiler: clang
       sudo: required
       dist: trusty
-      env: VULKAN_SAMPLES_BUILD_CONFIG=SCAN
+      env: KSB_TARGET=SCAN KSB_TYPE=Debug
+    # Linux Clang release build for scan-build.
+    - os: linux
+      compiler: clang
+      sudo: required
+      dist: trusty
+      env: KSB_TARGET=SCAN KSB_TYPE=Release
     # Mac OS X Clang debug build.
     - os: osx
       compiler: clang
       sudo: required
-      env: VULKAN_SAMPLES_BUILD_CONFIG=NORMAL VULKAN_SAMPLES_BUILD_TYPE=Debug
+      env: KSB_TARGET=OSX KSB_TYPE=Debug
     # Mac OS X Clang release build.
     - os: osx
       compiler: clang
       sudo: required
-      env: VULKAN_SAMPLES_BUILD_CONFIG=NORMAL VULKAN_SAMPLES_BUILD_TYPE=Release
+      env: KSB_TARGET=OSX KSB_TYPE=Release
 
 cache:
   apt: true
@@ -87,46 +105,54 @@ android:
     - android-23
 
 before_install:
-  # Install ninja on Mac OS X.
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew update; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install ninja; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install python3; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then virtualenv venv -p python3; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then source venv/bin/activate; fi
   # Install the appropriate Linux packages.
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update; fi
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get -y install python3 libx11-dev libxxf86vm-dev libxrandr-dev libxcb1-dev libxcb-keysyms1-dev libxcb-icccm4-dev clang; fi
+  - if [[ "$KSB_TARGET" == "LINUX" || "$KSB_TARGET" == "COVERAGE" || "$KSB_TARGET" == "SCAN" ]]; then sudo apt-get update; fi
+  - if [[ "$KSB_TARGET" == "LINUX" || "$KSB_TARGET" == "COVERAGE" || "$KSB_TARGET" == "SCAN" ]]; then sudo apt-get -y install python3 libx11-dev libxxf86vm-dev libxrandr-dev libxcb1-dev libxcb-keysyms1-dev libxcb-icccm4-dev clang; fi
+  # Install ninja and python 3 on Mac OS X.
+  - if [[ "$KSB_TARGET" == "OSX" ]]; then brew update; fi
+  - if [[ "$KSB_TARGET" == "OSX" ]]; then brew install ninja; fi
+  - if [[ "$KSB_TARGET" == "OSX" ]]; then brew install python3; fi
+  - if [[ "$KSB_TARGET" == "OSX" ]]; then virtualenv venv -p python3; fi
+  - if [[ "$KSB_TARGET" == "OSX" ]]; then source venv/bin/activate; fi
   # Install the Android NDK.
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then export ARCH=`uname -m`; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then wget http://dl.google.com/android/repository/android-ndk-r12b-linux-${ARCH}.zip; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then unzip -u -q android-ndk-r12b-linux-${ARCH}.zip; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then export ANDROID_NDK_HOME=`pwd`/android-ndk-r12b; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then export JAVA_HOME="/usr/lib/jvm/java-8-oracle"; fi
+  - if [[ "$KSB_TARGET" == "ANDROID" ]]; then sudo apt-get -y install python3; fi
+  - if [[ "$KSB_TARGET" == "ANDROID" ]]; then export ARCH=`uname -m`; fi
+  - if [[ "$KSB_TARGET" == "ANDROID" ]]; then wget http://dl.google.com/android/repository/android-ndk-r13b-linux-${ARCH}.zip; fi
+  - if [[ "$KSB_TARGET" == "ANDROID" ]]; then unzip -u -q android-ndk-r13b-linux-${ARCH}.zip; fi
+  - if [[ "$KSB_TARGET" == "ANDROID" ]]; then export ANDROID_NDK_HOME=`pwd`/android-ndk-r13b; fi
+  - if [[ "$KSB_TARGET" == "ANDROID" ]]; then export JAVA_HOME="/usr/lib/jvm/java-8-oracle"; fi
+  - if [[ "$KSB_TARGET" == "ANDROID" ]]; then export PATH="$ANDROID_NDK_HOME:$PATH"; fi
 
 install:
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then pip install --user nose; fi
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then pip install --user cpp-coveralls; fi
+  - if [[ "$KSB_TARGET" == "LINUX" || "$KSB_TARGET" == "COVERAGE" || "$KSB_TARGET" == "SCAN" ]]; then pip install --user nose; fi
+  - if [[ "$KSB_TARGET" == "LINUX" || "$KSB_TARGET" == "COVERAGE" || "$KSB_TARGET" == "SCAN" ]]; then pip install --user cpp-coveralls; fi
     # Make sure we can find the above Python packages
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then export PATH=$HOME/.local/bin:$PATH; fi
+  - if [[ "$KSB_TARGET" == "LINUX" || "$KSB_TARGET" == "COVERAGE" || "$KSB_TARGET" == "SCAN" ]]; then export PATH=$HOME/.local/bin:$PATH; fi
 
 before_script:
   - git clone https://github.com/KhronosGroup/glslang.git ../glslang
   - git clone https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers.git ../Vulkan-LoaderAndValidationLayers
 
 script:
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "NORMAL" || "$VULKAN_SAMPLES_BUILD_CONFIG" == "COVERAGE" || "$VULKAN_SAMPLES_BUILD_CONFIG" == "SCAN" ]]; then mkdir build && cd build; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "NORMAL"   ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${VULKAN_SAMPLES_BUILD_TYPE:-Debug} ..; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "COVERAGE" ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${VULKAN_SAMPLES_BUILD_TYPE:-Debug} -DENABLE_CODE_COVERAGE=ON ..; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "NORMAL" || "$VULKAN_SAMPLES_BUILD_CONFIG" == "COVERAGE" ]]; then ninja; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "NORMAL" || "$VULKAN_SAMPLES_BUILD_CONFIG" == "COVERAGE" ]]; then ctest -j`nproc` --output-on-failure; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "SCAN"    ]]; then scan-build cmake -GNinja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug ..; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "SCAN"    ]]; then scan-build ninja; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_CONFIG" == "ANDROID" ]]; then ./build_android.sh; fi
+  - if [[ "$KSB_TARGET" == "LINUX"    ]]; then mkdir build && cd build; fi
+  - if [[ "$KSB_TARGET" == "LINUX"    ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${KSB_TYPE:-Debug} ..; fi
+  - if [[ "$KSB_TARGET" == "LINUX"    ]]; then ninja; fi
+  - if [[ "$KSB_TARGET" == "COVERAGE" ]]; then mkdir build && cd build; fi
+  - if [[ "$KSB_TARGET" == "COVERAGE" ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${KSB_TYPE:-Debug} -DENABLE_CODE_COVERAGE=ON ..; fi
+  - if [[ "$KSB_TARGET" == "COVERAGE" ]]; then ninja; fi
+  - if [[ "$KSB_TARGET" == "SCAN"     ]]; then mkdir build && cd build; fi
+  - if [[ "$KSB_TARGET" == "SCAN"     ]]; then scan-build cmake -GNinja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=${KSB_TYPE:-Debug} ..; fi
+  - if [[ "$KSB_TARGET" == "SCAN"     ]]; then scan-build ninja; fi
+  - if [[ "$KSB_TARGET" == "OSX"      ]]; then mkdir build && cd build; fi
+  - if [[ "$KSB_TARGET" == "OSX"      ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${KSB_TYPE:-Debug} ..; fi
+  - if [[ "$KSB_TARGET" == "OSX"      ]]; then ninja; fi
+  - if [[ "$KSB_TARGET" == "ANDROID"  && "$KSB_TYPE" == "NDK" ]]; then ./build_android_ndk.sh; fi
+  - if [[ "$KSB_TARGET" == "ANDROID"  && "$KSB_TYPE" == "GRADLE" ]]; then ./build_android_gradle.sh; fi
 
 after_success:
   # Collect coverage and push to coveralls.info.
   # Ignore third party source code and tests.
-  - if [[ "$CC" == "gcc" && "$VULKAN_SAMPLES_CODE_COVERAGE" == "ON" ]]; then
+  - if [[ "$KSB_TARGET" == "COVERAGE" ]]; then
       coveralls
         --root ../
         --build-root ./
