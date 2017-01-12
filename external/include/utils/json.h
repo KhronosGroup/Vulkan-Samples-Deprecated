@@ -422,7 +422,9 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
 #include <float.h>
 #include <assert.h>
 #include <string.h>
+#if !defined( __APPLE__ )
 #include <malloc.h>
+#endif
 #if defined( _MSC_VER )
 #include <intrin.h>
 #endif
