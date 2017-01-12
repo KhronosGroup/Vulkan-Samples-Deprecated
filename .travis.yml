@@ -87,14 +87,14 @@ android:
 
 before_install:
   # Install the appropriate Linux packages.
-  - if [[ "KSB_TARGET" == "LINUX" || "KSB_TARGET" == "COVERAGE" || "KSB_TARGET" == "SCAN" ]]; then sudo apt-get update; fi
-  - if [[ "KSB_TARGET" == "LINUX" || "KSB_TARGET" == "COVERAGE" || "KSB_TARGET" == "SCAN" ]]; then sudo apt-get -y install python3 libx11-dev libxxf86vm-dev libxrandr-dev libxcb1-dev libxcb-keysyms1-dev libxcb-icccm4-dev clang; fi
+  - if [[ "$KSB_TARGET" == "LINUX" || "$KSB_TARGET" == "COVERAGE" || "$KSB_TARGET" == "SCAN" ]]; then sudo apt-get update; fi
+  - if [[ "$KSB_TARGET" == "LINUX" || "$KSB_TARGET" == "COVERAGE" || "$KSB_TARGET" == "SCAN" ]]; then sudo apt-get -y install python3 libx11-dev libxxf86vm-dev libxrandr-dev libxcb1-dev libxcb-keysyms1-dev libxcb-icccm4-dev clang; fi
   # Install ninja on Mac OS X.
-  - if [[ "KSB_TARGET" == "OSX" ]]; then brew update; fi
-  - if [[ "KSB_TARGET" == "OSX" ]]; then brew install ninja; fi
-  - if [[ "KSB_TARGET" == "OSX" ]]; then brew install python3; fi
-  - if [[ "KSB_TARGET" == "OSX" ]]; then virtualenv venv -p python3; fi
-  - if [[ "KSB_TARGET" == "OSX" ]]; then source venv/bin/activate; fi
+  - if [[ "$KSB_TARGET" == "OSX" ]]; then brew update; fi
+  - if [[ "$KSB_TARGET" == "OSX" ]]; then brew install ninja; fi
+  - if [[ "$KSB_TARGET" == "OSX" ]]; then brew install python3; fi
+  - if [[ "$KSB_TARGET" == "OSX" ]]; then virtualenv venv -p python3; fi
+  - if [[ "$KSB_TARGET" == "OSX" ]]; then source venv/bin/activate; fi
   # Install the Android NDK.
   - if [[ "$KSB_TARGET" == "ANDROID" ]]; then export ARCH=`uname -m`; fi
   - if [[ "$KSB_TARGET" == "ANDROID" ]]; then wget http://dl.google.com/android/repository/android-ndk-r13b-linux-${ARCH}.zip; fi
@@ -104,10 +104,10 @@ before_install:
   - if [[ "$KSB_TARGET" == "ANDROID" ]]; then export PATH="$ANDROID_NDK_HOME:$PATH"; fi
 
 install:
-  - if [[ "KSB_TARGET" == "LINUX" || "KSB_TARGET" == "COVERAGE" || "KSB_TARGET" == "SCAN" ]]; then pip install --user nose; fi
-  - if [[ "KSB_TARGET" == "LINUX" || "KSB_TARGET" == "COVERAGE" || "KSB_TARGET" == "SCAN" ]]; then pip install --user cpp-coveralls; fi
+  - if [[ "$KSB_TARGET" == "LINUX" || "$KSB_TARGET" == "COVERAGE" || "$KSB_TARGET" == "SCAN" ]]; then pip install --user nose; fi
+  - if [[ "$KSB_TARGET" == "LINUX" || "$KSB_TARGET" == "COVERAGE" || "$KSB_TARGET" == "SCAN" ]]; then pip install --user cpp-coveralls; fi
     # Make sure we can find the above Python packages
-  - if [[ "KSB_TARGET" == "LINUX" || "KSB_TARGET" == "COVERAGE" || "KSB_TARGET" == "SCAN" ]]; then export PATH=$HOME/.local/bin:$PATH; fi
+  - if [[ "$KSB_TARGET" == "LINUX" || "$KSB_TARGET" == "COVERAGE" || "$KSB_TARGET" == "SCAN" ]]; then export PATH=$HOME/.local/bin:$PATH; fi
 
 before_script:
   - git clone https://github.com/KhronosGroup/glslang.git ../glslang
