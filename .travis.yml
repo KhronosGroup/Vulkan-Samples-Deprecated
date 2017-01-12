@@ -89,6 +89,12 @@ before_install:
   # Install the appropriate Linux packages.
   - if [[ "VULKAN_SAMPLES_BUILD_TARGET" == "LINUX" ]]; then sudo apt-get update; fi
   - if [[ "VULKAN_SAMPLES_BUILD_TARGET" == "LINUX" ]]; then sudo apt-get -y install python3 libx11-dev libxxf86vm-dev libxrandr-dev libxcb1-dev libxcb-keysyms1-dev libxcb-icccm4-dev clang; fi
+  # Install the appropriate Linux packages.
+  - if [[ "VULKAN_SAMPLES_BUILD_TARGET" == "COVERAGE" ]]; then sudo apt-get update; fi
+  - if [[ "VULKAN_SAMPLES_BUILD_TARGET" == "COVERAGE" ]]; then sudo apt-get -y install python3 libx11-dev libxxf86vm-dev libxrandr-dev libxcb1-dev libxcb-keysyms1-dev libxcb-icccm4-dev clang; fi
+  # Install the appropriate Linux packages.
+  - if [[ "VULKAN_SAMPLES_BUILD_TARGET" == "SCAN" ]]; then sudo apt-get update; fi
+  - if [[ "VULKAN_SAMPLES_BUILD_TARGET" == "SCAN" ]]; then sudo apt-get -y install python3 libx11-dev libxxf86vm-dev libxrandr-dev libxcb1-dev libxcb-keysyms1-dev libxcb-icccm4-dev clang; fi
   # Install ninja on Mac OS X.
   - if [[ "VULKAN_SAMPLES_BUILD_TARGET" == "OSX" ]]; then brew update; fi
   - if [[ "VULKAN_SAMPLES_BUILD_TARGET" == "OSX" ]]; then brew install ninja; fi
@@ -114,15 +120,16 @@ before_script:
   - git clone https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers.git ../Vulkan-LoaderAndValidationLayers
 
 script:
+  - if [[ "$VULKAN_SAMPLES_BUILD_TARGET" == "LINUX"    ]]; then mkdir build && cd build; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_TARGET" == "LINUX"    ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${VULKAN_SAMPLES_BUILD_TYPE:-Debug} ..; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_TARGET" == "LINUX"    ]]; then ninja; fi
+  - if [[ "$VULKAN_SAMPLES_BUILD_TARGET" == "OSX"      ]]; then mkdir build && cd build; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_TARGET" == "OSX"      ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${VULKAN_SAMPLES_BUILD_TYPE:-Debug} ..; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_TARGET" == "OSX"      ]]; then ninja; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_TARGET" == "ANDROID"  ]]; then ./build_android.sh; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_TARGET" == "COVERAGE" ]]; then mkdir build && cd build; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_TARGET" == "COVERAGE" ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${VULKAN_SAMPLES_BUILD_TYPE:-Debug} -DENABLE_CODE_COVERAGE=ON ..; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_TARGET" == "COVERAGE" ]]; then ninja; fi
-  - if [[ "$VULKAN_SAMPLES_BUILD_TARGET" == "COVERAGE" ]]; then ctest -j`nproc` --output-on-failure; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_TARGET" == "SCAN"     ]]; then mkdir build && cd build; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_TARGET" == "SCAN"     ]]; then scan-build cmake -GNinja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug ..; fi
   - if [[ "$VULKAN_SAMPLES_BUILD_TARGET" == "SCAN"     ]]; then scan-build ninja; fi
