@@ -3502,7 +3502,7 @@ static void Warp32x32_SampleBilinearPlanarRGB(
 			"	add			%[sy], %[d], #128							\n\t"	// &destRow[32]
 			"	mov			%[dy], #4									\n\t"	// dest pixel pitch
 
-			".LP_PLANAR_BILINEAR_RGB:									\n\t"
+			".LP_1234:													\n\t"
 			"	sxtb		r0, %[sx], ror #8							\n\t"	// srcX >> 8;
 			"	sxtb		r1, %[sx], ror #24							\n\t"	// srcY >> 8;
 			"	mla			r0, r1, %[p], r0							\n\t"	// ( srcY >> 8 ) * srcPitchInTexels + ( srcX >> 8 );
@@ -3670,7 +3670,7 @@ static void Warp32x32_SampleBilinearPlanarRGB(
 			"	vadd.u8		q2, q2, q3									\n\t"	// update the bilinear weights (fracY^-1), (fracY)
 
 			"	cmp			%[d], %[sy]									\n\t"	// destRow == ( dest + y * destPitchInPixels + 32 )
-			"	bne			.LP_PLANAR_BILINEAR_RGB						\n\t"
+			"	bne			.LP_1234									\n\t"
 			:
 			:	[sx] "r" (localSrcX8),
 				[sy] "r" (localSrcY8),
