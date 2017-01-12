@@ -17,7 +17,8 @@ matrix:
     - os: linux
       compiler: gcc
       sudo: required
-      env: KSB_TARGET=ANDROID ANDROID_TARGET=android-21 ANDROID_ABI=armeabi-v7a
+      dist: trusty
+      env: KSB_TARGET=ANDROID
     # Linux GCC debug build.
     - os: linux
       compiler: gcc
