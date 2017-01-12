@@ -49,18 +49,30 @@ matrix:
       sudo: required
       dist: trusty
       env: KSB_TARGET=LINUX KSB_TYPE=Release
-    # Linux GCC build for code coverage.
+    # Linux GCC debug build for code coverage.
     - os: linux
       compiler: gcc
       sudo: required
       dist: trusty
-      env: KSB_TARGET=COVERAGE
-    # Linux Clang build for scan-build.
+      env: KSB_TARGET=COVERAGE KSB_TYPE=Debug
+    # Linux GCC release build for code coverage.
+    - os: linux
+      compiler: gcc
+      sudo: required
+      dist: trusty
+      env: KSB_TARGET=COVERAGE KSB_TYPE=Release
+    # Linux Clang debug build for scan-build.
     - os: linux
       compiler: clang
       sudo: required
       dist: trusty
-      env: KSB_TARGET=SCAN
+      env: KSB_TARGET=SCAN KSB_TYPE=Debug
+    # Linux Clang release build for scan-build.
+    - os: linux
+      compiler: clang
+      sudo: required
+      dist: trusty
+      env: KSB_TARGET=SCAN KSB_TYPE=Release
     # Mac OS X Clang debug build.
     - os: osx
       compiler: clang
@@ -125,17 +137,17 @@ script:
   - if [[ "$KSB_TARGET" == "LINUX"    ]]; then mkdir build && cd build; fi
   - if [[ "$KSB_TARGET" == "LINUX"    ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${KSB_TYPE:-Debug} ..; fi
   - if [[ "$KSB_TARGET" == "LINUX"    ]]; then ninja; fi
+  - if [[ "$KSB_TARGET" == "COVERAGE" ]]; then mkdir build && cd build; fi
+  - if [[ "$KSB_TARGET" == "COVERAGE" ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${KSB_TYPE:-Debug} -DENABLE_CODE_COVERAGE=ON ..; fi
+  - if [[ "$KSB_TARGET" == "COVERAGE" ]]; then ninja; fi
+  - if [[ "$KSB_TARGET" == "SCAN"     ]]; then mkdir build && cd build; fi
+  - if [[ "$KSB_TARGET" == "SCAN"     ]]; then scan-build cmake -GNinja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=${KSB_TYPE:-Debug} ..; fi
+  - if [[ "$KSB_TARGET" == "SCAN"     ]]; then scan-build ninja; fi
   - if [[ "$KSB_TARGET" == "OSX"      ]]; then mkdir build && cd build; fi
   - if [[ "$KSB_TARGET" == "OSX"      ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${KSB_TYPE:-Debug} ..; fi
   - if [[ "$KSB_TARGET" == "OSX"      ]]; then ninja; fi
   - if [[ "$KSB_TARGET" == "ANDROID"  && "$KSB_TYPE" == "NDK" ]]; then ./build_android_ndk.sh; fi
   - if [[ "$KSB_TARGET" == "ANDROID"  && "$KSB_TYPE" == "GRADLE" ]]; then ./build_android_gradle.sh; fi
-  - if [[ "$KSB_TARGET" == "COVERAGE" ]]; then mkdir build && cd build; fi
-  - if [[ "$KSB_TARGET" == "COVERAGE" ]]; then cmake -GNinja -DCMAKE_BUILD_TYPE=${KSB_TYPE:-Debug} -DENABLE_CODE_COVERAGE=ON ..; fi
-  - if [[ "$KSB_TARGET" == "COVERAGE" ]]; then ninja; fi
-  - if [[ "$KSB_TARGET" == "SCAN"     ]]; then mkdir build && cd build; fi
-  - if [[ "$KSB_TARGET" == "SCAN"     ]]; then scan-build cmake -GNinja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug ..; fi
-  - if [[ "$KSB_TARGET" == "SCAN"     ]]; then scan-build ninja; fi
 
 after_success:
   # Collect coverage and push to coveralls.info.
