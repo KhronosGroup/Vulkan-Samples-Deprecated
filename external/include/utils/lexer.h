@@ -3,7 +3,7 @@
 
 Description	:	Basic C99-style lexer.
 Author		:	J.M.P. van Waveren
-Date		:	08/26/2016
+Date		:	12/10/2016
 Language	:	C99
 Format		:	Real tabs with the tab size equal to 4 spaces.
 Copyright	:	Copyright (c) 2016 Oculus VR, LLC. All Rights reserved.

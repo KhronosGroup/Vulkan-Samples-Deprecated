@@ -1286,10 +1286,10 @@ static unsigned char * ksGltf_ReadBase64( const char * base64, size_t * outSizeI
 {
 	const size_t maxSizeInBytes = ( outSizeInBytes != NULL && *outSizeInBytes > 0 ) ? *outSizeInBytes : SIZE_MAX;
 	size_t base64SizeInBytes = strlen( base64 );
-	size_t dataSizeInBytes = Base64_DecodeSizeInBytes( base64, base64SizeInBytes );
+	size_t dataSizeInBytes = ksBase64_DecodeSizeInBytes( base64, base64SizeInBytes );
 	dataSizeInBytes = MIN( dataSizeInBytes, maxSizeInBytes );
 	unsigned char * buffer = (unsigned char *)malloc( dataSizeInBytes );
-	Base64_Decode( buffer, base64, base64SizeInBytes, dataSizeInBytes );
+	ksBase64_Decode( buffer, base64, base64SizeInBytes, dataSizeInBytes );
 	if ( outSizeInBytes != NULL )
 	{
 		*outSizeInBytes = dataSizeInBytes;
@@ -1352,17 +1352,17 @@ static unsigned char * ksGltf_ReadUri( const unsigned char * binaryBuffer, const
 	return ksGltf_ReadFile( uri, outSizeInBytes );
 }
 
-static char * ksGltf_ParseUri( const ksGltfScene * scene, const Json_t * json, const char * uriName )
+static char * ksGltf_ParseUri( const ksGltfScene * scene, const ksJson * json, const char * uriName )
 {
-	const Json_t * jsonUri = Json_GetMemberByName( json, uriName );
+	const ksJson * jsonUri = ksJson_GetMemberByName( json, uriName );
 	if ( jsonUri == NULL )
 	{
 		return ksGltf_strdup( "" );
 	}
-	const Json_t * extensions = Json_GetMemberByName( json, "extensions" );
+	const ksJson * extensions = ksJson_GetMemberByName( json, "extensions" );
 	if ( extensions != NULL )
 	{
-		const char * bufferViewName = Json_GetString( Json_GetMemberByName( Json_GetMemberByName( extensions, "KHR_binary_glTF" ), "bufferView" ), "" );
+		const char * bufferViewName = ksJson_GetString( ksJson_GetMemberByName( ksJson_GetMemberByName( extensions, "KHR_binary_glTF" ), "bufferView" ), "" );
 		if ( bufferViewName[0] != '\0' )
 		{
 			const ksGltfBufferView * bufferView = ksGltf_GetBufferViewByName( scene, bufferViewName );
@@ -1374,7 +1374,7 @@ static char * ksGltf_ParseUri( const ksGltfScene * scene, const Json_t * json, c
 			}
 		}
 	}
-	return ksGltf_strdup( Json_GetString( jsonUri, "" ) );
+	return ksGltf_strdup( ksJson_GetString( jsonUri, "" ) );
 }
 
 const char * ksGltf_GetImageContainerFromUri( const char * uri )
@@ -1549,12 +1549,12 @@ static const char * ksGltf_FindShaderUri( const ksGltfShader * shader, const ksG
 	return bestUri;
 }
 
-static void ksGltf_ParseIntArray( int * elements, const int count, const Json_t * arrayNode )
+static void ksGltf_ParseIntArray( int * elements, const int count, const ksJson * arrayNode )
 {
 	int i = 0;
-	for ( ; i < Json_GetMemberCount( arrayNode ) && i < count; i++ )
+	for ( ; i < ksJson_GetMemberCount( arrayNode ) && i < count; i++ )
 	{
-		elements[i] = Json_GetInt32( Json_GetMemberByIndex( arrayNode, i ), 0 );
+		elements[i] = ksJson_GetInt32( ksJson_GetMemberByIndex( arrayNode, i ), 0 );
 	}
 	for ( ; i < count; i++ )
 	{
@@ -1562,12 +1562,12 @@ static void ksGltf_ParseIntArray( int * elements, const int count, const Json_t 
 	}
 }
 
-static void ksGltf_ParseFloatArray( float * elements, const int count, const Json_t * arrayNode )
+static void ksGltf_ParseFloatArray( float * elements, const int count, const ksJson * arrayNode )
 {
 	int i = 0;
-	for ( ; i < Json_GetMemberCount( arrayNode ) && i < count; i++ )
+	for ( ; i < ksJson_GetMemberCount( arrayNode ) && i < count; i++ )
 	{
-		elements[i] = Json_GetFloat( Json_GetMemberByIndex( arrayNode, i ), 0.0f );
+		elements[i] = ksJson_GetFloat( ksJson_GetMemberByIndex( arrayNode, i ), 0.0f );
 	}
 	for ( ; i < count; i++ )
 	{
@@ -1575,16 +1575,16 @@ static void ksGltf_ParseFloatArray( float * elements, const int count, const Jso
 	}
 }
 
-static void ksGltf_ParseUniformValue( ksGltfUniformValue * value, const Json_t * json, const ksGpuProgramParmType type, const ksGltfScene * scene )
+static void ksGltf_ParseUniformValue( ksGltfUniformValue * value, const ksJson * json, const ksGpuProgramParmType type, const ksGltfScene * scene )
 {
 	switch ( type )
 	{
-		case KS_GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED:					value->texture = ksGltf_GetTextureByName( scene, Json_GetString( json, "" ) ); break;
-		case KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT:				value->intValue[0] = Json_GetInt32( json, 0 ); break;
+		case KS_GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED:					value->texture = ksGltf_GetTextureByName( scene, ksJson_GetString( json, "" ) ); break;
+		case KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT:				value->intValue[0] = ksJson_GetInt32( json, 0 ); break;
 		case KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR2:		ksGltf_ParseIntArray( value->intValue, 16, json ); break;
 		case KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR3:		ksGltf_ParseIntArray( value->intValue, 16, json ); break;
 		case KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_INT_VECTOR4:		ksGltf_ParseIntArray( value->intValue, 16, json ); break;
-		case KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT:				value->floatValue[0] = Json_GetFloat( json, 0.0f ); break;
+		case KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT:				value->floatValue[0] = ksJson_GetFloat( json, 0.0f ); break;
 		case KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR2:		ksGltf_ParseFloatArray( value->floatValue, 2, json ); break;
 		case KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR3:		ksGltf_ParseFloatArray( value->floatValue, 3, json ); break;
 		case KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_VECTOR4:		ksGltf_ParseFloatArray( value->floatValue, 4, json ); break;
@@ -2798,7 +2798,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	// Based on a GL_MAX_UNIFORM_BLOCK_SIZE of 16384 on the ARM Mali.
 	const int MAX_JOINTS = 16384 / sizeof( ksMatrix4x4f );
 
-	Json_t * rootNode = Json_Create();
+	ksJson * rootNode = ksJson_Create();
 
 	//
 	// Load either the glTF .json or .glb
@@ -2814,7 +2814,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 		FILE * binaryFile = fopen( fileName, "rb" );
 		if ( binaryFile == NULL )
 		{
-			Json_Destroy( rootNode );
+			ksJson_Destroy( rootNode );
 			Error( "Failed to open %s", fileName );
 			return false;
 		}
@@ -2823,7 +2823,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 		if ( fread( &header, 1, sizeof( header ), binaryFile ) != sizeof( header ) )
 		{
 			fclose( binaryFile );
-			Json_Destroy( rootNode );
+			ksJson_Destroy( rootNode );
 			Error( "Failed to read glTF binary header %s", fileName );
 			return false;
 		}
@@ -2831,7 +2831,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 		if ( header.magic != GLTF_BINARY_MAGIC || header.version != GLTF_BINARY_VERSION || header.contentFormat != GLTF_BINARY_CONTENT_FORMAT )
 		{
 			fclose( binaryFile );
-			Json_Destroy( rootNode );
+			ksJson_Destroy( rootNode );
 			Error( "Invalid glTF binary header %s", fileName );
 			return false;
 		}
@@ -2841,18 +2841,18 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 		{
 			free( content );
 			fclose( binaryFile );
-			Json_Destroy( rootNode );
+			ksJson_Destroy( rootNode );
 			Error( "Failed to read binary glTF content %s", fileName );
 			return false;
 		}
 		content[header.contentLength] = '\0';	// make sure the buffer is zero terminated
 
 		const char * errorString = "";
-		if ( !Json_ReadFromBuffer( rootNode, content, &errorString ) )
+		if ( !ksJson_ReadFromBuffer( rootNode, content, &errorString ) )
 		{
 			free( content );
 			fclose( binaryFile );
-			Json_Destroy( rootNode );
+			ksJson_Destroy( rootNode );
 			Error( "Failed to load %s (%s)", fileName, errorString );
 			return false;
 		}
@@ -2867,7 +2867,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 		{
 			free( binaryBuffer );
 			fclose( binaryFile );
-			Json_Destroy( rootNode );
+			ksJson_Destroy( rootNode );
 			Error( "Failed to read binary glTF content %s", fileName );
 			return false;
 		}
@@ -2877,9 +2877,9 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	else
 	{
 		const char * errorString = "";
-		if ( !Json_ReadFromFile( rootNode, fileName, &errorString ) )
+		if ( !ksJson_ReadFromFile( rootNode, fileName, &errorString ) )
 		{
-			Json_Destroy( rootNode );
+			ksJson_Destroy( rootNode );
 			Error( "Failed to load %s (%s)", fileName, errorString );
 			return false;
 		}
@@ -2889,11 +2889,11 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	// Check the glTF JSON version.
 	//
 
-	const Json_t * asset = Json_GetMemberByName( rootNode, "asset" );
-	const char * version = Json_GetString( Json_GetMemberByName( asset, "version" ), "1.0" );
+	const ksJson * asset = ksJson_GetMemberByName( rootNode, "asset" );
+	const char * version = ksJson_GetString( ksJson_GetMemberByName( asset, "version" ), "1.0" );
 	if ( strcmp( version, GLTF_JSON_VERSION ) != 0 )
 	{
-		Json_Destroy( rootNode );
+		ksJson_Destroy( rootNode );
 		Error( "glTF version is %s instead of %s", version, GLTF_JSON_VERSION );
 		return false;
 	}
@@ -2904,15 +2904,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	{
 		const ksNanoseconds startTime = GetTimeNanoseconds();
 
-		const Json_t * buffers = Json_GetMemberByName( rootNode, "buffers" );
-		scene->bufferCount = Json_GetMemberCount( buffers );
+		const ksJson * buffers = ksJson_GetMemberByName( rootNode, "buffers" );
+		scene->bufferCount = ksJson_GetMemberCount( buffers );
 		scene->buffers = (ksGltfBuffer *) calloc( scene->bufferCount, sizeof( ksGltfBuffer ) );
 		for ( int bufferIndex = 0; bufferIndex < scene->bufferCount; bufferIndex++ )
 		{
-			const Json_t * buffer = Json_GetMemberByIndex( buffers, bufferIndex );
-			scene->buffers[bufferIndex].name = ksGltf_strdup( Json_GetMemberName( buffer ) );
-			scene->buffers[bufferIndex].byteLength = (size_t) Json_GetUint64( Json_GetMemberByName( buffer, "byteLength" ), 0 );
-			scene->buffers[bufferIndex].type = ksGltf_strdup( Json_GetString( Json_GetMemberByName( buffer, "type" ), "" ) );
+			const ksJson * buffer = ksJson_GetMemberByIndex( buffers, bufferIndex );
+			scene->buffers[bufferIndex].name = ksGltf_strdup( ksJson_GetMemberName( buffer ) );
+			scene->buffers[bufferIndex].byteLength = (size_t) ksJson_GetUint64( ksJson_GetMemberByName( buffer, "byteLength" ), 0 );
+			scene->buffers[bufferIndex].type = ksGltf_strdup( ksJson_GetString( ksJson_GetMemberByName( buffer, "type" ), "" ) );
 			if ( strcmp( scene->buffers[bufferIndex].name, "binary_glTF" ) == 0 )
 			{
 				assert( scene->buffers[bufferIndex].byteLength == binaryBufferLength );
@@ -2920,7 +2920,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			else
 			{
-				scene->buffers[bufferIndex].bufferData = ksGltf_ReadUri( binaryBuffer, Json_GetString( Json_GetMemberByName( buffer, "uri" ), "" ), NULL );
+				scene->buffers[bufferIndex].bufferData = ksGltf_ReadUri( binaryBuffer, ksJson_GetString( ksJson_GetMemberByName( buffer, "uri" ), "" ), NULL );
 			}
 			assert( scene->buffers[bufferIndex].name[0] != '\0' );
 			assert( scene->buffers[bufferIndex].byteLength != 0 );
@@ -2938,17 +2938,17 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	{
 		const ksNanoseconds startTime = GetTimeNanoseconds();
 
-		const Json_t * bufferViews = Json_GetMemberByName( rootNode, "bufferViews" );
-		scene->bufferViewCount = Json_GetMemberCount( bufferViews );
+		const ksJson * bufferViews = ksJson_GetMemberByName( rootNode, "bufferViews" );
+		scene->bufferViewCount = ksJson_GetMemberCount( bufferViews );
 		scene->bufferViews = (ksGltfBufferView *) calloc( scene->bufferViewCount, sizeof( ksGltfBufferView ) );
 		for ( int bufferViewIndex = 0; bufferViewIndex < scene->bufferViewCount; bufferViewIndex++ )
 		{
-			const Json_t * view = Json_GetMemberByIndex( bufferViews, bufferViewIndex );
-			scene->bufferViews[bufferViewIndex].name = ksGltf_strdup( Json_GetMemberName( view ) );
-			scene->bufferViews[bufferViewIndex].buffer = ksGltf_GetBufferByName( scene, Json_GetString( Json_GetMemberByName( view, "buffer" ), "" ) );
-			scene->bufferViews[bufferViewIndex].byteOffset = (size_t) Json_GetUint64( Json_GetMemberByName( view, "byteOffset" ), 0 );
-			scene->bufferViews[bufferViewIndex].byteLength = (size_t) Json_GetUint64( Json_GetMemberByName( view, "byteLength" ), 0 );
-			scene->bufferViews[bufferViewIndex].target = Json_GetUint16( Json_GetMemberByName( view, "target" ), 0 );
+			const ksJson * view = ksJson_GetMemberByIndex( bufferViews, bufferViewIndex );
+			scene->bufferViews[bufferViewIndex].name = ksGltf_strdup( ksJson_GetMemberName( view ) );
+			scene->bufferViews[bufferViewIndex].buffer = ksGltf_GetBufferByName( scene, ksJson_GetString( ksJson_GetMemberByName( view, "buffer" ), "" ) );
+			scene->bufferViews[bufferViewIndex].byteOffset = (size_t) ksJson_GetUint64( ksJson_GetMemberByName( view, "byteOffset" ), 0 );
+			scene->bufferViews[bufferViewIndex].byteLength = (size_t) ksJson_GetUint64( ksJson_GetMemberByName( view, "byteLength" ), 0 );
+			scene->bufferViews[bufferViewIndex].target = ksJson_GetUint16( ksJson_GetMemberByName( view, "target" ), 0 );
 			assert( scene->bufferViews[bufferViewIndex].name[0] != '\0' );
 			assert( scene->bufferViews[bufferViewIndex].buffer != NULL );
 			assert( scene->bufferViews[bufferViewIndex].byteLength != 0 );
@@ -2968,21 +2968,21 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	{
 		const ksNanoseconds startTime = GetTimeNanoseconds();
 
-		const Json_t * accessors = Json_GetMemberByName( rootNode, "accessors" );
-		scene->accessorCount = Json_GetMemberCount( accessors );
+		const ksJson * accessors = ksJson_GetMemberByName( rootNode, "accessors" );
+		scene->accessorCount = ksJson_GetMemberCount( accessors );
 		scene->accessors = (ksGltfAccessor *) calloc( scene->accessorCount, sizeof( ksGltfAccessor ) );
 		for ( int accessorIndex = 0; accessorIndex < scene->accessorCount; accessorIndex++ )
 		{
-			const Json_t * access = Json_GetMemberByIndex( accessors, accessorIndex );
-			scene->accessors[accessorIndex].name = ksGltf_strdup( Json_GetMemberName( access ) );
-			scene->accessors[accessorIndex].bufferView = ksGltf_GetBufferViewByName( scene, Json_GetString( Json_GetMemberByName( access, "bufferView" ), "" ) );
-			scene->accessors[accessorIndex].byteOffset = (size_t) Json_GetUint64( Json_GetMemberByName( access, "byteOffset" ), 0 );
-			scene->accessors[accessorIndex].byteStride = (size_t) Json_GetUint64( Json_GetMemberByName( access, "byteStride" ), 0 );
-			scene->accessors[accessorIndex].componentType = Json_GetUint16( Json_GetMemberByName( access, "componentType" ), 0 );
-			scene->accessors[accessorIndex].count = Json_GetInt32( Json_GetMemberByName( access, "count" ), 0 );
-			scene->accessors[accessorIndex].type =  ksGltf_strdup( Json_GetString( Json_GetMemberByName( access, "type" ), "" ) );
-			const Json_t * min = Json_GetMemberByName( access, "min" );
-			const Json_t * max = Json_GetMemberByName( access, "max" );
+			const ksJson * access = ksJson_GetMemberByIndex( accessors, accessorIndex );
+			scene->accessors[accessorIndex].name = ksGltf_strdup( ksJson_GetMemberName( access ) );
+			scene->accessors[accessorIndex].bufferView = ksGltf_GetBufferViewByName( scene, ksJson_GetString( ksJson_GetMemberByName( access, "bufferView" ), "" ) );
+			scene->accessors[accessorIndex].byteOffset = (size_t) ksJson_GetUint64( ksJson_GetMemberByName( access, "byteOffset" ), 0 );
+			scene->accessors[accessorIndex].byteStride = (size_t) ksJson_GetUint64( ksJson_GetMemberByName( access, "byteStride" ), 0 );
+			scene->accessors[accessorIndex].componentType = ksJson_GetUint16( ksJson_GetMemberByName( access, "componentType" ), 0 );
+			scene->accessors[accessorIndex].count = ksJson_GetInt32( ksJson_GetMemberByName( access, "count" ), 0 );
+			scene->accessors[accessorIndex].type =  ksGltf_strdup( ksJson_GetString( ksJson_GetMemberByName( access, "type" ), "" ) );
+			const ksJson * min = ksJson_GetMemberByName( access, "min" );
+			const ksJson * max = ksJson_GetMemberByName( access, "max" );
 			if ( min != NULL && max != NULL )
 			{
 				int componentCount = 0;
@@ -3031,34 +3031,34 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	{
 		const ksNanoseconds startTime = GetTimeNanoseconds();
 
-		const Json_t * images = Json_GetMemberByName( rootNode, "images" );
-		scene->imageCount = Json_GetMemberCount( images );
+		const ksJson * images = ksJson_GetMemberByName( rootNode, "images" );
+		scene->imageCount = ksJson_GetMemberCount( images );
 		scene->images = (ksGltfImage *) calloc( scene->imageCount, sizeof( ksGltfImage ) );
 		for ( int imageIndex = 0; imageIndex < scene->imageCount; imageIndex++ )
 		{
-			const Json_t * image = Json_GetMemberByIndex( images, imageIndex );
-			scene->images[imageIndex].name = ksGltf_strdup( Json_GetMemberName( image ) );
+			const ksJson * image = ksJson_GetMemberByIndex( images, imageIndex );
+			scene->images[imageIndex].name = ksGltf_strdup( ksJson_GetMemberName( image ) );
 			char * baseUri = ksGltf_ParseUri( scene, image, "uri" );
 
 			assert( scene->images[imageIndex].name[0] != '\0' );
 			assert( baseUri != '\0' );
 
-			const Json_t * extensions = Json_GetMemberByName( image, "extensions" );
+			const ksJson * extensions = ksJson_GetMemberByName( image, "extensions" );
 			if ( extensions != NULL )
 			{
-				const Json_t * KHR_image_versions = Json_GetMemberByName( extensions, "KHR_image_versions" );
+				const ksJson * KHR_image_versions = ksJson_GetMemberByName( extensions, "KHR_image_versions" );
 				if ( KHR_image_versions != NULL )
 				{
-					const Json_t * versions = Json_GetMemberByName( KHR_image_versions, "versions" );
-					const int versionCount = Json_GetMemberCount( versions );
+					const ksJson * versions = ksJson_GetMemberByName( KHR_image_versions, "versions" );
+					const int versionCount = ksJson_GetMemberCount( versions );
 					scene->images[imageIndex].versions = (ksGltfImageVersion *) calloc( versionCount + 1, sizeof( ksGltfImageVersion ) );
 					scene->images[imageIndex].versionCount = versionCount + 1;
 					for ( int versionIndex = 0; versionIndex < versionCount; versionIndex++ )
 					{
-						const Json_t * v = Json_GetMemberByIndex( versions, versionIndex );
-						scene->images[imageIndex].versions[versionIndex].container = ksGltf_strdup( Json_GetString( Json_GetMemberByName( v, "container" ), "" ) );
-						scene->images[imageIndex].versions[versionIndex].glInternalFormat = Json_GetUint32( Json_GetMemberByName( v, "glInternalFormat" ), 0 );
-						scene->images[imageIndex].versions[versionIndex].uri = ksGltf_strdup( Json_GetString( Json_GetMemberByName( v, "uri" ), "" ) );
+						const ksJson * v = ksJson_GetMemberByIndex( versions, versionIndex );
+						scene->images[imageIndex].versions[versionIndex].container = ksGltf_strdup( ksJson_GetString( ksJson_GetMemberByName( v, "container" ), "" ) );
+						scene->images[imageIndex].versions[versionIndex].glInternalFormat = ksJson_GetUint32( ksJson_GetMemberByName( v, "glInternalFormat" ), 0 );
+						scene->images[imageIndex].versions[versionIndex].uri = ksGltf_strdup( ksJson_GetString( ksJson_GetMemberByName( v, "uri" ), "" ) );
 					}
 				}
 			}
@@ -3084,17 +3084,17 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	{
 		const ksNanoseconds startTime = GetTimeNanoseconds();
 
-		const Json_t * samplers = Json_GetMemberByName( rootNode, "samplers" );
-		scene->samplerCount = Json_GetMemberCount( samplers );
+		const ksJson * samplers = ksJson_GetMemberByName( rootNode, "samplers" );
+		scene->samplerCount = ksJson_GetMemberCount( samplers );
 		scene->samplers = (ksGltfSampler *) calloc( scene->samplerCount, sizeof( ksGltfSampler ) );
 		for ( int samplerIndex = 0; samplerIndex < scene->samplerCount; samplerIndex++ )
 		{
-			const Json_t * sampler = Json_GetMemberByIndex( samplers, samplerIndex );
-			scene->samplers[samplerIndex].name = ksGltf_strdup( Json_GetMemberName( sampler ) );
-			scene->samplers[samplerIndex].magFilter = Json_GetUint16( Json_GetMemberByName( sampler, "magFilter" ), GL_LINEAR );
-			scene->samplers[samplerIndex].minFilter = Json_GetUint16( Json_GetMemberByName( sampler, "minFilter" ), GL_NEAREST_MIPMAP_LINEAR );
-			scene->samplers[samplerIndex].wrapS = Json_GetUint16( Json_GetMemberByName( sampler, "wrapS" ), GL_REPEAT );
-			scene->samplers[samplerIndex].wrapT = Json_GetUint16( Json_GetMemberByName( sampler, "wrapT" ), GL_REPEAT );
+			const ksJson * sampler = ksJson_GetMemberByIndex( samplers, samplerIndex );
+			scene->samplers[samplerIndex].name = ksGltf_strdup( ksJson_GetMemberName( sampler ) );
+			scene->samplers[samplerIndex].magFilter = ksJson_GetUint16( ksJson_GetMemberByName( sampler, "magFilter" ), GL_LINEAR );
+			scene->samplers[samplerIndex].minFilter = ksJson_GetUint16( ksJson_GetMemberByName( sampler, "minFilter" ), GL_NEAREST_MIPMAP_LINEAR );
+			scene->samplers[samplerIndex].wrapS = ksJson_GetUint16( ksJson_GetMemberByName( sampler, "wrapS" ), GL_REPEAT );
+			scene->samplers[samplerIndex].wrapT = ksJson_GetUint16( ksJson_GetMemberByName( sampler, "wrapT" ), GL_REPEAT );
 			assert( scene->samplers[samplerIndex].name[0] != '\0' );
 		}
 		ksGltf_CreateSamplerNameHash( scene );
@@ -3109,15 +3109,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	{
 		const ksNanoseconds startTime = GetTimeNanoseconds();
 
-		const Json_t * textures = Json_GetMemberByName( rootNode, "textures" );
-		scene->textureCount = Json_GetMemberCount( textures );
+		const ksJson * textures = ksJson_GetMemberByName( rootNode, "textures" );
+		scene->textureCount = ksJson_GetMemberCount( textures );
 		scene->textures = (ksGltfTexture *) calloc( scene->textureCount, sizeof( ksGltfTexture ) );
 		for ( int textureIndex = 0; textureIndex < scene->textureCount; textureIndex++ )
 		{
-			const Json_t * texture = Json_GetMemberByIndex( textures, textureIndex );
-			scene->textures[textureIndex].name = ksGltf_strdup( Json_GetMemberName( texture ) );
-			scene->textures[textureIndex].image = ksGltf_GetImageByName( scene, Json_GetString( Json_GetMemberByName( texture, "source" ), "" ) );
-			scene->textures[textureIndex].sampler = ksGltf_GetSamplerByName( scene, Json_GetString( Json_GetMemberByName( texture, "sampler" ), "" ) );
+			const ksJson * texture = ksJson_GetMemberByIndex( textures, textureIndex );
+			scene->textures[textureIndex].name = ksGltf_strdup( ksJson_GetMemberName( texture ) );
+			scene->textures[textureIndex].image = ksGltf_GetImageByName( scene, ksJson_GetString( ksJson_GetMemberByName( texture, "source" ), "" ) );
+			scene->textures[textureIndex].sampler = ksGltf_GetSamplerByName( scene, ksJson_GetString( ksJson_GetMemberByName( texture, "sampler" ), "" ) );
 
 			assert( scene->textures[textureIndex].name[0] != '\0' );
 			assert( scene->textures[textureIndex].image != NULL );
@@ -3153,35 +3153,35 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 
 		const int defaultGlslShaderCount = 3;
 
-		const Json_t * shaders = Json_GetMemberByName( rootNode, "shaders" );
-		scene->shaderCount = Json_GetMemberCount( shaders );
+		const ksJson * shaders = ksJson_GetMemberByName( rootNode, "shaders" );
+		scene->shaderCount = ksJson_GetMemberCount( shaders );
 		scene->shaders = (ksGltfShader *) calloc( scene->shaderCount, sizeof( ksGltfShader ) );
 		for ( int shaderIndex = 0; shaderIndex < scene->shaderCount; shaderIndex++ )
 		{
-			const Json_t * shader = Json_GetMemberByIndex( shaders, shaderIndex );
-			scene->shaders[shaderIndex].name = ksGltf_strdup( Json_GetMemberName( shader ) );
-			scene->shaders[shaderIndex].stage = Json_GetUint16( Json_GetMemberByName( shader, "type" ), 0 );
+			const ksJson * shader = ksJson_GetMemberByIndex( shaders, shaderIndex );
+			scene->shaders[shaderIndex].name = ksGltf_strdup( ksJson_GetMemberName( shader ) );
+			scene->shaders[shaderIndex].stage = ksJson_GetUint16( ksJson_GetMemberByName( shader, "type" ), 0 );
 
 			assert( scene->shaders[shaderIndex].name[0] != '\0' );
 			assert( scene->shaders[shaderIndex].stage != 0 );
 
-			const Json_t * extensions = Json_GetMemberByName( shader, "extensions" );
+			const ksJson * extensions = ksJson_GetMemberByName( shader, "extensions" );
 			if ( extensions != NULL )
 			{
 				for ( int shaderType = 0; shaderType < GLTF_SHADER_TYPE_MAX; shaderType++ )
 				{
-					const Json_t * shader_versions = Json_GetMemberByName( extensions, shaderVersionExtensions[shaderType] );
+					const ksJson * shader_versions = ksJson_GetMemberByName( extensions, shaderVersionExtensions[shaderType] );
 					if ( shader_versions != NULL )
 					{
-						const int count = Json_GetMemberCount( shader_versions );
+						const int count = ksJson_GetMemberCount( shader_versions );
 						const int extra = ( shaderType == GLTF_SHADER_TYPE_GLSL ) * defaultGlslShaderCount;
 						scene->shaders[shaderIndex].shaders[shaderType] = (ksGltfShaderVersion *) calloc( count + extra, sizeof( ksGltfShaderVersion ) );
 						scene->shaders[shaderIndex].shaderCount[shaderType] = count + extra;
 						for ( int index = 0; index < count; index++ )
 						{
-							const Json_t * glslShader = Json_GetMemberByIndex( shader_versions, index );
-							scene->shaders[shaderIndex].shaders[shaderType][index].api = ksGltf_strdup( Json_GetString( Json_GetMemberByName( glslShader, "api" ), "" ) );
-							scene->shaders[shaderIndex].shaders[shaderType][index].version = ksGltf_strdup( Json_GetString( Json_GetMemberByName( glslShader, "version" ), "" ) );
+							const ksJson * glslShader = ksJson_GetMemberByIndex( shader_versions, index );
+							scene->shaders[shaderIndex].shaders[shaderType][index].api = ksGltf_strdup( ksJson_GetString( ksJson_GetMemberByName( glslShader, "api" ), "" ) );
+							scene->shaders[shaderIndex].shaders[shaderType][index].version = ksGltf_strdup( ksJson_GetString( ksJson_GetMemberByName( glslShader, "version" ), "" ) );
 							scene->shaders[shaderIndex].shaders[shaderType][index].uri = ksGltf_ParseUri( scene, glslShader, "uri" );
 						}
 					}
@@ -3231,21 +3231,21 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	{
 		const ksNanoseconds startTime = GetTimeNanoseconds();
 
-		const Json_t * programs = Json_GetMemberByName( rootNode, "programs" );
-		scene->programCount = Json_GetMemberCount( programs );
+		const ksJson * programs = ksJson_GetMemberByName( rootNode, "programs" );
+		scene->programCount = ksJson_GetMemberCount( programs );
 		scene->programs = (ksGltfProgram *) calloc( scene->programCount, sizeof( ksGltfProgram ) );
 		for ( int programIndex = 0; programIndex < scene->programCount; programIndex++ )
 		{
-			const Json_t * program = Json_GetMemberByIndex( programs, programIndex );
-			const char * vertexShaderName = Json_GetString( Json_GetMemberByName( program, "vertexShader" ), "" );
-			const char * fragmentShaderName = Json_GetString( Json_GetMemberByName( program, "fragmentShader" ), "" );
+			const ksJson * program = ksJson_GetMemberByIndex( programs, programIndex );
+			const char * vertexShaderName = ksJson_GetString( ksJson_GetMemberByName( program, "vertexShader" ), "" );
+			const char * fragmentShaderName = ksJson_GetString( ksJson_GetMemberByName( program, "fragmentShader" ), "" );
 			const ksGltfShader * vertexShader = ksGltf_GetShaderByName( scene, vertexShaderName );
 			const ksGltfShader * fragmentShader = ksGltf_GetShaderByName( scene, fragmentShaderName );
 
 			assert( vertexShader != NULL );
 			assert( fragmentShader != NULL );
 
-			scene->programs[programIndex].name = ksGltf_strdup( Json_GetMemberName( program ) );
+			scene->programs[programIndex].name = ksGltf_strdup( ksJson_GetMemberName( program ) );
 			assert( scene->programs[programIndex].name[0] != '\0' );
 
 #if GRAPHICS_API_OPENGL == 1
@@ -3297,17 +3297,17 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	{
 		const ksNanoseconds startTime = GetTimeNanoseconds();
 
-		const Json_t * techniques = Json_GetMemberByName( rootNode, "techniques" );
-		scene->techniqueCount = Json_GetMemberCount( techniques );
+		const ksJson * techniques = ksJson_GetMemberByName( rootNode, "techniques" );
+		scene->techniqueCount = ksJson_GetMemberCount( techniques );
 		scene->techniques = (ksGltfTechnique *) calloc( scene->techniqueCount, sizeof( ksGltfTechnique ) );
 		for ( int techniqueIndex = 0; techniqueIndex < scene->techniqueCount; techniqueIndex++ )
 		{
-			const Json_t * technique = Json_GetMemberByIndex( techniques, techniqueIndex );
-			scene->techniques[techniqueIndex].name = ksGltf_strdup( Json_GetMemberName( technique ) );
+			const ksJson * technique = ksJson_GetMemberByIndex( techniques, techniqueIndex );
+			scene->techniques[techniqueIndex].name = ksGltf_strdup( ksJson_GetMemberName( technique ) );
 
 			assert( scene->techniques[techniqueIndex].name[0] != '\0' );
 
-			const Json_t * parameters = Json_GetMemberByName( technique, "parameters" );
+			const ksJson * parameters = ksJson_GetMemberByName( technique, "parameters" );
 
 #if GRAPHICS_API_OPENGL == 1 || GRAPHICS_API_OPENGL_ES == 1
 			int conversion = KS_GLSL_CONVERSION_FLAG_JOINT_BUFFER | KS_GLSL_CONVERSION_FLAG_LAYOUT_OPENGL |
@@ -3327,15 +3327,15 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			memcpy( scene->techniques[techniqueIndex].vertexAttributeLayout, DefaultVertexAttributeLayout, sizeof( DefaultVertexAttributeLayout ) );
 
 			int vertexAttribsFlags = 0;
-			const Json_t * attributes = Json_GetMemberByName( technique, "attributes" );
-			const int attributeCount = Json_GetMemberCount( attributes );
+			const ksJson * attributes = ksJson_GetMemberByName( technique, "attributes" );
+			const int attributeCount = ksJson_GetMemberCount( attributes );
 			scene->techniques[techniqueIndex].attributeCount = attributeCount;
 			scene->techniques[techniqueIndex].attributes = (ksGltfVertexAttribute *) calloc( attributeCount, sizeof( ksGltfVertexAttribute ) );
 			for ( int j = 0; j < attributeCount; j++ )
 			{
-				const Json_t * attrib = Json_GetMemberByIndex( attributes, j );
-				const char * attribName = Json_GetMemberName( attrib );
-				const char * parmName = Json_GetString( attrib, "" );
+				const ksJson * attrib = ksJson_GetMemberByIndex( attributes, j );
+				const char * attribName = ksJson_GetMemberName( attrib );
+				const char * parmName = ksJson_GetString( attrib, "" );
 				// Check for default shader.
 				if ( parmName[0] == '\0' )
 				{
@@ -3347,9 +3347,9 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 					break;
 				}
 
-				const Json_t * parameter = Json_GetMemberByName( parameters, parmName );
-				const char * semantic = Json_GetString( Json_GetMemberByName( parameter, "semantic" ), "" );
-				const int type = Json_GetUint16( Json_GetMemberByName( parameter, "type" ), 0 );
+				const ksJson * parameter = ksJson_GetMemberByName( parameters, parmName );
+				const char * semantic = ksJson_GetString( ksJson_GetMemberByName( parameter, "semantic" ), "" );
+				const int type = ksJson_GetUint16( ksJson_GetMemberByName( parameter, "type" ), 0 );
 
 				int attributeFlag = 0;
 				if ( strcmp( semantic, "POSITION" ) == 0 )			{ assert( type == GL_FLOAT_VEC3 ); attributeFlag |= VERTEX_ATTRIBUTE_FLAG_POSITION; }
@@ -3412,63 +3412,63 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 
 			const char * semanticUniforms[GLTF_UNIFORM_SEMANTIC_MAX] = { 0 };
 
-			const Json_t * uniforms = Json_GetMemberByName( technique, "uniforms" );
-			const int uniformCount = Json_GetMemberCount( uniforms );
+			const ksJson * uniforms = ksJson_GetMemberByName( technique, "uniforms" );
+			const int uniformCount = ksJson_GetMemberCount( uniforms );
 			scene->techniques[techniqueIndex].parms = (ksGpuProgramParm *) calloc( uniformCount, sizeof( ksGpuProgramParm ) );
 			scene->techniques[techniqueIndex].uniformCount = uniformCount;
 			scene->techniques[techniqueIndex].uniforms = (ksGltfUniform *) calloc( uniformCount, sizeof( ksGltfUniform ) );
 			memset( scene->techniques[techniqueIndex].uniforms, 0, uniformCount * sizeof( ksGltfUniform ) );
 			for ( int uniformIndex = 0; uniformIndex < uniformCount; uniformIndex++ )
 			{
-				const Json_t * uniform = Json_GetMemberByIndex( uniforms, uniformIndex );
-				const char * uniformName = Json_GetMemberName( uniform );
-				const char * parmName = Json_GetString( uniform, "" );
+				const ksJson * uniform = ksJson_GetMemberByIndex( uniforms, uniformIndex );
+				const char * uniformName = ksJson_GetMemberName( uniform );
+				const char * parmName = ksJson_GetString( uniform, "" );
 
-				const Json_t * parameter = Json_GetMemberByName( parameters, parmName );
-				const char * semanticName = Json_GetString( Json_GetMemberByName( parameter, "semantic" ), "" );
-				const int type = Json_GetUint16( Json_GetMemberByName( parameter, "type" ), 0 );
-				const int count = Json_GetUint32( Json_GetMemberByName( parameter, "count" ), 0 );
-				const char * node = Json_GetString( Json_GetMemberByName( parameter, "node" ), "" );
+				const ksJson * parameter = ksJson_GetMemberByName( parameters, parmName );
+				const char * semanticName = ksJson_GetString( ksJson_GetMemberByName( parameter, "semantic" ), "" );
+				const int type = ksJson_GetUint16( ksJson_GetMemberByName( parameter, "type" ), 0 );
+				const int count = ksJson_GetUint32( ksJson_GetMemberByName( parameter, "count" ), 0 );
+				const char * node = ksJson_GetString( ksJson_GetMemberByName( parameter, "node" ), "" );
 				int stageFlags = 0;
 				int binding = 0;
 
-				const Json_t * extensions = Json_GetMemberByName( parameter, "extensions" );
+				const ksJson * extensions = ksJson_GetMemberByName( parameter, "extensions" );
 				if ( extensions != NULL )
 				{
-					const Json_t * KHR_technique_uniform_stages = Json_GetMemberByName( extensions, "KHR_technique_uniform_stages" );
+					const ksJson * KHR_technique_uniform_stages = ksJson_GetMemberByName( extensions, "KHR_technique_uniform_stages" );
 					if ( KHR_technique_uniform_stages != NULL )
 					{
-						const Json_t * stageArray = Json_GetMemberByName( KHR_technique_uniform_stages, "stages" );
-						const int stageCount = Json_GetMemberCount( stageArray );
+						const ksJson * stageArray = ksJson_GetMemberByName( KHR_technique_uniform_stages, "stages" );
+						const int stageCount = ksJson_GetMemberCount( stageArray );
 						for ( int stateIndex = 0; stateIndex < stageCount; stateIndex++ )
 						{
-							stageFlags |= ksGltf_GetProgramStageFlag( Json_GetUint16( Json_GetMemberByIndex( stageArray, stateIndex ), 0 ) );
+							stageFlags |= ksGltf_GetProgramStageFlag( ksJson_GetUint16( ksJson_GetMemberByIndex( stageArray, stateIndex ), 0 ) );
 						}
 					}
 
 #if GRAPHICS_API_OPENGL == 1 || GRAPHICS_API_OPENGL_ES == 1
-					const Json_t * KHR_technique_uniform_binding_opengl = Json_GetMemberByName( extensions, "KHR_technique_uniform_binding_opengl" );
+					const ksJson * KHR_technique_uniform_binding_opengl = ksJson_GetMemberByName( extensions, "KHR_technique_uniform_binding_opengl" );
 					if ( KHR_technique_uniform_binding_opengl != NULL )
 					{
-						binding = Json_GetUint32( Json_GetMemberByName( parameter, "binding" ), 0 );
+						binding = ksJson_GetUint32( ksJson_GetMemberByName( parameter, "binding" ), 0 );
 					}
 #elif GRAPHICS_API_VULKAN == 1
-					const Json_t * KHR_technique_uniform_binding_vulkan = Json_GetMemberByName( extensions, "KHR_technique_uniform_binding_vulkan" );
+					const ksJson * KHR_technique_uniform_binding_vulkan = ksJson_GetMemberByName( extensions, "KHR_technique_uniform_binding_vulkan" );
 					if ( KHR_technique_uniform_binding_vulkan != NULL )
 					{
-						binding = Json_GetUint32( Json_GetMemberByName( parameter, "binding" ), 0 );
+						binding = ksJson_GetUint32( ksJson_GetMemberByName( parameter, "binding" ), 0 );
 					}
 #elif GRAPHICS_API_D3D == 1
-					const Json_t * KHR_technique_uniform_binding_d3d = Json_GetMemberByName( extensions, "KHR_technique_uniform_binding_d3d" );
+					const ksJson * KHR_technique_uniform_binding_d3d = ksJson_GetMemberByName( extensions, "KHR_technique_uniform_binding_d3d" );
 					if ( KHR_technique_uniform_binding_d3d != NULL )
 					{
-						binding = Json_GetUint32( Json_GetMemberByName( parameter, "binding" ), 0 );
+						binding = ksJson_GetUint32( ksJson_GetMemberByName( parameter, "binding" ), 0 );
 					}
 #elif GRAPHICS_API_METAL == 1
-					const Json_t * KHR_technique_uniform_binding_metal = Json_GetMemberByName( extensions, "KHR_technique_uniform_binding_metal" );
+					const ksJson * KHR_technique_uniform_binding_metal = ksJson_GetMemberByName( extensions, "KHR_technique_uniform_binding_metal" );
 					if ( KHR_technique_uniform_binding_metal != NULL )
 					{
-						binding = Json_GetUint32( Json_GetMemberByName( parameter, "binding" ), 0 );
+						binding = ksJson_GetUint32( ksJson_GetMemberByName( parameter, "binding" ), 0 );
 					}
 #endif
 				}
@@ -3532,7 +3532,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 				scene->techniques[techniqueIndex].uniforms[uniformIndex].type = parmType;
 				scene->techniques[techniqueIndex].uniforms[uniformIndex].index = uniformIndex;
 
-				const Json_t * value = Json_GetMemberByName( parameter, "value" );
+				const ksJson * value = ksJson_GetMemberByName( parameter, "value" );
 				if ( value != NULL )
 				{
 					ksGltfUniform * techniqueUniform = &scene->techniques[techniqueIndex].uniforms[uniformIndex];
@@ -3562,12 +3562,12 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			scene->techniques[techniqueIndex].rop.blendSrcAlpha = KS_GPU_BLEND_FACTOR_ONE;
 			scene->techniques[techniqueIndex].rop.blendDstAlpha = KS_GPU_BLEND_FACTOR_ZERO;
 
-			const Json_t * states = Json_GetMemberByName( technique, "states" );
-			const Json_t * enable = Json_GetMemberByName( states, "enable" );
-			const int enableCount = Json_GetMemberCount( enable );
+			const ksJson * states = ksJson_GetMemberByName( technique, "states" );
+			const ksJson * enable = ksJson_GetMemberByName( states, "enable" );
+			const int enableCount = ksJson_GetMemberCount( enable );
 			for ( int enableIndex = 0; enableIndex < enableCount; enableIndex++ )
 			{
-				const int enableState = Json_GetUint16( Json_GetMemberByIndex( enable, enableIndex ), 0 );
+				const int enableState = ksJson_GetUint16( ksJson_GetMemberByIndex( enable, enableIndex ), 0 );
 				switch ( enableState )
 				{
 					case GL_BLEND:
@@ -3594,61 +3594,61 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 				}
 			}
 
-			const Json_t * functions = Json_GetMemberByName( states, "functions" );
-			const int functionCount = Json_GetMemberCount( functions );
+			const ksJson * functions = ksJson_GetMemberByName( states, "functions" );
+			const int functionCount = ksJson_GetMemberCount( functions );
 			for ( int functionIndex = 0; functionIndex < functionCount; functionIndex++ )
 			{
-				const Json_t * func = Json_GetMemberByIndex( functions, functionIndex );
-				const char * funcName = Json_GetMemberName( func );
+				const ksJson * func = ksJson_GetMemberByIndex( functions, functionIndex );
+				const char * funcName = ksJson_GetMemberName( func );
 				if ( strcmp( funcName, "blendColor" ) == 0 )
 				{
 					// [float:red, float:blue, float:green, float:alpha]
-					scene->techniques[techniqueIndex].rop.blendColor.x = Json_GetFloat( Json_GetMemberByIndex( func, 0 ), 0.0f );
-					scene->techniques[techniqueIndex].rop.blendColor.y = Json_GetFloat( Json_GetMemberByIndex( func, 1 ), 0.0f );
-					scene->techniques[techniqueIndex].rop.blendColor.z = Json_GetFloat( Json_GetMemberByIndex( func, 2 ), 0.0f );
-					scene->techniques[techniqueIndex].rop.blendColor.w = Json_GetFloat( Json_GetMemberByIndex( func, 3 ), 0.0f );
+					scene->techniques[techniqueIndex].rop.blendColor.x = ksJson_GetFloat( ksJson_GetMemberByIndex( func, 0 ), 0.0f );
+					scene->techniques[techniqueIndex].rop.blendColor.y = ksJson_GetFloat( ksJson_GetMemberByIndex( func, 1 ), 0.0f );
+					scene->techniques[techniqueIndex].rop.blendColor.z = ksJson_GetFloat( ksJson_GetMemberByIndex( func, 2 ), 0.0f );
+					scene->techniques[techniqueIndex].rop.blendColor.w = ksJson_GetFloat( ksJson_GetMemberByIndex( func, 3 ), 0.0f );
 				}
 				else if ( strcmp( funcName, "blendEquationSeparate" ) == 0 )
 				{
 					// [GLenum:GL_FUNC_* (rgb), GLenum:GL_FUNC_* (alpha)]
-					scene->techniques[techniqueIndex].rop.blendOpColor = ksGltf_GetBlendOp( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
-					scene->techniques[techniqueIndex].rop.blendOpAlpha = ksGltf_GetBlendOp( Json_GetUint16( Json_GetMemberByIndex( func, 1 ), 0 ) );
+					scene->techniques[techniqueIndex].rop.blendOpColor = ksGltf_GetBlendOp( ksJson_GetUint16( ksJson_GetMemberByIndex( func, 0 ), 0 ) );
+					scene->techniques[techniqueIndex].rop.blendOpAlpha = ksGltf_GetBlendOp( ksJson_GetUint16( ksJson_GetMemberByIndex( func, 1 ), 0 ) );
 				}
 				else if ( strcmp( funcName, "blendFuncSeparate" ) == 0 )
 				{
 					// [GLenum:GL_ONE (srcRGB), GLenum:GL_ZERO (dstRGB), GLenum:GL_ONE (srcAlpha), GLenum:GL_ZERO (dstAlpha)]
-					scene->techniques[techniqueIndex].rop.blendSrcColor = ksGltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
-					scene->techniques[techniqueIndex].rop.blendDstColor = ksGltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 1 ), 0 ) );
-					scene->techniques[techniqueIndex].rop.blendSrcAlpha = ksGltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 2 ), 0 ) );
-					scene->techniques[techniqueIndex].rop.blendDstAlpha = ksGltf_GetBlendFactor( Json_GetUint16( Json_GetMemberByIndex( func, 3 ), 0 ) );
+					scene->techniques[techniqueIndex].rop.blendSrcColor = ksGltf_GetBlendFactor( ksJson_GetUint16( ksJson_GetMemberByIndex( func, 0 ), 0 ) );
+					scene->techniques[techniqueIndex].rop.blendDstColor = ksGltf_GetBlendFactor( ksJson_GetUint16( ksJson_GetMemberByIndex( func, 1 ), 0 ) );
+					scene->techniques[techniqueIndex].rop.blendSrcAlpha = ksGltf_GetBlendFactor( ksJson_GetUint16( ksJson_GetMemberByIndex( func, 2 ), 0 ) );
+					scene->techniques[techniqueIndex].rop.blendDstAlpha = ksGltf_GetBlendFactor( ksJson_GetUint16( ksJson_GetMemberByIndex( func, 3 ), 0 ) );
 				}
 				else if ( strcmp( funcName, "colorMask" ) == 0 )
 				{
 					// [bool:red, bool:green, bool:blue, bool:alpha]
-					scene->techniques[techniqueIndex].rop.redWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 0 ), false );
-					scene->techniques[techniqueIndex].rop.blueWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 1 ), false );
-					scene->techniques[techniqueIndex].rop.greenWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 2 ), false );
-					scene->techniques[techniqueIndex].rop.alphaWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 3 ), false );
+					scene->techniques[techniqueIndex].rop.redWriteEnable = ksJson_GetBool( ksJson_GetMemberByIndex( func, 0 ), false );
+					scene->techniques[techniqueIndex].rop.blueWriteEnable = ksJson_GetBool( ksJson_GetMemberByIndex( func, 1 ), false );
+					scene->techniques[techniqueIndex].rop.greenWriteEnable = ksJson_GetBool( ksJson_GetMemberByIndex( func, 2 ), false );
+					scene->techniques[techniqueIndex].rop.alphaWriteEnable = ksJson_GetBool( ksJson_GetMemberByIndex( func, 3 ), false );
 				}
 				else if ( strcmp( funcName, "cullFace" ) == 0 )
 				{
 					// [GLenum:GL_BACK,GL_FRONT]
-					scene->techniques[techniqueIndex].rop.cullMode = ksGltf_GetCullMode( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+					scene->techniques[techniqueIndex].rop.cullMode = ksGltf_GetCullMode( ksJson_GetUint16( ksJson_GetMemberByIndex( func, 0 ), 0 ) );
 				}
 				else if ( strcmp( funcName, "depthFunc" ) == 0 )
 				{
 					// [GLenum:GL_LESS,GL_LEQUAL,GL_GREATER]
-					scene->techniques[techniqueIndex].rop.depthCompare = ksGltf_GetCompareOp( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+					scene->techniques[techniqueIndex].rop.depthCompare = ksGltf_GetCompareOp( ksJson_GetUint16( ksJson_GetMemberByIndex( func, 0 ), 0 ) );
 				}
 				else if ( strcmp( funcName, "depthMask" ) == 0 )
 				{
 					// [bool:mask]
-					scene->techniques[techniqueIndex].rop.depthWriteEnable = Json_GetBool( Json_GetMemberByIndex( func, 0 ), false );
+					scene->techniques[techniqueIndex].rop.depthWriteEnable = ksJson_GetBool( ksJson_GetMemberByIndex( func, 0 ), false );
 				}
 				else if ( strcmp( funcName, "frontFace" ) == 0 )
 				{
 					// [Glenum:GL_CCW,GL_CW]
-					scene->techniques[techniqueIndex].rop.frontFace = ksGltf_GetFrontFace( Json_GetUint16( Json_GetMemberByIndex( func, 0 ), 0 ) );
+					scene->techniques[techniqueIndex].rop.frontFace = ksGltf_GetFrontFace( ksJson_GetUint16( ksJson_GetMemberByIndex( func, 0 ), 0 ) );
 				}
 				else if ( strcmp( funcName, "lineWidth" ) == 0 )
 				{
@@ -3672,7 +3672,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 				}
 			}
 
-			ksGltfProgram * program = ksGltf_GetProgramByName( scene, Json_GetString( Json_GetMemberByName( technique, "program" ), "" ) );
+			ksGltfProgram * program = ksGltf_GetProgramByName( scene, ksJson_GetString( ksJson_GetMemberByName( technique, "program" ), "" ) );
 			assert( program != NULL );
 
 			ksGltf_CreateTechniqueProgram( context, &scene->techniques[techniqueIndex], program, conversion, semanticUniforms );
@@ -3699,25 +3699,25 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	{
 		const ksNanoseconds startTime = GetTimeNanoseconds();
 
-		const Json_t * materials = Json_GetMemberByName( rootNode, "materials" );
-		scene->materialCount = Json_GetMemberCount( materials );
+		const ksJson * materials = ksJson_GetMemberByName( rootNode, "materials" );
+		scene->materialCount = ksJson_GetMemberCount( materials );
 		scene->materials = (ksGltfMaterial *) calloc( scene->materialCount, sizeof( ksGltfMaterial ) );
 		for ( int materialIndex = 0; materialIndex < scene->materialCount; materialIndex++ )
 		{
-			const Json_t * material = Json_GetMemberByIndex( materials, materialIndex );
-			scene->materials[materialIndex].name = ksGltf_strdup( Json_GetMemberName( material ) );
+			const ksJson * material = ksJson_GetMemberByIndex( materials, materialIndex );
+			scene->materials[materialIndex].name = ksGltf_strdup( ksJson_GetMemberName( material ) );
 			assert( scene->materials[materialIndex].name[0] != '\0' );
 
-			const ksGltfTechnique * technique = ksGltf_GetTechniqueByName( scene, Json_GetString( Json_GetMemberByName( material, "technique" ), "" ) );
+			const ksGltfTechnique * technique = ksGltf_GetTechniqueByName( scene, ksJson_GetString( ksJson_GetMemberByName( material, "technique" ), "" ) );
 			if ( settings->useMultiView )
 			{
-				const Json_t * extensions = Json_GetMemberByName( material, "extensions" );
+				const ksJson * extensions = ksJson_GetMemberByName( material, "extensions" );
 				if ( extensions != NULL )
 				{
-					const Json_t * KHR_glsl_multi_view = Json_GetMemberByName( extensions, "KHR_glsl_multi_view" );
+					const ksJson * KHR_glsl_multi_view = ksJson_GetMemberByName( extensions, "KHR_glsl_multi_view" );
 					if ( KHR_glsl_multi_view != NULL )
 					{
-						const ksGltfTechnique * multiViewTechnique = ksGltf_GetTechniqueByName( scene, Json_GetString( Json_GetMemberByName( KHR_glsl_multi_view, "technique" ), "" ) );
+						const ksGltfTechnique * multiViewTechnique = ksGltf_GetTechniqueByName( scene, ksJson_GetString( ksJson_GetMemberByName( KHR_glsl_multi_view, "technique" ), "" ) );
 						assert( multiViewTechnique != NULL );
 						technique = multiViewTechnique;
 					}
@@ -3726,13 +3726,13 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			scene->materials[materialIndex].technique = technique;
 			assert( scene->materials[materialIndex].technique != NULL );
 
-			const Json_t * values = Json_GetMemberByName( material, "values" );
-			scene->materials[materialIndex].valueCount = Json_GetMemberCount( values );
+			const ksJson * values = ksJson_GetMemberByName( material, "values" );
+			scene->materials[materialIndex].valueCount = ksJson_GetMemberCount( values );
 			scene->materials[materialIndex].values = (ksGltfMaterialValue *) calloc( scene->materials[materialIndex].valueCount, sizeof( ksGltfMaterialValue ) );
 			for ( int valueIndex = 0; valueIndex < scene->materials[materialIndex].valueCount; valueIndex++ )
 			{
-				const Json_t * value = Json_GetMemberByIndex( values, valueIndex );
-				const char * valueName = Json_GetMemberName( value );
+				const ksJson * value = ksJson_GetMemberByIndex( values, valueIndex );
+				const char * valueName = ksJson_GetMemberName( value );
 				ksGltfUniform * uniform = NULL;
 				for ( int uniformIndex = 0; uniformIndex < technique->uniformCount; uniformIndex++ )
 				{
@@ -3782,43 +3782,43 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	{
 		const ksNanoseconds startTime = GetTimeNanoseconds();
 
-		const Json_t * models = Json_GetMemberByName( rootNode, "meshes" );
-		scene->modelCount = Json_GetMemberCount( models );
+		const ksJson * models = ksJson_GetMemberByName( rootNode, "meshes" );
+		scene->modelCount = ksJson_GetMemberCount( models );
 		scene->models = (ksGltfModel *) calloc( scene->modelCount, sizeof( ksGltfModel ) );
 		ksGltfGeometryAccessors ** accessors = (ksGltfGeometryAccessors **) calloc( scene->modelCount, sizeof( ksGltfGeometryAccessors * ) );
 		for ( int modelIndex = 0; modelIndex < scene->modelCount; modelIndex++ )
 		{
-			const Json_t * model = Json_GetMemberByIndex( models, modelIndex );
-			scene->models[modelIndex].name = ksGltf_strdup( Json_GetMemberName( model ) );
+			const ksJson * model = ksJson_GetMemberByIndex( models, modelIndex );
+			scene->models[modelIndex].name = ksGltf_strdup( ksJson_GetMemberName( model ) );
 
 			ksVector3f_Set( &scene->models[modelIndex].mins, FLT_MAX );
 			ksVector3f_Set( &scene->models[modelIndex].maxs, -FLT_MAX );
 
 			assert( scene->models[modelIndex].name[0] != '\0' );
 
-			const Json_t * primitives = Json_GetMemberByName( model, "primitives" );
-			scene->models[modelIndex].surfaceCount = Json_GetMemberCount( primitives );
+			const ksJson * primitives = ksJson_GetMemberByName( model, "primitives" );
+			scene->models[modelIndex].surfaceCount = ksJson_GetMemberCount( primitives );
 			scene->models[modelIndex].surfaces = (ksGltfSurface *) calloc( scene->models[modelIndex].surfaceCount, sizeof( ksGltfSurface ) );
 			accessors[modelIndex] = (ksGltfGeometryAccessors *) calloc( scene->models[modelIndex].surfaceCount, sizeof( ksGltfGeometryAccessors ) );
 			for ( int surfaceIndex = 0; surfaceIndex < scene->models[modelIndex].surfaceCount; surfaceIndex++ )
 			{
 				ksGltfSurface * surface = &scene->models[modelIndex].surfaces[surfaceIndex];
-				const Json_t * primitive = Json_GetMemberByIndex( primitives, surfaceIndex );
-				const Json_t * attributes = Json_GetMemberByName( primitive, "attributes" );
+				const ksJson * primitive = ksJson_GetMemberByIndex( primitives, surfaceIndex );
+				const ksJson * attributes = ksJson_GetMemberByName( primitive, "attributes" );
 
-				const char * positionAccessorName		= Json_GetString( Json_GetMemberByName( attributes, "POSITION" ), "" );
-				const char * normalAccessorName			= Json_GetString( Json_GetMemberByName( attributes, "NORMAL" ), "" );
-				const char * tangentAccessorName		= Json_GetString( Json_GetMemberByName( attributes, "TANGENT" ), "" );
-				const char * binormalAccessorName		= Json_GetString( Json_GetMemberByName( attributes, "BINORMAL" ), "" );
-				const char * colorAccessorName			= Json_GetString( Json_GetMemberByName( attributes, "COLOR" ), "" );
-				const char * uv0AccessorName			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_0" ), "" );
-				const char * uv1AccessorName			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_1" ), "" );
-				const char * uv2AccessorName			= Json_GetString( Json_GetMemberByName( attributes, "TEXCOORD_2" ), "" );
-				const char * jointIndicesAccessorName	= Json_GetString( Json_GetMemberByName( attributes, "JOINT" ), "" );
-				const char * jointWeightsAccessorName	= Json_GetString( Json_GetMemberByName( attributes, "WEIGHT" ), "" );
-				const char * indicesAccessorName		= Json_GetString( Json_GetMemberByName( primitive, "indices" ), "" );
+				const char * positionAccessorName		= ksJson_GetString( ksJson_GetMemberByName( attributes, "POSITION" ), "" );
+				const char * normalAccessorName			= ksJson_GetString( ksJson_GetMemberByName( attributes, "NORMAL" ), "" );
+				const char * tangentAccessorName		= ksJson_GetString( ksJson_GetMemberByName( attributes, "TANGENT" ), "" );
+				const char * binormalAccessorName		= ksJson_GetString( ksJson_GetMemberByName( attributes, "BINORMAL" ), "" );
+				const char * colorAccessorName			= ksJson_GetString( ksJson_GetMemberByName( attributes, "COLOR" ), "" );
+				const char * uv0AccessorName			= ksJson_GetString( ksJson_GetMemberByName( attributes, "TEXCOORD_0" ), "" );
+				const char * uv1AccessorName			= ksJson_GetString( ksJson_GetMemberByName( attributes, "TEXCOORD_1" ), "" );
+				const char * uv2AccessorName			= ksJson_GetString( ksJson_GetMemberByName( attributes, "TEXCOORD_2" ), "" );
+				const char * jointIndicesAccessorName	= ksJson_GetString( ksJson_GetMemberByName( attributes, "JOINT" ), "" );
+				const char * jointWeightsAccessorName	= ksJson_GetString( ksJson_GetMemberByName( attributes, "WEIGHT" ), "" );
+				const char * indicesAccessorName		= ksJson_GetString( ksJson_GetMemberByName( primitive, "indices" ), "" );
 
-				surface->material = ksGltf_GetMaterialByName( scene, Json_GetString( Json_GetMemberByName( primitive, "material" ), "" ) );
+				surface->material = ksGltf_GetMaterialByName( scene, ksJson_GetString( ksJson_GetMemberByName( primitive, "material" ), "" ) );
 				assert( surface->material != NULL );
 
 				ksGltfGeometryAccessors * surfaceAccessors = &accessors[modelIndex][surfaceIndex];
@@ -3979,21 +3979,21 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	{
 		const ksNanoseconds startTime = GetTimeNanoseconds();
 
-		const Json_t * animations = Json_GetMemberByName( rootNode, "animations" );
-		scene->animationCount = Json_GetMemberCount( animations );
+		const ksJson * animations = ksJson_GetMemberByName( rootNode, "animations" );
+		scene->animationCount = ksJson_GetMemberCount( animations );
 		scene->animations = (ksGltfAnimation *) calloc( scene->animationCount, sizeof( ksGltfAnimation ) );
 		scene->timeLineCount = 0;	// May not need all because they are often shared.
 		scene->timeLines = (ksGltfTimeLine *) calloc( scene->animationCount, sizeof( ksGltfTimeLine ) );
 		for ( int animationIndex = 0; animationIndex < scene->animationCount; animationIndex++ )
 		{
-			const Json_t * animation = Json_GetMemberByIndex( animations, animationIndex );
-			scene->animations[animationIndex].name = ksGltf_strdup( Json_GetMemberName( animation ) );
+			const ksJson * animation = ksJson_GetMemberByIndex( animations, animationIndex );
+			scene->animations[animationIndex].name = ksGltf_strdup( ksJson_GetMemberName( animation ) );
 
-			const Json_t * parameters = Json_GetMemberByName( animation, "parameters" );
-			const Json_t * samplers = Json_GetMemberByName( animation, "samplers" );
+			const ksJson * parameters = ksJson_GetMemberByName( animation, "parameters" );
+			const ksJson * samplers = ksJson_GetMemberByName( animation, "samplers" );
 
 			// This assumes there is only a single time-line per animation.
-			const char * timeAccessorName = Json_GetString( Json_GetMemberByName( parameters, "TIME" ), "" );
+			const char * timeAccessorName = ksJson_GetString( ksJson_GetMemberByName( parameters, "TIME" ), "" );
 			const ksGltfAccessor * timeAccessor = ksGltf_GetAccessorByNameAndType( scene, timeAccessorName, "SCALAR", GL_FLOAT );
 
 			if ( timeAccessor == NULL || timeAccessor->count <= 0 )
@@ -4042,19 +4042,19 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 				scene->animations[animationIndex].timeLine = timeLine;
 			}
 
-			const Json_t * channels = Json_GetMemberByName( animation, "channels" );
-			scene->animations[animationIndex].channelCount = Json_GetMemberCount( channels );
+			const ksJson * channels = ksJson_GetMemberByName( animation, "channels" );
+			scene->animations[animationIndex].channelCount = ksJson_GetMemberCount( channels );
 			scene->animations[animationIndex].channels = (ksGltfAnimationChannel *) calloc( scene->animations[animationIndex].channelCount, sizeof( ksGltfAnimationChannel ) );
 			int newChannelCount = 0;
 			for ( int channelIndex = 0; channelIndex < scene->animations[animationIndex].channelCount; channelIndex++ )
 			{
-				const Json_t * channel = Json_GetMemberByIndex( channels, channelIndex );
-				const char * samplerName = Json_GetString( Json_GetMemberByName( channel, "sampler" ), "" );
-				const Json_t * sampler = Json_GetMemberByName( samplers, samplerName );
-				const char * inputName = Json_GetString( Json_GetMemberByName( sampler, "input" ), "" );
-				const char * interpolation = Json_GetString( Json_GetMemberByName( sampler, "interpolation" ), "" );
-				const char * outputName = Json_GetString( Json_GetMemberByName( sampler, "output" ), "" );
-				const char * accessorName = Json_GetString( Json_GetMemberByName( parameters, outputName ), "" );
+				const ksJson * channel = ksJson_GetMemberByIndex( channels, channelIndex );
+				const char * samplerName = ksJson_GetString( ksJson_GetMemberByName( channel, "sampler" ), "" );
+				const ksJson * sampler = ksJson_GetMemberByName( samplers, samplerName );
+				const char * inputName = ksJson_GetString( ksJson_GetMemberByName( sampler, "input" ), "" );
+				const char * interpolation = ksJson_GetString( ksJson_GetMemberByName( sampler, "interpolation" ), "" );
+				const char * outputName = ksJson_GetString( ksJson_GetMemberByName( sampler, "output" ), "" );
+				const char * accessorName = ksJson_GetString( ksJson_GetMemberByName( parameters, outputName ), "" );
 
 				assert( strcmp( inputName, "TIME" ) == 0 );
 				assert( strcmp( interpolation, "LINEAR" ) == 0 );
@@ -4064,9 +4064,9 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 				UNUSED_PARM( inputName );
 				UNUSED_PARM( interpolation );
 
-				const Json_t * target = Json_GetMemberByName( channel, "target" );
-				const char * nodeName = Json_GetString( Json_GetMemberByName( target, "id" ), "" );
-				const char * pathName = Json_GetString( Json_GetMemberByName( target, "path" ), "" );
+				const ksJson * target = ksJson_GetMemberByName( channel, "target" );
+				const char * nodeName = ksJson_GetString( ksJson_GetMemberByName( target, "id" ), "" );
+				const char * pathName = ksJson_GetString( ksJson_GetMemberByName( target, "path" ), "" );
 
 				ksVector3f * translation = NULL;
 				ksQuatf * rotation = NULL;
@@ -4140,17 +4140,17 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	{
 		const ksNanoseconds startTime = GetTimeNanoseconds();
 
-		const Json_t * skins = Json_GetMemberByName( rootNode, "skins" );
-		scene->skinCount = Json_GetMemberCount( skins );
+		const ksJson * skins = ksJson_GetMemberByName( rootNode, "skins" );
+		scene->skinCount = ksJson_GetMemberCount( skins );
 		scene->skins = (ksGltfSkin *) calloc( scene->skinCount, sizeof( ksGltfSkin ) );
 		for ( int skinIndex = 0; skinIndex < scene->skinCount; skinIndex++ )
 		{
-			const Json_t * skin = Json_GetMemberByIndex( skins, skinIndex );
-			scene->skins[skinIndex].name = ksGltf_strdup( Json_GetMemberName( skin ) );
+			const ksJson * skin = ksJson_GetMemberByIndex( skins, skinIndex );
+			scene->skins[skinIndex].name = ksGltf_strdup( ksJson_GetMemberName( skin ) );
 			ksMatrix4x4f bindShapeMatrix;
-			ksGltf_ParseFloatArray( bindShapeMatrix.m[0], 16, Json_GetMemberByName( skin, "bindShapeMatrix" ) );
+			ksGltf_ParseFloatArray( bindShapeMatrix.m[0], 16, ksJson_GetMemberByName( skin, "bindShapeMatrix" ) );
 
-			const char * bindAccessorName = Json_GetString( Json_GetMemberByName( skin, "inverseBindMatrices" ), "" );
+			const char * bindAccessorName = ksJson_GetString( ksJson_GetMemberByName( skin, "inverseBindMatrices" ), "" );
 			const ksGltfAccessor * bindAccess = ksGltf_GetAccessorByNameAndType( scene, bindAccessorName, "MAT4", GL_FLOAT );
 			scene->skins[skinIndex].inverseBindMatrices = ksGltf_GetBufferData( bindAccess );
 
@@ -4159,8 +4159,8 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 
 			scene->skins[skinIndex].parentNode = NULL;	// linked up once the nodes are loaded
 
-			const Json_t * jointNames = Json_GetMemberByName( skin, "jointNames" );
-			scene->skins[skinIndex].jointCount = Json_GetMemberCount( jointNames );
+			const ksJson * jointNames = ksJson_GetMemberByName( skin, "jointNames" );
+			scene->skins[skinIndex].jointCount = ksJson_GetMemberCount( jointNames );
 			scene->skins[skinIndex].joints = (ksGltfJoint *) calloc( scene->skins[skinIndex].jointCount, sizeof( ksGltfJoint ) );
 			assert( scene->skins[skinIndex].jointCount <= MAX_JOINTS );
 			for ( int jointIndex = 0; jointIndex < scene->skins[skinIndex].jointCount; jointIndex++ )
@@ -4169,24 +4169,24 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 				ksMatrix4x4f_Multiply( &inverseBindMatrix, &scene->skins[skinIndex].inverseBindMatrices[jointIndex], &bindShapeMatrix );
 				scene->skins[skinIndex].inverseBindMatrices[jointIndex] = inverseBindMatrix;
 
-				scene->skins[skinIndex].joints[jointIndex].name = ksGltf_strdup( Json_GetString( Json_GetMemberByIndex( jointNames, jointIndex ), "" ) );
+				scene->skins[skinIndex].joints[jointIndex].name = ksGltf_strdup( ksJson_GetString( ksJson_GetMemberByIndex( jointNames, jointIndex ), "" ) );
 				scene->skins[skinIndex].joints[jointIndex].node = NULL; // linked up once the nodes are loaded
 			}
 			assert( bindAccess->count == scene->skins[skinIndex].jointCount );
 
 			ksGpuBuffer_Create( context, &scene->skins[skinIndex].jointBuffer, KS_GPU_BUFFER_TYPE_UNIFORM, scene->skins[skinIndex].jointCount * sizeof( ksMatrix4x4f ), NULL, false );
 
-			const Json_t * extensions = Json_GetMemberByName( skin, "extensions" );
+			const ksJson * extensions = ksJson_GetMemberByName( skin, "extensions" );
 			if ( extensions != NULL )
 			{
-				const Json_t * KHR_skin_culling = Json_GetMemberByName( extensions, "KHR_skin_culling" );
+				const ksJson * KHR_skin_culling = ksJson_GetMemberByName( extensions, "KHR_skin_culling" );
 				if ( KHR_skin_culling != NULL )
 				{
-					const char * minsAccessorName = Json_GetString( Json_GetMemberByName( KHR_skin_culling, "jointGeometryMins" ), "" );
+					const char * minsAccessorName = ksJson_GetString( ksJson_GetMemberByName( KHR_skin_culling, "jointGeometryMins" ), "" );
 					const ksGltfAccessor * minsAccessor = ksGltf_GetAccessorByNameAndType( scene, minsAccessorName, "VEC3", GL_FLOAT );
 					scene->skins[skinIndex].jointGeometryMins = ksGltf_GetBufferData( minsAccessor );
 
-					const char * maxsAccessorName = Json_GetString( Json_GetMemberByName( KHR_skin_culling, "jointGeometryMaxs" ), "" );
+					const char * maxsAccessorName = ksJson_GetString( ksJson_GetMemberByName( KHR_skin_culling, "jointGeometryMaxs" ), "" );
 					const ksGltfAccessor * maxsAccessor = ksGltf_GetAccessorByNameAndType( scene, maxsAccessorName, "VEC3", GL_FLOAT );
 					scene->skins[skinIndex].jointGeometryMaxs = ksGltf_GetBufferData( maxsAccessor );
 				}
@@ -4204,36 +4204,36 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	{
 		const ksNanoseconds startTime = GetTimeNanoseconds();
 
-		const Json_t * cameras = Json_GetMemberByName( rootNode, "cameras" );
-		scene->cameraCount = Json_GetMemberCount( cameras );
+		const ksJson * cameras = ksJson_GetMemberByName( rootNode, "cameras" );
+		scene->cameraCount = ksJson_GetMemberCount( cameras );
 		scene->cameras = (ksGltfCamera *) calloc( scene->cameraCount, sizeof( ksGltfCamera ) );
 		for ( int cameraIndex = 0; cameraIndex < scene->cameraCount; cameraIndex++ )
 		{
-			const Json_t * camera = Json_GetMemberByIndex( cameras, cameraIndex );
-			const char * type = Json_GetString( Json_GetMemberByName( camera, "type" ), "" );
-			scene->cameras[cameraIndex].name = ksGltf_strdup( Json_GetMemberName( camera ) );
+			const ksJson * camera = ksJson_GetMemberByIndex( cameras, cameraIndex );
+			const char * type = ksJson_GetString( ksJson_GetMemberByName( camera, "type" ), "" );
+			scene->cameras[cameraIndex].name = ksGltf_strdup( ksJson_GetMemberName( camera ) );
 			if ( strcmp( type, "perspective" ) == 0 )
 			{
-				const Json_t * perspective = Json_GetMemberByName( camera, "perspective" );
-				const float aspectRatio = Json_GetFloat( Json_GetMemberByName( perspective, "aspectRatio" ), 0.0f );
-				const float yfov = Json_GetFloat( Json_GetMemberByName( perspective, "yfov" ), 0.0f );
+				const ksJson * perspective = ksJson_GetMemberByName( camera, "perspective" );
+				const float aspectRatio = ksJson_GetFloat( ksJson_GetMemberByName( perspective, "aspectRatio" ), 0.0f );
+				const float yfov = ksJson_GetFloat( ksJson_GetMemberByName( perspective, "yfov" ), 0.0f );
 				scene->cameras[cameraIndex].type = GLTF_CAMERA_TYPE_PERSPECTIVE;
 				scene->cameras[cameraIndex].perspective.fovDegreesX = ( 180.0f / MATH_PI ) * 2.0f * atanf( tanf( yfov * 0.5f ) * aspectRatio );
 				scene->cameras[cameraIndex].perspective.fovDegreesY = ( 180.0f / MATH_PI ) * yfov;
-				scene->cameras[cameraIndex].perspective.nearZ = Json_GetFloat( Json_GetMemberByName( perspective, "znear" ), 0.0f );
-				scene->cameras[cameraIndex].perspective.farZ = Json_GetFloat( Json_GetMemberByName( perspective, "zfar" ), 0.0f );
+				scene->cameras[cameraIndex].perspective.nearZ = ksJson_GetFloat( ksJson_GetMemberByName( perspective, "znear" ), 0.0f );
+				scene->cameras[cameraIndex].perspective.farZ = ksJson_GetFloat( ksJson_GetMemberByName( perspective, "zfar" ), 0.0f );
 				assert( scene->cameras[cameraIndex].perspective.fovDegreesX > 0.0f );
 				assert( scene->cameras[cameraIndex].perspective.fovDegreesY > 0.0f );
 				assert( scene->cameras[cameraIndex].perspective.nearZ > 0.0f );
 			}
 			else
 			{
-				const Json_t * orthographic = Json_GetMemberByName( camera, "orthographic" );
+				const ksJson * orthographic = ksJson_GetMemberByName( camera, "orthographic" );
 				scene->cameras[cameraIndex].type = GLTF_CAMERA_TYPE_ORTHOGRAPHIC;
-				scene->cameras[cameraIndex].orthographic.magX = Json_GetFloat( Json_GetMemberByName( orthographic, "xmag" ), 0.0f );
-				scene->cameras[cameraIndex].orthographic.magY = Json_GetFloat( Json_GetMemberByName( orthographic, "ymag" ), 0.0f );
-				scene->cameras[cameraIndex].orthographic.nearZ = Json_GetFloat( Json_GetMemberByName( orthographic, "znear" ), 0.0f );
-				scene->cameras[cameraIndex].orthographic.farZ = Json_GetFloat( Json_GetMemberByName( orthographic, "zfar" ), 0.0f );
+				scene->cameras[cameraIndex].orthographic.magX = ksJson_GetFloat( ksJson_GetMemberByName( orthographic, "xmag" ), 0.0f );
+				scene->cameras[cameraIndex].orthographic.magY = ksJson_GetFloat( ksJson_GetMemberByName( orthographic, "ymag" ), 0.0f );
+				scene->cameras[cameraIndex].orthographic.nearZ = ksJson_GetFloat( ksJson_GetMemberByName( orthographic, "znear" ), 0.0f );
+				scene->cameras[cameraIndex].orthographic.farZ = ksJson_GetFloat( ksJson_GetMemberByName( orthographic, "zfar" ), 0.0f );
 				assert( scene->cameras[cameraIndex].orthographic.magX > 0.0f );
 				assert( scene->cameras[cameraIndex].orthographic.magY > 0.0f );
 				assert( scene->cameras[cameraIndex].orthographic.nearZ > 0.0f );
@@ -4251,16 +4251,16 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	{
 		const ksNanoseconds startTime = GetTimeNanoseconds();
 
-		const Json_t * nodes = Json_GetMemberByName( rootNode, "nodes" );
-		scene->nodeCount = Json_GetMemberCount( nodes );
+		const ksJson * nodes = ksJson_GetMemberByName( rootNode, "nodes" );
+		scene->nodeCount = ksJson_GetMemberCount( nodes );
 		scene->nodes = (ksGltfNode *) calloc( scene->nodeCount, sizeof( ksGltfNode ) );
 		for ( int nodeIndex = 0; nodeIndex < scene->nodeCount; nodeIndex++ )
 		{
-			const Json_t * node = Json_GetMemberByIndex( nodes, nodeIndex );
-			scene->nodes[nodeIndex].name = ksGltf_strdup( Json_GetMemberName( node ) );
-			scene->nodes[nodeIndex].jointName = ksGltf_strdup( Json_GetString( Json_GetMemberByName( node, "jointName" ), "" ) );
-			const Json_t * matrix = Json_GetMemberByName( node, "matrix" );
-			if ( Json_IsArray( matrix ) )
+			const ksJson * node = ksJson_GetMemberByIndex( nodes, nodeIndex );
+			scene->nodes[nodeIndex].name = ksGltf_strdup( ksJson_GetMemberName( node ) );
+			scene->nodes[nodeIndex].jointName = ksGltf_strdup( ksJson_GetString( ksJson_GetMemberByName( node, "jointName" ), "" ) );
+			const ksJson * matrix = ksJson_GetMemberByName( node, "matrix" );
+			if ( ksJson_IsArray( matrix ) )
 			{
 				ksMatrix4x4f localTransform;
 				ksGltf_ParseFloatArray( localTransform.m[0], 16, matrix );
@@ -4270,28 +4270,28 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 			}
 			else
 			{
-				ksGltf_ParseFloatArray( &scene->nodes[nodeIndex].rotation.x, 4, Json_GetMemberByName( node, "rotation" ) );
-				ksGltf_ParseFloatArray( &scene->nodes[nodeIndex].scale.x, 3, Json_GetMemberByName( node, "scale" ) );
-				ksGltf_ParseFloatArray( &scene->nodes[nodeIndex].translation.x, 3, Json_GetMemberByName( node, "translation" ) );
+				ksGltf_ParseFloatArray( &scene->nodes[nodeIndex].rotation.x, 4, ksJson_GetMemberByName( node, "rotation" ) );
+				ksGltf_ParseFloatArray( &scene->nodes[nodeIndex].scale.x, 3, ksJson_GetMemberByName( node, "scale" ) );
+				ksGltf_ParseFloatArray( &scene->nodes[nodeIndex].translation.x, 3, ksJson_GetMemberByName( node, "translation" ) );
 			}
 
 			assert( scene->nodes[nodeIndex].name[0] != '\0' );
 
-			const Json_t * children = Json_GetMemberByName( node, "children" );
-			scene->nodes[nodeIndex].childCount = Json_GetMemberCount( children );
+			const ksJson * children = ksJson_GetMemberByName( node, "children" );
+			scene->nodes[nodeIndex].childCount = ksJson_GetMemberCount( children );
 			scene->nodes[nodeIndex].childNames = (char **) calloc( scene->nodes[nodeIndex].childCount, sizeof( char * ) );
 			for ( int c = 0; c < scene->nodes[nodeIndex].childCount; c++ )
 			{
-				scene->nodes[nodeIndex].childNames[c] = ksGltf_strdup( Json_GetString( Json_GetMemberByIndex( children, c ), "" ) );
+				scene->nodes[nodeIndex].childNames[c] = ksGltf_strdup( ksJson_GetString( ksJson_GetMemberByIndex( children, c ), "" ) );
 			}
-			scene->nodes[nodeIndex].camera = ksGltf_GetCameraByName( scene, Json_GetString( Json_GetMemberByName( node, "camera" ), "" ) );
-			scene->nodes[nodeIndex].skin = ksGltf_GetSkinByName( scene, Json_GetString( Json_GetMemberByName( node, "skin" ), "" ) );
-			const Json_t * meshes = Json_GetMemberByName( node, "meshes" );
-			scene->nodes[nodeIndex].modelCount = Json_GetMemberCount( meshes );
+			scene->nodes[nodeIndex].camera = ksGltf_GetCameraByName( scene, ksJson_GetString( ksJson_GetMemberByName( node, "camera" ), "" ) );
+			scene->nodes[nodeIndex].skin = ksGltf_GetSkinByName( scene, ksJson_GetString( ksJson_GetMemberByName( node, "skin" ), "" ) );
+			const ksJson * meshes = ksJson_GetMemberByName( node, "meshes" );
+			scene->nodes[nodeIndex].modelCount = ksJson_GetMemberCount( meshes );
 			scene->nodes[nodeIndex].models = (ksGltfModel **) calloc( scene->nodes[nodeIndex].modelCount, sizeof( ksGltfModel ** ) );
 			for ( int m = 0; m < scene->nodes[nodeIndex].modelCount; m++ )
 			{
-				scene->nodes[nodeIndex].models[m] = ksGltf_GetModelByName( scene, Json_GetString( Json_GetMemberByIndex( meshes, m ), "" ) );
+				scene->nodes[nodeIndex].models[m] = ksGltf_GetModelByName( scene, ksJson_GetString( ksJson_GetMemberByIndex( meshes, m ), "" ) );
 				assert( scene->nodes[nodeIndex].models[m] != NULL );
 			}
 		}
@@ -4358,23 +4358,23 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	// glTF sub-scenes
 	//
 	{
-		const Json_t * subScenes = Json_GetMemberByName( rootNode, "scenes" );
+		const ksJson * subScenes = ksJson_GetMemberByName( rootNode, "scenes" );
 		scene->subTreeCount = 0;
 		scene->subTrees = (ksGltfSubTree *) calloc( scene->nodeCount, sizeof( ksGltfSubTree ) );
-		scene->subSceneCount = Json_GetMemberCount( subScenes );
+		scene->subSceneCount = ksJson_GetMemberCount( subScenes );
 		scene->subScenes = (ksGltfSubScene *) calloc( scene->subSceneCount, sizeof( ksGltfSubScene ) );
 		for ( int subSceneIndex = 0; subSceneIndex < scene->subSceneCount; subSceneIndex++ )
 		{
-			const Json_t * subScene = Json_GetMemberByIndex( subScenes, subSceneIndex );
-			scene->subScenes[subSceneIndex].name = ksGltf_strdup( Json_GetMemberName( subScene ) );
+			const ksJson * subScene = ksJson_GetMemberByIndex( subScenes, subSceneIndex );
+			scene->subScenes[subSceneIndex].name = ksGltf_strdup( ksJson_GetMemberName( subScene ) );
 
-			const Json_t * nodes = Json_GetMemberByName( subScene, "nodes" );
-			scene->subScenes[subSceneIndex].subTreeCount = Json_GetMemberCount( nodes );
+			const ksJson * nodes = ksJson_GetMemberByName( subScene, "nodes" );
+			scene->subScenes[subSceneIndex].subTreeCount = ksJson_GetMemberCount( nodes );
 			scene->subScenes[subSceneIndex].subTrees = (ksGltfSubTree **) calloc( scene->subScenes[subSceneIndex].subTreeCount, sizeof( ksGltfSubTree * ) );
 
 			for ( int subTreeIndex = 0; subTreeIndex < scene->subScenes[subSceneIndex].subTreeCount; subTreeIndex++ )
 			{
-				const char * nodeName = Json_GetString( Json_GetMemberByIndex( nodes, subTreeIndex ), "" );
+				const char * nodeName = ksJson_GetString( ksJson_GetMemberByIndex( nodes, subTreeIndex ), "" );
 
 				scene->subScenes[subSceneIndex].subTrees[subTreeIndex] = NULL;
 				for ( int i = 0; i < scene->subTreeCount; i++ )
@@ -4459,11 +4459,11 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 	// glTF default scene
 	//
 
-	const char * defaultSceneName = Json_GetString( Json_GetMemberByName( rootNode, "scene" ), "" );
+	const char * defaultSceneName = ksJson_GetString( ksJson_GetMemberByName( rootNode, "scene" ), "" );
 	scene->state.currentSubScene = ksGltf_GetSubSceneByName( scene, defaultSceneName );
 	assert( scene->state.currentSubScene != NULL );
 
-	Json_Destroy( rootNode );
+	ksJson_Destroy( rootNode );
 
 	// Allocate run-time state memory.
 	scene->state.timeLineFrameState = (ksGltfTimeLineFrameState *) calloc( scene->timeLineCount, sizeof( ksGltfTimeLineFrameState ) );
