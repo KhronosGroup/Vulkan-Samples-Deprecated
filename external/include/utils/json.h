@@ -1150,7 +1150,6 @@ static void Json_WriteValue( const Json_t * node, int recursion, char ** bufferI
 	}
 	else if ( node->type == JSON_STRING )
 	{
-		Json_Printf( bufferInOut, lengthInOut, offsetInOut, 1, "\"" );
 		for ( const char * ptr = node->valueString; ptr[0] != '\0'; ptr++ )
 		{
 			if ( (unsigned char)ptr[0] < ' ' || ptr[0] == '\"' || ptr[0] == '\\' )
@@ -1172,7 +1171,7 @@ static void Json_WriteValue( const Json_t * node, int recursion, char ** bufferI
 				Json_Printf( bufferInOut, lengthInOut, offsetInOut, 1, "%c", ptr[0] );
 			}
 		}
-		Json_Printf( bufferInOut, lengthInOut, offsetInOut, 3, "\"%s\n", lastChild ? "" : "," );
+		Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "%s\n", lastChild ? "" : "," );
 	}
 	else if ( node->type == JSON_OBJECT )
 	{

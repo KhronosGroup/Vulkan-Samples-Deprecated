@@ -9,7 +9,8 @@ set( GL_HEADERS
     ${INCLUDE_DIR}/GL/wglext.h )
 set( UTILS_HEADERS
     ${INCLUDE_DIR}/utils/base64.h
-    ${INCLUDE_DIR}/utils/json.h )
+    ${INCLUDE_DIR}/utils/json.h
+    ${INCLUDE_DIR}/utils/lexer.h )
 set( VULKAN_HEADERS
     ${INCLUDE_DIR}/vulkan/vk_format.h )
 source_group( Dummy FILES ${SOURCES} )
