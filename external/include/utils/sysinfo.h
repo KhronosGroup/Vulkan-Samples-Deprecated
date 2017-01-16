@@ -196,7 +196,7 @@ static const char * GetCPUVersion()
 		char buffer[1024];
 		while ( fgets( buffer, sizeof( buffer ), cpuinfo ) )
 		{
-			for ( int i = 0; i < (int)ARRAY_SIZE( keyValues ); i++ )
+			for ( int i = 0; i < (int)( sizeof( keyValues ) / sizeof( keyValues[0] ) ); i++ )
 			{
 				const size_t length = strlen( keyValues[i].key );
 				if ( strncmp( buffer, keyValues[i].key, length ) == 0 )
