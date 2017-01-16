@@ -57,8 +57,8 @@ size_t ksBase64_Decode( unsigned char * data, const char * base64, const size_t 
 ================================================================================================================================
 */
 
-#if !defined( BASE64_H )
-#define BASE64_H
+#if !defined( KSBASE64_H )
+#define KSBASE64_H
 
 // alphabet character for a radix-64 number
 static const char base64_alphabet[] =
@@ -192,4 +192,4 @@ static inline size_t ksBase64_Decode( unsigned char * data, const char * base64,
 	return dataSizeInBytes;
 }
 
-#endif // !BASE64_H
+#endif // !KSBASE64_H

@@ -1490,6 +1490,88 @@ static const unsigned int normalMapped2000LightsFragmentProgramSPIRV[] =
 	0x0003003e,0x00000089,0x00000025,0x000100fd,0x00010038
 };
 
+#elif GRAPHICS_API_D3D == 1
+
+static ksGpuProgramParm flatShadedProgramParms[] =
+{
+	{ KS_GPU_PROGRAM_STAGE_FLAG_VERTEX,	KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_MODEL_MATRIX,		"ModelMatrix",		0 },
+	{ KS_GPU_PROGRAM_STAGE_FLAG_VERTEX,	KS_GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM,				KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_SCENE_MATRICES,		"SceneMatrices",	0 }
+};
+
+static const char flatShadedVertexProgramHLSL[] =
+	"";
+
+static const char flatShadedMultiViewVertexProgramHLSL[] =
+	"";
+
+static const char flatShadedFragmentProgramHLSL[] =
+	"";
+
+static ksGpuProgramParm normalMappedProgramParms[] =
+{
+	{ KS_GPU_PROGRAM_STAGE_FLAG_VERTEX,		KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_MODEL_MATRIX,		"ModelMatrix",		0 },
+	{ KS_GPU_PROGRAM_STAGE_FLAG_VERTEX,		KS_GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM,				KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_SCENE_MATRICES,		"SceneMatrices",	0 },
+	{ KS_GPU_PROGRAM_STAGE_FLAG_FRAGMENT,	KS_GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_TEXTURE_0,					"Texture0",			0 },
+	{ KS_GPU_PROGRAM_STAGE_FLAG_FRAGMENT,	KS_GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_TEXTURE_1,					"Texture1",			1 },
+	{ KS_GPU_PROGRAM_STAGE_FLAG_FRAGMENT,	KS_GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_TEXTURE_2,					"Texture2",			2 }
+};
+
+static const char normalMappedVertexProgramHLSL[] =
+	"";
+
+static const char normalMappedMultiViewVertexProgramHLSL[] =
+	"";
+
+static const char normalMapped100LightsFragmentProgramHLSL[] =
+	"";
+
+static const char normalMapped1000LightsFragmentProgramHLSL[] =
+	"";
+
+static const char normalMapped2000LightsFragmentProgramHLSL[] =
+	"";
+
+#elif GRAPHICS_API_METAL == 1
+
+static ksGpuProgramParm flatShadedProgramParms[] =
+{
+	{ KS_GPU_PROGRAM_STAGE_FLAG_VERTEX,	KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_MODEL_MATRIX,		"ModelMatrix",		0 },
+	{ KS_GPU_PROGRAM_STAGE_FLAG_VERTEX,	KS_GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM,				KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_SCENE_MATRICES,		"SceneMatrices",	0 }
+};
+
+static const char flatShadedVertexProgramMetalSL[] =
+	"";
+
+static const char flatShadedMultiViewVertexProgramMetalSL[] =
+	"";
+
+static const char flatShadedFragmentProgramMetalSL[] =
+	"";
+
+static ksGpuProgramParm normalMappedProgramParms[] =
+{
+	{ KS_GPU_PROGRAM_STAGE_FLAG_VERTEX,		KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_MODEL_MATRIX,		"ModelMatrix",		0 },
+	{ KS_GPU_PROGRAM_STAGE_FLAG_VERTEX,		KS_GPU_PROGRAM_PARM_TYPE_BUFFER_UNIFORM,				KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_UNIFORM_SCENE_MATRICES,		"SceneMatrices",	0 },
+	{ KS_GPU_PROGRAM_STAGE_FLAG_FRAGMENT,	KS_GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_TEXTURE_0,					"Texture0",			0 },
+	{ KS_GPU_PROGRAM_STAGE_FLAG_FRAGMENT,	KS_GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_TEXTURE_1,					"Texture1",			1 },
+	{ KS_GPU_PROGRAM_STAGE_FLAG_FRAGMENT,	KS_GPU_PROGRAM_PARM_TYPE_TEXTURE_SAMPLED,				KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	PROGRAM_TEXTURE_2,					"Texture2",			2 }
+};
+
+static const char normalMappedVertexProgramMetalSL[] =
+	"";
+
+static const char normalMappedMultiViewVertexProgramMetalSL[] =
+	"";
+
+static const char normalMapped100LightsFragmentProgramMetalSL[] =
+	"";
+
+static const char normalMapped1000LightsFragmentProgramMetalSL[] =
+	"";
+
+static const char normalMapped2000LightsFragmentProgramMetalSL[] =
+	"";
+
 #endif
 
 static void ksPerfScene_Create( ksGpuContext * context, ksPerfScene * scene, ksSceneSettings * settings, ksGpuRenderPass * renderPass )

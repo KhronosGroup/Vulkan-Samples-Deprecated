@@ -674,9 +674,41 @@ static const unsigned int unitCubeFlatShadeFragmentProgramSPIRV[] =
 	0x00000049,0x0000000b,0x000100fd,0x00010038
 };
 
+#elif GRAPHICS_API_D3D == 1
+
+static ksGpuProgramParm unitCubeFlatShadeProgramParms[] =
+{
+	{ KS_GPU_PROGRAM_STAGE_FLAG_VERTEX,	KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	0,	"ModelMatrix",		0 },
+	{ KS_GPU_PROGRAM_STAGE_FLAG_VERTEX,	KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	1,	"ViewMatrix",		0 },
+	{ KS_GPU_PROGRAM_STAGE_FLAG_VERTEX,	KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	2,	"ProjectionMatrix",	0 }
+};
+
+static const char unitCubeFlatShadeVertexProgramHLSL[] =
+	"";
+
+static const char unitCubeFlatShadeFragmentProgramHLSL[] =
+	"";
+
+#elif GRAPHICS_API_METAL == 1
+
+static ksGpuProgramParm unitCubeFlatShadeProgramParms[] =
+{
+	{ KS_GPU_PROGRAM_STAGE_FLAG_VERTEX,	KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	0,	"ModelMatrix",		0 },
+	{ KS_GPU_PROGRAM_STAGE_FLAG_VERTEX,	KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	1,	"ViewMatrix",		0 },
+	{ KS_GPU_PROGRAM_STAGE_FLAG_VERTEX,	KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4,	KS_GPU_PROGRAM_PARM_ACCESS_READ_ONLY,	2,	"ProjectionMatrix",	0 }
+};
+
+static const char unitCubeFlatShadeVertexProgramMetalSL[] =
+	"";
+
+static const char unitCubeFlatShadeFragmentProgramMetalSL[] =
+	"";
+
+
 #endif
 
-#define GLTF_JSON_VERSION				"1.0"
+#define GLTF_JSON_VERSION_10			"1.0"
+#define GLTF_JSON_VERSION_101			"1.0.1"
 #define GLTF_BINARY_MAGIC				( ( 'g' << 0 ) | ( 'l' << 8 ) | ( 'T' << 16 ) | ( 'F' << 24 ) )
 #define GLTF_BINARY_VERSION				1
 #define GLTF_BINARY_CONTENT_FORMAT		0
@@ -867,6 +899,8 @@ typedef struct ksGltfUniform
 {
 	char *						name;
 	ksGltfUniformSemantic		semantic;
+	char *						nodeName;
+	struct ksGltfNode *			node;
 	ksGpuProgramParmType		type;
 	int							index;
 	ksGltfUniformValue			defaultValue;
@@ -1769,6 +1803,8 @@ typedef struct ksGltfInOutParm
 	size_t					nameLength;
 } ksGltfInOutParm;
 
+#if GRAPHICS_API_OPENGL == 1 || GRAPHICS_API_OPENGLES == 1 || GRAPHICS_API_VULKAN == 1
+
 // Convert a GLSL 1.0 ES glTF shader to a newer (at least 1.3) GLSL version primarily for uniform buffer support.
 // Assumes the GLSL 1.0 ES glTF shader does not use any extensions.
 // Currently assumes the GLSL 1.0 ES glTF shader does not use any preprocessing.
@@ -2466,9 +2502,12 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 	return newSource;
 }
 
+#endif
+
 void ksGltf_CreateTechniqueProgram( ksGpuContext * context, ksGltfTechnique * technique, const ksGltfProgram * program,
 								const int conversion, const char * semanticUniforms[] )
 {
+#if GRAPHICS_API_OPENGL == 1 || GRAPHICS_API_OPENGLES == 1 || GRAPHICS_API_VULKAN == 1
 	if ( conversion != KS_GLSL_CONVERSION_NONE )
 	{
 		const char * newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MAX] = { 0 };
@@ -2635,6 +2674,8 @@ void ksGltf_CreateTechniqueProgram( ksGpuContext * context, ksGltfTechnique * te
 
 				newUniforms[newUniformCount].name = technique->uniforms[uniformIndex].name;
 				newUniforms[newUniformCount].semantic = technique->uniforms[uniformIndex].semantic;
+				newUniforms[newUniformCount].nodeName = technique->uniforms[uniformIndex].nodeName;
+				newUniforms[newUniformCount].node = technique->uniforms[uniformIndex].node;
 				newUniforms[newUniformCount].type = technique->uniforms[uniformIndex].type;
 				newUniforms[newUniformCount].index = newUniformCount;
 
@@ -2728,6 +2769,10 @@ void ksGltf_CreateTechniqueProgram( ksGpuContext * context, ksGltfTechnique * te
 		free( fragmentSource );
 	}
 	else
+#else
+	UNUSED_PARM( conversion );
+	UNUSED_PARM( semanticUniforms );
+#endif
 	{
 		ksGpuGraphicsProgram_Create( context, &technique->program,
 									program->vertexSource, program->vertexSourceSize,
@@ -2891,10 +2936,10 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 
 	const ksJson * asset = ksJson_GetMemberByName( rootNode, "asset" );
 	const char * version = ksJson_GetString( ksJson_GetMemberByName( asset, "version" ), "1.0" );
-	if ( strcmp( version, GLTF_JSON_VERSION ) != 0 )
+	if ( strcmp( version, GLTF_JSON_VERSION_10 ) != 0 && strcmp( version, GLTF_JSON_VERSION_101 ) != 0 )
 	{
+		Error( "glTF version is %s instead of %s", version, GLTF_JSON_VERSION_10 );
 		ksJson_Destroy( rootNode );
-		Error( "glTF version is %s instead of %s", version, GLTF_JSON_VERSION );
 		return false;
 	}
 
@@ -3499,7 +3544,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 					default:						assert( false ); break;
 				}
 
-				if ( node[0] == '\0' )
+				if ( node[0] != '\0' )
 				{
 					semanticName = "NODE";
 					assert( parmType == KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4 );
@@ -3529,6 +3574,8 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 
 				scene->techniques[techniqueIndex].uniforms[uniformIndex].name = ksGltf_strdup( parmName );
 				scene->techniques[techniqueIndex].uniforms[uniformIndex].semantic = semantic;
+				scene->techniques[techniqueIndex].uniforms[uniformIndex].nodeName = ( node[0] != '\0' ) ? ksGltf_strdup( node ) : NULL;
+				scene->techniques[techniqueIndex].uniforms[uniformIndex].node = NULL;	// linked up later
 				scene->techniques[techniqueIndex].uniforms[uniformIndex].type = parmType;
 				scene->techniques[techniqueIndex].uniforms[uniformIndex].index = uniformIndex;
 
@@ -4319,13 +4366,27 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 				node->children[childIndex]->parent = node;
 			}
 		}
+		// Get the uniform nodes of techniques.
+		for ( int techniqueIndex = 0; techniqueIndex < scene->techniqueCount; techniqueIndex++ )
+		{
+			for ( int uniformIndex = 0; uniformIndex < scene->techniques[techniqueIndex].uniformCount; uniformIndex++ )
+			{
+				ksGltfUniform * uniform = &scene->techniques[techniqueIndex].uniforms[uniformIndex];
+				if ( uniform->nodeName != NULL )
+				{
+					uniform->node = ksGltf_GetNodeByName( scene, uniform->nodeName );
+					assert( uniform->node != NULL );
+				}
+			}
+		}
 		// Get the animated nodes.
 		for ( int animationIndex = 0; animationIndex < scene->animationCount; animationIndex++ )
 		{
 			for ( int channelIndex = 0; channelIndex < scene->animations[animationIndex].channelCount; channelIndex++ )
 			{
-				scene->animations[animationIndex].channels[channelIndex].node = ksGltf_GetNodeByName( scene, scene->animations[animationIndex].channels[channelIndex].nodeName );
-				assert( scene->animations[animationIndex].channels[channelIndex].node != NULL );
+				ksGltfAnimationChannel * channel = &scene->animations[animationIndex].channels[channelIndex];
+				channel->node = ksGltf_GetNodeByName( scene, channel->nodeName );
+				assert( channel->node != NULL );
 			}
 		}
 		// Get the skin joint nodes.
@@ -4629,6 +4690,7 @@ static void ksGltfScene_Destroy( ksGpuContext * context, ksGltfScene * scene )
 			{
 				free( (void *)scene->techniques[techniqueIndex].parms[uniformIndex].name );
 				free( scene->techniques[techniqueIndex].uniforms[uniformIndex].name );
+				free( scene->techniques[techniqueIndex].uniforms[uniformIndex].nodeName );
 			}
 			for ( int attributeIndex = 0; attributeIndex < scene->techniques[techniqueIndex].attributeCount; attributeIndex++ )
 			{
@@ -4881,7 +4943,7 @@ static void ksGltfScene_Simulate( ksGltfScene * scene, ksViewState * viewState, 
 		}
 
 		// Transform the node hierarchy into global space.
-		for ( int nodeIndex = 0; nodeIndex < scene->nodeCount; nodeIndex++ )
+		for ( int nodeIndex = 0; nodeIndex < subTree->nodeCount; nodeIndex++ )
 		{
 			ksGltfNodeState * nodeState = &scene->state.nodeState[(int)( subTree->nodes[nodeIndex] - scene->nodes )];
 
@@ -5166,7 +5228,11 @@ static void ksGltfScene_Render( ksGpuCommandBuffer * commandBuffer, const ksGltf
 							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE:		assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
 							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION:				assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
 							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE:		assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
-							case GLTF_UNIFORM_SEMANTIC_NODE:								ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &modelMatrix ); break;
+							case GLTF_UNIFORM_SEMANTIC_NODE:								{
+																								const ksMatrix4x4f * matrix = &scene->state.nodeState[(int)( uniform->node - scene->nodes )].globalTransform;
+																								ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, matrix );
+																								break;
+																							}
 							case GLTF_UNIFORM_SEMANTIC_VIEWPORT:							ksGpuGraphicsCommand_SetParmFloatVector4( &command, uniform->index, &viewport ); break;
 							case GLTF_UNIFORM_SEMANTIC_JOINT_ARRAY:							assert( false ); break;	// replaced by KHR_glsl_joint_buffer
 							case GLTF_UNIFORM_SEMANTIC_JOINT_BUFFER:						ksGpuGraphicsCommand_SetParmBufferUniform( &command, uniform->index, jointBuffer ); break;

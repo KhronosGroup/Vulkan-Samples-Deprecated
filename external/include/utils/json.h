@@ -407,8 +407,8 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
 ================================================================================================================================
 */
 
-#if !defined( JSON_H )
-#define JSON_H
+#if !defined( KSJSON_H )
+#define KSJSON_H
 
 #ifdef _MSC_VER
 	#pragma warning( disable : 4201 )	// nonstandard extension used: nameless struct/union
@@ -1663,4 +1663,4 @@ static inline ksJson * ksJson_SetString( ksJson * node, const char * value )
 	return node;
 }
 
-#endif // !JSON_H
+#endif // !KSJSON_H

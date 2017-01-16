@@ -53,6 +53,9 @@ static bool ksLexer_CaseSensitiveCompareToken( const unsigned char * tokenStart,
 =================================================================================
 */
 
+#if !defined( KSLEXER_H )
+#define KSLEXER_H
+
 typedef enum
 {
 	KS_TOKEN_TYPE_NONE,
@@ -464,3 +467,5 @@ static const unsigned char * ksLexer_SkipBracedSection( const unsigned char * bu
 	}
 	return ptr;
 }
+
+#endif // !KSLEXER_H
