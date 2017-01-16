@@ -48,6 +48,20 @@ sudo apt-get install libxcb-keysyms1-dev
 sudo apt-get install libxcb-icccm4-dev
 ```
 
+Samples using Wayland typically require the following packages.
+```
+sudo apt-get install libwayland-dev
+sudo apt-get install libinput-dev
+sudo apt-get install libinput-tools
+```
+
+Samples using Mir typically require the following packages:
+```
+sudo apt-get install libmirclient-dev
+sudo apt-get install mirlibmircommon-dev
+sudo apt-get install mir-platform-input-evdev5
+```
+
 ## MacOS
 
 Version 10.11 or later.
@@ -71,5 +85,5 @@ Android M or earlier.
 
 Android N or later.
 
-- Android NDK Revision 12 beta 2 or later (from https://github.com/android-ndk/ndk/wiki).
+- Android NDK Revision 13b or later (from https://github.com/android-ndk/ndk/wiki).
 - Read the Android Vulkan guides for more details (from http://developer.android.com/ndk/guides/graphics/index.html).

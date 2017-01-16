@@ -1,7 +1,7 @@
 /*
 ================================================================================================
 
-Description	:	JSON reader/writer.
+Description	:	DOM-style JSON reader/writer.
 Author		:	J.M.P. van Waveren
 Date		:	08/07/2016
 Language	:	C99
@@ -131,99 +131,99 @@ such limitations and can parse any JSON text that fits in memory.
 
 This implementation is designed to be robust, allowing completely
 invalid JSON text to be parsed without fatal run-time exceptions.
-All interface functions continue to work, even if a NULL Json_t
+All interface functions continue to work, even if a NULL ksJson
 pointer is passed in.
 
 
 INTERFACE
 =========
 
-struct Json_t;
+struct ksJson;
 
-Json_t *		Json_Create();
-void			Json_Destroy( Json_t * rootNode );
+ksJson *		ksJson_Create();
+void			ksJson_Destroy( ksJson * rootNode );
 
-bool			Json_ReadFromBuffer( Json_t * rootNode, const char * buffer, const char ** errorStringOut );
-bool			Json_ReadFromFile( Json_t * rootNode, const char * fileName, const char ** errorStringOut );
-bool			Json_WriteToBuffer( const Json_t * rootNode, char ** bufferOut, int * lengthOut );	// Buffer is allocated with malloc.
-bool			Json_WriteToFile( const Json_t * rootNode, const char * fileName );
+bool			ksJson_ReadFromBuffer( ksJson * rootNode, const char * buffer, const char ** errorStringOut );
+bool			ksJson_ReadFromFile( ksJson * rootNode, const char * fileName, const char ** errorStringOut );
+bool			ksJson_WriteToBuffer( const ksJson * rootNode, char ** bufferOut, int * lengthOut );	// Buffer is allocated with malloc.
+bool			ksJson_WriteToFile( const ksJson * rootNode, const char * fileName );
 
 //
 // query
 //
 
-int				Json_GetMemberCount( const Json_t * node );							// Get the number of object members or array elements.
-Json_t *		Json_GetMemberByIndex( const Json_t * node, const int index );		// Get an object member or array element by index.
-Json_t *		Json_GetMemberByName( const Json_t * node, const char * name );		// Case-sensitive lookup of an object member by name.
-const char *	Json_GetMemberName( const Json_t * node );							// Returns the name of this member.
+int				ksJson_GetMemberCount( const ksJson * node );							// Get the number of object members or array elements.
+ksJson *		ksJson_GetMemberByIndex( const ksJson * node, const int index );		// Get an object member or array element by index.
+ksJson *		ksJson_GetMemberByName( const ksJson * node, const char * name );		// Case-sensitive lookup of an object member by name.
+const char *	ksJson_GetMemberName( const ksJson * node );							// Returns the name of this member.
 
-bool			Json_IsNull( const Json_t * node );									// Returns true if the node != NULL and the value is 'null'.
-bool			Json_IsBoolean( const Json_t * node );								// Returns true if the node != NULL and the value is 'true' or 'false'.
-bool			Json_IsNumber( const Json_t * node );								// Returns true if the node != NULL and the value is a number.
-bool			Json_IsInteger( const Json_t * node );								// Returns true if the node != NULL and the value is an integer number.
-bool			Json_IsUnsigned( const Json_t * node );								// Returns true if the node != NULL and the value is an unsigned integer number.
-bool			Json_IsFloatingPoint( const Json_t * node );						// Returns true if the node != NULL and the value is a floating-point number.
-bool			Json_IsString( const Json_t * node );								// Returns true if the node != NULL and the value is a string.
-bool			Json_IsObject( const Json_t * node );								// Returns true if the node != NULL and the node is an object.
-bool			Json_IsArray( const Json_t * node );								// Returns true if the node != NULL and the node is an array.
+bool			ksJson_IsNull( const ksJson * node );									// Returns true if the node != NULL and the value is 'null'.
+bool			ksJson_IsBoolean( const ksJson * node );								// Returns true if the node != NULL and the value is 'true' or 'false'.
+bool			ksJson_IsNumber( const ksJson * node );									// Returns true if the node != NULL and the value is a number.
+bool			ksJson_IsInteger( const ksJson * node );								// Returns true if the node != NULL and the value is an integer number.
+bool			ksJson_IsUnsigned( const ksJson * node );								// Returns true if the node != NULL and the value is an unsigned integer number.
+bool			ksJson_IsFloatingPoint( const ksJson * node );							// Returns true if the node != NULL and the value is a floating-point number.
+bool			ksJson_IsString( const ksJson * node );									// Returns true if the node != NULL and the value is a string.
+bool			ksJson_IsObject( const ksJson * node );									// Returns true if the node != NULL and the node is an object.
+bool			ksJson_IsArray( const ksJson * node );									// Returns true if the node != NULL and the node is an array.
 
-bool			Json_GetBoolean( const Json_t * node, const bool defaultValue );	// Returns 'defaultValue' if IsBoolean( node ) == false.
-int8_t			Json_GetInt8( const Json_t * node, const int8_t defaultValue );		// Returns 'defaultValue' if IsNumber( node ) == false.
-uint8_t			Json_GetUint8( const Json_t * node, const uint8_t defaultValue );	// Returns 'defaultValue' if IsNumber( node ) == false.
-int16_t			Json_GetInt16( const Json_t * node, const int16_t defaultValue );	// Returns 'defaultValue' if IsNumber( node ) == false.
-uint16_t		Json_GetUint16( const Json_t * node, const uint16_t defaultValue );	// Returns 'defaultValue' if IsNumber( node ) == false.
-int32_t			Json_GetInt32( const Json_t * node, const int32_t defaultValue );	// Returns 'defaultValue' if IsNumber( node ) == false.
-uint32_t		Json_GetUint32( const Json_t * node, const uint32_t defaultValue );	// Returns 'defaultValue' if IsNumber( node ) == false.
-int64_t			Json_GetInt64( const Json_t * node, const int64_t defaultValue );	// Returns 'defaultValue' if IsNumber( node ) == false.
-uint64_t		Json_GetUint64( const Json_t * node, const uint64_t defaultValue );	// Returns 'defaultValue' if IsNumber( node ) == false.
-float			Json_GetFloat( const Json_t * node, const float defaultValue );		// Returns 'defaultValue' if IsNumber( node ) == false.
-double			Json_GetDouble( const Json_t * node, const double defaultValue );	// Returns 'defaultValue' if IsNumber( node ) == false.
-const char *	Json_GetString( const Json_t * node, const char * defaultValue );	// Returns 'defaultValue' if IsString( node ) == false.
+bool			ksJson_GetBoolean( const ksJson * node, const bool defaultValue );		// Returns 'defaultValue' if IsBoolean( node ) == false.
+int8_t			ksJson_GetInt8( const ksJson * node, const int8_t defaultValue );		// Returns 'defaultValue' if IsNumber( node ) == false.
+uint8_t			ksJson_GetUint8( const ksJson * node, const uint8_t defaultValue );		// Returns 'defaultValue' if IsNumber( node ) == false.
+int16_t			ksJson_GetInt16( const ksJson * node, const int16_t defaultValue );		// Returns 'defaultValue' if IsNumber( node ) == false.
+uint16_t		ksJson_GetUint16( const ksJson * node, const uint16_t defaultValue );	// Returns 'defaultValue' if IsNumber( node ) == false.
+int32_t			ksJson_GetInt32( const ksJson * node, const int32_t defaultValue );		// Returns 'defaultValue' if IsNumber( node ) == false.
+uint32_t		ksJson_GetUint32( const ksJson * node, const uint32_t defaultValue );	// Returns 'defaultValue' if IsNumber( node ) == false.
+int64_t			ksJson_GetInt64( const ksJson * node, const int64_t defaultValue );		// Returns 'defaultValue' if IsNumber( node ) == false.
+uint64_t		ksJson_GetUint64( const ksJson * node, const uint64_t defaultValue );	// Returns 'defaultValue' if IsNumber( node ) == false.
+float			ksJson_GetFloat( const ksJson * node, const float defaultValue );		// Returns 'defaultValue' if IsNumber( node ) == false.
+double			ksJson_GetDouble( const ksJson * node, const double defaultValue );		// Returns 'defaultValue' if IsNumber( node ) == false.
+const char *	ksJson_GetString( const ksJson * node, const char * defaultValue );		// Returns 'defaultValue' if IsString( node ) == false.
 
 //
 // create & modify
 //
 
-Json_t *		Json_SetObject( Json_t * node );									// Turns the node into an empty object.
-Json_t *		Json_SetArray( Json_t * node );										// Turns the node into an empty array.
+ksJson *		ksJson_SetObject( ksJson * node );										// Turns the node into an empty object.
+ksJson *		ksJson_SetArray( ksJson * node );										// Turns the node into an empty array.
 
-Json_t *		Json_AddObjectMember( Json_t * node, const char * name );			// Adds and returns a new object member with the given name. The node must be an object.
-Json_t *		Json_AddArrayElement( Json_t * node );								// Adds and returns a new array element. The node must be an array.
+ksJson *		ksJson_AddObjectMember( ksJson * node, const char * name );				// Adds and returns a new object member with the given name. The node must be an object.
+ksJson *		ksJson_AddArrayElement( ksJson * node );								// Adds and returns a new array element. The node must be an array.
 
-Json_t *		Json_SetNull( Json_t * node );										// Turns the node into null.
-Json_t *		Json_SetBoolean( Json_t * node, const bool value );					// Turns the node into a boolean with the given value.
-Json_t *		Json_SetInt8( Json_t * node, const int8_t value );					// Turns the node into a 8-bit signed integer with the given value.
-Json_t *		Json_SetUint8( Json_t * node, const uint8_t value );				// Turns the node into a 8-bit unsigned integer with the given value.
-Json_t *		Json_SetInt16( Json_t * node, const int16_t value );				// Turns the node into a 16-bit signed integer with the given value.
-Json_t *		Json_SetUint16( Json_t * node, const uint16_t value );				// Turns the node into a 16-bit unsigned integer with the given value.
-Json_t *		Json_SetInt32( Json_t * node, const int32_t value );				// Turns the node into a 32-bit signed integer with the given value.
-Json_t *		Json_SetUint32( Json_t * node, const uint32_t value );				// Turns the node into a 32-bit unsigned integer with the given value.
-Json_t *		Json_SetInt64( Json_t * node, const int64_t value );				// Turns the node into a 64-bit signed integer with the given value.
-Json_t *		Json_SetUint64( Json_t * node, const uint64_t value );				// Turns the node into a 64-bit unsigned integer with the given value.
-Json_t *		Json_SetFloat( Json_t * node, const float value );					// Turns the node into a 32-bit floating-point number with the given value.
-Json_t *		Json_SetDouble( Json_t * node, const double value );				// Turns the node into a 64-bit floating-point number with the given value.
-Json_t *		Json_SetString( Json_t * node, const char * value );				// Turns the node into a string with the given value.
+ksJson *		ksJson_SetNull( ksJson * node );										// Turns the node into null.
+ksJson *		ksJson_SetBoolean( ksJson * node, const bool value );					// Turns the node into a boolean with the given value.
+ksJson *		ksJson_SetInt8( ksJson * node, const int8_t value );					// Turns the node into a 8-bit signed integer with the given value.
+ksJson *		ksJson_SetUint8( ksJson * node, const uint8_t value );					// Turns the node into a 8-bit unsigned integer with the given value.
+ksJson *		ksJson_SetInt16( ksJson * node, const int16_t value );					// Turns the node into a 16-bit signed integer with the given value.
+ksJson *		ksJson_SetUint16( ksJson * node, const uint16_t value );				// Turns the node into a 16-bit unsigned integer with the given value.
+ksJson *		ksJson_SetInt32( ksJson * node, const int32_t value );					// Turns the node into a 32-bit signed integer with the given value.
+ksJson *		ksJson_SetUint32( ksJson * node, const uint32_t value );				// Turns the node into a 32-bit unsigned integer with the given value.
+ksJson *		ksJson_SetInt64( ksJson * node, const int64_t value );					// Turns the node into a 64-bit signed integer with the given value.
+ksJson *		ksJson_SetUint64( ksJson * node, const uint64_t value );				// Turns the node into a 64-bit unsigned integer with the given value.
+ksJson *		ksJson_SetFloat( ksJson * node, const float value );					// Turns the node into a 32-bit floating-point number with the given value.
+ksJson *		ksJson_SetDouble( ksJson * node, const double value );					// Turns the node into a 64-bit floating-point number with the given value.
+ksJson *		ksJson_SetString( ksJson * node, const char * value );					// Turns the node into a string with the given value.
 
 
 USAGE
 =====
 
-The Json_Create() function creates an empty DOM. The default value of this
+The ksJson_Create() function creates an empty DOM. The default value of this
 empty DOM is null:
 
-    Json_IsNull( Json_Create() ) == true
+    ksJson_IsNull( ksJson_Create() ) == true
 
-The Json_Read* functions can be used to initialize the DOM from JSON text.
-The Json_Is* and Json_Get* functions can be used to query the DOM from code.
-The Json_Set* and Json_Add* functions can be used to create/modify the DOM.
-The Json_Write* functions can be used to write the DOM to JSON text.
-The Json_Destroy() function is used to destroy the complete DOM.
+The ksJson_Read* functions can be used to initialize the DOM from JSON text.
+The ksJson_Is* and ksJson_Get* functions can be used to query the DOM from code.
+The ksJson_Set* and ksJson_Add* functions can be used to create/modify the DOM.
+The ksJson_Write* functions can be used to write the DOM to JSON text.
+The ksJson_Destroy() function is used to destroy the complete DOM.
 
-The functions Json_GetMemberByIndex() and Json_GetMemberByName() are used
+The functions ksJson_GetMemberByIndex() and ksJson_GetMemberByName() are used
 to access the elements of an array and/or members of an object. These functions
 may return NULL if the node is not an object or array, the index is out of range,
-or no member by the given name exists. All the Json_Is* functions will return
-false when a NULL pointer is passed in. All the Json_Get* functions will return
+or no member by the given name exists. All the ksJson_Is* functions will return
+false when a NULL pointer is passed in. All the ksJson_Get* functions will return
 the default value when a NULL pointer is passed in.
 
 The interface to create/modify the JSON DOM does not allow nodes to be
@@ -233,18 +233,18 @@ members and array elements are allocated from a JSON object or array after
 which the member or element can be assigned a value. The default value of
 a new object member or array element is null.
 
-    Json_IsNull( Json_AddObjectMember( object, "count" ) ) == true
-    Json_IsNull( Json_AddArrayElement( array ) ) == true
+    ksJson_IsNull( ksJson_AddObjectMember( object, "count" ) ) == true
+    ksJson_IsNull( ksJson_AddArrayElement( array ) ) == true
 
-A value in the DOM can be changed at any time by calling one of the Json_Set*
+A value in the DOM can be changed at any time by calling one of the ksJson_Set*
 functions. For instance:
 
-    Json_SetInt32( Json_AddObjectMember( object, "count" ), 10 );
-    Json_SetFloat( Json_AddArrayElement( array ), 2.0f );
+    ksJson_SetInt32( ksJson_AddObjectMember( object, "count" ), 10 );
+    ksJson_SetFloat( ksJson_AddArrayElement( array ), 2.0f );
 
 The object members and array elements are kept in the order they are added.
-A JSON object or array can be cleared by calling Json_SetObject() or
-Json_SetArray() respectively.
+A JSON object or array can be cleared by calling ksJson_SetObject() or
+ksJson_SetArray() respectively.
 
 
 EXAMPLES
@@ -254,57 +254,57 @@ char * buffer = NULL;
 int length = 0;
 
 {
-	Json_t * rootNode = Json_SetObject( Json_Create() );
-	Json_t * vertices = Json_SetArray( Json_AddObjectMember( rootNode, "vertices" ) );
+	ksJson * rootNode = ksJson_SetObject( ksJson_Create() );
+	ksJson * vertices = ksJson_SetArray( ksJson_AddObjectMember( rootNode, "vertices" ) );
 	for ( int i = 0; i < 3; i++ )
 	{
-		Json_t * vertex = Json_SetObject( Json_AddArrayElement( vertices ) );
+		ksJson * vertex = ksJson_SetObject( ksJson_AddArrayElement( vertices ) );
 
-		Json_t * position = Json_SetObject( Json_AddObjectMember( vertex, "position" ) );
-		Json_SetFloat( Json_AddObjectMember( position, "x" ), (float)( ( i & 1 ) >> 0 ) );
-		Json_SetFloat( Json_AddObjectMember( position, "y" ), (float)( ( i & 2 ) >> 1 ) );
-		Json_SetFloat( Json_AddObjectMember( position, "z" ), (float)( ( i & 4 ) >> 2 ) );
+		ksJson * position = ksJson_SetObject( ksJson_AddObjectMember( vertex, "position" ) );
+		ksJson_SetFloat( ksJson_AddObjectMember( position, "x" ), (float)( ( i & 1 ) >> 0 ) );
+		ksJson_SetFloat( ksJson_AddObjectMember( position, "y" ), (float)( ( i & 2 ) >> 1 ) );
+		ksJson_SetFloat( ksJson_AddObjectMember( position, "z" ), (float)( ( i & 4 ) >> 2 ) );
 
-		Json_t * normal = Json_SetObject( Json_AddObjectMember( vertex, "normal" ) );
-		Json_SetFloat( Json_AddObjectMember( normal, "x" ), 0.5f );
-		Json_SetFloat( Json_AddObjectMember( normal, "y" ), 0.6f );
-		Json_SetFloat( Json_AddObjectMember( normal, "z" ), 0.7f );
+		ksJson * normal = ksJson_SetObject( ksJson_AddObjectMember( vertex, "normal" ) );
+		ksJson_SetFloat( ksJson_AddObjectMember( normal, "x" ), 0.5f );
+		ksJson_SetFloat( ksJson_AddObjectMember( normal, "y" ), 0.6f );
+		ksJson_SetFloat( ksJson_AddObjectMember( normal, "z" ), 0.7f );
 	}
-	Json_t * indices = Json_SetArray( Json_AddObjectMember( rootNode, "indices" ) );
+	ksJson * indices = ksJson_SetArray( ksJson_AddObjectMember( rootNode, "indices" ) );
 	for ( unsigned int i = 0; i < 3; i++ )
 	{
-		Json_SetUint32( Json_AddArrayElement( indices ), i );
+		ksJson_SetUint32( ksJson_AddArrayElement( indices ), i );
 	}
-	Json_WriteToBuffer( rootNode, &buffer, &length );
-	Json_Destroy( rootNode );
+	ksJson_WriteToBuffer( rootNode, &buffer, &length );
+	ksJson_Destroy( rootNode );
 }
 
 {
-	Json_t * rootNode = Json_Create();
-	if ( Json_ReadFromBuffer( rootNode, buffer, NULL ) )
+	ksJson * rootNode = ksJson_Create();
+	if ( ksJson_ReadFromBuffer( rootNode, buffer, NULL ) )
 	{
-		const Json_t * vertices = Json_GetMemberByName( rootNode, "vertices" );
-		for ( int i = 0; i < Json_GetMemberCount( vertices ); i++ )
+		const ksJson * vertices = ksJson_GetMemberByName( rootNode, "vertices" );
+		for ( int i = 0; i < ksJson_GetMemberCount( vertices ); i++ )
 		{
-			const Json_t * vertex = Json_GetMemberByIndex( vertices, i );
+			const ksJson * vertex = ksJson_GetMemberByIndex( vertices, i );
 
-			const Json_t * position = Json_GetMemberByName( vertex, "position" );
-			const float position_x = Json_GetFloat( Json_GetMemberByName( position, "x" ), 0.0f );
-			const float position_y = Json_GetFloat( Json_GetMemberByName( position, "y" ), 0.0f );
-			const float position_z = Json_GetFloat( Json_GetMemberByName( position, "z" ), 0.0f );
+			const ksJson * position = ksJson_GetMemberByName( vertex, "position" );
+			const float position_x = ksJson_GetFloat( ksJson_GetMemberByName( position, "x" ), 0.0f );
+			const float position_y = ksJson_GetFloat( ksJson_GetMemberByName( position, "y" ), 0.0f );
+			const float position_z = ksJson_GetFloat( ksJson_GetMemberByName( position, "z" ), 0.0f );
 
-			const Json_t * normal = Json_GetMemberByName( vertex, "normal" );
-			const float normal_x = Json_GetFloat( Json_GetMemberByName( normal, "x" ), 0.0f );
-			const float normal_y = Json_GetFloat( Json_GetMemberByName( normal, "y" ), 0.0f );
-			const float normal_z = Json_GetFloat( Json_GetMemberByName( normal, "z" ), 0.0f );
+			const ksJson * normal = ksJson_GetMemberByName( vertex, "normal" );
+			const float normal_x = ksJson_GetFloat( ksJson_GetMemberByName( normal, "x" ), 0.0f );
+			const float normal_y = ksJson_GetFloat( ksJson_GetMemberByName( normal, "y" ), 0.0f );
+			const float normal_z = ksJson_GetFloat( ksJson_GetMemberByName( normal, "z" ), 0.0f );
 		}
-		const Json_t * indices = Json_GetMemberByName( rootNode, "indices" );
-		for ( int i = 0; i < Json_GetMemberCount( indices ); i++ )
+		const ksJson * indices = ksJson_GetMemberByName( rootNode, "indices" );
+		for ( int i = 0; i < ksJson_GetMemberCount( indices ); i++ )
 		{
-			const unsigned int index = Json_GetUint32( Json_GetMemberByIndex( indices, i ), 0 );
+			const unsigned int index = ksJson_GetUint32( ksJson_GetMemberByIndex( indices, i ), 0 );
 		}
 	}
-	Json_Destroy( rootNode );
+	ksJson_Destroy( rootNode );
 }
 
 free( buffer );
@@ -317,7 +317,7 @@ The following DOM-style implementations were tested:
                                                             
 Name        Version               Source                                          Language
 ------------------------------------------------------------------------------------------
-Json_t      1.0                   https://github.com/KhronosGroup/Vulkan-Samples  C99
+ksJson      1.0                   https://github.com/KhronosGroup/Vulkan-Samples  C99
 rapidjson   1.02                  https://github.com/miloyip/rapidjson            C++
 sajson      Mar 24, 2016          https://github.com/chadaustin/sajson            C++
 gason       Sep 16, 2015          https://github.com/vivkin/gason                 C++
@@ -333,7 +333,7 @@ These implementations have the following general properties:
            Const   Throws  Mutable  Maint. Member       Case       Supports  Supports  Supports  Supports  Supports  <= 4u   Clamp   Robust
 Name       source  except. DOM      order  storage      sensitive  UTF16     int32_t   uint32_t  int64_t   uint64_t  double  double  
 -------------------------------------------------------------------------------------------------------------------------------------------
-Json_t     yes     no      yes      yes    mapped-array yes        yes       yes       yes       yes       yes       yes     yes     yes
+ksJson     yes     no      yes      yes    mapped-array yes        yes       yes       yes       yes       yes       yes     yes     yes
 rapidjson  yes     yes     yes      yes    array        yes        yes       yes       yes       yes       yes       yes     no      no
 sajson     yes     no      no       no     array        yes        yes       no        no        no        no        no      no      no
 gason      no      no      no       yes    linked-list  N/A        no        yes       yes       no        no        no      no      no
@@ -375,7 +375,7 @@ Text to DOM     2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
                 VS2015-up3     VS2015-up3     GCC 4.9        GCC 4.9        Clang 3.8      Clang 3.8
                 c++11          c++11          gnustl_static  gnustl_static  c++_static     c++_static
 ----------------------------------------------------------------------------------------------------------
-  Json_t        123.704 ms     113.623 ms      260.471 ms     229.713 ms     284.767 ms     244.413 ms
+  ksJson        123.704 ms     113.623 ms      260.471 ms     229.713 ms     284.767 ms     244.413 ms
   rapidjson     113.475 ms     117.906 ms      294.813 ms     217.756 ms     318.686 ms     267.120 ms
   sajson         99.068 ms      69.175 ms      287.485 ms     167.319 ms     173.386 ms     182.552 ms
   gason          64.896 ms      57.836 ms      116.311 ms     115.667 ms     195.282 ms     123.649 ms
@@ -393,7 +393,7 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
                 VS2015-up3     VS2015-up3     GCC 4.9        GCC 4.9        Clang 3.8      Clang 3.8
                 c++11          c++11          gnustl_static  gnustl_static  c++_static     c++_static
 ----------------------------------------------------------------------------------------------------------
-  Json_t         15.963 ms      15.765 ms      106.081 ms      39.828 ms      84.220 ms      42.936 ms
+  ksJson         15.963 ms      15.765 ms      106.081 ms      39.828 ms      84.220 ms      42.936 ms
   rapidjson      39.516 ms      31.692 ms       82.376 ms      48.170 ms      75.268 ms      49.578 ms
   sajson         39.083 ms      43.925 ms      153.721 ms     113.389 ms      95.203 ms      56.443 ms
   gason          21.963 ms      23.685 ms      212.653 ms      99.502 ms     218.437 ms     103.013 ms
@@ -407,8 +407,8 @@ Traverse DOM    2.6 GHz        2.6 GHz        2.1 GHz        2.1 GHz        2.1 
 ================================================================================================================================
 */
 
-#if !defined( JSON_H )
-#define JSON_H
+#if !defined( KSJSON_H )
+#define KSJSON_H
 
 #ifdef _MSC_VER
 	#pragma warning( disable : 4201 )	// nonstandard extension used: nameless struct/union
@@ -452,8 +452,8 @@ typedef enum
 } JsonType_t;
 
 // JSON node
-// 32-bit sizeof( Json_t ) = 64-bit sizeof( Json_t ) = 32
-typedef struct Json_t
+// 32-bit sizeof( ksJson ) = 64-bit sizeof( ksJson ) = 32
+typedef struct ksJson
 {
 	union
 	{
@@ -466,17 +466,17 @@ typedef struct Json_t
 		uint64_t			valueUint64;	// 64-bit unsigned integer value
 		double				valueDouble;	// 64-bit floating-point value
 		char *				valueString;	// string value
-		struct Json_t **	memberMap;		// object/array members
+		struct ksJson **	memberMap;		// object/array members
 	};
 	JsonType_t		type;					// type of value
 	int				membersAllocated;		// number of allocated members
 	int				memberCount;			// number of actual members
 	int				memberIndex;			// mutable member index for faster lookups
-} Json_t;
+} ksJson;
 
-static Json_t * Json_Create()
+static ksJson * ksJson_Create()
 {
-	Json_t * json = (Json_t *) calloc( 1, sizeof( Json_t ) );
+	ksJson * json = (ksJson *) calloc( 1, sizeof( ksJson ) );
 	json->valueString = (char *)"null";
 	json->type = JSON_NULL;
 	return json;
@@ -518,27 +518,27 @@ static int MapMemberCount( int mapIndex, int memberCount )
 	return JSON_MIN( ( 1 << ( JSON_BASE_ALLOC_PWR + mapIndex ) ), memberCount ) - MapMemberOffset( mapIndex );
 }
 
-static Json_t * Json_AllocMember( Json_t * node )
+static ksJson * ksJson_AllocMember( ksJson * node )
 {
 	const int mapIndex = MemberIndexToMapIndex( node->memberCount );
 	if ( node->memberCount >= node->membersAllocated )
 	{
 		if ( ( mapIndex & ( JSON_MAP_GRANULARITY - 1 ) ) == 0 )
 		{
-			Json_t ** newMemberMap = (Json_t **) malloc( ( mapIndex + JSON_MAP_GRANULARITY ) * sizeof( Json_t * ) );
+			ksJson ** newMemberMap = (ksJson **) malloc( ( mapIndex + JSON_MAP_GRANULARITY ) * sizeof( ksJson * ) );
 			if ( mapIndex > 0 )
 			{
-				memcpy( newMemberMap, node->memberMap, mapIndex * sizeof( Json_t * ) );
+				memcpy( newMemberMap, node->memberMap, mapIndex * sizeof( ksJson * ) );
 				free( node->memberMap );
 			}
 			node->memberMap = newMemberMap;
 		}
 		const int mapSize = JSON_MAX( MapMemberOffset( mapIndex ), ( 1 << JSON_BASE_ALLOC_PWR ) );
-		node->memberMap[mapIndex] = (Json_t *) malloc( mapSize * sizeof( Json_t ) );
+		node->memberMap[mapIndex] = (ksJson *) malloc( mapSize * sizeof( ksJson ) );
 		node->membersAllocated += mapSize;
 	}
 	const int memberOffset = MapMemberOffset( mapIndex );
-	Json_t * member = &node->memberMap[mapIndex][node->memberCount++ - memberOffset];
+	ksJson * member = &node->memberMap[mapIndex][node->memberCount++ - memberOffset];
 	member->name = NULL;
 	member->valueInt64 = 0;
 	member->valueString = (char *)"null";
@@ -549,9 +549,9 @@ static Json_t * Json_AllocMember( Json_t * node )
 	return member;
 }
 
-static void Json_FreeNode( Json_t * node, const bool freeName )
+static void ksJson_FreeNode( ksJson * node, const bool freeName )
 {
-	assert( node->type >= JSON_NULL && node->type <= JSON_ARRAY );		// stale Json_t pointer?
+	assert( node->type >= JSON_NULL && node->type <= JSON_ARRAY );		// stale ksJson pointer?
 	if ( freeName )
 	{
 		free( node->name );
@@ -564,11 +564,11 @@ static void Json_FreeNode( Json_t * node, const bool freeName )
 			const int endMapIndex = MemberIndexToMapIndex( node->memberCount - 1 );
 			for ( int mapIndex = 0; mapIndex <= endMapIndex; mapIndex++ )
 			{
-				Json_t * members = node->memberMap[mapIndex];
+				ksJson * members = node->memberMap[mapIndex];
 				const int mapMemberCount = MapMemberCount( mapIndex, node->memberCount ); 
 				for ( int i = 0; i < mapMemberCount; i++ )
 				{
-					Json_FreeNode( &members[i], true );
+					ksJson_FreeNode( &members[i], true );
 				}
 				free( members );
 			}
@@ -587,18 +587,18 @@ static void Json_FreeNode( Json_t * node, const bool freeName )
 	node->memberIndex = 0;
 }
 
-static void Json_Destroy( Json_t * rootNode )
+static void ksJson_Destroy( ksJson * rootNode )
 {
 	if ( rootNode != NULL /* && is an actual root */ )
 	{
-		Json_FreeNode( rootNode, true );
+		ksJson_FreeNode( rootNode, true );
 		free( rootNode );
 	}
 }
 
 // Parses white space.
 // Returns a pointer to the first character after the white space.
-static const char * Json_ParseWhiteSpace( const char * buffer )
+static const char * ksJson_ParseWhiteSpace( const char * buffer )
 {
 	while ( buffer[0] != '\0' && (unsigned char)buffer[0] <= ' ' )
 	{
@@ -609,7 +609,7 @@ static const char * Json_ParseWhiteSpace( const char * buffer )
 
 // Parses a hexadecimal string up to four digits and stores the integer result in 'value'.
 // Returns a pointer to the first character after the string.
-static const char * Json_ParseHex4( unsigned int * value, const char * buffer )
+static const char * ksJson_ParseHex4( unsigned int * value, const char * buffer )
 {
 	int v = 0;
 	for( unsigned int digit = 0; digit < 4; digit++, buffer++ )
@@ -654,7 +654,7 @@ static const unsigned char json_firstByteMark[7] =
 
 // Parses a string and stores the result in 'value'.
 // Returns a pointer to the first character after the string.
-static const char * Json_ParseString( char ** value, const char * buffer, const char ** errorStringOut )
+static const char * ksJson_ParseString( char ** value, const char * buffer, const char ** errorStringOut )
 {
 	assert( buffer[0] == '\"' );
 	buffer++;
@@ -685,7 +685,7 @@ static const char * Json_ParseString( char ** value, const char * buffer, const 
 		{
 			// Transcode UTF16 to UTF8.
 			unsigned int uc = 0;
-			buffer = Json_ParseHex4( &uc, buffer + 2 );
+			buffer = ksJson_ParseHex4( &uc, buffer + 2 );
 			// Check for UTF16 surrogate pairs.
 			if ( uc >= 0xD800 && uc <= 0xDBFF )
 			{
@@ -693,7 +693,7 @@ static const char * Json_ParseString( char ** value, const char * buffer, const 
 				if ( buffer[0] == '\\' && buffer[1] == 'u' )
 				{
 					unsigned int uc2 = 0;
-					buffer = Json_ParseHex4( &uc2, buffer + 2 );
+					buffer = ksJson_ParseHex4( &uc2, buffer + 2 );
 					if ( uc2 < 0xDC00 || uc2 > 0xDFFF )
 					{
 						free( out );
@@ -784,7 +784,7 @@ static const double json_pow10[] =
 
 // Parses a number and stores the result in 'valueInt64', 'valueUint64' or 'valueDouble'.
 // Returns a pointer to the first character after the number.
-static const char * Json_ParseNumber( JsonType_t * type, int64_t * valueInt64, uint64_t * valueUint64, double * valueDouble,
+static const char * ksJson_ParseNumber( JsonType_t * type, int64_t * valueInt64, uint64_t * valueUint64, double * valueDouble,
 										const char * buffer, const char ** errorStringOut )
 {
 	(void)errorStringOut;
@@ -902,7 +902,7 @@ static const char * Json_ParseNumber( JsonType_t * type, int64_t * valueInt64, u
 	return buffer;
 }
 
-static const char * Json_ParseValue( Json_t * json, const int recursion, const char * buffer, const char ** errorStringOut )
+static const char * ksJson_ParseValue( ksJson * json, const int recursion, const char * buffer, const char ** errorStringOut )
 {
 	assert( errorStringOut != NULL );
 	if ( recursion > JSON_MAX_RECURSION )
@@ -911,7 +911,7 @@ static const char * Json_ParseValue( Json_t * json, const int recursion, const c
 		return buffer;
 	}
 
-	buffer = Json_ParseWhiteSpace( buffer );
+	buffer = ksJson_ParseWhiteSpace( buffer );
 
 	if ( buffer[0] == 'n' )
 	{
@@ -937,7 +937,7 @@ static const char * Json_ParseValue( Json_t * json, const int recursion, const c
 	else if ( buffer[0] == '\"' )
 	{
 		json->type = JSON_STRING;
-		return Json_ParseString( &json->valueString, buffer, errorStringOut );
+		return ksJson_ParseString( &json->valueString, buffer, errorStringOut );
 	}
 	else if ( buffer[0] == '{' )
 	{
@@ -947,7 +947,7 @@ static const char * Json_ParseValue( Json_t * json, const int recursion, const c
 		buffer++;
 		while ( *errorStringOut == NULL )
 		{
-			buffer = Json_ParseWhiteSpace( buffer );
+			buffer = ksJson_ParseWhiteSpace( buffer );
 			if ( buffer[0] == '}' )
 			{
 				buffer++;
@@ -962,17 +962,17 @@ static const char * Json_ParseValue( Json_t * json, const int recursion, const c
 				}
 				buffer++;
 			}
-			Json_t * member = Json_AllocMember( json );
-			buffer = Json_ParseWhiteSpace( buffer );
-			buffer = Json_ParseString( &member->name, buffer, errorStringOut );
-			buffer = Json_ParseWhiteSpace( buffer );
+			ksJson * member = ksJson_AllocMember( json );
+			buffer = ksJson_ParseWhiteSpace( buffer );
+			buffer = ksJson_ParseString( &member->name, buffer, errorStringOut );
+			buffer = ksJson_ParseWhiteSpace( buffer );
 			if ( buffer[0] != ':' )
 			{
 				*errorStringOut = "missing colon";
 				return buffer;
 			}
 			buffer++;
-			buffer = Json_ParseValue( member, recursion + 1, buffer, errorStringOut );
+			buffer = ksJson_ParseValue( member, recursion + 1, buffer, errorStringOut );
 		}
 		return buffer;
 	}
@@ -984,7 +984,7 @@ static const char * Json_ParseValue( Json_t * json, const int recursion, const c
 		buffer++;
 		while ( *errorStringOut == NULL )
 		{
-			buffer = Json_ParseWhiteSpace( buffer );
+			buffer = ksJson_ParseWhiteSpace( buffer );
 			if ( buffer[0] == ']' )
 			{
 				buffer++;
@@ -999,18 +999,18 @@ static const char * Json_ParseValue( Json_t * json, const int recursion, const c
 				}
 				buffer++;
 			}
-			Json_t * member = Json_AllocMember( json );
-			buffer = Json_ParseValue( member, recursion + 1, buffer, errorStringOut );
+			ksJson * member = ksJson_AllocMember( json );
+			buffer = ksJson_ParseValue( member, recursion + 1, buffer, errorStringOut );
 		}
 		return buffer;
 	}
 	else
 	{
-		return Json_ParseNumber( &json->type, &json->valueInt64, &json->valueUint64, &json->valueDouble, buffer, errorStringOut );
+		return ksJson_ParseNumber( &json->type, &json->valueInt64, &json->valueUint64, &json->valueDouble, buffer, errorStringOut );
 	}
 }
 
-static bool Json_ReadFromBuffer( Json_t * rootNode, const char * buffer, const char ** errorStringOut )
+static bool ksJson_ReadFromBuffer( ksJson * rootNode, const char * buffer, const char ** errorStringOut )
 {
 	if ( rootNode == NULL || buffer == NULL )
 	{
@@ -1020,23 +1020,23 @@ static bool Json_ReadFromBuffer( Json_t * rootNode, const char * buffer, const c
 	{
 		*errorStringOut = NULL;
 	}
-	Json_FreeNode( rootNode, true );
+	ksJson_FreeNode( rootNode, true );
 
 	const char * error = NULL;
-	Json_ParseValue( rootNode, 0, buffer, &error );
+	ksJson_ParseValue( rootNode, 0, buffer, &error );
 	if ( error != NULL )
 	{
 		if ( errorStringOut != NULL )
 		{
 			*errorStringOut = error;
 		}
-		Json_FreeNode( rootNode, true );
+		ksJson_FreeNode( rootNode, true );
 		return false;
 	}
 	return true;
 }
 
-static bool Json_ReadFromFile( Json_t * rootNode, const char * fileName, const char ** errorStringOut )
+static bool ksJson_ReadFromFile( ksJson * rootNode, const char * fileName, const char ** errorStringOut )
 {
 	if ( rootNode == NULL || fileName == NULL )
 	{
@@ -1046,7 +1046,7 @@ static bool Json_ReadFromFile( Json_t * rootNode, const char * fileName, const c
 	{
 		*errorStringOut = NULL;
 	}
-	Json_FreeNode( rootNode, true );
+	ksJson_FreeNode( rootNode, true );
 
 	FILE * file = fopen( fileName, "rb" );
 	if ( file == NULL )
@@ -1077,14 +1077,14 @@ static bool Json_ReadFromFile( Json_t * rootNode, const char * fileName, const c
 	fclose( file );
 
 	const char * error = NULL;
-	Json_ParseValue( rootNode, 0, buffer, &error );
+	ksJson_ParseValue( rootNode, 0, buffer, &error );
 	if ( error != NULL )
 	{
 		if ( errorStringOut != NULL )
 		{
 			*errorStringOut = error;
 		}
-		Json_FreeNode( rootNode, true );
+		ksJson_FreeNode( rootNode, true );
 		free( buffer );
 		return false;
 	}
@@ -1093,7 +1093,7 @@ static bool Json_ReadFromFile( Json_t * rootNode, const char * fileName, const c
 	return true;
 }
 
-static void Json_Printf( char ** bufferInOut, int * lengthInOut, int * offsetInOut, const int extraLength, const char * format, ... )
+static void ksJson_Printf( char ** bufferInOut, int * lengthInOut, int * offsetInOut, const int extraLength, const char * format, ... )
 {
 	if ( *offsetInOut + extraLength + 1 > *lengthInOut )
 	{
@@ -1115,7 +1115,7 @@ static void Json_Printf( char ** bufferInOut, int * lengthInOut, int * offsetInO
 	assert( *offsetInOut <= *lengthInOut );
 }
 
-static void Json_WriteValue( const Json_t * node, int recursion, char ** bufferInOut, int * lengthInOut, int * offsetInOut, const int indent, const bool lastChild )
+static void ksJson_WriteValue( const ksJson * node, int recursion, char ** bufferInOut, int * lengthInOut, int * offsetInOut, const int indent, const bool lastChild )
 {
 	if ( recursion > JSON_MAX_RECURSION )
 	{
@@ -1128,96 +1128,95 @@ static void Json_WriteValue( const Json_t * node, int recursion, char ** bufferI
 
 	if ( node->type == JSON_NULL || node->type == JSON_BOOLEAN )
 	{
-		Json_Printf( bufferInOut, lengthInOut, offsetInOut, (int)strlen( node->valueString ) + 2, "%s%s\n", node->valueString, lastChild ? "" : "," );
+		ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, (int)strlen( node->valueString ) + 2, "%s%s\n", node->valueString, lastChild ? "" : "," );
 	}
 	else if ( node->type == JSON_INT )
 	{
 		char temp[1024];
 		const int length = sprintf( temp, "%lld", (long long int)node->valueInt64 );
-		Json_Printf( bufferInOut, lengthInOut, offsetInOut, length + 2, "%s%s\n", temp, lastChild ? "" : "," );
+		ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, length + 2, "%s%s\n", temp, lastChild ? "" : "," );
 	}
 	else if ( node->type == JSON_UINT )
 	{
 		char temp[1024];
 		const int length = sprintf( temp, "%llu", (unsigned long long int)node->valueUint64 );
-		Json_Printf( bufferInOut, lengthInOut, offsetInOut, length + 2, "%s%s\n", temp, lastChild ? "" : "," );
+		ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, length + 2, "%s%s\n", temp, lastChild ? "" : "," );
 	}
 	else if ( node->type == JSON_FLOAT )
 	{
 		char temp[1024];
 		int length = sprintf( temp, "%g", node->valueDouble );
-		Json_Printf( bufferInOut, lengthInOut, offsetInOut, length + 2, "%s%s\n", temp, lastChild ? "" : "," );
+		ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, length + 2, "%s%s\n", temp, lastChild ? "" : "," );
 	}
 	else if ( node->type == JSON_STRING )
 	{
-		Json_Printf( bufferInOut, lengthInOut, offsetInOut, 1, "\"" );
 		for ( const char * ptr = node->valueString; ptr[0] != '\0'; ptr++ )
 		{
 			if ( (unsigned char)ptr[0] < ' ' || ptr[0] == '\"' || ptr[0] == '\\' )
 			{
 				switch ( ptr[0] )
 				{
-					case '\\': Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "\\\\" ); break;
-					case '\"': Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "\\\"" ); break;
-					case '\b': Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "\\b" ); break;
-					case '\f': Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "\\f" ); break;
-					case '\n': Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "\\n" ); break;
-					case '\r': Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "\\r" ); break;
-					case '\t': Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "\\t" ); break;
-					default: Json_Printf( bufferInOut, lengthInOut, offsetInOut, 6, "\\u%04x", ptr[0] ); break;
+					case '\\': ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "\\\\" ); break;
+					case '\"': ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "\\\"" ); break;
+					case '\b': ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "\\b" ); break;
+					case '\f': ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "\\f" ); break;
+					case '\n': ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "\\n" ); break;
+					case '\r': ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "\\r" ); break;
+					case '\t': ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "\\t" ); break;
+					default: ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, 6, "\\u%04x", ptr[0] ); break;
 				}
 			}
 			else
 			{
-				Json_Printf( bufferInOut, lengthInOut, offsetInOut, 1, "%c", ptr[0] );
+				ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, 1, "%c", ptr[0] );
 			}
 		}
-		Json_Printf( bufferInOut, lengthInOut, offsetInOut, 3, "\"%s\n", lastChild ? "" : "," );
+		ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "%s\n", lastChild ? "" : "," );
 	}
 	else if ( node->type == JSON_OBJECT )
 	{
-		Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "{\n" );
+		ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "{\n" );
 		if ( node->memberCount > 0 )
 		{
 			const int endMapIndex = MemberIndexToMapIndex( node->memberCount - 1 );
 			for ( int mapIndex = 0; mapIndex <= endMapIndex; mapIndex++ )
 			{
-				const Json_t * members = node->memberMap[mapIndex];
+				const ksJson * members = node->memberMap[mapIndex];
 				const int mapMemberCount = MapMemberCount( mapIndex, node->memberCount ); 
 				for ( int i = 0; i < mapMemberCount; i++ )
 				{
-					const Json_t * member = &members[i];
-					Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1 + (int)strlen( member->name ) + 5, "%s\"%s\" : ", &indentTable[maxIndent - ( indent + 1 )], member->name );
-					Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( mapIndex == endMapIndex && i == mapMemberCount - 1 ) );
+					const ksJson * member = &members[i];
+					ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1 + (int)strlen( member->name ) + 5, "%s\"%s\" : ", &indentTable[maxIndent - ( indent + 1 )], member->name );
+					ksJson_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( mapIndex == endMapIndex && i == mapMemberCount - 1 ) );
 				}
 			}
 		}
-		Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 2, "%s}%s\n", &indentTable[maxIndent - indent], lastChild ? "" : "," );
+		ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 2, "%s}%s\n", &indentTable[maxIndent - indent], lastChild ? "" : "," );
 	}
 	else if ( node->type == JSON_ARRAY )
 	{
-		Json_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "[\n" );
+		ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, 2, "[\n" );
 		if ( node->memberCount > 0 )
 		{
 			const int endMapIndex = MemberIndexToMapIndex( node->memberCount - 1 );
 			for ( int mapIndex = 0; mapIndex <= endMapIndex; mapIndex++ )
 			{
-				const Json_t * members = node->memberMap[mapIndex];
+				const ksJson * members = node->memberMap[mapIndex];
 				const int mapMemberCount = MapMemberCount( mapIndex, node->memberCount ); 
 				for ( int i = 0; i < mapMemberCount; i++ )
 				{
-					const Json_t * member = &members[i];
-					Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1, "%s", &indentTable[maxIndent - ( indent + 1 )] );
-					Json_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( mapIndex == endMapIndex && i == mapMemberCount - 1 ) );
+					const ksJson * member = &members[i];
+					ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 1, "%s", &indentTable[maxIndent - ( indent + 1 )] );
+					ksJson_WriteValue( member, recursion + 1, bufferInOut, lengthInOut, offsetInOut, indent + 1, ( mapIndex == endMapIndex && i == mapMemberCount - 1 ) );
 				}
 			}
 		}
-		Json_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 2, "%s]%s\n", &indentTable[maxIndent - indent], lastChild ? "" : "," );
+		ksJson_Printf( bufferInOut, lengthInOut, offsetInOut, indent + 2, "%s]%s\n", &indentTable[maxIndent - indent], lastChild ? "" : "," );
 	}
 }
 
 // 'lengthOut' is the length of 'bufferOut' without trailing zero.
-static bool Json_WriteToBuffer( const Json_t * rootNode, char ** bufferOut, int * lengthOut )
+static bool ksJson_WriteToBuffer( const ksJson * rootNode, char ** bufferOut, int * lengthOut )
 {
 	if ( rootNode == NULL || bufferOut == NULL || lengthOut == NULL )
 	{
@@ -1226,12 +1225,12 @@ static bool Json_WriteToBuffer( const Json_t * rootNode, char ** bufferOut, int 
 	*bufferOut = NULL;
 	*lengthOut = 0;
 	int offset = 0;
-	Json_WriteValue( rootNode, 0, bufferOut, lengthOut, &offset, 0, true );
+	ksJson_WriteValue( rootNode, 0, bufferOut, lengthOut, &offset, 0, true );
 	*lengthOut = offset;
 	return true;
 }
 
-static bool Json_WriteToFile( const Json_t * rootNode, const char * fileName )
+static bool ksJson_WriteToFile( const ksJson * rootNode, const char * fileName )
 {
 	if ( rootNode == NULL || fileName == NULL )
 	{
@@ -1240,7 +1239,7 @@ static bool Json_WriteToFile( const Json_t * rootNode, const char * fileName )
 	char * buffer = NULL;
 	int length = 0;
 	int offset = 0;
-	Json_WriteValue( rootNode, 0, &buffer, &length, &offset, 0, true );
+	ksJson_WriteValue( rootNode, 0, &buffer, &length, &offset, 0, true );
 
 	FILE * file = fopen( fileName, "wb" );
 	if ( file == NULL )
@@ -1259,7 +1258,7 @@ static bool Json_WriteToFile( const Json_t * rootNode, const char * fileName )
 	return true;
 }
 
-static int Json_GetMemberCount( const Json_t * node )
+static int ksJson_GetMemberCount( const ksJson * node )
 {
 	if ( node != NULL )
 	{
@@ -1269,7 +1268,7 @@ static int Json_GetMemberCount( const Json_t * node )
 	return 0;
 }
 
-static Json_t * Json_GetMemberByIndex( const Json_t * node, const int index )
+static ksJson * ksJson_GetMemberByIndex( const ksJson * node, const int index )
 {
 	if ( node != NULL )
 	{
@@ -1287,7 +1286,7 @@ static Json_t * Json_GetMemberByIndex( const Json_t * node, const int index )
 	return NULL;
 }
 
-static Json_t * Json_GetMemberByName( const Json_t * node, const char * name )
+static ksJson * ksJson_GetMemberByName( const ksJson * node, const char * name )
 {
 	if ( node != NULL && node->type == JSON_OBJECT && node->memberCount > 0 )
 	{
@@ -1297,7 +1296,7 @@ static Json_t * Json_GetMemberByName( const Json_t * node, const char * name )
 		int firstMemberOffset = node->memberIndex - MapMemberOffset( startMapIndex );
 		for ( int mapIndex = startMapIndex; mapIndex <= endMapIndex; mapIndex++ )
 		{
-			Json_t * members = node->memberMap[mapIndex];
+			ksJson * members = node->memberMap[mapIndex];
 			const int mapMemberCount = MapMemberCount( mapIndex, node->memberCount ); 
 			for ( int i = firstMemberOffset; i < mapMemberCount; i++ )
 			{
@@ -1312,7 +1311,7 @@ static Json_t * Json_GetMemberByName( const Json_t * node, const char * name )
 		}
 		for ( int mapIndex = 0; mapIndex <= startMapIndex; mapIndex++ )
 		{
-			Json_t * members = node->memberMap[mapIndex];
+			ksJson * members = node->memberMap[mapIndex];
 			const int mapMemberCount = MapMemberCount( mapIndex, node->memberIndex ); 
 			for ( int i = 0; i < mapMemberCount; i++ )
 			{
@@ -1328,7 +1327,7 @@ static Json_t * Json_GetMemberByName( const Json_t * node, const char * name )
 	return NULL;
 }
 
-const char * Json_GetMemberName( const Json_t * node )
+const char * ksJson_GetMemberName( const ksJson * node )
 {
 	if ( node != NULL && node->name != NULL )
 	{
@@ -1338,57 +1337,57 @@ const char * Json_GetMemberName( const Json_t * node )
 	return "";
 }
 
-static inline bool Json_IsNull( const Json_t * node )
+static inline bool ksJson_IsNull( const ksJson * node )
 {
 	return ( node != NULL && node->type == JSON_NULL );
 }
 
-static inline bool Json_IsBoolean( const Json_t * node )
+static inline bool ksJson_IsBoolean( const ksJson * node )
 {
 	return ( node != NULL && node->type == JSON_BOOLEAN );
 }
 
-static inline bool Json_IsNumber( const Json_t * node )
+static inline bool ksJson_IsNumber( const ksJson * node )
 {
 	return ( node != NULL && ( node->type == JSON_INT || node->type == JSON_UINT || node->type == JSON_FLOAT ) );
 }
 
-static inline bool Json_IsInteger( const Json_t * node )
+static inline bool ksJson_IsInteger( const ksJson * node )
 {
 	return ( node != NULL && ( node->type == JSON_INT || node->type == JSON_UINT ) );
 }
 
-static inline bool Json_IsUnsigned( const Json_t * node )
+static inline bool ksJson_IsUnsigned( const ksJson * node )
 {
 	return ( node != NULL && node->type == JSON_UINT );
 }
 
-static inline bool Json_IsFloatingPoint( const Json_t * node )
+static inline bool ksJson_IsFloatingPoint( const ksJson * node )
 {
 	return ( node != NULL && node->type == JSON_FLOAT );
 }
 
-static inline bool Json_IsString( const Json_t * node )
+static inline bool ksJson_IsString( const ksJson * node )
 {
 	return ( node != NULL && node->type == JSON_STRING );
 }
 
-static inline bool Json_IsObject( const Json_t * node )
+static inline bool ksJson_IsObject( const ksJson * node )
 {
 	return ( node != NULL && node->type == JSON_OBJECT );
 }
 
-static inline bool Json_IsArray( const Json_t * node )
+static inline bool ksJson_IsArray( const ksJson * node )
 {
 	return ( node != NULL && node->type == JSON_ARRAY );
 }
 
-static inline bool Json_GetBool( const Json_t * node, const bool defaultValue )
+static inline bool ksJson_GetBool( const ksJson * node, const bool defaultValue )
 {
-	return Json_IsBoolean( node ) ? node->valueString[0] == 't' : defaultValue;
+	return ksJson_IsBoolean( node ) ? node->valueString[0] == 't' : defaultValue;
 }
 
-static inline int8_t Json_GetInt8( const Json_t * node, const int8_t defaultValue )
+static inline int8_t ksJson_GetInt8( const ksJson * node, const int8_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_INT ) ?		(int8_t)JSON_CLAMP( node->valueInt64, INT8_MIN, INT8_MAX ) :
@@ -1396,7 +1395,7 @@ static inline int8_t Json_GetInt8( const Json_t * node, const int8_t defaultValu
 			( ( node->type == JSON_FLOAT ) ?	(int8_t)JSON_CLAMP( node->valueDouble, INT8_MIN, INT8_MAX ) : defaultValue ) ) ) );
 }
 
-static inline uint8_t Json_GetUint8( const Json_t * node, const uint8_t defaultValue )
+static inline uint8_t ksJson_GetUint8( const ksJson * node, const uint8_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_UINT ) ?		(uint8_t)JSON_MIN( node->valueUint64, UINT8_MAX ) :
@@ -1404,7 +1403,7 @@ static inline uint8_t Json_GetUint8( const Json_t * node, const uint8_t defaultV
 			( ( node->type == JSON_FLOAT ) ?	(uint8_t)JSON_CLAMP( node->valueDouble, 0, UINT8_MAX ) : defaultValue ) ) ) );
 }
 
-static inline int16_t Json_GetInt16( const Json_t * node, const int16_t defaultValue )
+static inline int16_t ksJson_GetInt16( const ksJson * node, const int16_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_INT ) ?		(int16_t)JSON_CLAMP( node->valueInt64, INT16_MIN, INT16_MAX ) :
@@ -1412,7 +1411,7 @@ static inline int16_t Json_GetInt16( const Json_t * node, const int16_t defaultV
 			( ( node->type == JSON_FLOAT ) ?	(int16_t)JSON_CLAMP( node->valueDouble, INT16_MIN, INT16_MAX ) : defaultValue ) ) ) );
 }
 
-static inline uint16_t Json_GetUint16( const Json_t * node, const uint16_t defaultValue )
+static inline uint16_t ksJson_GetUint16( const ksJson * node, const uint16_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_UINT ) ?		(uint16_t)JSON_MIN( node->valueUint64, UINT16_MAX ) :
@@ -1420,7 +1419,7 @@ static inline uint16_t Json_GetUint16( const Json_t * node, const uint16_t defau
 			( ( node->type == JSON_FLOAT ) ?	(uint16_t)JSON_CLAMP( node->valueDouble, 0, UINT16_MAX ) : defaultValue ) ) ) );
 }
 
-static inline int32_t Json_GetInt32( const Json_t * node, const int32_t defaultValue )
+static inline int32_t ksJson_GetInt32( const ksJson * node, const int32_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_INT ) ?		(int32_t)JSON_CLAMP( node->valueInt64, INT32_MIN, INT32_MAX ) :
@@ -1428,7 +1427,7 @@ static inline int32_t Json_GetInt32( const Json_t * node, const int32_t defaultV
 			( ( node->type == JSON_FLOAT ) ?	(int32_t)JSON_CLAMP( node->valueDouble, INT32_MIN, INT32_MAX ) : defaultValue ) ) ) );
 }
 
-static inline uint32_t Json_GetUint32( const Json_t * node, const uint32_t defaultValue )
+static inline uint32_t ksJson_GetUint32( const ksJson * node, const uint32_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_UINT ) ?		(uint32_t)JSON_MIN( node->valueUint64, UINT32_MAX ) :
@@ -1436,7 +1435,7 @@ static inline uint32_t Json_GetUint32( const Json_t * node, const uint32_t defau
 			( ( node->type == JSON_FLOAT ) ?	(uint32_t)JSON_CLAMP( node->valueDouble, 0, UINT32_MAX ) : defaultValue ) ) ) );
 }
 
-static inline int64_t Json_GetInt64( const Json_t * node, const int64_t defaultValue )
+static inline int64_t ksJson_GetInt64( const ksJson * node, const int64_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_INT ) ?		(int64_t)node->valueInt64 :
@@ -1444,7 +1443,7 @@ static inline int64_t Json_GetInt64( const Json_t * node, const int64_t defaultV
 			( ( node->type == JSON_FLOAT ) ?	(int64_t)JSON_CLAMP( node->valueDouble, INT64_MIN, INT64_MAX ) : defaultValue ) ) ) );
 }
 
-static inline uint64_t Json_GetUint64( const Json_t * node, const uint64_t defaultValue )
+static inline uint64_t ksJson_GetUint64( const ksJson * node, const uint64_t defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_UINT ) ?		(uint64_t)node->valueUint64 :
@@ -1452,7 +1451,7 @@ static inline uint64_t Json_GetUint64( const Json_t * node, const uint64_t defau
 			( ( node->type == JSON_FLOAT ) ?	(uint64_t)JSON_CLAMP( node->valueDouble, 0, UINT64_MAX ) : defaultValue ) ) ) );
 }
 
-static inline float Json_GetFloat( const Json_t * node, const float defaultValue )
+static inline float ksJson_GetFloat( const ksJson * node, const float defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_FLOAT ) ?	(float)JSON_CLAMP( node->valueDouble, -FLT_MAX, FLT_MAX ) :
@@ -1460,7 +1459,7 @@ static inline float Json_GetFloat( const Json_t * node, const float defaultValue
 			( ( node->type == JSON_UINT ) ?		(float)node->valueUint64 : defaultValue ) ) ) );
 }
 
-static inline double Json_GetDouble( const Json_t * node, const double defaultValue )
+static inline double ksJson_GetDouble( const ksJson * node, const double defaultValue )
 {
 	return	( ( node == NULL ) ?				defaultValue :
 			( ( node->type == JSON_FLOAT ) ?	(double)node->valueDouble :
@@ -1468,17 +1467,17 @@ static inline double Json_GetDouble( const Json_t * node, const double defaultVa
 			( ( node->type == JSON_UINT ) ?		(double)node->valueUint64 : defaultValue ) ) ) );
 }
 
-static inline const char * Json_GetString( const Json_t * node, const char * defaultValue )
+static inline const char * ksJson_GetString( const ksJson * node, const char * defaultValue )
 {
-	return Json_IsString( node ) ? node->valueString : defaultValue;
+	return ksJson_IsString( node ) ? node->valueString : defaultValue;
 }
 
-static Json_t * Json_AddObjectMember( Json_t * node, const char * name )
+static ksJson * ksJson_AddObjectMember( ksJson * node, const char * name )
 {
 	if ( node != NULL && node->type == JSON_OBJECT )
 	{
 		assert( name != NULL );
-		Json_t * member = Json_AllocMember( node );
+		ksJson * member = ksJson_AllocMember( node );
 		const size_t length = strlen( name );
 		member->name = (char *) malloc( length + 1 );
 		strcpy( member->name, name );
@@ -1488,174 +1487,174 @@ static Json_t * Json_AddObjectMember( Json_t * node, const char * name )
 	return NULL;
 }
 
-static Json_t * Json_AddArrayElement( Json_t * node )
+static ksJson * ksJson_AddArrayElement( ksJson * node )
 {
 	if ( node != NULL && node->type == JSON_ARRAY )
 	{
-		Json_t * element = Json_AllocMember( node );
+		ksJson * element = ksJson_AllocMember( node );
 		return element;
 	}
 	return NULL;
 }
 
-static inline Json_t * Json_SetObject( Json_t * node )
+static inline ksJson * ksJson_SetObject( ksJson * node )
 {
 	if ( node != NULL )
 	{
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_OBJECT;
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetArray( Json_t * node )
+static inline ksJson * ksJson_SetArray( ksJson * node )
 {
 	if ( node != NULL )
 	{
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_ARRAY;
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetNull( Json_t * node )
+static inline ksJson * ksJson_SetNull( ksJson * node )
 {
 	if ( node != NULL )
 	{
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_NULL;
 		node->valueString = (char *)"null";
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetBoolean( Json_t * node, const bool value )
+static inline ksJson * ksJson_SetBoolean( ksJson * node, const bool value )
 {
 	if ( node != NULL )
 	{
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_BOOLEAN;
 		node->valueString = value ? (char *)"true" : (char *)"false";
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetInt8( Json_t * node, const int8_t value )
+static inline ksJson * ksJson_SetInt8( ksJson * node, const int8_t value )
 {
 	if ( node != NULL )
 	{
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_INT;
 		node->valueInt64 = value;
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetUint8( Json_t * node, const uint8_t value )
+static inline ksJson * ksJson_SetUint8( ksJson * node, const uint8_t value )
 {
 	if ( node != NULL )
 	{
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_UINT;
 		node->valueUint64 = value;
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetInt16( Json_t * node, const int16_t value )
+static inline ksJson * ksJson_SetInt16( ksJson * node, const int16_t value )
 {
 	if ( node != NULL )
 	{
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_INT;
 		node->valueInt64 = value;
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetUint16( Json_t * node, const uint16_t value )
+static inline ksJson * ksJson_SetUint16( ksJson * node, const uint16_t value )
 {
 	if ( node != NULL )
 	{
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_UINT;
 		node->valueUint64 = value;
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetInt32( Json_t * node, const int32_t value )
+static inline ksJson * ksJson_SetInt32( ksJson * node, const int32_t value )
 {
 	if ( node != NULL )
 	{
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_INT;
 		node->valueInt64 = value;
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetUint32( Json_t * node, const uint32_t value )
+static inline ksJson * ksJson_SetUint32( ksJson * node, const uint32_t value )
 {
 	if ( node != NULL )
 	{
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_UINT;
 		node->valueUint64 = value;
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetInt64( Json_t * node, const int64_t value )
+static inline ksJson * ksJson_SetInt64( ksJson * node, const int64_t value )
 {
 	if ( node != NULL )
 	{
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_INT;
 		node->valueInt64 = value;
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetUint64( Json_t * node, const uint64_t value )
+static inline ksJson * ksJson_SetUint64( ksJson * node, const uint64_t value )
 {
 	if ( node != NULL )
 	{
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_UINT;
 		node->valueUint64 = value;
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetFloat( Json_t * node, const float value )
+static inline ksJson * ksJson_SetFloat( ksJson * node, const float value )
 {
 	if ( node != NULL )
 	{
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_FLOAT;
 		node->valueDouble = value;
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetDouble( Json_t * node, const double value )
+static inline ksJson * ksJson_SetDouble( ksJson * node, const double value )
 {
 	if ( node != NULL )
 	{
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_FLOAT;
 		node->valueDouble = value;
 	}
 	return node;
 }
 
-static inline Json_t * Json_SetString( Json_t * node, const char * value )
+static inline ksJson * ksJson_SetString( ksJson * node, const char * value )
 {
 	if ( node != NULL )
 	{
 		assert( value != NULL );
-		Json_FreeNode( node, false );
+		ksJson_FreeNode( node, false );
 		node->type = JSON_STRING;
 		const int length = (int)strlen( value );
 		node->valueString = (char *) malloc( length + 1 );
@@ -1664,4 +1663,4 @@ static inline Json_t * Json_SetString( Json_t * node, const char * value )
 	return node;
 }
 
-#endif // !JSON_H
+#endif // !KSJSON_H

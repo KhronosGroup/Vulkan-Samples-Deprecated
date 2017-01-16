@@ -16,5 +16,5 @@ stereoscopic images onto the display, synchronized with the display refresh
 source file   |  description
 --------------|--------------------------------------------------------
 atw_cpu_dsp.c |	 Asynchronous Time Warp implementation for a CPU or DSP
-atw_opengl.c  |  Asynchronous Time Warp implementation using OpenGL
+atw_opengl.c  |  Asynchronous Time Warp implementation using OpenGL / OpenGL ES
 atw_vulkan.c  |  Asynchronous Time Warp implementation using Vulkan

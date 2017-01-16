@@ -8,8 +8,13 @@ set( GL_HEADERS
     ${INCLUDE_DIR}/GL/glext.h
     ${INCLUDE_DIR}/GL/wglext.h )
 set( UTILS_HEADERS
+    ${INCLUDE_DIR}/utils/algebra.h
     ${INCLUDE_DIR}/utils/base64.h
-    ${INCLUDE_DIR}/utils/json.h )
+    ${INCLUDE_DIR}/utils/json.h
+    ${INCLUDE_DIR}/utils/lexer.h
+    ${INCLUDE_DIR}/utils/sysinfo.h
+    ${INCLUDE_DIR}/utils/nanoseconds.h
+    ${INCLUDE_DIR}/utils/threading.h )
 set( VULKAN_HEADERS
     ${INCLUDE_DIR}/vulkan/vk_format.h )
 source_group( Dummy FILES ${SOURCES} )

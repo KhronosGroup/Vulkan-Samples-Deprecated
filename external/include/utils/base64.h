@@ -49,16 +49,16 @@ https://www.ietf.org/rfc/rfc4648.txt
 INTERFACE
 =========
 
-size_t Base64_EncodeSizeInBytes( size_t dataSizeInBytes );
-size_t Base64_DecodeSizeInBytes( const char * base64, const size_t base64SizeInBytes );
-size_t Base64_Encode( char * base64, const unsigned char * data, const size_t dataSizeInBytes );
-size_t Base64_Decode( unsigned char * data, const char * base64, const size_t base64SizeInBytes, const size_t maxDecodeSizeInBytes );
+size_t ksBase64_EncodeSizeInBytes( size_t dataSizeInBytes );
+size_t ksBase64_DecodeSizeInBytes( const char * base64, const size_t base64SizeInBytes );
+size_t ksBase64_Encode( char * base64, const unsigned char * data, const size_t dataSizeInBytes );
+size_t ksBase64_Decode( unsigned char * data, const char * base64, const size_t base64SizeInBytes, const size_t maxDecodeSizeInBytes );
 
 ================================================================================================================================
 */
 
-#if !defined( BASE64_H )
-#define BASE64_H
+#if !defined( KSBASE64_H )
+#define KSBASE64_H
 
 // alphabet character for a radix-64 number
 static const char base64_alphabet[] =
@@ -88,12 +88,12 @@ static const char base64_radix64[] =
 	 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
 };
 
-static inline size_t Base64_EncodeSizeInBytes( size_t dataSizeInBytes )
+static inline size_t ksBase64_EncodeSizeInBytes( size_t dataSizeInBytes )
 {
 	return ( dataSizeInBytes + 2 ) / 3 * 4;
 }
 
-static inline size_t Base64_DecodeSizeInBytes( const char * base64, const size_t base64SizeInBytes )
+static inline size_t ksBase64_DecodeSizeInBytes( const char * base64, const size_t base64SizeInBytes )
 {
 	int padding = 0;
 	for ( size_t i = base64SizeInBytes - 1; i > 0 && base64[i] == '='; i-- )
@@ -103,7 +103,7 @@ static inline size_t Base64_DecodeSizeInBytes( const char * base64, const size_t
 	return ( ( 3 * base64SizeInBytes + 3 ) / 4 ) - padding;
 }
 
-static inline size_t Base64_Encode( char * base64, const unsigned char * data, const size_t dataSizeInBytes )
+static inline size_t ksBase64_Encode( char * base64, const unsigned char * data, const size_t dataSizeInBytes )
 {
 	size_t base64SizeInBytes = 0;
 	size_t byteCount = 0;
@@ -144,7 +144,7 @@ static inline size_t Base64_Encode( char * base64, const unsigned char * data, c
 	return base64SizeInBytes;
 }
 
-static inline size_t Base64_Decode( unsigned char * data, const char * base64, const size_t base64SizeInBytes, const size_t maxDecodeSizeInBytes )
+static inline size_t ksBase64_Decode( unsigned char * data, const char * base64, const size_t base64SizeInBytes, const size_t maxDecodeSizeInBytes )
 {
 	size_t maxDecodeBytes = ( maxDecodeSizeInBytes > 0 ) ? maxDecodeSizeInBytes : SIZE_MAX;
 	size_t dataSizeInBytes = 0;
@@ -192,4 +192,4 @@ static inline size_t Base64_Decode( unsigned char * data, const char * base64, c
 	return dataSizeInBytes;
 }
 
-#endif // !BASE64_H
+#endif // !KSBASE64_H
