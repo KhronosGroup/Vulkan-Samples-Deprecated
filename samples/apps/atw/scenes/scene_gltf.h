@@ -2492,7 +2492,7 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 								found = true;
 								break;
 							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE:
-								out += sprintf( (char *)out, "%s%s * %s%s  %s%s",
+								out += sprintf( (char *)out, "%s%s * %s%s * %s%s",
 										newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE], multiviewArrayIndexString,
 										pushConstantInstanceName, newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE],
 										pushConstantInstanceName, technique->parms[i].name );
@@ -2509,7 +2509,7 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 								found = true;
 								break;
 							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE:
-								out += sprintf( (char *)out, "%s%s * %s%s * %s%s %s%s",
+								out += sprintf( (char *)out, "%s%s * %s%s * %s%s * %s%s",
 										newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE], multiviewArrayIndexString,
 										newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE], multiviewArrayIndexString,
 										pushConstantInstanceName, newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE],
@@ -2790,11 +2790,7 @@ void ksGltf_CreateTechniqueProgram( ksGpuContext * context, ksGltfTechnique * te
 				newParms[newUniformCount].name = technique->parms[uniformIndex].name;
 				newParms[newUniformCount].binding = 0;	// Set when adding layout qualitifiers.
 
-				newUniforms[newUniformCount].name = technique->uniforms[uniformIndex].name;
-				newUniforms[newUniformCount].semantic = technique->uniforms[uniformIndex].semantic;
-				newUniforms[newUniformCount].nodeName = technique->uniforms[uniformIndex].nodeName;
-				newUniforms[newUniformCount].node = technique->uniforms[uniformIndex].node;
-				newUniforms[newUniformCount].type = technique->uniforms[uniformIndex].type;
+				memcpy( &newUniforms[newUniformCount], &technique->uniforms[uniformIndex], sizeof( ksGltfUniform ) );
 				newUniforms[newUniformCount].index = newUniformCount;
 
 				newUniformCount++;
