@@ -29,8 +29,8 @@ limitations under the License.
 ================================================================================================
 */
 
-#if !defined( KSTIMENS_H )
-#define KSTIMENS_H
+#if !defined( KSNANOSECONDS_H )
+#define KSNANOSECONDS_H
 
 #if defined( WIN32 ) || defined( _WIN32 ) || defined( WIN64 ) || defined( _WIN64 )
 	#if !defined( OS_WINDOWS )
@@ -127,4 +127,4 @@ static ksNanoseconds GetTimeNanoseconds()
 #endif
 }
 
-#endif // !KSTIMENS_H
+#endif // !KSNANOSECONDS_H
