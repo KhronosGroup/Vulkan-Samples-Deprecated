@@ -846,7 +846,6 @@ typedef enum
 	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE,
 	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION,
 	GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE,
-	GLTF_UNIFORM_SEMANTIC_NODE,
 	GLTF_UNIFORM_SEMANTIC_VIEWPORT,
 	GLTF_UNIFORM_SEMANTIC_JOINT_ARRAY,
 	// new semantic values
@@ -878,7 +877,6 @@ gltfUniformSemanticNames[] =
 	{ "MODELVIEWINVERSETRANSPOSE",		GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE },
 	{ "MODELVIEWPROJECTION",			GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION },
 	{ "MODELVIEWPROJECTIONINVERSE",		GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE },
-	{ "NODE",							GLTF_UNIFORM_SEMANTIC_NODE },
 	{ "VIEWPORT",						GLTF_UNIFORM_SEMANTIC_VIEWPORT },
 	{ "JOINTMATRIX",					GLTF_UNIFORM_SEMANTIC_JOINT_ARRAY },
 	// new semantic values
@@ -2090,6 +2088,8 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 		}
 	}
 
+	static const char tabTable[] = { "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t" };
+
 	int addSpace = 0;
 	int addTabs = 0;
 	bool newLine = true;
@@ -2106,16 +2106,11 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 
 		if ( tokenInfo.type == KS_TOKEN_TYPE_PUNCTUATION )
 		{
-			if ( ksLexer_CaseSensitiveCompareToken( token, ptr, ";" ) )
-			{
-				out = (unsigned char *)memcpy( out, ";\n", 2 ) + 2;
-				addSpace = 0;
-				newLine = true;
-				continue;
-			}
 			if ( ksLexer_CaseSensitiveCompareToken( token, ptr, "{" ) )
 			{
-				out = (unsigned char *)memcpy( out, "\n{\n", 3 ) + 3;
+				out = (unsigned char *)memcpy( out, "\n", 1 ) + 1;
+				out = (unsigned char *)memcpy( out, tabTable, MIN( addTabs, 16 ) ) + MIN( addTabs, 16 );
+				out = (unsigned char *)memcpy( out, "{\n", 2 ) + 2;
 				addTabs++;
 				addSpace = 0;
 				newLine = true;
@@ -2123,8 +2118,16 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 			}
 			if ( ksLexer_CaseSensitiveCompareToken( token, ptr, "}" ) )
 			{
-				out = (unsigned char *)memcpy( out, "}\n", 2 ) + 2;
 				addTabs--;
+				addSpace = 0;
+				newLine = true;
+				out = (unsigned char *)memcpy( out, tabTable, MIN( addTabs, 16 ) ) + MIN( addTabs, 16 );
+				out = (unsigned char *)memcpy( out, "}\n", 2 ) + 2;
+				continue;
+			}
+			if ( ksLexer_CaseSensitiveCompareToken( token, ptr, ";" ) )
+			{
+				out = (unsigned char *)memcpy( out, ";\n", 2 ) + 2;
 				addSpace = 0;
 				newLine = true;
 				continue;
@@ -2159,15 +2162,7 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 			}
 		}
 
-		// Strip any existing precision specifiers.
-		if ( ksLexer_CaseSensitiveCompareToken( token, ptr, "precision" ) )
-		{
-			ptr = ksLexer_SkipUpToIncludingToken( source, ptr, ";" );
-			continue;
-		}
-
 		// Insert tabs/spaces.
-		static const char tabTable[] = { "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t" };
 		if ( newLine )
 		{
 			out = (unsigned char *)memcpy( out, tabTable, MIN( addTabs, 16 ) ) + MIN( addTabs, 16 );
@@ -2181,30 +2176,43 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 
 		if ( tokenInfo.type == KS_TOKEN_TYPE_NAME )
 		{
+			// Strip any existing precision specifiers.
+			if ( ksLexer_CaseSensitiveCompareToken( token, ptr, "precision" ) )
+			{
+				ptr = ksLexer_SkipUpToIncludingToken( source, ptr, ";" );
+				addSpace = 0;
+				continue;
+			}
+
 			// Convert the vertex and fragment shader in-out parameters.
 			if ( stage == KS_GPU_PROGRAM_STAGE_FLAG_VERTEX )
 			{
 				if ( ksLexer_CaseSensitiveCompareToken( token, ptr, "attribute" ) )
 				{
+					const unsigned char * typeStart;
+					const unsigned char * typeEnd = ksLexer_NextToken( source, ptr, &typeStart, NULL );
+					const unsigned char * nameStart;
+					const unsigned char * nameEnd = ksLexer_NextToken( source, typeEnd, &nameStart, NULL );
 					if ( ( conversion & ( KS_GLSL_CONVERSION_FLAG_LAYOUT_OPENGL | KS_GLSL_CONVERSION_FLAG_LAYOUT_VULKAN ) ) != 0 )
 					{
-						const unsigned char * typeStart;
-						const unsigned char * typeEnd = ksLexer_NextToken( source, ptr, &typeStart, NULL );
-						const unsigned char * nameStart;
-						const unsigned char * nameEnd = ksLexer_NextToken( source, typeEnd, &nameStart, NULL );
 						out += sprintf( (char *)out, "layout( location = %d ) ", ksGltf_GetVertexAttributeLocation( technique, nameStart, nameEnd ) );
 					}
 					out = (unsigned char *)memcpy( out, "in", 2 ) + 2;
+					out = (unsigned char *)memcpy( out, " ", 1 ) + 1;
+					out = (unsigned char *)memcpy( out, typeStart, typeEnd - typeStart ) + ( typeEnd - typeStart );
+					out = (unsigned char *)memcpy( out, " ", 1 ) + 1;
+					out = (unsigned char *)memcpy( out, nameStart, nameEnd - nameStart ) + ( nameEnd - nameStart );
+					ptr = nameEnd;
 					continue;
 				}
 				if ( ksLexer_CaseSensitiveCompareToken( token, ptr, "varying" ) )
 				{
+					const unsigned char * typeStart;
+					const unsigned char * typeEnd = ksLexer_NextToken( source, ptr, &typeStart, NULL );
+					const unsigned char * nameStart;
+					const unsigned char * nameEnd = ksLexer_NextToken( source, typeEnd, &nameStart, NULL );
 					if ( ( conversion & ( KS_GLSL_CONVERSION_FLAG_LAYOUT_OPENGL | KS_GLSL_CONVERSION_FLAG_LAYOUT_VULKAN ) ) != 0 )
 					{
-						const unsigned char * typeStart;
-						const unsigned char * typeEnd = ksLexer_NextToken( source, ptr, &typeStart, NULL );
-						const unsigned char * nameStart;
-						const unsigned char * nameEnd = ksLexer_NextToken( source, typeEnd, &nameStart, NULL );
 						out += sprintf( (char *)out, "layout( location = %d ) ", *inOutParmCount );
 						inOutParms[(*inOutParmCount)].nameStart = nameStart;
 						inOutParms[(*inOutParmCount)].nameEnd = nameEnd;
@@ -2212,6 +2220,11 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 						(*inOutParmCount)++;
 					}
 					out = (unsigned char *)memcpy( out, "out", 3 ) + 3;
+					out = (unsigned char *)memcpy( out, " ", 1 ) + 1;
+					out = (unsigned char *)memcpy( out, typeStart, typeEnd - typeStart ) + ( typeEnd - typeStart );
+					out = (unsigned char *)memcpy( out, " ", 1 ) + 1;
+					out = (unsigned char *)memcpy( out, nameStart, nameEnd - nameStart ) + ( nameEnd - nameStart );
+					ptr = nameEnd;
 					continue;
 				}
 			}
@@ -2219,12 +2232,12 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 			{
 				if ( ksLexer_CaseSensitiveCompareToken( token, ptr, "varying" ) )
 				{
+					const unsigned char * typeStart;
+					const unsigned char * typeEnd = ksLexer_NextToken( source, ptr, &typeStart, NULL );
+					const unsigned char * nameStart;
+					const unsigned char * nameEnd = ksLexer_NextToken( source, typeEnd, &nameStart, NULL );
 					if ( ( conversion & ( KS_GLSL_CONVERSION_FLAG_LAYOUT_OPENGL | KS_GLSL_CONVERSION_FLAG_LAYOUT_VULKAN ) ) != 0 )
 					{
-						const unsigned char * typeStart;
-						const unsigned char * typeEnd = ksLexer_NextToken( source, ptr, &typeStart, NULL );
-						const unsigned char * nameStart;
-						const unsigned char * nameEnd = ksLexer_NextToken( source, typeEnd, &nameStart, NULL );
 						const size_t nameLength = nameEnd - nameStart;
 						int location = -1;
 						for ( int i = 0; i < *inOutParmCount; i++ )
@@ -2240,6 +2253,11 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 						out += sprintf( (char *)out, "layout( location = %d ) ", location );
 					}
 					out = (unsigned char *)memcpy( out, "in", 2 ) + 2;
+					out = (unsigned char *)memcpy( out, " ", 1 ) + 1;
+					out = (unsigned char *)memcpy( out, typeStart, typeEnd - typeStart ) + ( typeEnd - typeStart );
+					out = (unsigned char *)memcpy( out, " ", 1 ) + 1;
+					out = (unsigned char *)memcpy( out, nameStart, nameEnd - nameStart ) + ( nameEnd - nameStart );
+					ptr = nameEnd;
 					continue;
 				}
 			}
@@ -2325,6 +2343,11 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 				}
 
 				out = (unsigned char *)memcpy( out, token, ptr - token ) + ( ptr - token );
+				out = (unsigned char *)memcpy( out, " ", 1 ) + 1;
+				out = (unsigned char *)memcpy( out, typeStart, typeEnd - typeStart ) + ( typeEnd - typeStart );
+				out = (unsigned char *)memcpy( out, " ", 1 ) + 1;
+				out = (unsigned char *)memcpy( out, nameStart, nameEnd - nameStart ) + ( nameEnd - nameStart );
+				ptr = nameEnd;
 				continue;
 			}
 
@@ -2412,6 +2435,98 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 							newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE], multiviewArrayIndexString,
 							pushConstantInstanceName, newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE] );
 					ksGltf_SetUniformStageFlag( technique, (const unsigned char *)newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE], NULL, stage );
+					continue;
+				}
+
+				// Pre-multiplied node transform with semantic transform.
+				bool found = false;
+				for ( int i = 0; i < technique->uniformCount; i++ )
+				{
+					if ( technique->uniforms[i].nodeName != NULL && ksLexer_CaseSensitiveCompareToken( token, ptr, technique->parms[i].name ) )
+					{
+						assert( stage == KS_GPU_PROGRAM_STAGE_FLAG_VERTEX );
+						switch ( technique->uniforms[i].semantic )
+						{
+							case GLTF_UNIFORM_SEMANTIC_VIEW:
+								out += sprintf( (char *)out, "%s%s * %s%s",
+									newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_VIEW], multiviewArrayIndexString,
+									pushConstantInstanceName, technique->parms[i].name );
+								found = true;
+								break;
+							case GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE:
+								out += sprintf( (char *)out, "%s%s * %s%s",
+										newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE], multiviewArrayIndexString,
+										pushConstantInstanceName, technique->parms[i].name );
+								found = true;
+								break;
+							case GLTF_UNIFORM_SEMANTIC_PROJECTION:
+								out += sprintf( (char *)out, "%s%s * %s%s",
+										newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_PROJECTION], multiviewArrayIndexString,
+										pushConstantInstanceName, technique->parms[i].name );
+								found = true;
+								break;
+							case GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE:
+								out += sprintf( (char *)out, "%s%s * %s%s",
+										newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE], multiviewArrayIndexString,
+										pushConstantInstanceName, technique->parms[i].name );
+								found = true;
+								break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL:
+								out += sprintf( (char *)out, "%s * %s%s",
+										newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MODEL],
+										pushConstantInstanceName, technique->parms[i].name );
+								found = true;
+								break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE:
+								out += sprintf( (char *)out, "%s * %s%s",
+										newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE],
+										pushConstantInstanceName, technique->parms[i].name );
+								found = true;
+								break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW:
+								out += sprintf( (char *)out, "%s%s * %s%s * %s%s",
+										newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_VIEW], multiviewArrayIndexString,
+										pushConstantInstanceName, newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MODEL],
+										pushConstantInstanceName, technique->parms[i].name );
+								ksGltf_SetUniformStageFlag( technique, (const unsigned char *)newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MODEL], NULL, stage );
+								found = true;
+								break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE:
+								out += sprintf( (char *)out, "%s%s * %s%s * %s%s",
+										newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE], multiviewArrayIndexString,
+										pushConstantInstanceName, newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE],
+										pushConstantInstanceName, technique->parms[i].name );
+								ksGltf_SetUniformStageFlag( technique, (const unsigned char *)newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE], NULL, stage );
+								found = true;
+								break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION:
+								out += sprintf( (char *)out, "%s%s * %s%s * %s%s * %s%s",
+										newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_PROJECTION], multiviewArrayIndexString,
+										newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_VIEW], multiviewArrayIndexString,
+										pushConstantInstanceName, newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MODEL],
+										pushConstantInstanceName, technique->parms[i].name );
+								ksGltf_SetUniformStageFlag( technique, (const unsigned char *)newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MODEL], NULL, stage );
+								found = true;
+								break;
+							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE:
+								out += sprintf( (char *)out, "%s%s * %s%s * %s%s * %s%s",
+										newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE], multiviewArrayIndexString,
+										newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE], multiviewArrayIndexString,
+										pushConstantInstanceName, newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE],
+										pushConstantInstanceName, technique->parms[i].name );
+								ksGltf_SetUniformStageFlag( technique, (const unsigned char *)newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE], NULL, stage );
+								found = true;
+								break;
+							default:
+								out += sprintf( (char *)out, "%s%s", pushConstantInstanceName, technique->parms[i].name );
+								found = true;
+								break;
+						}
+						break;
+					}
+				}
+				if ( found )
+				{
 					continue;
 				}
 			}
@@ -2659,9 +2774,12 @@ void ksGltf_CreateTechniqueProgram( ksGpuContext * context, ksGltfTechnique * te
 							technique->uniforms[uniformIndex].semantic == GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION ||
 							technique->uniforms[uniformIndex].semantic == GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE )
 					{
-						free( (void *)technique->parms[uniformIndex].name );
-						free( technique->uniforms[uniformIndex].name );
-						continue;
+						if ( technique->uniforms[uniformIndex].nodeName == NULL )
+						{
+							free( (void *)technique->parms[uniformIndex].name );
+							free( technique->uniforms[uniformIndex].name );
+							continue;
+						}
 					}
 				}
 
@@ -2672,11 +2790,7 @@ void ksGltf_CreateTechniqueProgram( ksGpuContext * context, ksGltfTechnique * te
 				newParms[newUniformCount].name = technique->parms[uniformIndex].name;
 				newParms[newUniformCount].binding = 0;	// Set when adding layout qualitifiers.
 
-				newUniforms[newUniformCount].name = technique->uniforms[uniformIndex].name;
-				newUniforms[newUniformCount].semantic = technique->uniforms[uniformIndex].semantic;
-				newUniforms[newUniformCount].nodeName = technique->uniforms[uniformIndex].nodeName;
-				newUniforms[newUniformCount].node = technique->uniforms[uniformIndex].node;
-				newUniforms[newUniformCount].type = technique->uniforms[uniformIndex].type;
+				memcpy( &newUniforms[newUniformCount], &technique->uniforms[uniformIndex], sizeof( ksGltfUniform ) );
 				newUniforms[newUniformCount].index = newUniformCount;
 
 				newUniformCount++;
@@ -3546,7 +3660,6 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 
 				if ( node[0] != '\0' )
 				{
-					semanticName = "NODE";
 					assert( parmType == KS_GPU_PROGRAM_PARM_TYPE_PUSH_CONSTANT_FLOAT_MATRIX4X4 );
 				}
 
@@ -5212,33 +5325,36 @@ static void ksGltfScene_Render( ksGpuCommandBuffer * commandBuffer, const ksGltf
 					for ( int uniformIndex = 0; uniformIndex < technique->uniformCount; uniformIndex++ )
 					{
 						const ksGltfUniform * uniform = &technique->uniforms[uniformIndex];
-						switch ( uniform->semantic )
+						if ( uniform->node != NULL )
 						{
-							case GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE:						ksGltfScene_SetUniformValue( &command, uniform, &uniform->defaultValue ); break;
-							case GLTF_UNIFORM_SEMANTIC_VIEW:								assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
-							case GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE:						assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
-							case GLTF_UNIFORM_SEMANTIC_PROJECTION:							assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
-							case GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE:					assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
-							case GLTF_UNIFORM_SEMANTIC_LOCAL:								ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &localMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_MODEL:								ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &modelMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE:						ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &modelInverseMatrix ); break;
-							case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE:				assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
-							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW:							assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
-							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE:					assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
-							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE:		assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
-							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION:				assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
-							case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE:		assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
-							case GLTF_UNIFORM_SEMANTIC_NODE:								{
-																								const ksMatrix4x4f * matrix = &scene->state.nodeState[(int)( uniform->node - scene->nodes )].globalTransform;
-																								ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, matrix );
-																								break;
-																							}
-							case GLTF_UNIFORM_SEMANTIC_VIEWPORT:							ksGpuGraphicsCommand_SetParmFloatVector4( &command, uniform->index, &viewport ); break;
-							case GLTF_UNIFORM_SEMANTIC_JOINT_ARRAY:							assert( false ); break;	// replaced by KHR_glsl_joint_buffer
-							case GLTF_UNIFORM_SEMANTIC_JOINT_BUFFER:						ksGpuGraphicsCommand_SetParmBufferUniform( &command, uniform->index, jointBuffer ); break;
-							case GLTF_UNIFORM_SEMANTIC_VIEW_PROJECTION_BUFFER:				ksGpuGraphicsCommand_SetParmBufferUniform( &command, uniform->index, &scene->viewProjectionBuffer ); break;
-							case GLTF_UNIFORM_SEMANTIC_VIEW_PROJECTION_MULTI_VIEW_BUFFER:	ksGpuGraphicsCommand_SetParmBufferUniform( &command, uniform->index, &scene->viewProjectionBuffer ); break;
-							default: break;
+							const ksMatrix4x4f * matrix = &scene->state.nodeState[(int)( uniform->node - scene->nodes )].globalTransform;
+							ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, matrix );
+						}
+						else
+						{
+							switch ( uniform->semantic )
+							{
+								case GLTF_UNIFORM_SEMANTIC_DEFAULT_VALUE:						ksGltfScene_SetUniformValue( &command, uniform, &uniform->defaultValue ); break;
+								case GLTF_UNIFORM_SEMANTIC_VIEW:								assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
+								case GLTF_UNIFORM_SEMANTIC_VIEW_INVERSE:						assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
+								case GLTF_UNIFORM_SEMANTIC_PROJECTION:							assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
+								case GLTF_UNIFORM_SEMANTIC_PROJECTION_INVERSE:					assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
+								case GLTF_UNIFORM_SEMANTIC_LOCAL:								ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &localMatrix ); break;
+								case GLTF_UNIFORM_SEMANTIC_MODEL:								ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &modelMatrix ); break;
+								case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE:						ksGpuGraphicsCommand_SetParmFloatMatrix4x4( &command, uniform->index, &modelInverseMatrix ); break;
+								case GLTF_UNIFORM_SEMANTIC_MODEL_INVERSE_TRANSPOSE:				assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
+								case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW:							assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
+								case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE:					assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
+								case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_INVERSE_TRANSPOSE:		assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
+								case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION:				assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
+								case GLTF_UNIFORM_SEMANTIC_MODEL_VIEW_PROJECTION_INVERSE:		assert( false ); break;	// replaced by KHR_glsl_view_projection_buffer
+								case GLTF_UNIFORM_SEMANTIC_VIEWPORT:							ksGpuGraphicsCommand_SetParmFloatVector4( &command, uniform->index, &viewport ); break;
+								case GLTF_UNIFORM_SEMANTIC_JOINT_ARRAY:							assert( false ); break;	// replaced by KHR_glsl_joint_buffer
+								case GLTF_UNIFORM_SEMANTIC_JOINT_BUFFER:						ksGpuGraphicsCommand_SetParmBufferUniform( &command, uniform->index, jointBuffer ); break;
+								case GLTF_UNIFORM_SEMANTIC_VIEW_PROJECTION_BUFFER:				ksGpuGraphicsCommand_SetParmBufferUniform( &command, uniform->index, &scene->viewProjectionBuffer ); break;
+								case GLTF_UNIFORM_SEMANTIC_VIEW_PROJECTION_MULTI_VIEW_BUFFER:	ksGpuGraphicsCommand_SetParmBufferUniform( &command, uniform->index, &scene->viewProjectionBuffer ); break;
+								default: break;
+							}
 						}
 					}
 

@@ -64,6 +64,9 @@ limitations under the License.
 
 #if defined( OS_WINDOWS )
 	#include <windows.h>
+#elif defined( OS_APPLE )
+	#include <Foundation/NSString.h>
+	#include <Foundation/NSProcessInfo.h>
 #elif defined( OS_ANDROID )
 	#include <dlfcn.h>							// for dlopen
 #endif

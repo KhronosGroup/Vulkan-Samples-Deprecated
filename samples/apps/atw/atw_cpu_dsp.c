@@ -718,8 +718,6 @@ Default to no cache management
 #define EYE_COUNT					2
 #define COLOR_CHANNEL_COUNT			3
 
-typedef uint64_t ksNanoseconds;
-
 /*
 ================================
 Fast integer operations
