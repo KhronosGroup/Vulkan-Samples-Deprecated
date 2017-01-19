@@ -31,7 +31,7 @@ DESCRIPTION
 
 All matrices are column-major.
 
-Define one of the following defines before including this header file to
+Set one of the following defines to one before including this header file to
 construct an appropriate projection matrix for a particular graphics API.
 
 #define GRAPHICS_API_OPENGL		0

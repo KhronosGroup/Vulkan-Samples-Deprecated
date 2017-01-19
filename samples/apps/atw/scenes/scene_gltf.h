@@ -32,6 +32,15 @@ limitations under the License.
 DESCRIPTION
 ===========
 
+Set one of the following defines to one before including this header file to
+load a glTF scene for a particular graphics API.
+
+#define GRAPHICS_API_OPENGL		0
+#define GRAPHICS_API_OPENGL_ES	0
+#define GRAPHICS_API_VULKAN		0
+#define GRAPHICS_API_D3D		0
+#define GRAPHICS_API_METAL		0
+
 This implementation supports the following extensions:
 
  - KHR_binary_glTF
@@ -63,7 +72,8 @@ Incorrect usage of JSON:
 	  As a result, a JSON parser is needed that cannot just lookup
 	  object members by name, but can also iterate over the object
 	  members as if they are array elements. Not all JSON parsers
-	  support this.
+	  support this. JSON parsers that do support this behavior are
+	  typically not optimized for objects with many members.
 There are no JSON ordering requirements:
 	- There are no requirements for how the JSON data is ordered. There
 	  are obvious benefits from ordering the JSON data, such that all
@@ -97,8 +107,8 @@ The naming of things is sometimes awkward:
 	- In normal graphics terminology meshes are connected pieces of geometry
 	  and primitives are triangles (or lines or points). However, in glTF,
 	  meshes are models and primitives are surfaces.
-	- The stage of a shader is called "shader.type". Why isn't it called
-	  "shader.stage"?
+	- The pipeline stage of a shader is called "shader.type". Why isn't it
+	  called "shader.stage"?
 There are also obvious things missing:
 	- There is no requirement that a buffer holds only one type of data.
 	  A buffer may mix vertex attribute arrays, index arrays, animation
@@ -108,7 +118,7 @@ There are also obvious things missing:
 	  separate bufferViews for every separate piece of data that is used.
 	  The bufferView.target member is also not a required member so a
 	  bufferView may still not say anything about what kind of data it holds.
-	- glTF 1.0 is limited to GLSL 1.00 which means there is no support for
+	- glTF 1.0 is limited to GLSL 1.00 ES which means there is no support for
 	  uniforms buffers. For animations this means that the number of joints
 	  per surface is very limited and updating a uniform array is also far
 	  less efficient than updating a uniform buffer on modern hardware.
@@ -171,6 +181,8 @@ This glTF implementation overcomes some of these issues.
 	- Time-lines that are fixed-rate are identified at load time. A fixed-rate
 	  time-line allows for very fast direct indexing of key frames based on
 	  the current time.
+	- Time-lines are evaluated separately so they can be shared by different
+	  animations.
 	- The bindShapeMatrix is folded into the inverseBindMatrices at load
 	  time to avoid another run-time matrix multiplication.
 	- This implementation supports culling of animated models using the
@@ -1271,10 +1283,6 @@ static char * ksGltf_strdup( const char * str )
 
 static unsigned char * ksGltf_ReadFile( const char * fileName, size_t * outSizeInBytes )
 {
-	if ( outSizeInBytes != NULL )
-	{
-		*outSizeInBytes = 0;
-	}
 	FILE * file = fopen( fileName, "rb" );
 	if ( file == NULL )
 	{
@@ -1305,12 +1313,13 @@ static unsigned char * ksGltf_ReadPlainText( const char * uri, size_t * outSizeI
 {
 	const size_t maxSizeInBytes = ( outSizeInBytes != NULL && *outSizeInBytes > 0 ) ? *outSizeInBytes : SIZE_MAX;
 	const size_t length = MIN( strlen( uri ), maxSizeInBytes );
+	char * out = (char *)malloc( length + 1 );
+	strncpy( out, uri, length );
+	out[length] = '\0';
 	if ( outSizeInBytes != NULL )
 	{
 		*outSizeInBytes = length;
 	}
-	char * out = (char *)malloc( length + 1 );
-	strcpy( out, uri );
 	return (unsigned char *)out;
 }
 
@@ -2442,7 +2451,8 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 				bool found = false;
 				for ( int i = 0; i < technique->uniformCount; i++ )
 				{
-					if ( technique->uniforms[i].nodeName != NULL && ksLexer_CaseSensitiveCompareToken( token, ptr, technique->parms[i].name ) )
+					if ( technique->uniforms[i].nodeName != NULL && technique->uniforms[i].semantic != GLTF_UNIFORM_SEMANTIC_NONE &&
+							ksLexer_CaseSensitiveCompareToken( token, ptr, technique->parms[i].name ) )
 					{
 						assert( stage == KS_GPU_PROGRAM_STAGE_FLAG_VERTEX );
 						switch ( technique->uniforms[i].semantic )
@@ -2522,6 +2532,7 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 								found = true;
 								break;
 						}
+						ksGltf_SetUniformStageFlag( technique, (const unsigned char *)technique->parms[i].name, NULL, stage );
 						break;
 					}
 				}
@@ -2948,6 +2959,10 @@ static void ksGltf_SortNodes( ksGltfNode * nodes, const int nodeCount )
 	free( nodeStack );
 }
 
+#if defined( _MSC_VER )
+#define stricmp _stricmp
+#endif
+
 static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * scene, ksSceneSettings * settings, ksGpuRenderPass * renderPass )
 {
 	const ksNanoseconds t0 = GetTimeNanoseconds();
@@ -2968,7 +2983,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 
 	const char * fileName = settings->glTF;
 	const size_t fileNameLength = strlen( fileName );
-	if ( fileNameLength > 4 && strcmp( &fileName[fileNameLength - 4], ".glb" ) == 0 )
+	if ( fileNameLength > 4 && stricmp( &fileName[fileNameLength - 4], ".glb" ) == 0 )
 	{
 		FILE * binaryFile = fopen( fileName, "rb" );
 		if ( binaryFile == NULL )
