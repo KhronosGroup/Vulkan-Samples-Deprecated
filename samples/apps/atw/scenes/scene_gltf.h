@@ -2961,6 +2961,8 @@ static void ksGltf_SortNodes( ksGltfNode * nodes, const int nodeCount )
 
 #if defined( _MSC_VER )
 #define stricmp _stricmp
+#elif defined( __linux__ )
+#define stricmp strcasecmp
 #endif
 
 static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * scene, ksSceneSettings * settings, ksGpuRenderPass * renderPass )
