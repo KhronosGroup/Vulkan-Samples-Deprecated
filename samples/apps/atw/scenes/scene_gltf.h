@@ -2960,9 +2960,7 @@ static void ksGltf_SortNodes( ksGltfNode * nodes, const int nodeCount )
 }
 
 #if defined( _MSC_VER )
-#define stricmp _stricmp
-#elif defined( __linux__ )
-#define stricmp strcasecmp
+#define strcasecmp _stricmp
 #endif
 
 static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * scene, ksSceneSettings * settings, ksGpuRenderPass * renderPass )
@@ -2985,7 +2983,7 @@ static bool ksGltfScene_CreateFromFile( ksGpuContext * context, ksGltfScene * sc
 
 	const char * fileName = settings->glTF;
 	const size_t fileNameLength = strlen( fileName );
-	if ( fileNameLength > 4 && stricmp( &fileName[fileNameLength - 4], ".glb" ) == 0 )
+	if ( fileNameLength > 4 && strcasecmp( &fileName[fileNameLength - 4], ".glb" ) == 0 )
 	{
 		FILE * binaryFile = fopen( fileName, "rb" );
 		if ( binaryFile == NULL )
