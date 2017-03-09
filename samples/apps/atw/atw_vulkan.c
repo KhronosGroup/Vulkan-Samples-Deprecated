@@ -456,15 +456,17 @@ Platform headers / declarations
 	#include <dlfcn.h>						// for dlopen
 
 	#include "vulkan/vulkan.h"
-	#include "vulkan/vk_sdk_platform.h"
 	#include "vulkan/vk_format.h"
+
+#if !(defined( VK_USE_PLATFORM_IOS_MVK ) || defined( VK_USE_PLATFORM_MACOS_MVK ))
+	#include "vulkan/vk_sdk_platform.h"
+#endif
 
 	#if defined( OS_APPLE_IOS )
 		#include <UIKit/UIKit.h>
 		#if defined( VK_USE_PLATFORM_IOS_MVK )
 			#include <QuartzCore/CAMetalLayer.h>
 			#include <MoltenVK/vk_mvk_moltenvk.h>
-			#include <MoltenVK/vk_mvk_ios_surface.h>
 			#define VkIOSSurfaceCreateInfoKHR						VkIOSSurfaceCreateInfoMVK
 			#define VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR	VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_MVK
 			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			VK_MVK_IOS_SURFACE_EXTENSION_NAME
@@ -479,7 +481,7 @@ Platform headers / declarations
 				VkIOSSurfaceCreateFlagsKHR	flags;
 				UIView *					pView;
 			} VkIOSSurfaceCreateInfoKHR;
-			#define VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR	1000015000
+			#define VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_KHR	1000122000
 			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			"VK_KHR_ios_surface"
 			typedef VkResult (VKAPI_PTR *PFN_vkCreateIOSSurfaceKHR)(VkInstance instance, const VkIOSSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
 			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateIOSSurfaceKHR
@@ -493,7 +495,6 @@ Platform headers / declarations
 		#if defined( VK_USE_PLATFORM_MACOS_MVK )
 			#include <QuartzCore/CAMetalLayer.h>
 			#include <MoltenVK/vk_mvk_moltenvk.h>
-			#include <MoltenVK/vk_mvk_macos_surface.h>
 			#define VkMacOSSurfaceCreateInfoKHR						VkMacOSSurfaceCreateInfoMVK
 			#define VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_KHR	VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK
 			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			VK_MVK_MACOS_SURFACE_EXTENSION_NAME
@@ -508,7 +509,7 @@ Platform headers / declarations
 				VkMacOSSurfaceCreateFlagsKHR	flags;
 				NSView *						pView;
 			} VkMacOSSurfaceCreateInfoKHR;
-			#define VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_KHR	1000015000
+			#define VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_KHR	1000123000
 			#define VK_KHR_PLATFORM_SURFACE_EXTENSION_NAME			"VK_KHR_macos_surface"
 			typedef VkResult (VKAPI_PTR *PFN_vkCreateMacOSSurfaceKHR)(VkInstance instance, const VkMacOSSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
 			#define PFN_vkCreateSurfaceKHR							PFN_vkCreateMacOSSurfaceKHR
