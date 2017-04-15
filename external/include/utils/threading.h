@@ -90,6 +90,10 @@ limitations under the License.
 #define UNUSED_PARM( x )				{ (void)(x); }
 #endif
 
+#if !defined( ARRAY_SIZE )
+#define ARRAY_SIZE( a )					( sizeof( (a) ) / sizeof( (a)[0] ) )
+#endif
+
 /*
 ================================================================================================================================
 

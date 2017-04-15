@@ -73,7 +73,7 @@ enum
 	PROGRAM_TEXTURE_2
 };
 
-#if GRAPHICS_API_OPENGL == 1 || GRAPHICS_API_OPENGLES == 1
+#if GRAPHICS_API_OPENGL == 1 || GRAPHICS_API_OPENGL_ES == 1
 
 static ksGpuProgramParm flatShadedProgramParms[] =
 {
