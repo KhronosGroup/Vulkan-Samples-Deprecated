@@ -217,7 +217,7 @@ static void ksGltfScene_Render( ksGpuCommandBuffer * commandBuffer, const ksGltf
 #include <utils/base64.h>
 #include <utils/lexer.h>
 
-#if GRAPHICS_API_OPENGL == 0 && GRAPHICS_API_OPENGLES == 0
+#if GRAPHICS_API_OPENGL == 0 && GRAPHICS_API_OPENGL_ES == 0
 
 #define GL_BYTE							0x1400
 #define GL_UNSIGNED_BYTE				0x1401
@@ -319,7 +319,7 @@ static void ksGltfScene_Render( ksGpuCommandBuffer * commandBuffer, const ksGltf
 
 #endif
 
-#if GRAPHICS_API_OPENGL == 1 || GRAPHICS_API_OPENGLES == 1
+#if GRAPHICS_API_OPENGL == 1 || GRAPHICS_API_OPENGL_ES == 1
 
 static ksGpuProgramParm unitCubeFlatShadeProgramParms[] =
 {
@@ -1810,7 +1810,7 @@ typedef struct ksGltfInOutParm
 	size_t					nameLength;
 } ksGltfInOutParm;
 
-#if GRAPHICS_API_OPENGL == 1 || GRAPHICS_API_OPENGLES == 1 || GRAPHICS_API_VULKAN == 1
+#if GRAPHICS_API_OPENGL == 1 || GRAPHICS_API_OPENGL_ES == 1 || GRAPHICS_API_VULKAN == 1
 
 // Convert a GLSL 1.0 ES glTF shader to a newer (at least 1.3) GLSL version primarily for uniform buffer support.
 // Assumes the GLSL 1.0 ES glTF shader does not use any extensions.
@@ -2633,7 +2633,7 @@ unsigned char * ksGltf_ConvertShaderGLSL( const unsigned char * source, size_t *
 void ksGltf_CreateTechniqueProgram( ksGpuContext * context, ksGltfTechnique * technique, const ksGltfProgram * program,
 								const int conversion, const char * semanticUniforms[] )
 {
-#if GRAPHICS_API_OPENGL == 1 || GRAPHICS_API_OPENGLES == 1 || GRAPHICS_API_VULKAN == 1
+#if GRAPHICS_API_OPENGL == 1 || GRAPHICS_API_OPENGL_ES == 1 || GRAPHICS_API_VULKAN == 1
 	if ( conversion != KS_GLSL_CONVERSION_NONE )
 	{
 		const char * newSemanticUniforms[GLTF_UNIFORM_SEMANTIC_MAX] = { 0 };
