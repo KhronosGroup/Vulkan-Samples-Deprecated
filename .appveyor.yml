@@ -47,7 +47,7 @@ test_script:
 notifications:
   - provider: Email
     to:
-      - mrelusive@oculus.com
+      - gloria.kennickell@oculus.com
     subject: 'Vulkan-Samples Windows Build #{{buildVersion}}: {{status}}'
     on_build_success: false
     on_build_failure: true

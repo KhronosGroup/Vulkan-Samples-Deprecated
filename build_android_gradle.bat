@@ -1,5 +1,6 @@
 mkdir ..\Vulkan-LoaderAndValidationLayers\build\generated\include
 py -3 ..\Vulkan-LoaderAndValidationLayers\scripts\lvl_genvk.py -registry ..\Vulkan-LoaderAndValidationLayers\scripts\vk.xml vk_dispatch_table_helper.h -o ..\Vulkan-LoaderAndValidationLayers\build\generated\include\
+py -3 ..\Vulkan-LoaderAndValidationLayers\scripts\lvl_genvk.py -registry ..\Vulkan-LoaderAndValidationLayers\scripts\vk.xml vk_layer_dispatch_table.h -o ..\Vulkan-LoaderAndValidationLayers\build\generated\include\
 
 call samples\apps\atw\projects\android\gradle\atw_cpu_dsp\gradlew -b samples\apps\atw\projects\android\gradle\atw_cpu_dsp\build.gradle --project-cache-dir build\android\gradle\apps\atw_cpu_dsp\.gradle build
 call samples\apps\atw\projects\android\gradle\atw_opengl\gradlew -b samples\apps\atw\projects\android\gradle\atw_opengl\build.gradle --project-cache-dir build\android\gradle\apps\atw_opengl\.gradle build
