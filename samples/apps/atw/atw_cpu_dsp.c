@@ -5491,7 +5491,7 @@ Time Warp
 ================================================================================================
 */
 
-#include "utils/algebra.h"
+#include <utils/algebra.h>
 
 static void CalculateTimeWarpTransform( ksMatrix4x4f * transform, const ksMatrix4x4f * renderProjectionMatrix,
 										const ksMatrix4x4f * renderViewMatrix, const ksMatrix4x4f * newViewMatrix )
@@ -5786,7 +5786,7 @@ Threaded Time Warp
 ================================================================================================================================
 */
 
-#include "utils/threading.h"
+#include <utils/threading.h>
 
 typedef struct
 {

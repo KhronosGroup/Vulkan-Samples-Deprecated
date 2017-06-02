@@ -10706,6 +10706,27 @@ static void ksGpuCommandBuffer_UnmapBuffer( ksGpuCommandBuffer * commandBuffer, 
 		assert( buffer->size == mappedBuffer->size );
 
 		{
+			// Add a memory barrier for the destination buffer from shader access to DMA write
+			VkBufferMemoryBarrier bufferMemoryBarrier;
+			bufferMemoryBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+			bufferMemoryBarrier.pNext = NULL;
+			bufferMemoryBarrier.srcAccessMask = ksGpuBuffer_GetBufferAccess( buffer->type );
+			bufferMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			bufferMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			bufferMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			bufferMemoryBarrier.buffer = buffer->buffer;
+			bufferMemoryBarrier.offset = 0;
+			bufferMemoryBarrier.size = buffer->size;
+
+			const VkPipelineStageFlags src_stages = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+			const VkPipelineStageFlags dst_stages = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			const VkDependencyFlags flags = 0;
+
+			device->vkCmdPipelineBarrier( commandBuffer->cmdBuffers[commandBuffer->currentBuffer],
+											src_stages, dst_stages, flags, 0, NULL, 1, &bufferMemoryBarrier, 0, NULL );
+		}
+
+		{
 			// Add a memory barrier for the mapped buffer from host write to DMA read.
 			VkBufferMemoryBarrier bufferMemoryBarrier;
 			bufferMemoryBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -10718,8 +10739,8 @@ static void ksGpuCommandBuffer_UnmapBuffer( ksGpuCommandBuffer * commandBuffer, 
 			bufferMemoryBarrier.offset = 0;
 			bufferMemoryBarrier.size = mappedBuffer->size;
 
-			const VkPipelineStageFlags src_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-			const VkPipelineStageFlags dst_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			const VkPipelineStageFlags src_stages = VK_PIPELINE_STAGE_HOST_BIT;
+			const VkPipelineStageFlags dst_stages = VK_PIPELINE_STAGE_TRANSFER_BIT;
 			const VkDependencyFlags flags = 0;
 
 			VC( device->vkCmdPipelineBarrier( commandBuffer->cmdBuffers[commandBuffer->currentBuffer],
@@ -10749,8 +10770,8 @@ static void ksGpuCommandBuffer_UnmapBuffer( ksGpuCommandBuffer * commandBuffer, 
 			bufferMemoryBarrier.offset = 0;
 			bufferMemoryBarrier.size = buffer->size;
 
-			const VkPipelineStageFlags src_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-			const VkPipelineStageFlags dst_stages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			const VkPipelineStageFlags src_stages = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			const VkPipelineStageFlags dst_stages = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
 			const VkDependencyFlags flags = 0;
 
 			VC( device->vkCmdPipelineBarrier( commandBuffer->cmdBuffers[commandBuffer->currentBuffer],
