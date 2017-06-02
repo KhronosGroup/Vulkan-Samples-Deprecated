@@ -1903,11 +1903,14 @@ static bool ksGpuDevice_Create( ksGpuDevice * device, ksDriverInstance * instanc
 	VK( instance->vkCreateDevice( device->physicalDevice, &deviceCreateInfo, VK_ALLOCATOR, &device->device ) );
 
 #if defined( VK_USE_PLATFORM_IOS_MVK ) || defined( VK_USE_PLATFORM_MACOS_MVK )
-	// Specify some helpful MoltenVK extension configuration, such as performance logging.
+	// Specify some helpful MoltenVK extension configuration, such as performance logging and shader conversion logging.
 	MVKDeviceConfiguration mvkConfig;
 	vkGetMoltenVKDeviceConfigurationMVK( device->device, &mvkConfig );
 	mvkConfig.performanceTracking = true;
-	mvkConfig.performanceLoggingFrameCount = 60;	// Log once per second (actually once every 60 frames)
+	mvkConfig.performanceLoggingFrameCount = 300;	// Log once every 5 seconds (300 frames)
+#ifdef DEBUG
+	mvkConfig.debugMode = true;
+#endif
 	vkSetMoltenVKDeviceConfigurationMVK( device->device, &mvkConfig );
 #endif
 
