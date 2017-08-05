@@ -9089,7 +9089,7 @@ static bool ksGpuComputePipeline_Create( ksGpuContext * context, ksGpuComputePip
 	computePipelineCreateInfo.basePipelineHandle	= VK_NULL_HANDLE;
 	computePipelineCreateInfo.basePipelineIndex		= 0;
 
-	VK( context->device->vkCreateComputePipelines( context->device->device, context->pipelineCache, 1, &computePipelineCreateInfo, VK_ALLOCATOR, &pipeline->pipeline ) );
+	VC( context->device->vkCreateComputePipelines( context->device->device, context->pipelineCache, 1, &computePipelineCreateInfo, VK_ALLOCATOR, &pipeline->pipeline ) );
 
 	return true;
 }
