@@ -420,9 +420,12 @@ Platform headers / declarations
 
 	#define OPENGL_VERSION_MAJOR	4
 	#define OPENGL_VERSION_MINOR	3
-	#define GLSL_VERSION			"430"
+	#define GLSL_VERSION			"310 es"
 	#define SPIRV_VERSION			"99"
 	#define USE_SYNC_OBJECT			0			// 0 = GLsync, 1 = EGLSyncKHR, 2 = storage buffer
+
+	#define GRAPHICS_API_OPENGL_ES	1
+
 
 	#if __STDC_VERSION__ >= 199901L
 	#define _XOPEN_SOURCE 600
@@ -2053,8 +2056,6 @@ static bool ksGpuContext_CreateForSurface( ksGpuContext * context, const ksGpuDe
 
 	context->device = device;
 
-	GlInitExtensions();
-
 	int glxErrorBase;
 	int glxEventBase;
 	if ( !glXQueryExtension( xDisplay, &glxErrorBase, &glxEventBase ) )
@@ -2121,10 +2122,11 @@ static bool ksGpuContext_CreateForSurface( ksGpuContext * context, const ksGpuDe
 		GLX_CONTEXT_MAJOR_VERSION_ARB,	OPENGL_VERSION_MAJOR,
 		GLX_CONTEXT_MINOR_VERSION_ARB,	OPENGL_VERSION_MINOR,
 		GLX_CONTEXT_PROFILE_MASK_ARB,	GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
-		GLX_CONTEXT_FLAGS_ARB,			GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
+		//GLX_CONTEXT_FLAGS_ARB,			GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
 		0
 	};
 
+	glXCreateContextAttribsARB					= (PFNGLXCREATECONTEXTATTRIBSARBPROC)	GetExtension( "glXCreateContextAttribsARB" );
 	context->glxContext = glXCreateContextAttribsARB( xDisplay,					// Display *	dpy
 														context->glxFBConfig,	// GLXFBConfig	config
 														NULL,					// GLXContext	share_context
@@ -2625,6 +2627,12 @@ static void ksGpuContext_SetCurrent( ksGpuContext * context )
 	wglMakeCurrent( context->hDC, context->hGLRC );
 #elif defined( OS_LINUX_XLIB ) || defined( OS_LINUX_XCB_GLX )
 	glXMakeCurrent( context->xDisplay, context->glxDrawable, context->glxContext );
+	static int firstTime = 1;
+	if ( firstTime ) 
+	{
+		GlInitExtensions();
+		firstTime = 0;
+	}
 #elif defined( OS_LINUX_XCB )
 	xcb_glx_make_current_cookie_t glx_make_current_cookie = xcb_glx_make_current( context->connection, context->glxDrawable, context->glxContext, 0 );
 	xcb_glx_make_current_reply_t * glx_make_current_reply = xcb_glx_make_current_reply( context->connection, glx_make_current_cookie, NULL );
@@ -9769,9 +9777,13 @@ static const char barGraphComputeProgramGLSL[] =
 	"#version " GLSL_VERSION "\n"
 	GLSL_EXTENSIONS
 	"\n"
+	"#if __VERSION__ == 310\n"
+	"# define ES_HIGHP highp\n"
+	"#endif\n"
+	"\n"
 	"layout( local_size_x = " STRINGIFY( BARGRAPH_LOCAL_SIZE_X ) ", local_size_y = " STRINGIFY( BARGRAPH_LOCAL_SIZE_Y ) " ) in;\n"
 	"\n"
-	"layout( rgba8, binding = 0 ) uniform writeonly " ES_HIGHP " image2D dest;\n"
+	"layout( rgba8, binding = 0 ) uniform writeonly ES_HIGHP image2D dest;\n"
 	"layout( std430, binding = 0 ) buffer barValueBuffer { float barValues[]; };\n"
 	"layout( std430, binding = 1 ) buffer barColorBuffer { vec4 barColors[]; };\n"
 	"uniform lowp vec4 backgroundColor;\n"
@@ -11004,10 +11016,14 @@ static const char timeWarpTransformComputeProgramGLSL[] =
 	"#version " GLSL_VERSION "\n"
 	GLSL_EXTENSIONS
 	"\n"
+	"#if __VERSION__ == 310\n"
+	"# define ES_HIGHP highp\n"
+	"#endif\n"
+	"\n"
 	"layout( local_size_x = " STRINGIFY( TRANSFORM_LOCAL_SIZE_X ) ", local_size_y = " STRINGIFY( TRANSFORM_LOCAL_SIZE_Y ) " ) in;\n"
 	"\n"
-	"layout( rgba16f, binding = 0 ) uniform writeonly " ES_HIGHP " image2D dst;\n"
-	"layout( rgba32f, binding = 1 ) uniform readonly " ES_HIGHP " image2D src;\n"
+	"layout( rgba16f, binding = 0 ) uniform writeonly ES_HIGHP image2D dst;\n"
+	"layout( rgba32f, binding = 1 ) uniform readonly ES_HIGHP image2D src;\n"
 	"uniform highp mat3x4 timeWarpStartTransform;\n"
  	"uniform highp mat3x4 timeWarpEndTransform;\n"
 	"uniform ivec2 dimensions;\n"
@@ -11065,13 +11081,17 @@ static const char timeWarpSpatialComputeProgramGLSL[] =
 	"#version " GLSL_VERSION "\n"
 	GLSL_EXTENSIONS
 	"\n"
+	"#if __VERSION__ == 310\n"
+	"# define ES_HIGHP highp\n"
+	"#endif\n"
+	"\n"
 	"layout( local_size_x = " STRINGIFY( SPATIAL_LOCAL_SIZE_X ) ", local_size_y = " STRINGIFY( SPATIAL_LOCAL_SIZE_Y ) " ) in;\n"
 	"\n"
 	"// imageScale = {	eyeTilesWide / ( eyeTilesWide + 1 ) / eyePixelsWide,\n"
 	"//					eyeTilesHigh / ( eyeTilesHigh + 1 ) / eyePixelsHigh };\n"
 	"// imageBias  = {	0.5f / ( eyeTilesWide + 1 ),\n"
 	"//					0.5f / ( eyeTilesHigh + 1 ) };\n"
-	"layout( rgba8, binding = 0 ) uniform writeonly " ES_HIGHP " image2D dest;\n"
+	"layout( rgba8, binding = 0 ) uniform writeonly ES_HIGHP image2D dest;\n"
 	"uniform highp sampler2DArray eyeImage;\n"
 	"uniform highp sampler2D warpImageG;\n"
 	"uniform highp vec2 imageScale;\n"
@@ -11110,13 +11130,17 @@ static const char timeWarpChromaticComputeProgramGLSL[] =
 	"#version " GLSL_VERSION "\n"
 	GLSL_EXTENSIONS
 	"\n"
+	"#if __VERSION__ == 310\n"
+	"# define ES_HIGHP highp\n"
+	"#endif\n"
+	"\n"
 	"layout( local_size_x = " STRINGIFY( CHROMATIC_LOCAL_SIZE_X ) ", local_size_y = " STRINGIFY( CHROMATIC_LOCAL_SIZE_Y ) " ) in;\n"
 	"\n"
 	"// imageScale = {	eyeTilesWide / ( eyeTilesWide + 1 ) / eyePixelsWide,\n"
 	"//					eyeTilesHigh / ( eyeTilesHigh + 1 ) / eyePixelsHigh };\n"
 	"// imageBias  = {	0.5f / ( eyeTilesWide + 1 ),\n"
 	"//					0.5f / ( eyeTilesHigh + 1 ) };\n"
-	"layout( rgba8, binding = 0 ) uniform writeonly " ES_HIGHP " image2D dest;\n"
+	"layout( rgba8, binding = 0 ) uniform writeonly ES_HIGHP image2D dest;\n"
 	"uniform highp sampler2DArray eyeImage;\n"
 	"uniform highp sampler2D warpImageR;\n"
 	"uniform highp sampler2D warpImageG;\n"
